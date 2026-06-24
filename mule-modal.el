@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo+
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 1.0
+;; Version: 1.1
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -86,11 +86,63 @@
       (message "*org-scratch* buffer doesn't exist, creating."))))
 
 ;;; ---------------------------------------------------------------------------
+;;; Mule-Enter-DWIM
+;;; ---------------------------------------------------------------------------
+(defvar mule-editing-modes
+  '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
+  "Major modes where Enter should be blocked to prevent accidental
+  line breaks.")
+
+(defun mule--editing-mode-p ()
+  "Return non-nil if current major mode is in `mule-editing-modes'."
+  (member major-mode mule-editing-modes))
+
+(defun mule--org-enter-handler ()
+  "Handle Enter in Org mode: follow links except src-blocks."
+  (when (and (eq major-mode 'org-mode)
+             (fboundp 'org-element-at-point)
+             (fboundp 'org-open-at-point))
+    (let ((elem (org-element-at-point)))
+      (when (and elem (not (eq (car elem) 'src-block)))
+        #'org-open-at-point))))
+
+(defun mule--markdown-enter-handler ()
+  "Handle Enter in Markdown mode: follow links/buttons."
+  (when (memq major-mode '(markdown-mode gfm-mode))
+    (cond
+     ((fboundp 'markdown-follow-thing-at-point)
+      #'markdown-follow-thing-at-point)
+     ((fboundp 'shr-follow-link-at-point)
+      #'shr-follow-link-at-point)
+     (t
+      #'browse-url-at-point))))
+
+(defun mule--non-editing-enter-handler ()
+  "Handle Enter in non-editing modes (Info, Dired, etc.):
+  fallthrough."
+  (unless (mule--editing-mode-p)
+    (let ((native-ret (lookup-key (current-local-map) (kbd "RET"))))
+      (when (and native-ret
+                 (not (eq native-ret 'undefined))
+                 (fboundp native-ret))
+        native-ret))))
+
+(defun mule-enter-dwim ()
+  "Smart Return handler for MULE Normal State."
+  (interactive)
+  (let ((follow-cmd nil))
+    (setq follow-cmd (or (mule--org-enter-handler)
+                         (mule--markdown-enter-handler)
+                         (mule--non-editing-enter-handler)))
+    (when follow-cmd
+      (call-interactively follow-cmd))))
+
+;;; ---------------------------------------------------------------------------
 ;;; Helper Functions (Define FIRST so keymap can reference them)
 ;;; ---------------------------------------------------------------------------
 (defun mule--desc-bindings-walk (map prefix)
   "Helper for mule-describe-bindings: Recursively walk MAP and
-        insert non-prefix keys."
+  insert non-prefix keys."
   (map-keymap
    (lambda (key def)
      (let ((full-key (concat prefix (key-description (vector key)))))
@@ -127,7 +179,7 @@
 
 (defun mule-describe-bindings ()
   "Display all *leaf* keybindings in mule-mode-map. Excludes prefix
-                  keys from the output list."
+  keys from the output list."
   (interactive)
   (unless (boundp 'mule-mode-map)
     (user-error "mule-mode-map is not defined yet"))
@@ -252,28 +304,6 @@
   (interactive)
   (when (region-active-p)
     (fill-region (region-beginning) (region-end))))
-
-(defun mule-enter-dwim ()
-  "Smart Return handler for MULE Normal State."
-  (interactive)
-  (let ((follow-cmd nil))
-    (cond
-     ((eq major-mode 'org-mode)
-      (if (and (fboundp 'org-element-at-point)
-               (fboundp 'org-open-at-point))
-          (let ((elem (org-element-at-point)))
-            (when elem  ; Check elem exists first
-              (unless (eq (car elem) 'src-block)
-                (setq follow-cmd #'org-open-at-point))))
-        (message "Org functions not available")))
-
-     ((or (derived-mode-p 'dired-mode)
-          (eq major-mode 'ibuffer-mode)
-          (eq major-mode 'magit-status-mode))
-      (setq follow-cmd (key-binding (kbd "RET")))))
-
-    (when follow-cmd
-      (call-interactively follow-cmd))))
 
 (defun mule-move-to-left-margin ()
   "Move to beginning of line."
