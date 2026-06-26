@@ -99,7 +99,7 @@ setting, forcing Emacs to use your global default defined by
 *Example:*
 #+BEGIN_SRC elisp :tangle no
   ;; Global fallback (used if variables are nil or in non-MULE buffers)
-  (setq-default cursor-type '(hollow . 2))
+  (setq-default cursor-type 'hollow)
 
   ;; MULE ON (Normal) state (when ESC is pressed)
   (setq mule-cursor-normal 'box)          ; Or set to nil to match global
