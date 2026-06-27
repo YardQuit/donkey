@@ -142,26 +142,25 @@ setting, forcing Emacs to use your global default defined by
 | j   | next-line            | Move down                    |
 | k   | previous-line        | Move up                      |
 | l   | forward-char         | Move right                   |
-| w   | mule-right-word      | Forward word                 |
-| b   | mule-left-word       | Backward word                |
+| w   | mule-forward-word    | Forward word                 |
+| b   | mule-backward-word   | Backward word                |
 | W   | mule-forward-symbol  | Forward sexp                 |
 | B   | mule-backward-symbol | Backward sexp                |
 | S   | mule-jump-back       | Jump back position (count 5) |
-|     |                      |                              |
 |-----+----------------------+------------------------------|
 
 ** Goto / Scroll
-|-----+--------------------------+-------------------|
-| Key | Command                  | Description       |
-|-----+--------------------------+-------------------|
-| g g | beginning-of-buffer      | Jump to top       |
-| g t | beginning-of-buffer      | Jump to top (alt) |
-| g e | end-of-buffer            | Jump to bottom    |
-| g h | mule-move-to-left-margin | Beginning of line |
-| g l | mule-move-to-end-of-line | End of line       |
-| :   | mule-goto-line           | Go to line number |
-| z z | recenter-top-bottom      | Recenter screen   |
-|-----+--------------------------+-------------------|
+|-----+--------------------------------+-------------------|
+| Key | Command                        | Description       |
+|-----+--------------------------------+-------------------|
+| g g | beginning-of-buffer            | Jump to top       |
+| g t | beginning-of-buffer            | Jump to top (alt) |
+| g e | end-of-buffer                  | Jump to bottom    |
+| g h | mule-move-to-beginning-of-line | Beginning of line |
+| g l | mule-move-to-end-of-line       | End of line       |
+| :   | mule-goto-line                 | Go to line number |
+| z z | recenter-top-bottom            | Recenter screen   |
+|-----+--------------------------------+-------------------|
 
 ** Editing
 |-----+----------------------------+-----------------------------|
@@ -171,7 +170,7 @@ setting, forcing Emacs to use your global default defined by
 | x   | mule-delete                | Delete char or region (alt) |
 | D   | mule-kill-to-end-of-line   | Kill to end of line         |
 | c   | mule-change                | Delete and enter insert     |
-| C   | mule-comment-line          | Comment/uncomment line      |
+| C   | mule-comment-dwim          | Comment/uncomment line      |
 | C-j | join-line                  | Join current with next      |
 | >   | mule-indent-region-or-line | Indent region or line       |
 |-----+----------------------------+-----------------------------|
