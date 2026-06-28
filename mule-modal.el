@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo+
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 1.3
+;; Version: 1.4
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -552,11 +552,11 @@
   "Mark text INSIDE CHAR pairs (excluding delimiters)."
   (interactive)
   (let* ((default-char (char-after))
-         (supported-openers '(?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
+         (supported-openers '(?/ ?+ ?_ ?$ ?= ?* ?~ ?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
          (on-opener (and default-char (memq default-char supported-openers)))
          (open-char (if on-opener
                         default-char
-                      (read-char "Char ({[<>'\"`): ")))
+                      (read-char "Char (/+_$=*~{[<>'\"`): ")))
          (close-char nil)
          (start-pos nil)
          (end-pos nil))
@@ -570,6 +570,13 @@
            ((= open-char ?\") ?\")
            ((= open-char ?\') ?\')
            ((= open-char ?`) ?`)
+           ((= open-char ?=) ?=)
+           ((= open-char ?*) ?*)
+           ((= open-char ?~) ?~)
+           ((= open-char ?/) ?/)
+           ((= open-char ?+) ?+)
+           ((= open-char ?_) ?_)
+           ((= open-char ?$) ?$)
            (t
             (error "Unsupported delimiter '%c'" open-char))))
 
@@ -603,11 +610,11 @@
   "Mark text INCLUDING CHAR pairs (delimiters included)."
   (interactive)
   (let* ((default-char (char-after))
-         (supported-openers '(?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
+         (supported-openers '(?/ ?+ ?_ ?$ ?= ?* ?~ ?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
          (on-opener (and default-char (memq default-char supported-openers)))
          (open-char (if on-opener
                         default-char
-                      (read-char "Char ({[<>'\"`): ")))
+                      (read-char "Char (/+_$=*~{[<>'\"`): ")))
          (close-char nil)
          (start-pos nil)
          (end-pos nil))
@@ -621,6 +628,13 @@
            ((= open-char ?\") ?\")
            ((= open-char ?\') ?\')
            ((= open-char ?`) ?`)
+           ((= open-char ?=) ?=)
+           ((= open-char ?*) ?*)
+           ((= open-char ?~) ?~)
+           ((= open-char ?/) ?/)
+           ((= open-char ?+) ?+)
+           ((= open-char ?_) ?_)
+           ((= open-char ?$) ?$)
            (t
             (error "Unsupported delimiter '%c'. Use: { [ ( < ' \" `" open-char))))
 
