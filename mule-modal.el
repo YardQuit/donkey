@@ -57,7 +57,7 @@
 ;;; Buffer Creation Functions
 ;;; ---------------------------------------------------------------------------
 (defun mule-insert-org-scratch-message ()
-  "Inserts buffer message"
+  "Insert buffer message"
   (insert
    (substitute-command-keys
 ;; start - leave block as it looks.
@@ -647,7 +647,7 @@
           (search-failed
            (error "No '%c' found near cursor" open-char)))))
 
-    (goto-char (1+ start-pos))  ;; ← THIS LINE WAS MISSING
+    (goto-char (1+ start-pos))
 
     (condition-case nil
         (setq end-pos (search-forward (string close-char) nil nil))
