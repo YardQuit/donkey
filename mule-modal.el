@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 2.1
+;; Version: 2.2
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -81,57 +81,128 @@
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Describe Bindings Functions
 ;;; ---------------------------------------------------------------------------
-(defun mule--desc-bindings-walk (map prefix)
-  "Helper for mule-describe-bindings: Recursively walk MAP and
-insert non-prefix keys."
-  (map-keymap
-   (lambda (key def)
-     (let ((full-key (concat prefix (key-description (vector key)))))
-       (when (and (not (eq def 'undefined))
-                  (not (and (listp def)
-                            (eq (car def) 'remap)
-                            (eq (cadr def) 'self-insert-command)
-                            (null (cdr (cddr def))))))
-         (unless (or (keymapp def)
-                     (and (listp def) (keymapp (cdr def))))
-           (insert (format "%-25s %s\n" full-key
-                           (if (symbolp def) (symbol-name def) "[complex]"))))
+(defun mule--desc-bindings-collect-leaves (map prefix)
+  "Recursively walk MAP and return a list of (FULL-KEY . DEF) cons
+cells for leaf bindings."
+  (let (acc)
+    (map-keymap
+     (lambda (key def)
+       (when def
+         (let ((full-key (concat prefix (key-description (vector key)))))
+           (unless (and (listp def)
+                        (eq (car def) 'remap)
+                        (eq (cadr def) 'self-insert-command)
+                        (null (cddr def)))
+             (cond
+              ((keymapp def)
+               (setq acc (append acc
+                                 (mule--desc-bindings-collect-leaves
+                                  def (concat full-key " ")))))
+              ((and (consp def) (keymapp (cdr def)))
+               (setq acc (append acc
+                                 (mule--desc-bindings-collect-leaves
+                                  (cdr def) (concat full-key " ")))))
+              (t
+               (push (cons full-key def) acc)))))))
+     map)
+    (nreverse acc)))
 
-         (cond
-          ((keymapp def)
-           (mule--desc-bindings-walk def (concat full-key " ")))
-          ((and (listp def) (keymapp (cdr def)))
-           (mule--desc-bindings-walk (cdr def) (concat full-key " ")))))))
-   map))
+(defun mule--binding-group-name (prefix)
+  "Return a human-readable group name for PREFIX."
+  (cond
+   ((string= prefix "single") "Single Keys")
+   ((string= prefix "g")      "Goto / Scroll")
+   ((string= prefix "m")      "Mark Objects")
+   ((string= prefix "r")      "Search / Replace")
+   ((string= prefix "z")      "Scroll")
+   (t (format "%s Prefix" (upcase prefix)))))
 
 (defun mule-describe-bindings ()
-  "Display all *leaf* keybindings in mule-normal-mode-map. Excludes
-prefix keys from the output list."
+  "Display all leaf keybindings in mule-normal-mode-map with formatting.
+Bindings are grouped by prefix, separated by blank rows and section
+headers.  Command names are clickable buttons that open their
+documentation."
   (interactive)
   (unless (boundp 'mule-normal-mode-map)
     (user-error "mule-normal-mode-map is not defined yet"))
 
-  (let ((buf (get-buffer-create "*MULE Bindings*")))
-    (with-current-buffer buf
-      (setq buffer-read-only nil))
+  (let* ((buf (get-buffer-create "*MULE Bindings*"))
+         (raw (mule--desc-bindings-collect-leaves mule-normal-mode-map ""))
+         (sorted-raw (sort raw (lambda (a b) (string< (car a) (car b))))))
 
     (with-current-buffer buf
+      (setq buffer-read-only nil)
       (erase-buffer)
 
-      (insert "MULE Normal Mode Key Bindings\n")
-      (insert (make-string 40 ?=) "\n\n")
-      (insert (format "%-25s %s\n" "KEY" "COMMAND"))
-      (insert (make-string 48 ?-) "\n")
+      ;; Title
+      (insert (propertize "MULE Normal Mode Key Bindings\n"
+                          'face '(bold font-lock-function-name-face :height 1.2)))
+      (insert (propertize (make-string 50 ?=)
+                          'face 'font-lock-comment-face) "\n\n")
 
-      (mule--desc-bindings-walk mule-normal-mode-map "")
+      ;; Column header
+      (insert (propertize (format "%-14s %s\n" "KEY" "COMMAND")
+                          'face 'font-lock-keyword-face))
+      (insert (propertize (make-string 50 ?-)
+                          'face 'font-lock-comment-face) "\n")
 
-      (goto-char (point-min))
+      ;; Binding entries
+      (let ((prev-group nil)
+            (lines-added 0))
+        (dolist (entry sorted-raw)
+          (let* ((full-key (car entry))
+                 (def      (cdr entry))
+                 (group    (if (string-match "\\(.+?\\) " full-key)
+                               (match-string 1 full-key)
+                             "single"))
+                 (new-block-p (and (> lines-added 0)
+                                   (not (equal prev-group group)))))
+
+            ;; Separator + header on group transition
+            (when new-block-p
+              (insert "\n")
+              (insert (propertize (format "  %s" (mule--binding-group-name group))
+                                  'face '(bold font-lock-comment-delimiter-face)))
+              (insert "\n")
+              (insert (propertize (make-string 50 ?-)
+                                  'face 'font-lock-comment-face) "\n"))
+
+            ;; Key column
+            (insert (propertize (format "%-14s " full-key)
+                                'face 'font-lock-variable-name-face))
+
+            ;; Command name as clickable button
+            (if (symbolp def)
+                (insert-text-button (symbol-name def)
+                                    'action (lambda (_) (describe-function def))
+                                    'follow-link t
+                                    'help-echo (format "Describe %s" def))
+              (insert "[complex]"))
+            (insert "\n")
+
+            (setq lines-added (1+ lines-added)
+                  prev-group  group))))
+
+      ;; Footer
+      (insert "\n")
+      (insert (propertize (make-string 50 ?=)
+                          'face 'font-lock-comment-face) "\n")
+      (insert (propertize "q: quit  |  RET or click: describe command"
+                          'face 'font-lock-comment-face))
+
+      ;; Buffer settings
       (special-mode)
       (setq-local buffer-read-only t)
       (setq-local truncate-lines t)
 
-      (local-set-key (kbd "q") #'quit-window)
-      (local-set-key (kbd "RET") #'bury-buffer))
+      ;; Local keymap — avoids polluting shared special-mode-map
+      (let ((local-map (make-sparse-keymap)))
+        (set-keymap-parent local-map special-mode-map)
+        (keymap-set local-map "q"   #'quit-window)
+        (keymap-set local-map "RET" #'push-button)
+        (use-local-map local-map))
+      
+      (goto-char (point-min)))
 
     (display-buffer buf)))
 
