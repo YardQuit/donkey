@@ -17,7 +17,7 @@ add the following to your init.el or config.el:
 
 #+begin_src emacs-lisp
 
-    (let ((mule-path (expand-file-name "~/.config/emacs/mule-modal/mule-modal.el"
+    (let ((mule-path (expand-file-name "mule-modal/mule-modal.el"
                                      user-emacs-directory)))
     (if (file-exists-p mule-path)
         (load mule-path nil t)

@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 2.2
+;; Version: 2.3
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -557,11 +557,11 @@ commenting, then returns to the Org buffer."
   "Mark text INSIDE CHAR pairs (excluding delimiters)."
   (interactive)
   (let* ((default-char (char-after))
-         (supported-openers '(?/ ?+ ?_ ?$ ?= ?* ?~ ?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
+         (supported-openers '(?: ?/ ?+ ?_ ?$ ?= ?* ?~ ?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
          (on-opener (and default-char (memq default-char supported-openers)))
          (open-char (if on-opener
                         default-char
-                      (read-char "Char (/+_$=*~{[<>'\"`): ")))
+                      (read-char "Char (:/+_$=*~{[<>'\"`): ")))
          (close-char nil)
          (start-pos nil)
          (end-pos nil))
@@ -579,6 +579,7 @@ commenting, then returns to the Org buffer."
            ((= open-char ?*) ?*)
            ((= open-char ?~) ?~)
            ((= open-char ?/) ?/)
+           ((= open-char ?:) ?:)
            ((= open-char ?+) ?+)
            ((= open-char ?_) ?_)
            ((= open-char ?$) ?$)
@@ -615,11 +616,11 @@ commenting, then returns to the Org buffer."
   "Mark text INCLUDING CHAR pairs (delimiters included)."
   (interactive)
   (let* ((default-char (char-after))
-         (supported-openers '(?/ ?+ ?_ ?$ ?= ?* ?~ ?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
+         (supported-openers '(?: ?/ ?+ ?_ ?$ ?= ?* ?~ ?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
          (on-opener (and default-char (memq default-char supported-openers)))
          (open-char (if on-opener
                         default-char
-                      (read-char "Char (/+_$=*~{[<>'\"`): ")))
+                      (read-char "Char (:/+_$=*~{[<>'\"`): ")))
          (close-char nil)
          (start-pos nil)
          (end-pos nil))
@@ -637,6 +638,7 @@ commenting, then returns to the Org buffer."
            ((= open-char ?*) ?*)
            ((= open-char ?~) ?~)
            ((= open-char ?/) ?/)
+           ((= open-char ?:) ?:)
            ((= open-char ?+) ?+)
            ((= open-char ?_) ?_)
            ((= open-char ?$) ?$)
@@ -668,6 +670,53 @@ commenting, then returns to the Org buffer."
       (error "Empty selection between %c and %c" open-char close-char))
 
     (message "Selected OUTER content including '%c'" open-char)))
+
+(defun mule-mark-sexp-inner ()
+  "Mark content inside the balanced expression at point.
+Uses the syntax table to identify delimiters (parentheses,
+brackets, braces).  If point is on an opening or closing
+delimiter, marks content within that pair.  If point is inside
+a pair, finds the enclosing delimiters and marks everything
+within, excluding the delimiters themselves."
+  (interactive)
+  (unless (looking-at "\\s(")
+    (condition-case nil
+        (backward-up-list)
+      (scan-error
+       (user-error "Not inside a balanced expression"))))
+  (let ((start (1+ (point))) end)
+    (condition-case nil
+        (setq end (1- (progn (forward-list 1) (point))))
+      (scan-error
+       (user-error "Unbalanced expression")))
+    (when (>= start end)
+      (user-error "Empty expression"))
+    (push-mark start t)
+    (goto-char end)
+    (activate-mark)
+    (message "Marked inner expression")))
+
+(defun mule-mark-sexp-outer ()
+  "Mark the balanced expression at point, including delimiters.
+Uses the syntax table to identify delimiters (parentheses,
+brackets, braces).  If point is on a delimiter, marks that
+pair.  If point is inside a pair, finds the enclosing pair
+and marks it including delimiters."
+  (interactive)
+  (unless (looking-at "\\s(")
+    (condition-case nil
+        (backward-up-list)
+      (scan-error
+       (user-error "Not inside a balanced expression"))))
+  (let ((start (point)) end)
+    (condition-case nil
+        (setq end (progn (forward-list 1) (point)))
+      (scan-error
+       (user-error "Unbalanced expression")))
+    (push-mark start t)
+    (goto-char end)
+    (activate-mark)
+    (message "Marked outer expression")))
 
 (defun mule-mark-word ()
   "Select the entire word at or adjacent to point."
@@ -751,7 +800,9 @@ commenting, then returns to the Org buffer."
 (keymap-set mule-normal-mode-map "v" #'set-mark-command)
 
 ;; Mark objects
+(keymap-set mule-normal-mode-map "m A" #'mule-mark-sexp-outer)
 (keymap-set mule-normal-mode-map "m a" #'mule-mark-outer)
+(keymap-set mule-normal-mode-map "m I" #'mule-mark-sexp-inner)
 (keymap-set mule-normal-mode-map "m i" #'mule-mark-inner)
 (keymap-set mule-normal-mode-map "m p" #'mule-mark-paragraph)
 (keymap-set mule-normal-mode-map "m s" #'mule-mark-sentence)
