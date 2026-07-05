@@ -808,7 +808,7 @@ back to global `cursor-type'."
 ;;; ---------------------------------------------------------------------------
 (defvar mule--minibuffer-pre-state nil
   "Track MULE state before entering minibuffer.
-Value is 'normal, 'insert, or nil. Not buffer-local because we
+Value is \'normal, \'insert, or nil. Not buffer-local because we
 need to read it after switching buffers.")
 
 (defun mule--minibuffer-current-state ()
