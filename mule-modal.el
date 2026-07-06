@@ -929,9 +929,9 @@ back to global `cursor-type'."
 ;;; Mule Minibuffer Safety
 ;;; ---------------------------------------------------------------------------
 (defvar mule--minibuffer-pre-state nil
-  "Track MULE state before entering minibuffer.
-Value is \='normal, \='insert, or nil. Not buffer-local because we
-need to read it after switching buffers.")
+  "Track MULE state before entering minibuffer. Value is \='normal,
+\='insert, or nil. Not buffer-local because we need to read it after
+switching buffers.")
 
 (defun mule--minibuffer-current-state ()
   "Return the current MULE state as a symbol."
@@ -969,12 +969,42 @@ need to read it after switching buffers.")
 ;; In normal state, C-g acts as standard keyboard-quit.
 ;; Preserves C-level interrupt for running commands.
 (defun mule--exit-insert ()
-"Exit insert state and quit any active command."
-(interactive)
-(mule-enter-normal)
-(keyboard-quit))
+  "Exit insert state and quit any active command."
+  (interactive)
+  (mule-enter-normal)
+  (keyboard-quit))
 
 (define-key mule-insert-mode-map (kbd "C-g") #'mule--exit-insert)
+
+(defvar-local mule--saved-input-method nil
+  "Buffer-local saved input method name for restoration on Insert
+  entry.")
+
+(defun mule--on-normal-entry ()
+  "Deactivate input method when entering Normal state."
+  (when mule-normal-mode
+    (when current-input-method
+      (setq mule--saved-input-method current-input-method)
+      (deactivate-input-method))))
+
+(defun mule--on-insert-entry ()
+  "Reactivate saved input method when entering Insert state."
+  (when mule-insert-mode
+    (when (and mule--saved-input-method
+               (not current-input-method))
+      (activate-input-method mule--saved-input-method))))
+
+(defun mule--on-input-method-activate ()
+  "Prevent input method from staying active in Normal state."
+  (when (bound-and-true-p mule-normal-mode)
+    (when current-input-method
+      (setq mule--saved-input-method current-input-method)
+      (let (input-method-activate-hook)
+        (deactivate-input-method)))))
+
+(add-hook 'mule-normal-mode-hook #'mule--on-normal-entry)
+(add-hook 'mule-insert-mode-hook #'mule--on-insert-entry)
+(add-hook 'input-method-activate-hook #'mule--on-input-method-activate)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Exclusion Mode Safeguards
@@ -982,8 +1012,8 @@ need to read it after switching buffers.")
 (defvar mule--excluded-modes
   '(ibuffer-mode eshell-mode term-mode vterm-mode dired-mode comint-mode magit-status-mode)
   "Major modes where MULE Normal state should be permanently
-    disabled. In these modes, MULE Insert state (passthrough) is used
-    instead, keeping MULE active but non-interfering.")
+    disabled. In these modes, MULE Insert state (passthrough) is
+    used instead, keeping MULE active but non-interfering.")
 
 (dolist (mode mule--excluded-modes)
   (let ((hook (intern (format "%s-hook" mode))))
