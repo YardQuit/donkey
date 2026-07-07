@@ -996,6 +996,9 @@ ignore so smartparens' overlay handler does not run."
 
 (keymap-set mule-insert-mode-map "C-g" #'mule--exit-insert)
 
+(defvar smartparens-mode-map nil
+"Keymap for smartparens-mode. Declared here to silence byte-compiler.")
+
 (with-eval-after-load 'smartparens
   (keymap-set smartparens-mode-map "C-g" #'mule--exit-insert))
 
