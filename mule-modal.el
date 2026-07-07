@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 2.5
+;; Version: 2.6
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -746,6 +746,26 @@ and marks it including delimiters."
   (activate-mark)
   (message "Paragraph marked"))
 
+(defun mule-mark-symbol ()
+  "Select the entire symbol at or adjacent to point.
+Trailing commas or periods are omitted from the selection."
+  (interactive)
+  (unless (and (char-after)
+               (member (char-syntax (char-after)) '(?\w ?_)))
+    (backward-sexp 1))
+
+  (beginning-of-thing 'symbol)
+  (forward-sexp 1)
+
+  (while (memq (char-before) '(?, ?.))
+    (backward-char 1))
+
+  (push-mark (point) t)
+  (backward-sexp 1)
+  (activate-mark)
+
+  (message "Symbol marked"))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Normal Mode Keymap Definition
 ;;; ---------------------------------------------------------------------------
@@ -808,6 +828,7 @@ and marks it including delimiters."
 (keymap-set mule-normal-mode-map "m s" #'mule-mark-sentence)
 (keymap-set mule-normal-mode-map "m v" #'mule-rectangle-mark-mode)
 (keymap-set mule-normal-mode-map "m w" #'mule-mark-word)
+(keymap-set mule-normal-mode-map "m W" #'mule-mark-symbol)
 
 ;; Buffer navigation
 (keymap-set mule-normal-mode-map "%" #'mark-whole-buffer)
