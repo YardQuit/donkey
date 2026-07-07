@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 2.3
+;; Version: 2.4
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -969,16 +969,39 @@ switching buffers.")
 ;; In normal state, C-g acts as standard keyboard-quit.
 ;; Preserves C-level interrupt for running commands.
 (defun mule--exit-insert ()
-  "Exit insert state and quit any active command."
+  "Exit insert state and enter normal mode.
+Removes active mark, enters normal mode, and verifies the
+transition succeeded."
   (interactive)
+  (deactivate-mark)
   (mule-enter-normal)
-  (keyboard-quit))
+  (unless (bound-and-true-p mule-normal-mode)
+    (mule-normal-mode 1)))
 
-(define-key mule-insert-mode-map (kbd "C-g") #'mule--exit-insert)
+(defun mule--intercept-quit-in-insert ()
+  "Intercept C-g in insert mode by raw key event.
+Bypasses all keymap priority issues — checks the actual key
+pressed, not which command it resolved to. Sets this-command to
+ignore so smartparens' overlay handler does not run."
+  (when (and (bound-and-true-p mule-insert-mode)
+             (not (minibufferp))
+             (equal (this-single-command-keys) [7]))
+    (setq this-command 'ignore)
+    (deactivate-mark)
+    (mule-enter-normal)
+    (unless (bound-and-true-p mule-normal-mode)
+      (mule-normal-mode 1))))
+
+(add-hook 'pre-command-hook #'mule--intercept-quit-in-insert)
+
+(keymap-set mule-insert-mode-map "C-g" #'mule--exit-insert)
+
+(with-eval-after-load 'smartparens
+  (keymap-set smartparens-mode-map "C-g" #'mule--exit-insert))
 
 (defvar-local mule--saved-input-method nil
   "Buffer-local saved input method name for restoration on Insert
-  entry.")
+entry.")
 
 (defun mule--on-normal-entry ()
   "Deactivate input method when entering Normal state."
