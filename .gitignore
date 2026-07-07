@@ -17,7 +17,7 @@ dist/
 *.~undo-tree
 
 # Temporary files
-mule-modal-*.el
+mule-modal-exp*.el
 *.bak
 \#*\#
 nohup.out
