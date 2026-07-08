@@ -1,6 +1,7 @@
 ;;; mule-mark-symbol-test.el --- Tests for mule-mark-symbol -*- lexical-binding: t; -*-
 
 (require 'ert)
+(require 'mule-modal)
 
 (declare-function mule-mark-symbol nil)
 

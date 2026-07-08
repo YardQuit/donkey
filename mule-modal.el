@@ -80,19 +80,18 @@
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Describe Bindings Functions
-;;; ---------------------------------------------------------------------------
+  ;;; ---------------------------------------------------------------------------
 (defun mule--desc-bindings-collect-leaves (map prefix)
   "Recursively walk MAP and return a list of (FULL-KEY . DEF) cons
-cells for leaf bindings."
+  cells for leaf bindings."
   (let (acc)
     (map-keymap
      (lambda (key def)
        (when def
          (let ((full-key (concat prefix (key-description (vector key)))))
-           (unless (and (listp def)
-                        (eq (car def) 'remap)
-                        (eq (cadr def) 'self-insert-command)
-                        (null (cddr def)))
+           (unless (and (eq key 'remap)
+                        (keymapp def)
+                        (lookup-key def [self-insert-command]))
              (cond
               ((keymapp def)
                (setq acc (append acc
@@ -119,9 +118,9 @@ cells for leaf bindings."
 
 (defun mule-describe-bindings ()
   "Display all leaf keybindings in mule-normal-mode-map with formatting.
-Bindings are grouped by prefix, separated by blank rows and section
-headers.  Command names are clickable buttons that open their
-documentation."
+  Bindings are grouped by prefix, separated by blank rows and section
+  headers.  Command names are clickable buttons that open their
+  documentation."
   (interactive)
   (unless (boundp 'mule-normal-mode-map)
     (user-error "mule-normal-mode-map is not defined yet"))
@@ -212,7 +211,7 @@ documentation."
 (defvar mule-editing-modes
   '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
   "Major modes where Enter should be blocked to prevent accidental
-line breaks.")
+    line breaks.")
 
 (defun mule--editing-mode-p ()
   "Return non-nil if current major mode is in `mule-editing-modes'."
@@ -245,6 +244,7 @@ fallthrough."
     (let ((native-ret (lookup-key (current-local-map) (kbd "RET"))))
       (when (and native-ret
                  (not (eq native-ret 'undefined))
+                 (symbolp native-ret)
                  (fboundp native-ret))
         native-ret))))
 
