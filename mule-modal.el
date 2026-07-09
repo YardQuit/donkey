@@ -344,9 +344,18 @@ commenting, then returns to the Org buffer."
 (defun mule-insert-after ()
   "Insert after current char - enters INSERT state."
   (interactive)
-  (forward-char 1)
+  (condition-case _err
+      (forward-char 1)
+    (end-of-buffer nil))
   (mule-enter-insert))
 
+(defun mule-insert-after ()
+"Insert after current char - enters INSERT state."
+(interactive)
+(condition-case _err
+    (forward-char 1)
+  (end-of-buffer nil))
+(mule-enter-insert))
 (defun mule-insert-beginning-of-line ()
   "Insert at beginning of line - enters INSERT state."
   (interactive)
