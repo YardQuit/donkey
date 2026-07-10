@@ -316,5 +316,3 @@ Expected: point at end of line, regardless of prefix arg."
     (should (= (point) 12))))
 
 ;;; mule-insert-end-of-line-test.el ends here
-
-(ert "mule-insert-end-of-line")

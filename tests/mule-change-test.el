@@ -395,5 +395,3 @@
       (should (= (buffer-size) 7)))))
 
     ;;; mule-change-test.el ends here
-
-(ert "mule-change")

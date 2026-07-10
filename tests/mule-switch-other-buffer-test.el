@@ -123,9 +123,9 @@ Expected: switch-to-buffer receives the correct buffer on each call."
                            buf-a
                          buf-b)))
                     ((symbol-function 'switch-to-buffer)
-                   (lambda (buf)
-                     (push buf results)
-                     (set-buffer buf))))
+                     (lambda (buf)
+                       (push buf results)
+                       (set-buffer buf))))
             (set-buffer buf-b)
             (mule-switch-other-buffer)
             (should (eq (current-buffer) buf-a))
@@ -189,5 +189,3 @@ Expected: other-buffer called regardless of prefix arg, receives current-buffer.
     (should (eq other-arg (current-buffer)))))
 
 ;;; mule-switch-other-buffer-test.el ends here
-
-(ert "mule-switch-other-buffer")

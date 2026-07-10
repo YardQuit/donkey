@@ -128,5 +128,3 @@ mark-sexp should treat them as one unit."
   (should (equal (nth 2 (mule-test--symbol-result "foo,bar" 2)) "foo,bar")))
 
 ;;; mule-mark-symbol-test.el ends here
-
-(ert "mule-mark-symbol")

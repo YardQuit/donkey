@@ -292,5 +292,3 @@ Expected: region-active-p true after command."
         (should (region-active-p))))))
 
 ;;; mule-visual-previous-line-test.el ends here
-
-(ert "mule-visual-previous-line")

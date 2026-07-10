@@ -253,8 +253,8 @@ Expected: no error, clipboard-yank executes."
                  (lambda () nil))
                 ((symbol-function 'clipboard-yank)
                  (lambda () (setq yanked t))))
-        (call-interactively #'mule-yank))
-      (should yanked))))
+        (call-interactively #'mule-yank)))
+    (should yanked)))
 
 (ert-deftest mule-yank-call-interactively-with-region ()
   "Can be called interactively with a region.
@@ -292,5 +292,3 @@ Expected: clipboard-yank called regardless of prefix arg."
       (should yanked))))
 
 ;;; mule-yank-test.el ends here
-
-(ert "mule-yank")

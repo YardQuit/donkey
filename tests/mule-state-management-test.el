@@ -397,5 +397,3 @@ Expected: hook is nil when deactivate-input-method is called."
     (should-not hook-during-deactivate)))
 
 ;;; mule-state-management-test.el ends here
-
-(ert "mule-state")

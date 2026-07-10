@@ -355,5 +355,3 @@ Use cl-letf to intercept and format the message string."
         (should (string-match "Position 1/1" msg))))))
 
 ;;; mule-jump-back-test.el ends here
-
-(ert "mule-jump-back")

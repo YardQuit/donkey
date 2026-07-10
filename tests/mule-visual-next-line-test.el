@@ -301,5 +301,3 @@ Expected: region-active-p true after command."
         (should (region-active-p))))))
 
 ;;; mule-visual-next-line-test.el ends here
-
-(ert "mule-visual-next-line")

@@ -68,37 +68,37 @@
 (ert-deftest mule-create-org-scratch/creates-named-buffer ()
   "Should create a buffer named *org-scratch*."
   (mule-with-clean-scratch
-    (mule-create-org-scratch)
-    (should (buffer-live-p (get-buffer "*org-scratch*")))))
+   (mule-create-org-scratch)
+   (should (buffer-live-p (get-buffer "*org-scratch*")))))
 
 (ert-deftest mule-create-org-scratch/enables-org-mode ()
   "The created buffer should be in `org-mode'."
   (mule-with-clean-scratch
-    (mule-create-org-scratch)
-    (with-current-buffer "*org-scratch*"
-      (should (eq major-mode 'org-mode)))))
+   (mule-create-org-scratch)
+   (with-current-buffer "*org-scratch*"
+     (should (eq major-mode 'org-mode)))))
 
 (ert-deftest mule-create-org-scratch/switches-to-buffer ()
   "Should switch the current window to the new buffer."
   (mule-with-clean-scratch
-    (mule-create-org-scratch)
-    (should (eq (current-buffer) (get-buffer "*org-scratch*")))))
+   (mule-create-org-scratch)
+   (should (eq (current-buffer) (get-buffer "*org-scratch*")))))
 
 (ert-deftest mule-create-org-scratch/contains-scratch-message ()
   "The created buffer should contain the scratch message text."
   (mule-with-clean-scratch
-    (mule-create-org-scratch)
-    (with-current-buffer "*org-scratch*"
-      (goto-char (point-min))
-      (should (search-forward "# This buffer is for scribbling in org-mode." nil t)))))
+   (mule-create-org-scratch)
+   (with-current-buffer "*org-scratch*"
+     (goto-char (point-min))
+     (should (search-forward "# This buffer is for scribbling in org-mode." nil t)))))
 
 (ert-deftest mule-create-org-scratch/idempotent-buffer ()
   "Calling twice should reuse (not duplicate) the *org-scratch* buffer."
   (mule-with-clean-scratch
-    (mule-create-org-scratch)
-    (let ((first-buf (get-buffer "*org-scratch*")))
-      (mule-create-org-scratch)
-      (should (eq (get-buffer "*org-scratch*") first-buf)))))
+   (mule-create-org-scratch)
+   (let ((first-buf (get-buffer "*org-scratch*")))
+     (mule-create-org-scratch)
+     (should (eq (get-buffer "*org-scratch*") first-buf)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Tests for `mule-org-scratch'
@@ -107,58 +107,58 @@
 (ert-deftest mule-org-scratch/creates-when-absent ()
   "When no *org-scratch* buffer exists, should create one."
   (mule-with-clean-scratch
-    (mule-org-scratch)
-    (should (buffer-live-p (get-buffer "*org-scratch*")))
-    (with-current-buffer "*org-scratch*"
-      (should (eq major-mode 'org-mode)))))
+   (mule-org-scratch)
+   (should (buffer-live-p (get-buffer "*org-scratch*")))
+   (with-current-buffer "*org-scratch*"
+     (should (eq major-mode 'org-mode)))))
 
 (ert-deftest mule-org-scratch/switches-when-present ()
   "When *org-scratch* already exists, should switch to it without recreating."
   (mule-with-clean-scratch
-    (mule-create-org-scratch)
-    (let ((original-buf (get-buffer "*org-scratch*")))
-      ;; Add some content so we can verify it survives.
-      (with-current-buffer original-buf
-        (insert "* My Scribbles"))
-      (mule-org-scratch)
-      (should (eq (current-buffer) original-buf))
-      ;; Same buffer object — not a fresh one.
-      (should (eq (get-buffer "*org-scratch*") original-buf))
-      ;; Content preserved.
-      (goto-char (point-min))
-      (should (search-forward "* My Scribbles" nil t)))))
+   (mule-create-org-scratch)
+   (let ((original-buf (get-buffer "*org-scratch*")))
+     ;; Add some content so we can verify it survives.
+     (with-current-buffer original-buf
+       (insert "* My Scribbles"))
+     (mule-org-scratch)
+     (should (eq (current-buffer) original-buf))
+     ;; Same buffer object — not a fresh one.
+     (should (eq (get-buffer "*org-scratch*") original-buf))
+     ;; Content preserved.
+     (goto-char (point-min))
+     (should (search-forward "* My Scribbles" nil t)))))
 
 (ert-deftest mule-org-scratch/message-on-create ()
   "Should signal creation via `message' when buffer is new."
   (mule-with-clean-scratch
-    (let ((messages nil))
-      (cl-letf (((symbol-function #'message)
-                 (lambda (fmt &rest args)
-                   (push (apply #'format fmt args) messages))))
-        (mule-org-scratch))
-      (should (member "*org-scratch* buffer doesn't exist, creating." messages)))))
+   (let ((messages nil))
+     (cl-letf (((symbol-function #'message)
+                (lambda (fmt &rest args)
+                  (push (apply #'format fmt args) messages))))
+       (mule-org-scratch))
+     (should (member "*org-scratch* buffer doesn't exist, creating." messages)))))
 
 (ert-deftest mule-org-scratch/message-on-switch ()
   "Should signal switching via `message' when buffer already exists."
   (mule-with-clean-scratch
-    (mule-create-org-scratch)
-    (let ((messages nil))
-      (cl-letf (((symbol-function #'message)
-                 (lambda (fmt &rest args)
-                   (push (apply #'format fmt args) messages))))
-        (mule-org-scratch))
-      (should (member "*org-scratch* buffer already exist, switching." messages)))))
+   (mule-create-org-scratch)
+   (let ((messages nil))
+     (cl-letf (((symbol-function #'message)
+                (lambda (fmt &rest args)
+                  (push (apply #'format fmt args) messages))))
+       (mule-org-scratch))
+     (should (member "*org-scratch* buffer already exist, switching." messages)))))
 
 (ert-deftest mule-org-scratch/does-not-double-insert ()
   "Switching to an existing buffer should not re-insert the scratch message."
   (mule-with-clean-scratch
-    (mule-create-org-scratch)
-    (let ((size-before
-           (with-current-buffer "*org-scratch*" (buffer-size))))
-      (mule-org-scratch)
-      (let ((size-after
-             (with-current-buffer "*org-scratch*" (buffer-size))))
-        (should (= size-before size-after))))))
+   (mule-create-org-scratch)
+   (let ((size-before
+          (with-current-buffer "*org-scratch*" (buffer-size))))
+     (mule-org-scratch)
+     (let ((size-after
+            (with-current-buffer "*org-scratch*" (buffer-size))))
+       (should (= size-before size-after))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Test Runner
@@ -171,5 +171,3 @@
 (provide 'mule-org-scratch-test)
 
 ;;; mule-org-scratch-test.el ends here
-
-(ert "org-scratch")

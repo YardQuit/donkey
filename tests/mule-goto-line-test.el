@@ -239,5 +239,3 @@ Expected: point lands at line 2 start (position 7)."
       (should (= (point) 7)))))
 
 ;;; mule-goto-line-test.el ends here
-
-(ert "mule-goto-line")

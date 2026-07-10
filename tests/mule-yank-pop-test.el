@@ -273,5 +273,3 @@ Expected: yank-pop called regardless of prefix arg."
       (should popped))))
 
 ;;; mule-yank-pop-test.el ends here
-
-(ert "mule-yank-pop")

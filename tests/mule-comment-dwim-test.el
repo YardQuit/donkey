@@ -386,5 +386,3 @@ Expected: comment-or-uncomment-region called (region branch executed)."
     (should branch-used)))
 
 ;;; mule-comment-dwim-test.el ends here
-
-(ert "mule-comment-dwim")

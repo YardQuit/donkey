@@ -2,6 +2,7 @@
 
 (require 'ert)
 (require 'cl-lib)
+(require 'mule-modal)
 
 ;; ===========================================================================
 ;; Section: mule-indent-region-or-line
@@ -308,5 +309,3 @@ Expected: no error."
     t))
 
 ;;; mule-indent-region-or-line-test.el ends here
-
-(ert "mule-indent-region-or-line")

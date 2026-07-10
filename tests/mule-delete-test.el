@@ -140,8 +140,8 @@ Expected: kill-region receives (1, 6)."
                  (lambda () nil)))
         (let ((rectangle-mark-mode nil))
           (mule-delete)))
-    (should (= (car killed-bounds) 1))
-    (should (= (cadr killed-bounds) 6)))))
+      (should (= (car killed-bounds) 1))
+      (should (= (cadr killed-bounds) 6)))))
 
 (ert-deftest mule-delete-region-point-before-mark ()
   "Region with point before mark.
@@ -163,8 +163,8 @@ Expected: kill-region receives (6, 1)."
                  (lambda () nil)))
         (let ((rectangle-mark-mode nil))
           (mule-delete)))
-    (should (= (car killed-bounds) 6))
-    (should (= (cadr killed-bounds) 1)))))
+      (should (= (car killed-bounds) 6))
+      (should (= (cadr killed-bounds) 1)))))
 
 (ert-deftest mule-delete-region-skips-delete-char ()
   "With an active region, delete-char is not called.
@@ -182,7 +182,7 @@ Expected: delete-char not invoked."
                  (lambda (n) (setq delete-char-called t))))
         (let ((rectangle-mark-mode nil))
           (mule-delete)))
-    (should-not delete-char-called))))
+      (should-not delete-char-called))))
 
 (ert-deftest mule-delete-region-does-not-enter-insert ()
   "mule-delete with region does not enter insert mode.
@@ -200,7 +200,7 @@ Expected: mule-enter-insert not called."
                  (lambda () (setq entered t))))
         (let ((rectangle-mark-mode nil))
           (mule-delete)))
-    (should-not entered))))
+      (should-not entered))))
 
 ;;; --- Rectangle mode ---
 
@@ -255,7 +255,7 @@ Expected: delete-char not invoked."
                  (lambda (n) (setq delete-char-called t))))
         (let ((rectangle-mark-mode t))
           (mule-delete)))
-    (should-not delete-char-called))))
+      (should-not delete-char-called))))
 
 (ert-deftest mule-delete-rectangle-mode-falls-back-when-disabled ()
   "When rectangle-mark-mode is nil and region is active,
@@ -274,8 +274,8 @@ Expected: kill-region called, call-interactively not called."
                  (lambda (beg end) (setq kill-called t))))
         (let ((rectangle-mark-mode nil))
           (mule-delete)))
-    (should kill-called)
-    (should-not ci-called))))
+      (should kill-called)
+      (should-not ci-called))))
 
 ;;; --- Buffer integrity ---
 
@@ -336,5 +336,3 @@ Expected: no error, kill-region executes."
     (should (= (buffer-size) 7))))
 
 ;;; mule-delete-test.el ends here
-
-(ert "mule-delete")

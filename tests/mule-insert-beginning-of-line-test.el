@@ -275,5 +275,3 @@ Expected: point at beginning of line, regardless of prefix arg."
     (should (= (point) 1))))
 
 ;;; mule-insert-beginning-of-line-test.el ends here
-
-(ert "mule-insert-beginning-of-line")

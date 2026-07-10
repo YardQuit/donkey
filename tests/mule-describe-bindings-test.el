@@ -469,5 +469,3 @@ Expected: after the second call, only keys from the second map remain."
     (kill-buffer "*MULE Bindings*")))
 
 ;;; mule-describe-bindings-test.el ends here
-
-(ert "mule-describe-bindings")

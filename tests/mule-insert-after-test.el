@@ -247,5 +247,3 @@ Expected: point advances by 1, not by 4."
     (should (= (point) 2))))
 
 ;;; mule-insert-after-test.el ends here
-
-(ert "mule-insert-after")
