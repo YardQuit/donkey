@@ -206,47 +206,47 @@
     (display-buffer buf)))
 
 ;;; ---------------------------------------------------------------------------
-;;; Mule Enter DWIM Functions
-;;; ---------------------------------------------------------------------------
-(defvar mule-editing-modes
-  '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
-  "Major modes where Enter should be blocked to prevent accidental
-        line breaks.")
+  ;;; Mule Enter DWIM Functions
+  ;;; ---------------------------------------------------------------------------
+  (defvar mule-editing-modes
+    '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
+    "Major modes where Enter should be blocked to prevent accidental
+          line breaks.")
 
-(defun mule--editing-mode-p ()
-  "Return non-nil if current major mode is in `mule-editing-modes'."
-  (member major-mode mule-editing-modes))
+  (defun mule--editing-mode-p ()
+    "Return non-nil if current major mode is in `mule-editing-modes'."
+    (member major-mode mule-editing-modes))
 
-(defun mule--org-enter-handler ()
-  "Handle Enter in Org mode: follow links except src-blocks."
-  (when (and (eq major-mode 'org-mode)
-             (fboundp 'org-element-at-point)
-             (fboundp 'org-open-at-point))
-    (let ((elem (org-element-at-point)))
-      (when (and elem (not (eq (car elem) 'src-block)))
-        #'org-open-at-point))))
+  (defun mule--org-enter-handler ()
+    "Handle Enter in Org mode: follow links except src-blocks."
+    (when (and (eq major-mode 'org-mode)
+               (fboundp 'org-element-at-point)
+               (fboundp 'org-open-at-point))
+      (let ((elem (org-element-at-point)))
+        (when (and elem (not (eq (car elem) 'src-block)))
+          #'org-open-at-point))))
 
-(defun mule--markdown-enter-handler ()
-  "Handle Enter in Markdown mode: follow links/buttons."
-  (when (memq major-mode '(markdown-mode gfm-mode))
-    (cond
-     ((fboundp 'markdown-follow-thing-at-point)
-      #'markdown-follow-thing-at-point)
-     ((fboundp 'shr-follow-link-at-point)
-      #'shr-follow-link-at-point)
-     (t
-      #'browse-url-at-point))))
+  (defun mule--markdown-enter-handler ()
+    "Handle Enter in Markdown mode: follow links/buttons."
+    (when (memq major-mode '(markdown-mode gfm-mode))
+      (cond
+       ((fboundp 'markdown-follow-thing-at-point)
+        #'markdown-follow-thing-at-point)
+       ((fboundp 'shr-follow-link-at-point)
+        #'shr-follow-link-at-point)
+       (t
+        #'browse-url-at-point))))
 
-;; (defun mule--non-editing-enter-handler ()
-;;   "Handle Enter in non-editing modes (Info, Dired, etc.):
-;; fallthrough."
-;;   (unless (mule--editing-mode-p)
-;;     (let ((native-ret (lookup-key (current-local-map) (kbd "RET"))))
-;;       (when (and native-ret
-;;                  (not (eq native-ret 'undefined))
-;;                  (symbolp native-ret)
-;;                  (fboundp native-ret))
-;;         native-ret))))
+  ;; (defun mule--non-editing-enter-handler ()
+  ;;   "Handle Enter in non-editing modes (Info, Dired, etc.):
+  ;; fallthrough."
+  ;;   (unless (mule--editing-mode-p)
+  ;;     (let ((native-ret (lookup-key (current-local-map) (kbd "RET"))))
+  ;;       (when (and native-ret
+  ;;                  (not (eq native-ret 'undefined))
+  ;;                  (symbolp native-ret)
+  ;;                  (fboundp native-ret))
+  ;;         native-ret))))
 
 (defun mule--non-editing-enter-handler ()
   "Handle Enter in non-editing modes (Info, Dired, etc.):
@@ -258,15 +258,15 @@ Return the native RET binding if it's not a prefix key."
                  (not (keymapp native-ret)))
         native-ret))))
 
-(defun mule-enter-dwim ()
-  "Smart Return handler for MULE Normal State."
-  (interactive)
-  (let ((follow-cmd nil))
-    (setq follow-cmd (or (mule--org-enter-handler)
-                         (mule--markdown-enter-handler)
-                         (mule--non-editing-enter-handler)))
-    (when follow-cmd
-      (call-interactively follow-cmd))))
+  (defun mule-enter-dwim ()
+    "Smart Return handler for MULE Normal State."
+    (interactive)
+    (let ((follow-cmd nil))
+      (setq follow-cmd (or (mule--org-enter-handler)
+                           (mule--markdown-enter-handler)
+                           (mule--non-editing-enter-handler)))
+      (when follow-cmd
+        (call-interactively follow-cmd))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Comment DWIM Functions
