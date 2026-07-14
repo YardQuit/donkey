@@ -298,7 +298,7 @@ in terminal mode (`emacs -nw')."
         (keymap-set local-map "q"   #'quit-window)
         (keymap-set local-map "RET" #'push-button)
         (use-local-map local-map))
-      
+
       (goto-char (point-min)))
     (display-buffer buf)))
 
