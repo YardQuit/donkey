@@ -3,6 +3,8 @@
 (require 'ert)
 (require 'org)
 (require 'mule-modal)
+(defvar this-original-command)
+(defvar last-command-event)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Helper Macro

@@ -517,6 +517,11 @@ recorded positions. Skips markers whose buffer has been killed."
   "Switch to INSERT state."
   (mule-insert-mode 1))
 
+(defun mule-insert-here ()
+  "Insert  current char - enters INSERT state."
+  (interactive)
+  (mule-enter-insert))
+
 (defun mule-insert-after ()
   "Insert after current char - enters INSERT state."
   (interactive)
@@ -659,8 +664,12 @@ recorded positions. Skips markers whose buffer has been killed."
 (defun mule-rectangle-mark-mode ()
   "Toggle rectangle mark mode."
   (interactive)
-  (rectangle-mark-mode 1)
-  (right-char 1))
+  (if (bound-and-true-p rectangle-mark-mode)
+      (progn
+        (rectangle-mark-mode -1)
+        (deactivate-mark))
+    (rectangle-mark-mode 1)
+    (right-char 1)))
 
 (defun mule-mark-inner ()
   "Mark text INSIDE CHAR pairs (excluding delimiters)."
@@ -885,7 +894,7 @@ Trailing commas or periods are omitted from the selection."
 (keymap-set mule-normal-mode-map "I" #'mule-insert-beginning-of-line)
 (keymap-set mule-normal-mode-map "O" #'mule-open-above)
 (keymap-set mule-normal-mode-map "a" #'mule-insert-after)
-(keymap-set mule-normal-mode-map "i" #'mule-insert-mode)
+(keymap-set mule-normal-mode-map "i" #'mule-insert-here)
 (keymap-set mule-normal-mode-map "o" #'mule-open-below)
 
 ;; Editing operations
