@@ -37,6 +37,7 @@
 ;;; Code:
 
 (require 'thingatpt) ;(mule-mark-word)
+(require 'cl-lib)    ; Explicitly load cl-lib for cl-some, cl-incf
 (eval-and-compile
   (declare-function org-open-at-point "org")     ;(mule-enter-dwim)
   (declare-function org-element-at-point "org")  ;(mule-enter-dwim)
@@ -53,12 +54,13 @@
 ;;; ---------------------------------------------------------------------------
 
 (defun mule-insert-org-scratch-message ()
-  "Insert buffer message"
+  "Insert buffer message."
   (insert
    (substitute-command-keys
     (purecopy "\
 # This buffer is for scribbling in org-mode.
 # Start your scribble here and save to file with ‘\\[save-some-buffers]' for persistence.
+
 ")))
   (goto-char (point-max)))
 
@@ -86,7 +88,7 @@
 
 (defun mule--desc-bindings-collect-leaves (map prefix)
   "Recursively walk MAP and return a list of (FULL-KEY . DEF) cons
-  cells for leaf bindings."
+cells for leaf bindings."
   (let (acc)
     (map-keymap
      (lambda (key def)
@@ -122,9 +124,9 @@
 (defun mule-describe-bindings ()
   "Display all leaf keybindings in mule-normal-mode-map with formatting.
 
-  Bindings are grouped by prefix, separated by blank rows and section
-  headers. Command names are clickable buttons that open their
-  documentation."
+Bindings are grouped by prefix, separated by blank rows and section
+headers. Command names are clickable buttons that open their
+documentation."
   (interactive)
   (unless (boundp 'mule-normal-mode-map)
     (user-error "mule-normal-mode-map is not defined yet"))
@@ -203,7 +205,7 @@
 (defvar mule-editing-modes
   '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
   "Major modes where Enter should be blocked to prevent accidental
-          line breaks.")
+line breaks.")
 
 (defun mule--editing-mode-p ()
   "Return non-nil if current major mode is in `mule-editing-modes'."
@@ -216,18 +218,18 @@
              (fboundp 'org-open-at-point))
     (let ((elem (org-element-at-point)))
       (when (and elem (not (eq (car elem) 'src-block)))
-        #'org-open-at-point))))
+        'org-open-at-point))))
 
 (defun mule--markdown-enter-handler ()
   "Handle Enter in Markdown mode: follow links/buttons."
   (when (memq major-mode '(markdown-mode gfm-mode))
     (cond
      ((fboundp 'markdown-follow-thing-at-point)
-      #'markdown-follow-thing-at-point)
+      'markdown-follow-thing-at-point)
      ((fboundp 'shr-follow-link-at-point)
-      #'shr-follow-link-at-point)
+      'shr-follow-link-at-point)
      (t
-      #'browse-url-at-point))))
+      'browse-url-at-point))))
 
 (defun mule--non-editing-enter-handler ()
   "Handle Enter in non-editing modes (Info, Dired, etc.):
@@ -258,9 +260,11 @@ Return the native RET binding if it's not a prefix key."
 
 (defun mule-comment-dwim ()
   "Comment/uncomment whole lines in region, or current line if no
-region. When inside an Org source block, delegates to the block's
-native major mode via `org-edit-special' for language-aware
-commenting, then returns to the Org buffer."
+region.
+
+When inside an Org source block, delegates to the block's native
+major mode via `org-edit-special' for language-aware commenting,
+then returns to the Org buffer."
   (interactive)
   (cond
    ((mule--in-org-src-block-p)
@@ -318,7 +322,7 @@ commenting, then returns to the Org buffer."
 
 (defvar mule--position-ring nil
   "List of markers recording previous cursor positions, most recent
-      first.")
+first.")
 
 (defvar mule--position-index 0
   "Current rotation offset into `mule--position-ring'.
@@ -331,7 +335,7 @@ recorded.")
 
 (defun mule--track-position ()
   "Record previous cursor position when point or buffer changes.
-    
+
 Runs on `post-command-hook'. Independent of the mark ring and
 region."
   (unless (minibufferp)
@@ -412,7 +416,7 @@ recorded positions. Skips markers whose buffer has been killed."
   (mule-insert-mode 1))
 
 (defun mule-insert-here ()
-  "Insert  current char - enters INSERT state."
+  "Insert at current position - enters INSERT state."
   (interactive)
   (mule-enter-insert))
 
@@ -467,26 +471,211 @@ recorded positions. Skips markers whose buffer has been killed."
     (mule-enter-insert)))
 
 ;;; ---------------------------------------------------------------------------
+;;; Clipboard Tools Detection
+;;; ---------------------------------------------------------------------------
+
+(defvar mule--clipboard-tools-available nil
+  "Non-nil when system clipboard integration is available.
+
+Checked synchronously at load time. Non-nil when the platform
+supports native clipboard access or when at least one of
+`wl-copy' (Wayland), `xclip'/`xsel' (X11), or `pbcopy' (macOS)
+is found in `exec-path'.")
+
+;; Track whether we've shown the clipboard warning this session
+(defvar mule--clipboard-warning-shown nil
+  "Non-nil after showing clipboard warning once per session.
+
+Prevents spamming users with repeated tips on every yank operation.")
+
+(defun mule--detect-clipboard-tools ()
+  "Detect available system clipboard tools.
+
+Checks for wl-clipboard (Wayland), xclip/xsel (X11), and
+pbcopy/pbpaste (macOS). On Windows, native clipboard integration
+is assumed. Returns non-nil if any tool or native support is found."
+  (cond
+   ;; macOS: always has pbcopy/pbpaste
+   ((eq system-type 'darwin) t)
+   ;; Windows: native clipboard integration, no external tools needed
+   ((eq system-type 'windows-nt) t)
+   ;; Linux/BSD: check for Wayland and X11 clipboard tools
+   ((or (executable-find "wl-copy")
+        (executable-find "xclip")
+        (executable-find "xsel")) t)
+   ;; GUI Emacs has its own clipboard bridge on all platforms
+   ((display-graphic-p) t)
+   (t nil)))
+
+;; Run detection synchronously at load time
+(setq mule--clipboard-tools-available (mule--detect-clipboard-tools))
+
+(unless (or mule--clipboard-tools-available noninteractive)
+  (message "Warning (mule-modal): No system clipboard tools detected.
+  Yank will fall back to the kill-ring. Install wl-clipboard
+  (Wayland), xclip or xsel (X11) for system clipboard integration."))
+
+;;; ---------------------------------------------------------------------------
+;;; Clipboard Platform Diagnostics and Debugging
+;;; ---------------------------------------------------------------------------
+
+(defun mule--platform-info ()
+  "Return a plist describing the current execution environment.
+
+Includes system type, display backend, terminal type, and clipboard
+availability. Useful for debugging platform-specific issues."
+  (list :system-type system-type
+        :display-type (if (display-graphic-p) 'gui 'terminal)
+        :tty-type (tty-type)
+        :term-env (getenv "TERM")
+        :clipboard-tools-available mule--clipboard-tools-available
+        :native-comp (fboundp 'native-comp-available-p)
+        :emacs-version emacs-version))
+
+(defun mule-debug-platform ()
+  "Display detailed platform information for troubleshooting.
+
+Shows system type, display backend, terminal configuration,
+and clipboard tool availability. Useful when reporting bugs
+or debugging platform-specific issues.
+
+Output goes to a temporary buffer named '*MULE Platform Debug*'."
+  (interactive)
+  (let ((info (mule--platform-info)))
+    (with-output-to-temp-buffer "*MULE Platform Debug*"
+      (princ "=== MULE Modal Platform Diagnostics ===\n\n")
+
+      (princ "--- System Information ---\n")
+      (princ (format "Emacs Version: %s\n" (plist-get info :emacs-version)))
+      (princ (format "System Type:   %s\n" (plist-get info :system-type)))
+      (princ (format "Native Comp:   %s\n"
+                     (if (plist-get info :native-comp) "yes" "no")))
+      (princ "\n")
+
+      (princ "--- Display Backend ---\n")
+      (let ((dtype (plist-get info :display-type)))
+        (princ (format "Display Mode:  %s\n" dtype))
+        (when (eq dtype 'gui)
+          (princ (format "Window System: %s\n" (window-system)))))
+      (princ (format "TTY Type:      %s\n" (plist-get info :tty-type)))
+      (princ (format "TERM Env:      %s\n" (or (plist-get info :term-env)
+                                               "(not set)")))
+      (princ "\n")
+
+      (princ "--- Clipboard Status ---\n")
+      (princ (format "Tools Available: %s\n"
+                     (if (plist-get info :clipboard-tools-available)
+                         "yes" "no")))
+      (unless (plist-get info :clipboard-tools-available)
+        (princ "\nRecommended Actions:\n")
+        (cond
+         ((eq system-type 'darwin)
+          (princ "  macOS: pbcopy/pbpaste should be available by default.\n")
+          (princ "  If missing, check your PATH or reinstall Xcode CLI tools.\n"))
+         ((eq system-type 'windows-nt)
+          (princ "  Windows: Native clipboard support is built-in.\n")
+          (princ "  Verify you're not running in pure terminal mode without\n")
+          (princ "  Windows Terminal or ConEmu with VT support.\n"))
+         (t
+          (princ "  Linux/Other: Install one of the following:\n")
+          (princ "    - wl-clipboard (Wayland): sudo apt install wl-clipboard\n")
+          (princ "    - xclip (X11):            sudo apt install xclip\n")
+          (princ "    - xsel (X11):             sudo apt install xsel\n")))
+        (princ "\n"))
+
+      (princ "--- Platform-Specific Checks ---\n")
+      (cond
+       ((eq system-type 'darwin)
+        (princ "macOS Detected:\n")
+        (princ "  • DECSCUSR cursor sequences may not work in Terminal.app\n")
+        (princ "  • iTerm2 and Alacritty have better terminal support\n")
+        (princ "  • GUI mode bypasses terminal limitations entirely\n"))
+       ((eq system-type 'windows-nt)
+        (princ "Windows Detected:\n")
+        (princ "  • Ensure Windows 10+ for VT sequence support in -nw mode\n")
+        (princ "  • Use Windows Terminal or ConEmu for best compatibility\n")
+        (princ "  • PowerShell/CMD without VT may break cursor shapes\n"))
+       ((eq system-type 'gnu/linux)
+        (princ "Linux Detected:\n")
+        (princ "  • Check DISPLAY/WAYLAND_DISPLAY environment variables\n")
+        (princ "  • Verify your display server (X11 vs Wayland)\n")
+        (princ "  • Terminal emulator capability varies significantly\n")))
+
+      (princ "\n=== End of Diagnostics ===\n")
+      (princ "\nPress 'q' to close this buffer.\n"))
+
+    (with-current-buffer "*MULE Platform Debug*"
+      (let ((local-map (make-sparse-keymap)))
+        (set-keymap-parent local-map
+                           (if (boundp 'help-map)
+                               help-map
+                             special-mode-map))
+        (keymap-set local-map "q" #'quit-window)
+        (use-local-map local-map))
+      (special-mode))))
+
+;;; ---------------------------------------------------------------------------
 ;;; Yank and Delete Commands
 ;;; ---------------------------------------------------------------------------
 
+(defun mule--clipboard-yank ()
+  "Yank from the system clipboard with kill-ring fallback.
+
+Invokes `clipboard-yank' when the function is available; otherwise
+falls back to `yank'. If `clipboard-yank' signals an error
+(empty or inaccessible clipboard), falls back to `yank' from the
+kill ring and emits an informative message with platform context.
+Shows platform-appropriate installation tips only once per session."
+  (let ((platform-context
+         (cond
+          ((eq system-type 'darwin) "macOS")
+          ((eq system-type 'windows-nt) "Windows")
+          (t "Linux/BSD"))))
+    (condition-case err
+        (if (fboundp 'clipboard-yank)
+            (clipboard-yank)
+          (yank))
+      (error
+       (yank)
+       (message "Clipboard unavailable on %s; yanked from kill ring (%s)."
+                platform-context
+                (error-message-string err)))))
+  ;; Show tip only once, and only for platforms that actually need external tools
+  (when (and (not mule--clipboard-warning-shown)
+             (not (display-graphic-p))
+             (not mule--clipboard-tools-available)
+             (not (eq system-type 'darwin))
+             (not (eq system-type 'windows-nt)))
+    (setq mule--clipboard-warning-shown t)
+    (message "Tip: Install wl-clipboard (Wayland) or xclip/xsel (X11) for system clipboard.")))
+
+(defun mule--delete-active-region-safe ()
+  "Delete active region if one exists.
+
+Uses `kill-active-region' if available (Emacs 29+), falling back to
+`delete-active-region'. Handles both cases gracefully."
+  (when (use-region-p)
+    (if (fboundp 'kill-active-region)
+        (kill-active-region)
+      (delete-active-region))))
+
 (defun mule-yank ()
-  "Yank clipboard content, includes replacing selected region."
+  "Yank clipboard content, replacing the active region if present.
+
+Falls back to the kill ring when the system clipboard is
+inaccessible. This provides consistent behavior across GUI and
+terminal Emacs on Linux (X11/Wayland), macOS, and Windows."
   (interactive)
-  (if (use-region-p)
-      (progn
-        (delete-active-region)
-        (clipboard-yank))
-    (clipboard-yank)))
+  (mule--delete-active-region-safe)
+  (mule--clipboard-yank))
 
 (defun mule-yank-pop ()
-  "Rotate yanks, includes replacing selected region."
+  "Replace the last yanked text with the next kill-ring entry.
+
+Removes the active region first if one is present."
   (interactive)
-  (if (use-region-p)
-      (progn
-        (delete-active-region)
-        (yank-pop))
-    (yank-pop)))
+  (mule--delete-active-region-safe)
+  (yank-pop))
 
 (defun mule-delete ()
   "Delete character or region."
@@ -865,10 +1054,11 @@ Trailing commas or periods are omitted from the selection."
 ;;; ---------------------------------------------------------------------------
 
 (defvar mule-insert-mode-map nil
-  "Keymap for MULE Insert state. Minimal keymap: all keys fall
-through to the major mode and global map, providing unmodified
-Emacs behavior. C-g is bound to `mule--exit-insert' to return
-to Normal state.")
+  "Keymap for MULE Insert state.
+
+Minimal keymap: all keys fall through to the major mode and global
+map, providing unmodified Emacs behavior. C-g is bound to
+`mule--exit-insert' to return to Normal state.")
 (when (null mule-insert-mode-map)
   (setq mule-insert-mode-map (make-sparse-keymap)))
 ;; C-g is bound later in the Insert to Normal Transition section.
@@ -926,11 +1116,84 @@ Set to nil to fall back to global `cursor-type'."
                  (const :tag "Use Global Default" nil))
   :group 'mule)
 
+(defcustom mule--decscusr-denied-terminals
+  '("dumb" "linux")
+  "List of terminal type prefixes where DECSCUSR is suppressed.
+
+Terminal types reported by `tty-type' that match any prefix in
+this list (via `string-prefix-p') will not receive cursor shape
+escape sequences. These terminals either lack VT cursor control
+or use a non-DECSCUSR mechanism for cursor shapes.
+
+Common entries:
+  \"dumb\"  — no escape sequence support whatsoever
+  \"linux\" — Linux framebuffer console; uses ioctls, not DECSCUSR
+
+Users may add entries for terminals that exhibit garbled output
+when DECSCUSR sequences are sent."
+  :type '(repeat string)
+  :group 'mule)
+
+(defun mule--cursor-type-to-decscusr (type)
+  "Convert cursor TYPE to DECSCUSR escape sequence.
+
+Maps all supported shapes including hollow (blinking)."
+  (pcase type
+    ('box         "\e[2 q")    ; Steady block
+    ('hollow      "\e[0 q")    ; Blinking block (default)
+    ('bar         "\e[6 q")    ; Steady bar
+    (`(bar . ,_)  "\e[6 q")    ; Steady bar, ignore width
+    (`(hbar . ,_) "\e[4 q")    ; Steady underline
+    (_ "\e[0 q")))             ; Fallback to default
+
+(defun mule--terminal-supports-decscusr-p ()
+  "Return non-nil if the current terminal likely supports DECSCUSR.
+
+Returns nil for graphical frames and for terminals whose type
+matches a prefix in `mule--decscusr-denied-terminals'.
+Falls back to the `TERM' environment variable when `tty-type'
+returns nil, and performs a conservative guess based on known
+capable terminal names."
+  (and (not (display-graphic-p))
+       (let ((tty (or (tty-type) (getenv "TERM"))))
+         (when tty
+           (and (not (cl-some
+                      (lambda (prefix)
+                        (string-prefix-p prefix tty))
+                      mule--decscusr-denied-terminals))
+                (not (member tty '("dumb" "unknown" "cons25"))))))))
+
+(defun mule--send-cursor-sequence (type)
+  "Send DECSCUSR escape sequence for TYPE to terminal.
+
+Suppresses output on graphical frames and on terminals listed in
+`mule--decscusr-denied-terminals'. Wraps `send-string-to-terminal'
+in `condition-case' to silently absorb I/O failures. Sends the
+sequence twice with a brief pause to improve delivery reliability
+on terminals that drop bytes during state transitions."
+  (when (mule--terminal-supports-decscusr-p)
+    (let ((seq (mule--cursor-type-to-decscusr type)))
+      (when seq
+        (condition-case nil
+            (progn
+              (send-string-to-terminal seq)
+              (sit-for 0.01)
+              (send-string-to-terminal seq))
+          (error nil))))))
+
 (defun mule--apply-cursor-setting (setting)
-  "Apply SETTING, falling back to global default if SETTING is nil."
-  (if setting
-      (setq-local cursor-type setting)
-    (kill-local-variable 'cursor-type)))
+  "Apply SETTING, falling back to global default if SETTING is nil.
+
+In terminal mode, also sends DECSCUSR escape sequence for visual
+cursor change."
+  (let ((effective (cond
+                    (setting setting)
+                    ((local-variable-p 'cursor-type) cursor-type)
+                    (t (default-value 'cursor-type)))))
+    (if setting
+        (setq-local cursor-type setting)
+      (kill-local-variable 'cursor-type))
+    (mule--send-cursor-sequence effective)))
 
 (defun mule--update-cursor ()
   "Update cursor based on current MULE state."
@@ -946,13 +1209,43 @@ Set to nil to fall back to global `cursor-type'."
 (add-hook 'mule-insert-mode-hook #'mule--update-cursor)
 
 ;;; ---------------------------------------------------------------------------
+;;; Terminal Denylist Management
+;;; ---------------------------------------------------------------------------
+
+(defun mule--add-denylist-entry (terminal-prefix)
+  "Add TERMINAL-PREFIX to `mule--decscusr-denied-terminals'.
+
+Updates the custom variable and saves to your customization file."
+  (interactive
+   (list (read-string "Terminal type prefix to deny: ")))
+  (unless (member terminal-prefix mule--decscusr-denied-terminals)
+    (customize-set-variable 'mule--decscusr-denied-terminals
+                            (append mule--decscusr-denied-terminals (list terminal-prefix)))
+    (customize-save-variable 'mule--decscusr-denied-terminals
+                             mule--decscusr-denied-terminals)
+    (message "Added \"%s\" to DECSCUSR denylist" terminal-prefix)))
+
+(defun mule--remove-denylist-entry (terminal-prefix)
+  "Remove TERMINAL-PREFIX from `mule--decscusr-denied-terminals'.
+
+Updates the custom variable and saves to your customization file."
+  (interactive
+   (list (read-string "Terminal type prefix to allow: ")))
+  (when (member terminal-prefix mule--decscusr-denied-terminals)
+    (customize-set-variable 'mule--decscusr-denied-terminals
+                            (cl-remove terminal-prefix mule--decscusr-denied-terminals :test #'string=))
+    (customize-save-variable 'mule--decscusr-denied-terminals
+                             mule--decscusr-denied-terminals)
+    (message "Removed \"%s\" from DECSCUSR denylist" terminal-prefix)))
+
+;;; ---------------------------------------------------------------------------
 ;;; Mule Minibuffer Safety
 ;;; ---------------------------------------------------------------------------
 
 (defvar mule--minibuffer-pre-state nil
   "Track MULE state before entering minibuffer.
 
-Value is \='normal, \='insert, or nil. Not buffer-local because we
+Value is normal, insert, or nil. Not buffer-local because we
 need to read it after switching buffers.")
 
 (defun mule--minibuffer-current-state ()
@@ -992,14 +1285,17 @@ need to read it after switching buffers.")
   (mule-normal-mode 1))
 
 (defvar-local mule--deferred-overlay-cleanup-timer nil
-  "Buffer-local timer for deferred overlay cleanup after exiting insert mode.")
+  "Buffer-local timer for deferred overlay cleanup after exiting
+insert mode.")
 
 (defvar-local mule--just-exited-from-insert nil
   "Buffer-local guard set when exiting insert mode.
-      Reset on next command to prevent re-entry race conditions.")
+
+Reset on next command to prevent re-entry race conditions.")
 
 (defun mule--clear-transient-overlays ()
   "Clear transient overlays left by highlighting packages.
+
 Operates on the current buffer only."
   (let ((cleared 0)
         (transient-faces
@@ -1058,7 +1354,8 @@ Operates on the current buffer only."
     cleared))
 
 (defun mule--schedule-overlay-cleanup ()
-  "Schedule deferred cleanup for overlays created by post-command hooks."
+  "Schedule deferred cleanup for overlays created by post-command
+hooks."
   (when mule--deferred-overlay-cleanup-timer
     (cancel-timer mule--deferred-overlay-cleanup-timer))
   (let ((buf (current-buffer)))
@@ -1072,14 +1369,16 @@ Operates on the current buffer only."
                  (setq mule--deferred-overlay-cleanup-timer nil))))))))
 
 (defun mule--reset-exit-guard ()
-  "Reset the exit guard on next command. Allows re-entry of insert mode."
+  "Reset the exit guard on next command. Allows re-entry of insert
+mode."
   (setq mule--just-exited-from-insert nil)
   (remove-hook 'pre-command-hook #'mule--reset-exit-guard))
 
 (defun mule--exit-insert ()
-  "Exit insert state and enter normal mode. Removes active mark,
-enters normal mode, and schedules deferred overlay cleanup.
-In the minibuffer, delegates to `keyboard-quit'."
+  "Exit insert state and enter normal mode.
+
+Removes active mark, enters normal mode, and schedules deferred
+overlay cleanup. In the minibuffer, delegates to `keyboard-quit'."
   (interactive)
   (if (minibufferp)
       (keyboard-quit)
@@ -1091,6 +1390,7 @@ In the minibuffer, delegates to `keyboard-quit'."
 
 (defun mule--intercept-quit-in-insert ()
   "Intercept C-g in insert mode by raw key event or sp-cancel command.
+
 Calls `mule--exit-insert' directly to ensure state transition occurs."
   (when (and (bound-and-true-p mule-insert-mode)
              (not mule--just-exited-from-insert)
@@ -1105,9 +1405,10 @@ Calls `mule--exit-insert' directly to ensure state transition occurs."
 
 (defun mule--setup-smartparens-integration ()
   "Configure C-g handler in all smartparens keymaps.
-          Binds C-g in smartparens-mode-map AND overlay keymaps
-          (sp-pair-overlay-keymap, sp-overlay-keymap). Overlay keymaps
-          have higher priority than minor-mode maps."
+
+Binds C-g in smartparens-mode-map AND overlay keymaps
+(sp-pair-overlay-keymap, sp-overlay-keymap). Overlay keymaps have
+higher priority than minor-mode maps."
   (when (and (boundp 'smartparens-mode-map)
              (keymapp smartparens-mode-map))
     (keymap-set smartparens-mode-map "C-g" #'mule--exit-insert))
@@ -1171,8 +1472,10 @@ entry.")
 (defvar mule--excluded-modes
   '(ibuffer-mode eshell-mode term-mode vterm-mode dired-mode comint-mode magit-status-mode)
   "Major modes where MULE Normal state should be permanently
-disabled. In these modes, MULE Insert state (passthrough) is used
-instead, keeping MULE active but non-interfering.")
+disabled.
+
+In these modes, MULE Insert state (passthrough) is used instead,
+keeping MULE active but non-interfering.")
 
 (dolist (mode mule--excluded-modes)
   (let ((hook (intern (format "%s-hook" mode))))
@@ -1197,8 +1500,9 @@ instead, keeping MULE active but non-interfering.")
 
 (defun mule--ensure-default-state ()
   "Enable MULE Normal state unless the current major mode is
-excluded. For excluded modes, enable MULE Insert state
-(passthrough) instead.
+excluded.
+
+For excluded modes, enable MULE Insert state (passthrough) instead.
 Returns non-nil if MULE was enabled."
   (let ((is-excluded-p
          (or (memq major-mode mule--excluded-modes)
@@ -1235,7 +1539,7 @@ include the MULE state."
 
 (define-minor-mode mule-modal
   "Toggle MULE Modal Editing globally.
-    
+
 When enabled, MULE activates its dual-state system (Normal/Insert)
 in all buffers. Buffers whose major mode is in
 `mule--excluded-modes' fall back to Insert state (passthrough).
