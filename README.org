@@ -1,8 +1,4 @@
 #+TITLE: README
-#+date:       [2026-06-24 Wed 14:26]
-#+filetags:   :project:
-#+identifier: 20260624T142644
-#+signature:  39=1
 #+AUTHOR: Michael Jones (YardQuit)
 
 * Overview
@@ -11,13 +7,23 @@ Mule-Modal is an opinionated modal editing minor-mode for Emacs, that
 leverages Emacs' own built-in functions wherever possible. There is no
 overlay state — just a minor-mode keymap that toggles on and off.
 
-** Installation
-Place mule-modal.el at ~/.config/emacs/mule-modal/mule-modal.el, then
-add the following to your init.el or config.el:
+** Design Philosophy
+
+- Leverage Emacs native commands and built-in functions wherever possible
+- Custom commands only where beneficial
+- No overlay-based state tracking — just minor-mode keymaps
+- Graceful handling of optional dependencies (smartparens, org-mode)
+- Cross-platform support (Linux/Wayland/X11, macOS, Windows)
+- Terminal mode (=emacs -nw=) support with DECSCUSR cursor sequences
+
+* Installation
+
+Place =mule-modal.el= at =~/.config/emacs/mule-modal/mule-modal.el=, then
+add the following to your =init.el= or =config.el=:
 
 #+begin_src emacs-lisp
 
-    (let ((mule-path (expand-file-name "mule-modal/mule-modal.el"
+  (let ((mule-path (expand-file-name "mule-modal/mule-modal.el"
                                      user-emacs-directory)))
     (if (file-exists-p mule-path)
         (load mule-path nil t)
@@ -27,241 +33,487 @@ add the following to your init.el or config.el:
 
 #+end_src
 
-** Customizing Keybindings
+* Usage
 
-You can override existing bindings or add new ones in your `config.el`
-by modifying `mule-mode-map`.
+- Press =C-g= to enter MULE Normal state.
+- In Normal: =h=,=j=,=k=,=l= navigate; =i=,=I=,=a=,=A=,=o=,=O=,=c= enter Insert state.
+- In Insert: Standard Emacs behavior, press =C-g= to return to Normal.
+- State indicators show in modeline: =MULE[N]= = Normal, =MULE[I]= = Insert.
 
-*Override an existing binding:*
-#+BEGIN_SRC elisp
+* Default Keybindings
+
+** Navigation
+
+| Key | Command         | Description |
+|-----+-----------------+-------------|
+| =h= | =backward-char= | Move left   |
+| =j= | =next-line=     | Move down   |
+| =k= | =previous-line= | Move up     |
+| =l= | =forward-char=  | Move right  |
+
+** Visual Line Movement
+
+| Key | Command                     | Description                           |
+|-----+-----------------------------+---------------------------------------|
+| =J= | =mule-visual-next-line=     | Move down, extending visual selection |
+| =K= | =mule-visual-previous-line= | Move up, extending visual selection   |
+| =V= | =mule-visual-line-toggle=   | Toggle visual line selection          |
+| =v= | =set-mark-command=          | Toggle mark                           |
+
+** Insert Mode Entry
+
+| Key | Command                         | Description                         |
+|-----+---------------------------------+-------------------------------------|
+| =i= | =mule-insert-here=              | Insert at current position          |
+| =a= | =mule-insert-after=             | Insert after current char           |
+| =I= | =mule-insert-beginning-of-line= | Insert at beginning of line         |
+| =A= | =mule-insert-end-of-line=       | Insert at end of line               |
+| =o= | =mule-open-below=               | Open new line below, enter Insert   |
+| =O= | =mule-open-above=               | Open new line above, enter Insert   |
+| =c= | =mule-change=                   | Change char or region, enter Insert |
+
+** Editing
+
+| Key   | Command                      | Description                      |
+|-------+------------------------------+----------------------------------|
+| =d=   | =mule-delete=                | Delete char or region            |
+| =x=   | =mule-delete=                | Delete char (same as =d=)        |
+| =D=   | =kill-line=                  | Kill to end of line              |
+| =C=   | =mule-comment-dwim=          | Comment/uncomment line or region |
+| =C-j= | =join-line=                  | Join line with next              |
+| =>=   | =mule-indent-region-or-line= | Indent region or line            |
+
+** Yank and Paste
+
+| Key | Command          | Description                                 |
+|-----+------------------+---------------------------------------------|
+| =p= | =mule-yank=      | Yank from clipboard, replacing region       |
+| =P= | =mule-yank-pop=  | Replace last yank with next kill-ring entry |
+| =y= | =kill-ring-save= | Copy region to kill ring                    |
+
+** Motions
+
+| Key | Command          | Description                      |
+|-----+------------------+----------------------------------|
+| =w= | =forward-word=   | Move forward by word             |
+| =b= | =backward-word=  | Move backward by word            |
+| =W= | =forward-sexp=   | Move forward by sexp             |
+| =B= | =backward-sexp=  | Move backward by sexp            |
+| =S= | =mule-jump-back= | Jump to previous cursor position |
+
+** Mark Objects (=m= prefix)
+
+| Key   | Command                    | Description                          |
+|-------+----------------------------+--------------------------------------|
+| =m w= | =mule-mark-word=           | Mark word at point                   |
+| =m W= | =mule-mark-symbol=         | Mark symbol (includes hyphens)       |
+| =m s= | =mule-mark-sentence=       | Mark sentence                        |
+| =m p= | =mule-mark-paragraph=      | Mark paragraph                       |
+| =m i= | =mule-mark-inner=          | Mark inside delimiter pair (prompts) |
+| =m a= | =mule-mark-outer=          | Mark including delimiter pair        |
+| =m I= | =mule-mark-sexp-inner=     | Mark inside balanced expression      |
+| =m A= | =mule-mark-sexp-outer=     | Mark including balanced expression   |
+| =m v= | =mule-rectangle-mark-mode= | Toggle rectangle mark mode           |
+
+** Buffer Navigation (=g= prefix and standalone)
+
+| Key   | Command                  | Description                 |
+|-------+--------------------------+-----------------------------|
+| =g g= | =beginning-of-buffer=    | Go to beginning of buffer   |
+| =g e= | =end-of-buffer=          | Go to end of buffer         |
+| =g h= | =beginning-of-line=      | Go to beginning of line     |
+| =g l= | =move-end-of-line=       | Go to end of line           |
+| =g q= | =fill-region=            | Fill region                 |
+| =g Q= | =fill-paragraph=         | Fill paragraph              |
+| =g t= | =beginning-of-buffer=    | Go to beginning of buffer   |
+| :=    | =mule-goto-line=         | Go to line number (prompts) |
+| =%=   | =mark-whole-buffer=      | Select entire buffer        |
+| =.=   | =repeat=                 | Repeat last command         |
+| =?=   | =mule-describe-bindings= | Show all MULE keybindings   |
+
+** Search and Replace (=r= prefix)
+
+| Key   | Command          | Description    |
+|-------+------------------+----------------|
+| =r r= | =replace-regexp= | Replace regexp |
+| =r q= | =query-replace=  | Query replace  |
+
+** Undo and Scroll
+
+| Key   | Command               | Description     |
+|-------+-----------------------+-----------------|
+| =u=   | =undo=                | Undo            |
+| =U=   | =undo-redo=           | Redo            |
+| =z z= | =recenter-top-bottom= | Recenter cursor |
+
+** Enter Key
+
+| Key               | Command           | Description                            |
+|-------------------+-------------------+----------------------------------------|
+| =RET= / =<enter>= | =mule-enter-dwim= | Context-aware Enter (see DWIM section) |
+
+** Suppressed Keys (ignored in Normal state)
+
+These keys are explicitly suppressed to prevent unwanted behavior:
+
+| Key           | Effect  |
+|---------------+---------|
+| =<backspace>= | Ignored |
+| =<delete>=    | Ignored |
+| =,=           | Ignored |
+| =-=           | Ignored |
+| =/=           | Ignored |
+| =;=           | Ignored |
+| =_=           | Ignored |
+
+* Customizing Keybindings
+
+You can override existing bindings or add new ones in your =config.el=
+by modifying =mule-normal-mode-map=.
+
+** Override an existing binding:
+
+#+begin_src emacs-lisp
 
   ;; Replace the default behavior of ';' with consult-outline
-  (when (boundp 'mule-mode-map)
-    (keymap-set mule-mode-map ";" #'consult-outline)
-    
-#+END_SRC
+  (when (boundp 'mule-normal-mode-map)
+    (keymap-set mule-normal-mode-map ";" #'consult-outline))
 
-*Unbind a suppressed key to fall through:*
-#+BEGIN_SRC elisp
+#+end_src
+
+** Unbind a suppressed key to fall through:
+
+#+begin_src emacs-lisp
 
   ;; Make ',' fall through to the major mode instead of being ignored
-  (when (boundp 'mule-mode-map)
-    (keymap-unset mule-mode-map ",")
-    
-#+END_SRC
+  (when (boundp 'mule-normal-mode-map)
+    (keymap-unset mule-normal-mode-map ","))
 
-*Add a leader key map:*
-#+BEGIN_SRC elisp
+#+end_src
+
+** Add a leader key map:
+
+#+begin_src emacs-lisp
 
   ;; Leader Map Definition
-  (when (boundp 'mule-mode-map)
-    ;; Ensure leader map exists
+  (when (boundp 'mule-normal-mode-map)
     (unless (boundp 'mule-leader-map)
       (defvar mule-leader-map (make-sparse-keymap)
         "Leader key map under SPC."))
+    (keymap-set mule-normal-mode-map "SPC" 'mule-leader-map))
 
-    ;; Bind SPC to the leader map
-    (keymap-set mule-mode-map "SPC" mule-leader-map)
-
-    ;; Define leader sub-commands
-    (keymap-set mule-leader-map "f f" #'find-file)
-    (keymap-set mule-leader-map "b b" #'switch-to-buffer)
-    (keymap-set mule-leader-map "g g" #'magit-status)
-    
-#+END_SRC
-
-** Customizing the Cursor
-
-MULE manages the cursor shape per-buffer using custom variables.
-When MULE is =ON= Normal state, it uses `mule-cursor-normal`.
-When MULE is =OFF= Insert state, it uses `mule-cursor-insert`.
-
-If either variable is set to =nil=, MULE removes the buffer-local
-setting, forcing Emacs to use your global default defined by
-`setq-default cursor-type`.
-
-*Accepted Cursor Values*
-|----------------+----------------------------------|
-| Value          | Appearance                       |
-|----------------+----------------------------------|
-| ~box~          | Solid block cursor               |
-| ~bar~          | Thin vertical bar                |
-| ~hbar~         | Thin horizontal bar              |
-| ~hollow~       | Hollow box outline               |
-| ~(bar . N)~    | Vertical bar with width N pixels |
-| ~(hollow . N)~ | Hollow box with width N pixels   |
-| ~nil~          | Fallback to default cursor       |
-|                | "Should NOT be use on default"   |
-|----------------+----------------------------------|
-
-*Example:*
-#+BEGIN_SRC elisp :tangle no
-
-  ;; Global fallback (used if variables are nil or in non-MULE buffers)
-  (setq-default cursor-type 'hollow)
-
-  ;; MULE ON (Normal) state (when ESC is pressed)
-  (setq mule-cursor-normal 'box)          ; Or set to nil to match global
-
-  ;; MULE OFF (Insert) state (when typing)
-  (setq mule-cursor-insert '(bar . 2))    ; Or set to nil to match global
-  
-#+END_SRC
-
-** States
-|--------+------------------------+----------------------------------------------------|
-| State  | Indicator              | Meaning                                            |
-|--------+------------------------+----------------------------------------------------|
-| Normal | ` MULE[N]` in modeline | Keys are commands. Raw character input is blocked. |
-| Insert | ` MULE[I]  in modeline | All keys pass through normally.                    |
-|--------+------------------------+----------------------------------------------------|
-
-- Press /C-g/ to enter Normal State.
-- Press any insert-entry key (i, I, a, A, o, O, c) to return to Insert State.
-
-* Key Reference
-
-** Entering Insert State
-|-----+-------------------------------|
-| Key | Description                   |
-|-----+-------------------------------|
-| i   | Enter insert at point         |
-| I   | Insert at beginning of line   |
-| a   | Insert after current char     |
-| A   | Insert at end of line         |
-| o   | Open line below, enter insert |
-| O   | Open line above, enter insert |
-|-----+-------------------------------|
-
-** Navigation
-|-----+-----------------------|
-| Key | Description           |
-|-----+-----------------------|
-| h   | Move left             |
-| j   | Move down             |
-| k   | Move up               |
-| l   | Move right            |
-| w   | Forward word          |
-| b   | Backward word         |
-| W   | Forward sexp          |
-| B   | Backward sexp         |
-| S   | Jump back position(s) |
-|-----+-----------------------|
-
-** Goto / Scroll
-|-----+-------------------|
-| Key | Description       |
-|-----+-------------------|
-| g g | Jump to top       |
-| g t | Jump to top (alt) |
-| g e | Jump to bottom    |
-| g h | Beginning of line |
-| g l | End of line       |
-| :   | Go to line number |
-| z z | Recenter screen   |
-|-----+-------------------|
-
-** Editing
-|-----+-----------------------------|
-| Key | Description                 |
-|-----+-----------------------------|
-| d   | Delete char or region       |
-| x   | Delete char or region (alt) |
-| D   | Kill to end of line         |
-| c   | Delete and enter insert     |
-| C   | Comment/uncomment line      |
-| C-j | Join current with next      |
-| >   | Indent region or line       |
-|-----+-----------------------------|
-
-** Kill / Yank
-|-----+--------------------------|
-| Key | Description              |
-|-----+--------------------------|
-| y   | Copy (save to kill ring) |
-| p   | Paste from clipboard     |
-| P   | Rotate through kill ring |
-|-----+--------------------------|
-
-** Undo
-|-----+-------------|
-| Key | Description |
-|-----+-------------|
-| u   | Undo        |
-| U   | Redo        |
-|-----+-------------|
-
-** Visual Selection
-|-----+----------------------------|
-| Key | Description                |
-|-----+----------------------------|
-| v   | Set mark (character-wise)  |
-| V   | Toggle line-wise selection |
-| J   | Extend selection downward  |
-| K   | Extend selection upward    |
-| %   | Select entire buffer       |
-|-----+----------------------------|
-
-** Mark Objects
-|-----+-------------------------------------------------|
-| Key | Description                                     |
-|-----+-------------------------------------------------|
-| m i | Simple select inside delimiters (exclude chars) |
-| m a | Simple select around delimiters (include chars) |
-| m I | Sexp select inside delimiters (exclude chars)   |
-| m A | Sexp select around delimiters (include chars)   |
-| m w | Select word at point                            |
-| m s | Select sentence at point                        |
-| m p | Select paragraph at point                       |
-| m v | Rectangle selection                             |
-|-----+-------------------------------------------------|
-
-** Search / Replace
-|-----+---------------------|
-| Key | Description         |
-|-----+---------------------|
-| r q | Interactive replace |
-| r r | Regexp replace      |
-|-----+---------------------|
-
-** Miscellaneous
-|-----+--------------------------------|
-| Key | Description                    |
-|-----+--------------------------------|
-| ?   | Show all mule-mode keybindings |
-| .   | Repeat last command            |
-| g q | Fill selected region           |
-| g Q | Fill current paragraph         |
-|-----+--------------------------------|
-
-
-* Org-Scratch Buffer
-
-This package provides a utility to create or switch to a disposable
-Org buffer.
-
-- Command: ~mule-org-scratch~
-- Function: Creates or switches to ~*org-scratch*~ for quick notes.
-  Save with ~C-x C-s~.
+#+end_src
 
 * Excluded Modes
 
-MULE-Modal automatically disables itself in the following major modes
-to preserve native functionality:
+MULE Normal state is permanently disabled in certain major modes where
+key suppression would break core functionality. In these modes, MULE
+stays in Insert state (passthrough), keeping MULE active but
+non-interfering.
 
-- ibuffer-mode
-- eshell-mode
-- term-mode
-- vterm-mode
-- comint-mode
-- magit-status-mode
-- dired-mode
+** Built-in Defaults
 
-* Minibuffer Safety
+The following modes are excluded by default because they manage
+subprocess interaction or terminal emulation where suppressing keys
+via =suppress-keymap= would break functionality:
 
-When the minibuffer is entered, `mule-mode` is temporarily disabled.
-On exit, the previous state is restored.
+| Mode          | Reason                                                                 |
+|---------------+------------------------------------------------------------------------|
+| =comint-mode= | Process interaction — all input goes to subprocess. Covers derivatives |
+|               | like =shell-mode=, =inferior-python-mode=, =ielm-mode=, =gud-mode=     |
+|               | via =derived-mode-p=.                                                  |
+| =term-mode=   | Full PTY terminal emulation — character-at-a-time, raw mode.           |
+| =vterm-mode=  | Same as =term-mode= but faster implementation.                         |
+| =eshell-mode= | Own command-line parser and input loop.                                |
 
-* Dependencies
+Derived modes are caught automatically by the =derived-mode-p= check
+in =mule--ensure-default-state=, so listing =comint-mode= alone covers
+dozens of comint derivatives.
 
-No external packages are required.
+** Adding Additional Excluded Modes
+
+Modes like =dired-mode=, =ibuffer-mode=, =magit-status-mode=, and
+=epa-key-list-mode= are NOT excluded by default. In these modes, MULE
+Normal state works (keys are suppressed, =hjkl= navigates), but some
+users may prefer passthrough to retain native keybindings.
+
+To add modes to the exclusion list in your =config.el=:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'mule-modal
+    (dolist (mode '(dired-mode ibuffer-mode magit-status-mode epa-key-list-mode))
+      (add-to-list 'mule-excluded-modes mode)))
+
+#+end_src
+
+Or add a single mode:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'mule-modal
+    (add-to-list 'mule-excluded-modes 'pdf-view-mode))
+
+#+end_src
+
+Verify the current exclusion list:
+
+#+begin_src emacs-lisp
+
+  M-x eval-expression RET mule-excluded-modes RET
+
+#+end_src
+
+* Enter Key Rules (DWIM)
+
+MULE's =mule-enter-dwim= command dispatches the Enter (RET) key based
+on context. In editing modes, Enter is blocked to prevent accidental
+line breaks. In non-editing modes, the native RET binding is invoked.
+
+For =org-mode= and =markdown-mode=, MULE uses a rule-based dispatch
+system to execute context-aware actions when Enter is pressed.
+
+** Built-in Default Rules
+
+The following rules are installed by default (controlled by
+=mule-default-enter-rules-enabled=, which defaults to =t=):
+
+#+begin_src emacs-lisp
+
+  ;; Toggle checkboxes in org list items
+  (mule-add-enter-rule item :checkbox org-toggle-checkbox)
+
+  ;; Toggle TODO/DONE on org headlines
+  (mule-add-enter-rule headline :todo-type mule-org-todo)
+
+  ;; Follow links in org, markdown, or plain text
+  (mule-add-enter-rule link nil org-open-at-point
+                       markdown-follow-thing-at-point
+                       browse-url-at-point)
+
+#+end_src
+
+Each rule specifies:
+- =ELEMENT-TYPE= :: Org element type to match (e.g. =item=, =headline=, =link=)
+- =PROPERTY= :: Org element property to check (e.g. =:checkbox=, =:todo-type=), or =nil= for no property check
+- =COMMANDS= :: One or more commands tried in sequence (fallback chain). The first =fboundp= and =commandp= match wins.
+
+** Rule Priority
+
+Rules use =add-to-list= which prepends to the front of the list. The
+first matching rule wins.
+
+To prioritize a specific command for an element type, add it LAST in
+your =config.el= so it appears at the front of the dispatch list:
+
+#+begin_src emacs-lisp
+
+  ;; These will be checked in this order:
+  ;; 1. shr-follow-link-at-point (added last, checked first)
+  ;; 2. org-open-at-point (added first, checked second)
+  (mule-add-enter-rule link nil org-open-at-point)
+  (mule-add-enter-rule link nil shr-follow-link-at-point)
+
+#+end_src
+
+To replace a default rule entirely, disable the built-ins first, then
+add your own:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'mule-modal
+    (setq mule-default-enter-rules-enabled nil)
+    (mule-add-enter-rule link nil shr-follow-link-at-point))
+
+#+end_src
+
+** Disabling Built-in Rules
+
+To define your own rules entirely, disable the defaults:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'mule-modal
+    (setq mule-default-enter-rules-enabled nil))
+
+#+end_src
+
+** Adding Custom Enter Rules
+
+Rules can be added from =config.el= using the =mule-add-enter-rule=
+macro. Example:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'mule-modal
+    ;; Follow links with shr-follow-link-at-point as first choice
+    (mule-add-enter-rule link nil shr-follow-link-at-point
+                         org-open-at-point
+                         browse-url-at-point)
+
+    ;; Open agenda files from org-agenda table view
+    (mule-add-enter-rule org-agenda-heading nil
+                         org-agenda-do-default-action))
+
+#+end_src
+
+** Dispatch Order
+
+=mule-enter-dwim= checks elements in this order:
+
+1. =org-agenda-mode= RET binding (if in agenda)
+2. Context element (most specific, e.g. a link inside a headline)
+3. Parent element (e.g. the headline itself)
+4. Ancestor elements (walking up the org element tree)
+5. Non-editing mode native RET binding
+
+All rules are checked at each level before moving to the next. This
+ensures the most specific match fires first.
+
+** Available Element Types
+
+Common org element types for rules:
+
+| Element Type | Useful Properties | Example Commands                           |
+|--------------+-------------------+--------------------------------------------|
+| =link=       | =nil=             | =org-open-at-point=, =browse-url-at-point= |
+| =headline=   | =:todo-type=      | =org-todo=, =mule-org-todo=                |
+| =item=       | =:checkbox=       | =org-toggle-checkbox=                      |
+| =src-block=  | =nil=             | =org-edit-special=                         |
+| =table-row=  | =nil=             | =org-table-next-row=                       |
+| =plain-list= | =nil=             | =org-toggle-item=                          |
+
+* Cursor Management
+
+MULE manages cursor shapes independently for Normal and Insert states.
+In terminal mode (=emacs -nw=), DECSCUSR escape sequences are used for
+reliable cursor rendering across terminal emulators.
+
+** Configuration
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'mule-modal
+    (setq mule-cursor-normal 'box      ; box, bar, hollow, or nil for global default
+          mule-cursor-insert '(bar . 2))) ; bar with width 2
+
+#+end_src
+
+** Terminal Compatibility
+
+Some terminals do not support DECSCUSR or produce garbled output. MULE
+maintains a denylist of terminal types where escape sequences are
+suppressed:
+
+#+begin_src emacs-lisp
+
+  ;; View current denylist
+  M-x eval-expression RET mule--decscusr-denied-terminals RET
+
+  ;; Add a terminal to the denylist interactively
+  M-x mule--add-denylist-entry RET
+
+  ;; Remove a terminal from the denylist
+  M-x mule--remove-denylist-entry RET
+
+#+end_src
+
+Default denied terminals: =dumb=, =linux= (framebuffer console).
+
+** Platform Diagnostics
+
+Run =M-x mule-debug-platform= for a detailed report of:
+- System type and Emacs version
+- Display backend (GUI vs terminal)
+- TTY type and TERM environment variable
+- Clipboard tool availability
+- Native compilation status
+
+* Clipboard Integration
+
+MULE's =mule-yank= and =mule-yank-pop= commands integrate with the
+system clipboard, falling back to the kill ring when no clipboard tools
+are available.
+
+** Detection
+
+At load time, MULE checks for:
+- =wl-copy= / =wl-paste= (Wayland)
+- =xclip= / =xsel= (X11)
+- =pbcopy= / =pbpaste= (macOS)
+- Native GUI clipboard (graphical Emacs)
+- Windows native clipboard
+
+If no tools are found and Emacs is running in terminal mode, a warning
+is shown once per session. Yank operations fall back to the kill ring
+silently after the first warning.
+
+* Input Method Management
+
+MULE automatically saves and restores the active input method when
+transitioning between Normal and Insert states. This is useful for
+non-English keyboard layouts (e.g. Swedish Postfix).
+
+- Entering Normal state: saves and deactivates the current input method
+- Entering Insert state: restores the previously saved input method
+
+This prevents input method key sequences from interfering with Normal
+mode keybindings.
+
+* Smartparens Integration
+
+When =smartparens= is loaded, MULE automatically:
+- Binds =C-g= in =smartparens-mode-map= and overlay keymaps
+- Clears transient smartparens overlays on Insert-to-Normal transition
+- Defers overlay cleanup via idle timer to avoid race conditions
+
+No configuration needed — integration is automatic when both packages
+are loaded. If smartparens is not installed, MULE functions normally
+without errors.
+
+* Position Tracking
+
+=M-x mule-jump-back= (bound to =S=) rotates through a ring of
+previously recorded cursor positions. Positions are tracked
+automatically via =post-command-hook= whenever the cursor moves to a
+different buffer or position.
+
+- Ring size controlled by =mule--position-ring-max= (default: 10)
+- Skips markers whose buffer has been killed
+- Independent of the mark ring and region
+
+* Org-Scratch Buffer
+
+=M-x mule-org-scratch= creates or switches to a scratch buffer in
+=org-mode=. Useful for quick note-taking without creating a file.
+
+* Describe Bindings
+
+Press =?= in Normal state to see all active MULE keybindings in a
+formatted, clickable buffer. Bindings are grouped by prefix with
+section headers.
+
+#+begin_src emacs-lisp
+
+  M-x mule-describe-bindings
+
+#+end_src
+
+* Customization Group
+
+All MULE variables are under the =mule= Customize group:
+
+#+begin_src emacs-lisp
+
+  M-x customize-group RET mule RET
+
+#+end_src
+
+| Variable                           | Type    | Default            | Description                            |
+|------------------------------------+---------+--------------------+----------------------------------------|
+| =mule-excluded-modes=              | list    | (see above)        | Modes where Normal state is disabled   |
+| =mule-cursor-normal=               | symbol  | =box=              | Cursor shape in Normal state           |
+| =mule-cursor-insert=               | cons    | =(bar . 2)=        | Cursor shape in Insert state           |
+| =mule-default-enter-rules-enabled= | boolean | =t=                | Install default Enter DWIM rules       |
+| =mule--decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
+| =mule--position-ring-max=          | integer | =10=               | Number of positions in jump-back ring  |

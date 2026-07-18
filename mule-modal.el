@@ -50,6 +50,42 @@
 (defvar this-command)                          ;(mule--intercept-quit-in-insert)
 
 ;;; ---------------------------------------------------------------------------
+;;; Mule Excluded-modes
+;;; ---------------------------------------------------------------------------
+
+(defcustom mule-excluded-modes
+  '(comint-mode term-mode vterm-mode eshell-mode)
+  "Major modes where MULE Normal state should be permanently disabled.
+
+These modes manage subprocess interaction or terminal emulation
+where suppressing keys via `suppress-keymap' would break
+functionality. Derived modes (e.g. `shell-mode' from
+`comint-mode') are caught by `derived-mode-p' in
+`mule--ensure-default-state'.
+
+For modes like `dired-mode' or `magit-status-mode' where normal
+mode is a preference rather than a necessity, add them here
+explicitly if desired."
+  :type '(repeat symbol)
+  :group 'mule)
+
+(defun mule--handle-non-editing-buffer ()
+  "Enter insert mode in excluded major modes when mule-normal-mode activates."
+  (when (member major-mode mule-excluded-modes)
+    (when (bound-and-true-p mule-normal-mode)
+      (mule-enter-insert))))
+
+(add-hook 'mule-normal-mode-hook #'mule--handle-non-editing-buffer)
+
+(defun mule--check-post-command-non-editing ()
+  "Check after commands if we're in an excluded mode."
+  (when (and (bound-and-true-p mule-normal-mode)
+             (member major-mode mule-excluded-modes))
+    (mule-enter-insert)))
+
+(add-hook 'post-command-hook #'mule--check-post-command-non-editing)
+
+;;; ---------------------------------------------------------------------------
 ;;; Org-Scratch Buffer Creation
 ;;; ---------------------------------------------------------------------------
 
@@ -1569,35 +1605,6 @@ entry.")
 (add-hook 'input-method-activate-hook #'mule--on-input-method-activate)
 
 ;;; ---------------------------------------------------------------------------
-;;; Exclusion Mode Safeguards
-;;; ---------------------------------------------------------------------------
-
-(defvar mule--excluded-modes
-  '(ibuffer-mode eshell-mode term-mode vterm-mode dired-mode comint-mode magit-status-mode)
-  "Major modes where MULE Normal state should be permanently
-disabled.
-
-In these modes, MULE Insert state (passthrough) is used instead,
-keeping MULE active but non-interfering.")
-
-(dolist (mode mule--excluded-modes)
-  (let ((hook (intern (format "%s-hook" mode))))
-    (if (boundp hook)
-        (add-hook hook
-                  (lambda ()
-                    (when (bound-and-true-p mule-normal-mode)
-                      (mule-enter-insert)))
-                  -10)
-      (with-eval-after-load (intern (car (split-string (symbol-name mode) "-mode")))
-        (let ((hook (intern (format "%s-hook" mode))))
-          (when (boundp hook)
-            (add-hook hook
-                      (lambda ()
-                        (when (bound-and-true-p mule-normal-mode)
-                          (mule-enter-insert)))
-                      -10)))))))
-
-;;; ---------------------------------------------------------------------------
 ;;; Enhanced Mode Activation Logic
 ;;; ---------------------------------------------------------------------------
 
@@ -1608,8 +1615,8 @@ excluded.
 For excluded modes, enable MULE Insert state (passthrough) instead.
 Returns non-nil if MULE was enabled."
   (let ((is-excluded-p
-         (or (memq major-mode mule--excluded-modes)
-             (apply #'derived-mode-p mule--excluded-modes))))
+         (or (memq major-mode mule-excluded-modes)
+             (apply #'derived-mode-p mule-excluded-modes))))
     (cond
      (is-excluded-p
       (unless (bound-and-true-p mule-insert-mode)

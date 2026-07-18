@@ -214,7 +214,7 @@ signaled in `post-command-hook'."
 (ert-deftest mule-cg-in-excluded-mode ()
   "In excluded modes, MULE should start in insert state. C-g should not crash."
   (mule--with-test-buffer
-   (let ((mule--excluded-modes (cons 'fundamental-mode mule--excluded-modes)))
+   (let ((mule-excluded-modes (cons 'fundamental-mode mule-excluded-modes)))
      (mule-normal-mode -1)
      (mule-insert-mode -1)
      (mule--ensure-default-state)

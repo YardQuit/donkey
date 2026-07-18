@@ -220,7 +220,7 @@
   C-g should not crash."
   (mule--with-test-buffer
    ;; Temporarily treat fundamental-mode as excluded
-   (let ((mule--excluded-modes (cons 'fundamental-mode mule--excluded-modes)))
+   (let ((mule-excluded-modes (cons 'fundamental-mode mule-excluded-modes)))
      (mule-normal-mode -1)
      (mule-insert-mode -1)
      (mule--ensure-default-state)
