@@ -341,11 +341,15 @@ recorded positions. Skips markers whose buffer has been killed."
 (defun mule-insert-here ()
   "Insert at current position - enters INSERT state."
   (interactive)
+  (interactive)
+  (when (and mark-active (use-region-p))
+    (deactivate-mark))
   (mule-enter-insert))
 
 (defun mule-insert-after ()
   "Insert after current char - enters INSERT state."
   (interactive)
+  (deactivate-mark)
   (condition-case _err
       (forward-char 1)
     (end-of-buffer nil))
@@ -354,12 +358,16 @@ recorded positions. Skips markers whose buffer has been killed."
 (defun mule-insert-beginning-of-line ()
   "Insert at beginning of line - enters INSERT state."
   (interactive)
+  (when (and mark-active (use-region-p))
+    (deactivate-mark))
   (beginning-of-line)
   (mule-enter-insert))
 
 (defun mule-insert-end-of-line ()
   "Insert at end of line - enters INSERT state."
   (interactive)
+  (when (and mark-active (use-region-p))
+    (deactivate-mark))
   (move-end-of-line 1)
   (mule-enter-insert))
 
