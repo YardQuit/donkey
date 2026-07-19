@@ -36,7 +36,7 @@ add the following to your =init.el= or =config.el=:
 * Usage
 
 - Press =C-g= to enter MULE Normal state.
-- In Normal: =h=,=j=,=k=,=l= navigate; =i=,=I=,=a=,=A=,=o=,=O=,=c= enter Insert state.
+- In Normal: =h=, =j=, =k=, =l= navigate; =i=, =I=, =a=, =A=, =o=, =O=, =c= enter Insert state.
 - In Insert: Standard Emacs behavior, press =C-g= to return to Normal.
 - State indicators show in modeline: =MULE[N]= = Normal, =MULE[I]= = Insert.
 
@@ -515,5 +515,6 @@ All MULE variables are under the =mule= Customize group:
 | =mule-cursor-normal=               | symbol  | =box=              | Cursor shape in Normal state           |
 | =mule-cursor-insert=               | cons    | =(bar . 2)=        | Cursor shape in Insert state           |
 | =mule-default-enter-rules-enabled= | boolean | =t=                | Install default Enter DWIM rules       |
+| =mule-position-ring-max=           | integer | =10=               | Number of positions in jump-back ring  |
 | =mule--decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
-| =mule-position-ring-max=          | integer | =10=               | Number of positions in jump-back ring  |
+
