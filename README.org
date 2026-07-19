@@ -478,7 +478,7 @@ previously recorded cursor positions. Positions are tracked
 automatically via =post-command-hook= whenever the cursor moves to a
 different buffer or position.
 
-- Ring size controlled by =mule--position-ring-max= (default: 10)
+- Ring size controlled by =mule-position-ring-max= (default: 10)
 - Skips markers whose buffer has been killed
 - Independent of the mark ring and region
 
@@ -516,4 +516,4 @@ All MULE variables are under the =mule= Customize group:
 | =mule-cursor-insert=               | cons    | =(bar . 2)=        | Cursor shape in Insert state           |
 | =mule-default-enter-rules-enabled= | boolean | =t=                | Install default Enter DWIM rules       |
 | =mule--decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
-| =mule--position-ring-max=          | integer | =10=               | Number of positions in jump-back ring  |
+| =mule-position-ring-max=          | integer | =10=               | Number of positions in jump-back ring  |

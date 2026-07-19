@@ -8,7 +8,7 @@
 (defvar mule--position-ring)
 (defvar mule--position-index)
 (defvar mule--last-tracked-state)
-(defvar mule--position-ring-max)
+(defvar mule-position-ring-max)
 
 ;; ===========================================================================
 ;; Section: mule--track-position
@@ -27,7 +27,7 @@ Expected: ring remains empty, state set to (buffer . point)."
     (let ((mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
+          (mule-position-ring-max 10))
       (mule--track-position)
       (should (null mule--position-ring))
       (should (equal mule--last-tracked-state
@@ -44,7 +44,7 @@ Expected: ring remains empty, state unchanged."
     (let ((mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
+          (mule-position-ring-max 10))
       (mule--track-position)
       (mule--track-position)
       (should (null mule--position-ring)))))
@@ -61,7 +61,7 @@ Expected: ring has 1 marker pointing to position 1 in current buffer."
     (let ((mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
+          (mule-position-ring-max 10))
       (mule--track-position)
       (goto-char 5)
       (mule--track-position)
@@ -82,7 +82,7 @@ Expected: index = 0 after recording new position."
     (let ((mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
+          (mule-position-ring-max 10))
       (setq mule--position-index 5)
       (mule--track-position)
       (goto-char 5)
@@ -92,7 +92,7 @@ Expected: index = 0 after recording new position."
 ;;; --- Ring size limit ---
 
 (ert-deftest mule--track-position-enforces-ring-max ()
-  "Ring should not exceed mule--position-ring-max entries.
+  "Ring should not exceed mule-position-ring-max entries.
 Set max to 3, track 5 positions (first doesn't push).
 Expected: ring length = 3."
   (with-temp-buffer
@@ -100,8 +100,8 @@ Expected: ring length = 3."
     (let ((mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
-      (setq mule--position-ring-max 3)
+          (mule-position-ring-max 10))
+      (setq mule-position-ring-max 3)
       (mule--track-position)  ; First doesn't push
       (dotimes (i 5)
         (goto-char (+ 2 i))
@@ -118,7 +118,7 @@ Expected: ring remains empty, state unchanged."
     (let ((mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
+          (mule-position-ring-max 10))
       (let ((initial-state mule--last-tracked-state))
         (cl-letf (((symbol-function 'minibufferp)
                    (lambda () t)))
@@ -139,7 +139,7 @@ Expected: user-error with message about no positions."
   (let ((mule--position-ring nil)
         (mule--position-index 0)
         (mule--last-tracked-state nil)
-        (mule--position-ring-max 10))
+        (mule-position-ring-max 10))
     (should-error (mule-jump-back) :type 'user-error)))
 
 ;;; --- Single position ---
@@ -157,7 +157,7 @@ Expected: point at 1, index = 0 (after wrapping from 1 to 0)."
     (let ((mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
+          (mule-position-ring-max 10))
       (mule--track-position)  ; No push (first call)
       (goto-char 5)
       (mule--track-position)  ; Pushes marker at position 1
@@ -182,7 +182,7 @@ Expected: visits 3 → 1 → 5."
     (let ((mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
+          (mule-position-ring-max 10))
       (mule--track-position)  ; No push
       (goto-char 3)
       (mule--track-position)  ; Pushes 1
@@ -214,7 +214,7 @@ Expected: third jump wraps to first position."
     (let ((mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
+          (mule-position-ring-max 10))
       (mule--track-position)  ; No push
       (goto-char 3)
       (mule--track-position)  ; Pushes 1
@@ -243,7 +243,7 @@ Expected: point at 1 (the live marker position)."
           (mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
+          (mule-position-ring-max 10))
       (goto-char 1)
       (mule--track-position)  ; No push
       (set-buffer buf-a)
@@ -274,7 +274,7 @@ Expected: error when trying to jump to nil target."
           (let ((mule--position-ring nil)
                 (mule--position-index 0)
                 (mule--last-tracked-state nil)
-                (mule--position-ring-max 10))
+                (mule-position-ring-max 10))
             (mule--track-position)
             (set-buffer buf-b)
             (insert "b\n")
@@ -302,7 +302,7 @@ Expected: last-tracked-state reflects jumped-to position."
     (let ((mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
+          (mule-position-ring-max 10))
       (mule--track-position)  ; No push
       (goto-char 5)
       (mule--track-position)  ; Pushes 1
@@ -322,7 +322,7 @@ Expected: no error when positions exist."
     (let ((mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
+          (mule-position-ring-max 10))
       (mule--track-position)  ; No push
       (goto-char 5)
       (mule--track-position)  ; Pushes 1
@@ -342,7 +342,7 @@ Use cl-letf to intercept and format the message string."
     (let ((mule--position-ring nil)
           (mule--position-index 0)
           (mule--last-tracked-state nil)
-          (mule--position-ring-max 10))
+          (mule-position-ring-max 10))
       (mule--track-position)  ; No push
       (goto-char 5)
       (mule--track-position)  ; Pushes 1

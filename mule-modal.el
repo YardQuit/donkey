@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 2.8
+;; Version: 2.9
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -93,30 +93,30 @@ explicitly if desired."
   "Insert buffer message."
   (insert
    (substitute-command-keys
-    (purecopy "\
-# This buffer is for scribbling in org-mode.
-# Start your scribble here and save to file with ‘\\[save-some-buffers]' for persistence.
+    (purecopy
+     (concat "# This buffer is for scribbling in org-mode.\n"
+             "# Start your scribble here and save to file with '"
+             "\\[save-some-buffers]"
+             "' for persistence.\n\n"))))
+     (goto-char (point-max)))
 
-")))
-  (goto-char (point-max)))
+   (defun mule-create-org-scratch ()
+     "Create an _org-scratch_ buffer."
+     (let ((buffer (get-buffer-create "*org-scratch*")))
+       (switch-to-buffer buffer)
+       (org-mode)
+       (mule-insert-org-scratch-message)))
 
-(defun mule-create-org-scratch ()
-  "Create an _org-scratch_ buffer."
-  (let ((buffer (get-buffer-create "*org-scratch*")))
-    (switch-to-buffer buffer)
-    (org-mode)
-    (mule-insert-org-scratch-message)))
-
-(defun mule-org-scratch ()
-  "Create or switch to _org-scratch_."
-  (interactive)
-  (let ((org-scratch-buffer (get-buffer "*org-scratch*")))
-    (if org-scratch-buffer
-        (progn
-          (switch-to-buffer org-scratch-buffer)
-          (message "*org-scratch* buffer already exist, switching."))
-      (mule-create-org-scratch)
-      (message "*org-scratch* buffer doesn't exist, creating."))))
+   (defun mule-org-scratch ()
+     "Create or switch to _org-scratch_."
+     (interactive)
+     (let ((org-scratch-buffer (get-buffer "*org-scratch*")))
+       (if org-scratch-buffer
+           (progn
+             (switch-to-buffer org-scratch-buffer)
+             (message "*org-scratch* buffer already exist, switching."))
+         (mule-create-org-scratch)
+         (message "*org-scratch* buffer doesn't exist, creating."))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Describe Bindings
@@ -238,7 +238,7 @@ documentation."
 ;;; Line and Buffer Navigation Commands
 ;;; ---------------------------------------------------------------------------
 
-(defcustom mule--position-ring-max 10
+(defcustom mule-position-ring-max 10
   "Number of position markers retained in the ring."
   :type 'integer
   :group 'mule)
@@ -271,7 +271,7 @@ region."
           (set-marker m (cdr mule--last-tracked-state)
                       (car mule--last-tracked-state))
           (push m mule--position-ring)
-          (when (> (length mule--position-ring) mule--position-ring-max)
+          (when (> (length mule--position-ring) mule-position-ring-max)
             (set-marker (car (last mule--position-ring)) nil)
             (nbutlast mule--position-ring)))
         (setq mule--position-index 0))
