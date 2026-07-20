@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 2.9
+;; Version: 1.0.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
