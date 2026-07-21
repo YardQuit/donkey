@@ -1302,7 +1302,7 @@ Set to nil to fall back to global `cursor-type'."
                  (const :tag "Use Global Default" nil))
   :group 'donkey)
 
-(defcustom donkey--decscusr-denied-terminals
+(defcustom donkey-decscusr-denied-terminals
   '("dumb" "linux")
   "List of terminal type prefixes where DECSCUSR is suppressed.
 
@@ -1336,7 +1336,7 @@ Maps all supported shapes including hollow (blinking)."
   "Return non-nil if the current terminal likely supports DECSCUSR.
 
 Returns nil for graphical frames and for terminals whose type
-matches a prefix in `donkey--decscusr-denied-terminals'.
+matches a prefix in `donkey-decscusr-denied-terminals'.
 Falls back to the `TERM' environment variable when `tty-type'
 returns nil, and performs a conservative guess based on known
 capable terminal names."
@@ -1346,14 +1346,14 @@ capable terminal names."
            (and (not (cl-some
                       (lambda (prefix)
                         (string-prefix-p prefix tty))
-                      donkey--decscusr-denied-terminals))
+                      donkey-decscusr-denied-terminals))
                 (not (member tty '("dumb" "unknown" "cons25"))))))))
 
 (defun donkey--send-cursor-sequence (type)
   "Send DECSCUSR escape sequence for TYPE to terminal.
 
 Suppresses output on graphical frames and on terminals listed in
-`donkey--decscusr-denied-terminals'.  Wraps `send-string-to-terminal'
+`donkey-decscusr-denied-terminals'.  Wraps `send-string-to-terminal'
 in `condition-case' to silently absorb I/O failures.  Sends the
 sequence twice with a brief pause to improve delivery reliability
 on terminals that drop bytes during state transitions."
@@ -1398,30 +1398,30 @@ cursor change."
 ;;; Terminal Denylist Management
 ;;; ---------------------------------------------------------------------------
 
-(defun donkey--add-denylist-entry (terminal-prefix)
-  "Add TERMINAL-PREFIX to `donkey--decscusr-denied-terminals'.
+(defun donkey-add-denylist-entry (terminal-prefix)
+  "Add TERMINAL-PREFIX to `donkey-decscusr-denied-terminals'.
 
 Updates the custom variable and saves to your customization file."
   (interactive
    (list (read-string "Terminal type prefix to deny: ")))
-  (unless (member terminal-prefix donkey--decscusr-denied-terminals)
-    (customize-set-variable 'donkey--decscusr-denied-terminals
-                            (append donkey--decscusr-denied-terminals (list terminal-prefix)))
-    (customize-save-variable 'donkey--decscusr-denied-terminals
-                             donkey--decscusr-denied-terminals)
+  (unless (member terminal-prefix donkey-decscusr-denied-terminals)
+    (customize-set-variable 'donkey-decscusr-denied-terminals
+                            (append donkey-decscusr-denied-terminals (list terminal-prefix)))
+    (customize-save-variable 'donkey-decscusr-denied-terminals
+                             donkey-decscusr-denied-terminals)
     (message "Added \"%s\" to DECSCUSR denylist" terminal-prefix)))
 
-(defun donkey--remove-denylist-entry (terminal-prefix)
-  "Remove TERMINAL-PREFIX from `donkey--decscusr-denied-terminals'.
+(defun donkey-remove-denylist-entry (terminal-prefix)
+  "Remove TERMINAL-PREFIX from `donkey-decscusr-denied-terminals'.
 
 Updates the custom variable and saves to your customization file."
   (interactive
    (list (read-string "Terminal type prefix to allow: ")))
-  (when (member terminal-prefix donkey--decscusr-denied-terminals)
-    (customize-set-variable 'donkey--decscusr-denied-terminals
-                            (cl-remove terminal-prefix donkey--decscusr-denied-terminals :test #'string=))
-    (customize-save-variable 'donkey--decscusr-denied-terminals
-                             donkey--decscusr-denied-terminals)
+  (when (member terminal-prefix donkey-decscusr-denied-terminals)
+    (customize-set-variable 'donkey-decscusr-denied-terminals
+                            (cl-remove terminal-prefix donkey-decscusr-denied-terminals :test #'string=))
+    (customize-save-variable 'donkey-decscusr-denied-terminals
+                             donkey-decscusr-denied-terminals)
     (message "Removed \"%s\" from DECSCUSR denylist" terminal-prefix)))
 
 ;;; ---------------------------------------------------------------------------

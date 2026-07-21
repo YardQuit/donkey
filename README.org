@@ -126,7 +126,7 @@ add the following to your =init.el= or =config.el=:
 | =g q= | =fill-region=            | Fill region                 |
 | =g Q= | =fill-paragraph=         | Fill paragraph              |
 | =g t= | =beginning-of-buffer=    | Go to beginning of buffer   |
-| :=    | =donkey-goto-line=         | Go to line number (prompts) |
+| =:=   | =donkey-goto-line=         | Go to line number (prompts) |
 | =%=   | =mark-whole-buffer=      | Select entire buffer        |
 | =.=   | =repeat=                 | Repeat last command         |
 | =?=   | =donkey-describe-bindings= | Show all DONKEY keybindings   |
@@ -227,8 +227,9 @@ via =suppress-keymap= would break functionality:
 | =eshell-mode= | Own command-line parser and input loop.                                |
 
 Derived modes are caught automatically by the =derived-mode-p= check
-in =donkey--ensure-default-state=, so listing =comint-mode= alone covers
-dozens of comint derivatives.
+in =donkey--excluded-mode-p= (used consistently everywhere DONKEY needs
+to know whether a buffer is excluded), so listing =comint-mode= alone
+covers dozens of comint derivatives.
 
 ** Adding Additional Excluded Modes
 
@@ -408,13 +409,13 @@ suppressed:
 #+begin_src emacs-lisp
 
   ;; View current denylist
-  M-x eval-expression RET donkey--decscusr-denied-terminals RET
+  M-x eval-expression RET donkey-decscusr-denied-terminals RET
 
   ;; Add a terminal to the denylist interactively
-  M-x donkey--add-denylist-entry RET
+  M-x donkey-add-denylist-entry RET
 
   ;; Remove a terminal from the denylist
-  M-x donkey--remove-denylist-entry RET
+  M-x donkey-remove-denylist-entry RET
 
 #+end_src
 
@@ -437,7 +438,11 @@ are available.
 
 ** Detection
 
-At load time, DONKEY checks for:
+DONKEY checks for clipboard tool availability fresh each time it's
+needed (not cached), since the answer can differ per frame — a single
+=emacs --daemon= process can have both a GUI frame (=emacsclient -c=)
+and a terminal frame (=emacsclient -t=) at once, each with different
+capabilities. Detection covers:
 - =wl-copy= / =wl-paste= (Wayland)
 - =xclip= / =xsel= (X11)
 - =pbcopy= / =pbpaste= (macOS)
@@ -445,7 +450,7 @@ At load time, DONKEY checks for:
 - Windows native clipboard
 
 If no tools are found and Emacs is running in terminal mode, a warning
-is shown once per session. Yank operations fall back to the kill ring
+is shown once at load time. Yank operations fall back to the kill ring
 silently after the first warning.
 
 * Input Method Management
@@ -516,5 +521,5 @@ All DONKEY variables are under the =donkey= Customize group:
 | =donkey-cursor-insert=               | cons    | =(bar . 2)=        | Cursor shape in Insert state           |
 | =donkey-default-enter-rules-enabled= | boolean | =t=                | Install default Enter DWIM rules       |
 | =donkey-position-ring-max=           | integer | =10=               | Number of positions in jump-back ring  |
-| =donkey--decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
+| =donkey-decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
 

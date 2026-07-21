@@ -187,62 +187,62 @@ otherwise qualify."
       (setq donkey-cursor-insert original-value))))
 
 ;;; ---------------------------------------------------------------------------
-;;; donkey--decscusr-denied-terminals / donkey--add-denylist-entry /
-;;; donkey--remove-denylist-entry
+;;; donkey-decscusr-denied-terminals / donkey-add-denylist-entry /
+;;; donkey-remove-denylist-entry
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-decscusr-denied-terminals-default-contains-dumb-and-linux ()
   "Default entries include 'dumb' and 'linux'."
-  (should (member "dumb" donkey--decscusr-denied-terminals))
-  (should (member "linux" donkey--decscusr-denied-terminals)))
+  (should (member "dumb" donkey-decscusr-denied-terminals))
+  (should (member "linux" donkey-decscusr-denied-terminals)))
 
 (ert-deftest donkey-add-denylist-entry-adds-new-prefix ()
   "Adds a new prefix to the denylist and persists via customize."
-  (let ((donkey--decscusr-denied-terminals '("dumb" "linux"))
+  (let ((donkey-decscusr-denied-terminals '("dumb" "linux"))
         (saved-value nil))
     (cl-letf (((symbol-function 'customize-set-variable)
                (lambda (sym val) (set sym val)))
               ((symbol-function 'customize-save-variable)
                (lambda (sym val) (setq saved-value val))))
-      (donkey--add-denylist-entry "vt100"))
-    (should (member "vt100" donkey--decscusr-denied-terminals))
+      (donkey-add-denylist-entry "vt100"))
+    (should (member "vt100" donkey-decscusr-denied-terminals))
     (should (member "vt100" saved-value))))
 
 (ert-deftest donkey-add-denylist-entry-skips-duplicate ()
   "Does not duplicate an already-present prefix."
-  (let ((donkey--decscusr-denied-terminals '("dumb" "linux"))
+  (let ((donkey-decscusr-denied-terminals '("dumb" "linux"))
         (save-called nil))
     (cl-letf (((symbol-function 'customize-set-variable)
                (lambda (sym val) (set sym val)))
               ((symbol-function 'customize-save-variable)
                (lambda (sym val) (setq save-called t))))
-      (donkey--add-denylist-entry "dumb"))
+      (donkey-add-denylist-entry "dumb"))
     (should-not save-called)
-    (should (equal donkey--decscusr-denied-terminals '("dumb" "linux")))))
+    (should (equal donkey-decscusr-denied-terminals '("dumb" "linux")))))
 
 (ert-deftest donkey-remove-denylist-entry-removes-existing-prefix ()
   "Removes an existing prefix from the denylist and persists via customize."
-  (let ((donkey--decscusr-denied-terminals '("dumb" "linux" "vt100"))
+  (let ((donkey-decscusr-denied-terminals '("dumb" "linux" "vt100"))
         (saved-value nil))
     (cl-letf (((symbol-function 'customize-set-variable)
                (lambda (sym val) (set sym val)))
               ((symbol-function 'customize-save-variable)
                (lambda (sym val) (setq saved-value val))))
-      (donkey--remove-denylist-entry "vt100"))
-    (should-not (member "vt100" donkey--decscusr-denied-terminals))
+      (donkey-remove-denylist-entry "vt100"))
+    (should-not (member "vt100" donkey-decscusr-denied-terminals))
     (should-not (member "vt100" saved-value))))
 
 (ert-deftest donkey-remove-denylist-entry-skips-absent-prefix ()
   "Does nothing when the prefix isn't present in the denylist."
-  (let ((donkey--decscusr-denied-terminals '("dumb" "linux"))
+  (let ((donkey-decscusr-denied-terminals '("dumb" "linux"))
         (save-called nil))
     (cl-letf (((symbol-function 'customize-set-variable)
                (lambda (sym val) (set sym val)))
               ((symbol-function 'customize-save-variable)
                (lambda (sym val) (setq save-called t))))
-      (donkey--remove-denylist-entry "vt100"))
+      (donkey-remove-denylist-entry "vt100"))
     (should-not save-called)
-    (should (equal donkey--decscusr-denied-terminals '("dumb" "linux")))))
+    (should (equal donkey-decscusr-denied-terminals '("dumb" "linux")))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--detect-clipboard-tools
