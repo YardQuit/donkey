@@ -5,7 +5,6 @@
 (require 'donky)
 
 ;; Declare built-in dynamic variables so let-bindings are visible to hooks
-(defvar this-single-command-keys)
 (defvar this-command)
 (defvar this-original-command)
 (defvar last-command-event)
@@ -29,28 +28,30 @@ evaluate BODY with point at the start."
      ,@body))
 
 (defun donky--simulate-cg ()
-  "Simulate pressing C-g. Dynamically binds this-single-command-keys
-so pre-command-hook functions can see it."
+  "Simulate pressing C-g. Mocks `this-single-command-keys' so
+pre-command-hook functions can see it."
   (let ((this-command nil)
         (this-original-command nil)
-        (this-single-command-keys [7])
         (last-command-event 7))
-    (run-hooks 'pre-command-hook)
-    (unless (eq this-command 'ignore)
-      (when (and this-command (commandp this-command))
-        (call-interactively this-command)))
-    (run-hooks 'post-command-hook)))
+    (cl-letf (((symbol-function 'this-single-command-keys)
+               (lambda () [7])))
+      (run-hooks 'pre-command-hook)
+      (unless (eq this-command 'ignore)
+        (when (and this-command (commandp this-command))
+          (call-interactively this-command)))
+      (run-hooks 'post-command-hook))))
 
 (defun donky--simulate-key (key)
   "Simulate pressing KEY for testing guard reset behavior."
   (let ((last-command-event (aref key 0))
-        (this-single-command-keys key)
         (this-original-command this-command))
-    (run-hooks 'pre-command-hook)
-    (unless (eq this-command 'ignore)
-      (when (and this-command (commandp this-command))
-        (call-interactively this-command)))
-    (run-hooks 'post-command-hook)))
+    (cl-letf (((symbol-function 'this-single-command-keys)
+               (lambda () key)))
+      (run-hooks 'pre-command-hook)
+      (unless (eq this-command 'ignore)
+        (when (and this-command (commandp this-command))
+          (call-interactively this-command)))
+      (run-hooks 'post-command-hook))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Test Group 1: Basic Mode Transition
@@ -464,8 +465,7 @@ signaled in `post-command-hook'."
    (smartparens-mode 1)
    (donky-enter-insert)
    (forward-char 1)
-   (let ((this-command 'sp-cancel)
-         (this-single-command-keys [7]))
+   (let ((this-command 'sp-cancel))
      (should-not (bound-and-true-p donky-normal-mode))
      (donky--intercept-quit-in-insert)
      (should (bound-and-true-p donky-normal-mode)))))
@@ -474,8 +474,7 @@ signaled in `post-command-hook'."
   "When interceptor fires, it should set this-command to ignore."
   (donky--with-test-buffer
    (donky-enter-insert)
-   (let ((this-command 'sp-cancel)
-         (this-single-command-keys [7]))
+   (let ((this-command 'sp-cancel))
      (donky--intercept-quit-in-insert)
      (should (eq this-command 'ignore)))))
 
