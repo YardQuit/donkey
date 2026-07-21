@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026 Michael Jones
 ;; Author: Michael Jones <yardquit@pm.me>
 ;; Maintainer: Michael Jones
-;; Assisted-by: Lumo 2.0 Max
+;; Assisted-by: Lumo 2.0 Max, Claude [Claude Code]
 ;; URL: https://github.com/yardquit/donkey
 ;; Version: 1.0.0
 ;; Package-Requires: ((emacs "29.1"))
@@ -26,12 +26,12 @@
 
 ;;; Commentary:
 ;; Philosophy: Leverage Emacs Native Commands and built-in functions
-;; wherever possible. Custom commands only where beneficial.
+;; wherever possible.  Custom commands only where beneficial.
 ;;
 ;; Optional Smartparens Integration:
 ;; If you use smartparens, call `(donkey-setup-smartparens)' in
 ;; your config after loading smartparens to bind C-g in smartparens
-;; overlay keymaps. This improves reliability of C-g escape in terminal
+;; overlay keymaps.  This improves reliability of C-g escape in terminal
 ;; mode when inside nested smartparens overlays.
 
 ;;; Usage:
@@ -64,7 +64,7 @@
 
 These modes manage subprocess interaction or terminal emulation
 where suppressing keys via `suppress-keymap' would break
-functionality. Derived modes (e.g. `shell-mode' from
+functionality.  Derived modes (e.g. `shell-mode' from
 `comint-mode') are caught by `derived-mode-p' in
 `donkey--ensure-default-state'.
 
@@ -167,11 +167,11 @@ PREFIX is the accumulated key sequence string for the current path."
   "Display all leaf keybindings in `donkey-normal-mode-map' with formatting.
 
 Bindings are grouped by prefix, separated by blank rows and section
-headers. Command names are clickable buttons that open their
+headers.  Command names are clickable buttons that open their
 documentation."
   (interactive)
   (unless (boundp 'donkey-normal-mode-map)
-    (user-error "donkey-normal-mode-map is not defined yet"))
+    (user-error "Variable `donkey-normal-mode-map' is not defined yet"))
   (let* ((buf (get-buffer-create "*DONKEY Bindings*"))
          (raw (donkey--desc-bindings-collect-leaves donkey-normal-mode-map ""))
          (sorted-raw (sort raw (lambda (a b) (string< (car a) (car b))))))
@@ -255,7 +255,7 @@ documentation."
 (defvar donkey--position-index 0
   "Current rotation offset into `donkey--position-ring'.
 
-0 = most recent entry. Reset to 0 whenever a new position is
+0 = most recent entry.  Reset to 0 whenever a new position is
 recorded.")
 
 (defvar donkey--last-tracked-state nil
@@ -264,7 +264,7 @@ recorded.")
 (defun donkey--track-position ()
   "Record previous cursor position when point or buffer change.
 
-Runs on `post-command-hook'. Independent of the mark ring and
+Runs on `post-command-hook'.  Independent of the mark ring and
 region."
   (unless (minibufferp)
     (let ((now-buf (current-buffer))
@@ -286,7 +286,7 @@ region."
   "Rotate to the next stored position in the ring and jump there.
 
 Press repeatedly to cycle through the last `donkey--position-ring-max'
-recorded positions. Skips markers whose buffer has been killed."
+recorded positions.  Skips markers whose buffer has been killed."
   (interactive)
   (if (null donkey--position-ring)
       (user-error "No positions recorded yet")
@@ -409,7 +409,7 @@ recorded positions. Skips markers whose buffer has been killed."
   "Toggle headline TODO state between TODO and DONE.
 
 Uses `org-element-at-point' to detect :todo-type property and
-dispatches `org-todo' accordingly. No keyword string parsing needed."
+dispatches `org-todo' accordingly.  No keyword string parsing needed."
   (interactive)
   (when (and (fboundp 'org-element-at-point)
              (fboundp 'org-element-property)
@@ -520,7 +520,7 @@ Returns command symbol or nil if no handler matches."
     (call-interactively cmd)))
 
 (defun donkey--org-agenda-enter-handler ()
-  "Handle Enter in `org-agenda' mode. Return t if handled, otherwise nil."
+  "Handle Enter in `org-agenda' mode.  Return t if handled, otherwise nil."
   (when (and (boundp 'org-agenda-mode-map)
              (derived-mode-p 'org-agenda-mode))
     (let ((ret-cmd (lookup-key org-agenda-mode-map (kbd "RET"))))
@@ -531,7 +531,7 @@ Returns command symbol or nil if no handler matches."
         t))))
 
 (defun donkey--org-mode-enter-handler ()
-  "Handle Enter in `org-mode' and markdown modes. Return t if handled."
+  "Handle Enter in `org-mode' and markdown modes.  Return t if handled."
   (when (or (eq major-mode 'org-mode)
             (eq major-mode 'markdown-mode)
             (eq major-mode 'gfm-mode))
@@ -541,7 +541,7 @@ Returns command symbol or nil if no handler matches."
         t))))
 
 (defun donkey--non-editing-enter-handler ()
-  "Handle Enter in non-editing modes. Return t if handled."
+  "Handle Enter in non-editing modes.  Return t if handled."
   (unless (donkey--editing-mode-p)
     (when (and donkey--saved-ret-binding
                (not (eq donkey--saved-ret-binding 'undefined))
@@ -654,8 +654,8 @@ Prevents spamming users with repeated tips on every yank operation.")
   "Detect available system clipboard tools.
 
 Checks for wl-clipboard (Wayland), xclip/xsel (X11), and
-pbcopy/pbpaste (macOS). On Windows, native clipboard integration
-is assumed. Returns non-nil if any tool or native support is found."
+pbcopy/pbpaste (macOS).  On Windows, native clipboard integration
+is assumed.  Returns non-nil if any tool or native support is found."
   (cond
    ;; macOS: always has pbcopy/pbpaste
    ((eq system-type 'darwin) t)
@@ -685,7 +685,7 @@ is assumed. Returns non-nil if any tool or native support is found."
   "Return a plist describing the current execution environment.
 
 Includes system type, display backend, terminal type, and clipboard
-availability. Useful for debugging platform-specific issues."
+availability.  Useful for debugging platform-specific issues."
   (list :system-type system-type
         :display-type (if (display-graphic-p) 'gui 'terminal)
         :tty-type (tty-type)
@@ -698,7 +698,7 @@ availability. Useful for debugging platform-specific issues."
   "Display detailed platform information for troubleshooting.
 
 Shows system type, display backend, terminal configuration,
-and clipboard tool availability. Useful when reporting bugs
+and clipboard tool availability.  Useful when reporting bugs
 or debugging platform-specific issues.
 
 Output goes to a temporary buffer named '*DONKEY Platform Debug*'."
@@ -784,7 +784,7 @@ Output goes to a temporary buffer named '*DONKEY Platform Debug*'."
   "Yank from the system clipboard with `kill-ring' fallback.
 
 Invokes `clipboard-yank' when the function is available; otherwise
-falls back to `yank'. If `clipboard-yank' signals an error
+falls back to `yank'.  If `clipboard-yank' signals an error
 \(empty or inaccessible clipboard), falls back to `yank' from the
 kill ring and emits an informative message with platform context.
 Shows platform-appropriate installation tips only once per session."
@@ -825,7 +825,7 @@ the function `delete-active-region'.  Handles both cases gracefully."
   "Yank clipboard content, replacing the active region if present.
 
 Falls back to the kill ring when the system clipboard is
-inaccessible. This provides consistent behavior across GUI and
+inaccessible.  This provides consistent behavior across GUI and
 terminal Emacs on Linux (X11/Wayland), macOS, and Windows."
   (interactive)
   (donkey--delete-active-region-safe)
@@ -871,7 +871,7 @@ Removes the active region first if one is present."
     (message "Visual line: j/k to extend, V to cancel")))
 
 (defun donkey-visual-next-line ()
-  "Move down. Extend visual selection if active."
+  "Move down.  Extend visual selection if active."
   (interactive)
   (if (and (region-active-p) donkey-visual-anchor)
       (progn
@@ -889,7 +889,7 @@ Removes the active region first if one is present."
     (forward-line 1)))
 
 (defun donkey-visual-previous-line ()
-  "Move up. Extend visual selection if active."
+  "Move up.  Extend visual selection if active."
   (interactive)
   (if (and (region-active-p) donkey-visual-anchor)
       (progn
@@ -998,7 +998,7 @@ Removes the active region first if one is present."
            ((= open-char ?_) ?_)
            ((= open-char ?$) ?$)
            (t
-            (error "Unsupported delimiter '%c'. Use: { [ ( < ' \" `" open-char))))
+            (error "Unsupported delimiter '%c'.  Use: { [ ( < ' \" `" open-char))))
     (if on-opener
         (setq start-pos (point))
       (if (and (char-after) (= (char-after) open-char))
@@ -1024,8 +1024,8 @@ Removes the active region first if one is present."
   "Mark content inside the balanced expression at point.
 
 Uses the syntax table to identify delimiters (parentheses,
-brackets, braces). If point is on an opening or closing
-delimiter, marks content within that pair. If point is inside
+brackets, braces).  If point is on an opening or closing
+delimiter, marks content within that pair.  If point is inside
 a pair, finds the enclosing delimiters and marks everything
 within, excluding the delimiters themselves."
   (interactive)
@@ -1232,7 +1232,7 @@ providing unmodified Emacs behavior.  The `C-g' key runs the command
 (define-minor-mode donkey-normal-mode
   "DONKEY Normal state - modal navigation and editing.
 
-Each buffer maintains its own DONKEY state independently. When
+Each buffer maintains its own DONKEY state independently.  When
 enabled, `donkey-insert-mode' is automatically disabled and vice
 versa."
   :group 'donkey
@@ -1282,7 +1282,7 @@ Set to nil to fall back to global `cursor-type'."
 
 Terminal types reported by `tty-type' that match any prefix in
 this list (via `string-prefix-p') will not receive cursor shape
-escape sequences. These terminals either lack VT cursor control
+escape sequences.  These terminals either lack VT cursor control
 or use a non-DECSCUSR mechanism for cursor shapes.
 
 Common entries:
@@ -1327,8 +1327,8 @@ capable terminal names."
   "Send DECSCUSR escape sequence for TYPE to terminal.
 
 Suppresses output on graphical frames and on terminals listed in
-`donkey--decscusr-denied-terminals'. Wraps `send-string-to-terminal'
-in `condition-case' to silently absorb I/O failures. Sends the
+`donkey--decscusr-denied-terminals'.  Wraps `send-string-to-terminal'
+in `condition-case' to silently absorb I/O failures.  Sends the
 sequence twice with a brief pause to improve delivery reliability
 on terminals that drop bytes during state transitions."
   (when (donkey--terminal-supports-decscusr-p)
@@ -1405,7 +1405,7 @@ Updates the custom variable and saves to your customization file."
 (defvar donkey--minibuffer-pre-state nil
   "Track DONKEY state before entering minibuffer.
 
-Value is normal, insert, or nil. Not buffer-local because we
+Value is normal, insert, or nil.  Not buffer-local because we
 need to read it after switching buffers.")
 
 (defun donkey--minibuffer-current-state ()
@@ -1529,7 +1529,7 @@ Operates on the current buffer only."
                  (setq donkey--deferred-overlay-cleanup-timer nil))))))))
 
 (defun donkey--reset-exit-guard ()
-  "Reset the exit guard on next command. Allow re-entry of insert mode."
+  "Reset the exit guard on next command.  Allow re-entry of insert mode."
   (setq donkey--just-exited-from-insert nil)
   (remove-hook 'pre-command-hook #'donkey--reset-exit-guard))
 
@@ -1537,7 +1537,7 @@ Operates on the current buffer only."
   "Exit insert state and enter normal mode.
 
 Removes active mark, enters normal mode, and schedules deferred
-overlay cleanup. In the minibuffer, delegates to `keyboard-quit'."
+overlay cleanup.  In the minibuffer, delegates to `keyboard-quit'."
   (interactive)
   (if (minibufferp)
       (keyboard-quit)
@@ -1570,8 +1570,8 @@ then calls `donkey--exit-insert' directly to ensure state transition occurs."
   "Set up Smartparens integration.
 
 Call this from your config after loading `smartparens' to bind
-C-g in smartparens overlay keymaps. This improves reliability
-of C-g escape in terminal mode when inside nested smartparens
+`C-g' in smartparens overlay keymaps.  This improves reliability
+of `C-g' escape in terminal mode when inside nested smartparens
 overlays."
   (interactive)
   (when (and (boundp 'smartparens-mode-map)
@@ -1654,7 +1654,7 @@ Returns non-nil if DONKEY was enabled."
   "Return state indicator string for modeline.
 
 Returns ' DONKEY[N]' for Normal, ' DONKEY[I]' for Insert, empty string
-otherwise. Useful if you build your own mode-line and want to
+otherwise.  Useful if you build your own mode-line and want to
 include the DONKEY state."
   (cond
    ((bound-and-true-p donkey-normal-mode) " DONKEY[N]")
@@ -1670,11 +1670,11 @@ include the DONKEY state."
   "Toggle DONKEY Modal Editing globally.
 
 When enabled, DONKEY activates its dual-state system (Normal/Insert)
-in all buffers. Buffers whose major mode is in
+in all buffers.  Buffers whose major mode is in
 `donkey-excluded-modes' fall back to Insert state (passthrough).
 
 When disabled, all DONKEY state is cleared from every buffer and
-standard Emacs behavior is restored. \\[donkey-mode] or `M-x
+standard Emacs behavior is restored.  \\[donkey-mode] or `M-x
 donkey-mode' to toggle."
   :global t
   :group 'donkey
