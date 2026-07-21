@@ -656,19 +656,23 @@ variables are unbound."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-cg-in-excluded-mode ()
-  "In excluded modes, DONKEY should start in insert state. C-g should not crash."
+  "In excluded modes, DONKEY should start in insert state.  C-g should
+delegate to `keyboard-quit' rather than flip to normal mode, since a
+flip would just get reverted immediately and silently swallow the quit."
   (donkey--with-test-buffer
-   (let ((donkey-excluded-modes (cons 'fundamental-mode donkey-excluded-modes)))
+   (let ((donkey-excluded-modes (cons 'fundamental-mode donkey-excluded-modes))
+         (quit-called nil))
      (donkey-normal-mode -1)
      (donkey-insert-mode -1)
      (donkey--ensure-default-state)
      (should (bound-and-true-p donkey-insert-mode))
      (should-not (bound-and-true-p donkey-normal-mode))
-     (let ((errors nil))
-       (condition-case err
-           (donkey--simulate-cg)
-         (error (push err errors)))
-       (should (null errors))))))
+     (cl-letf (((symbol-function 'keyboard-quit)
+                (lambda () (setq quit-called t))))
+       (donkey--simulate-cg))
+     (should quit-called)
+     (should (bound-and-true-p donkey-insert-mode))
+     (should-not (bound-and-true-p donkey-normal-mode)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Integration: Input Method Preservation

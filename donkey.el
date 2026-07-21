@@ -74,9 +74,18 @@ explicitly if desired."
   :type '(repeat symbol)
   :group 'donkey)
 
+(defun donkey--excluded-mode-p ()
+  "Return non-nil if the current major mode is in `donkey-excluded-modes'.
+
+Checks both exact membership and derivation, so modes like
+`shell-mode' (derived from `comint-mode') are caught consistently
+everywhere this predicate is used."
+  (or (memq major-mode donkey-excluded-modes)
+      (apply #'derived-mode-p donkey-excluded-modes)))
+
 (defun donkey--handle-non-editing-buffer ()
   "Enter insert mode in excluded major modes when `donkey-normal-mode' activates."
-  (when (member major-mode donkey-excluded-modes)
+  (when (donkey--excluded-mode-p)
     (when (bound-and-true-p donkey-normal-mode)
       (donkey-enter-insert))))
 
@@ -85,10 +94,8 @@ explicitly if desired."
 (defun donkey--check-post-command-non-editing ()
   "Check after commands if we're in an excluded mode."
   (when (and (bound-and-true-p donkey-normal-mode)
-             (member major-mode donkey-excluded-modes))
+             (donkey--excluded-mode-p))
     (donkey-enter-insert)))
-
-(add-hook 'post-command-hook #'donkey--check-post-command-non-editing)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Org-Scratch Buffer Creation
@@ -1402,11 +1409,14 @@ Updates the custom variable and saves to your customization file."
 ;;; Donkey Minibuffer Safety
 ;;; ---------------------------------------------------------------------------
 
-(defvar donkey--minibuffer-pre-state nil
-  "Track DONKEY state before entering minibuffer.
+(defvar donkey--minibuffer-pre-state-stack nil
+  "Stack of DONKEY states saved before minibuffer activations.
 
-Value is normal, insert, or nil.  Not buffer-local because we
-need to read it after switching buffers.")
+Each element is normal, insert, or nil.  A stack rather than a
+single slot so recursive minibuffer activations (nested reads,
+e.g. via `enable-recursive-minibuffers') each restore their own
+saved state on exit instead of clobbering one another.  Not
+buffer-local because we need to read it after switching buffers.")
 
 (defun donkey--minibuffer-current-state ()
   "Return the current DONKEY state as a symbol."
@@ -1422,7 +1432,7 @@ need to read it after switching buffers.")
                    (with-current-buffer
                        (window-buffer (minibuffer-selected-window))
                      (donkey--minibuffer-current-state))))
-              (setq donkey--minibuffer-pre-state orig-state))
+              (push orig-state donkey--minibuffer-pre-state-stack))
             ;; Force insert mode (passthrough) in the minibuffer itself
             (when (bound-and-true-p donkey-normal-mode)
               (donkey-normal-mode -1))))
@@ -1432,10 +1442,9 @@ need to read it after switching buffers.")
             ;; Restore state in the originating buffer
             (with-current-buffer
                 (window-buffer (minibuffer-selected-window))
-              (pcase donkey--minibuffer-pre-state
+              (pcase (pop donkey--minibuffer-pre-state-stack)
                 ('normal (donkey-enter-normal))
-                ('insert (donkey-enter-insert))))
-            (setq donkey--minibuffer-pre-state nil)))
+                ('insert (donkey-enter-insert))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Insert to Normal Transition
@@ -1531,15 +1540,20 @@ Operates on the current buffer only."
 (defun donkey--reset-exit-guard ()
   "Reset the exit guard on next command.  Allow re-entry of insert mode."
   (setq donkey--just-exited-from-insert nil)
-  (remove-hook 'pre-command-hook #'donkey--reset-exit-guard))
+  (remove-hook 'pre-command-hook #'donkey--reset-exit-guard t))
 
 (defun donkey--exit-insert ()
   "Exit insert state and enter normal mode.
 
 Removes active mark, enters normal mode, and schedules deferred
-overlay cleanup.  In the minibuffer, delegates to `keyboard-quit'."
+overlay cleanup.  In the minibuffer, or in a `donkey-excluded-modes'
+buffer, delegates to `keyboard-quit' instead: these buffers stay in
+Insert state permanently, so forcing a Normal-state transition here
+would just get reverted immediately, silently swallowing `C-g' and
+preventing it from reaching the underlying mode (e.g. interrupting a
+subprocess or aborting a recursive edit)."
   (interactive)
-  (if (minibufferp)
+  (if (or (minibufferp) (donkey--excluded-mode-p))
       (keyboard-quit)
     (deactivate-mark)
     (donkey-enter-normal)
@@ -1559,7 +1573,10 @@ then calls `donkey--exit-insert' directly to ensure state transition occurs."
                  (eq this-command 'sp-cancel)))
     (setq this-command 'ignore
           donkey--just-exited-from-insert t)
-    (add-hook 'pre-command-hook #'donkey--reset-exit-guard -100)
+    ;; LOCAL (4th arg) so the reset only fires once THIS buffer is
+    ;; current again for its next command, not whichever buffer
+    ;; happens to run the next command globally.
+    (add-hook 'pre-command-hook #'donkey--reset-exit-guard -100 t)
     (donkey--exit-insert)))
 
 ;;; ---------------------------------------------------------------------------
@@ -1632,9 +1649,7 @@ overlays."
 
 For excluded modes, enable DONKEY Insert state (passthrough) instead.
 Returns non-nil if DONKEY was enabled."
-  (let ((is-excluded-p
-         (or (memq major-mode donkey-excluded-modes)
-             (apply #'derived-mode-p donkey-excluded-modes))))
+  (let ((is-excluded-p (donkey--excluded-mode-p)))
     (cond
      (is-excluded-p
       (unless (bound-and-true-p donkey-insert-mode)
@@ -1682,11 +1697,13 @@ donkey-mode' to toggle."
       (progn
         (add-hook 'after-change-major-mode-hook #'donkey--ensure-default-state)
         (add-hook 'post-command-hook #'donkey--track-position)
+        (add-hook 'post-command-hook #'donkey--check-post-command-non-editing)
         (dolist (buf (buffer-list))
           (with-current-buffer buf
             (donkey--ensure-default-state))))
     (remove-hook 'after-change-major-mode-hook #'donkey--ensure-default-state)
     (remove-hook 'post-command-hook #'donkey--track-position)
+    (remove-hook 'post-command-hook #'donkey--check-post-command-non-editing)
     (dolist (buf (buffer-list))
       (with-current-buffer buf
         (when (bound-and-true-p donkey-normal-mode)
