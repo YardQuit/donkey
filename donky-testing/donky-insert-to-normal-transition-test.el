@@ -3,7 +3,6 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'donky)
-(defvar this-single-command-keys)
 (defvar this-command)
 (defvar this-original-command)
 (defvar last-command-event)
@@ -26,21 +25,22 @@
      ,@body))
 
 (defun donky--simulate-key (key)
-  "Simulate pressing KEY by setting `this-single-command-keys' and
+  "Simulate pressing KEY by mocking `this-single-command-keys' and
   running `pre-command-hook', then executing the bound command.
   KEY should be a vector, e.g. [7] for C-g."
   (let ((last-command-event (aref key 0))
-        (this-single-command-keys key)
         (this-original-command this-command)
         (overriding-terminal-local-map nil))
-    ;; Mimic command loop: run pre-command-hook
-    (run-hooks 'pre-command-hook)
-    ;; Execute this-command if it wasn't set to ignore
-    (unless (eq this-command 'ignore)
-      (when (commandp this-command)
-        (call-interactively this-command)))
-    ;; Run post-command-hook
-    (run-hooks 'post-command-hook)))
+    (cl-letf (((symbol-function 'this-single-command-keys)
+               (lambda () key)))
+      ;; Mimic command loop: run pre-command-hook
+      (run-hooks 'pre-command-hook)
+      ;; Execute this-command if it wasn't set to ignore
+      (unless (eq this-command 'ignore)
+        (when (commandp this-command)
+          (call-interactively this-command)))
+      ;; Run post-command-hook
+      (run-hooks 'post-command-hook))))
 
 (defun donky--simulate-cg ()
   "Simulate pressing C-g."

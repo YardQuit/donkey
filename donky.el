@@ -52,7 +52,6 @@
   (defvar donky-normal-mode-map nil)
   (defvar donky-insert-mode-map nil))
 
-(defvar this-single-command-keys)              ;(donky--intercept-quit-in-insert)
 (defvar this-command)                          ;(donky--intercept-quit-in-insert)
 
 ;;; ---------------------------------------------------------------------------
@@ -522,9 +521,8 @@ Returns command symbol or nil if no handler matches."
 
 (defun donky--org-agenda-enter-handler ()
   "Handle Enter in `org-agenda' mode. Return t if handled, otherwise nil."
-  (when (and (fboundp 'org-agenda-mode-p)
-             (boundp 'org-agenda-mode-map)
-             (org-agenda-mode-p))
+  (when (and (boundp 'org-agenda-mode-map)
+             (derived-mode-p 'org-agenda-mode))
     (let ((ret-cmd (lookup-key org-agenda-mode-map (kbd "RET"))))
       (when (and ret-cmd
                  (not (eq ret-cmd 'undefined))
@@ -1557,8 +1555,7 @@ then calls `donky--exit-insert' directly to ensure state transition occurs."
   (when (and (bound-and-true-p donky-insert-mode)
              (not donky--just-exited-from-insert)
              (not (minibufferp))
-             (or (and (boundp 'this-single-command-keys)
-                      (equal this-single-command-keys [7]))
+             (or (equal (this-single-command-keys) [7])
                  (eq this-command 'sp-cancel)))
     (setq this-command 'ignore
           donky--just-exited-from-insert t)

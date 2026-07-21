@@ -12,7 +12,6 @@
 (defvar-local donky--just-exited-from-insert nil)
 (defvar-local donky--deferred-overlay-cleanup-timer nil)
 
-(defvar this-single-command-keys)
 (defvar this-command)
 
 ;; ===========================================================================
@@ -157,10 +156,11 @@
       (let ((donky-insert-mode t)
             (donky-normal-mode t)
             (donky--just-exited-from-insert nil)
-            (this-command 'original)
-            (this-single-command-keys [7]))
+            (this-command 'original))
         (cl-letf (((symbol-function 'minibufferp)
                    (lambda () nil))
+                  ((symbol-function 'this-single-command-keys)
+                   (lambda () [7]))
                   ((symbol-function 'deactivate-mark)
                    (lambda () (setq deactivated t)))
                   ((symbol-function 'donky-enter-normal)
