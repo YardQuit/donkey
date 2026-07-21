@@ -19,8 +19,8 @@ evaluate BODY with point at the start."
   (declare (indent 0))
   `(with-temp-buffer
      (fundamental-mode)
-     (donkey -1)
-     (donkey 1)
+     (donkey-mode -1)
+     (donkey-mode 1)
      (donkey--ensure-default-state)
      (donkey-enter-insert)
      (insert "(defun foo ()\n  (let ((x 1))\n    (concat \"bar\" x)))")

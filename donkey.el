@@ -1666,7 +1666,7 @@ include the DONKEY state."
 ;;; ---------------------------------------------------------------------------
 
 ;;;###autoload
-(define-minor-mode donkey
+(define-minor-mode donkey-mode
   "Toggle DONKEY Modal Editing globally.
 
 When enabled, DONKEY activates its dual-state system (Normal/Insert)
@@ -1674,11 +1674,11 @@ in all buffers. Buffers whose major mode is in
 `donkey-excluded-modes' fall back to Insert state (passthrough).
 
 When disabled, all DONKEY state is cleared from every buffer and
-standard Emacs behavior is restored. \\[donkey] or `M-x
-donkey' to toggle."
+standard Emacs behavior is restored. \\[donkey-mode] or `M-x
+donkey-mode' to toggle."
   :global t
   :group 'donkey
-  (if donkey
+  (if donkey-mode
       (progn
         (add-hook 'after-change-major-mode-hook #'donkey--ensure-default-state)
         (add-hook 'post-command-hook #'donkey--track-position)

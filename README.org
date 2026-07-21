@@ -29,7 +29,7 @@ add the following to your =init.el= or =config.el=:
         (load donkey-path nil t)
       (message "WARNING: Donkey modal module not found at %s." donkey-path)))
 
-  (donkey 1)
+  (donkey-mode 1)
 
 #+end_src
 
