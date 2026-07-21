@@ -860,8 +860,21 @@ Removes the active region first if one is present."
 ;;; Mark and Text Object Selection Commands
 ;;; ---------------------------------------------------------------------------
 
-(defvar donkey-visual-anchor nil
+(defvar-local donkey-visual-anchor nil
   "Anchor position for visual line selection.")
+
+(defun donkey--clear-visual-anchor ()
+  "Clear `donkey-visual-anchor' whenever the mark is deactivated.
+
+Runs on `deactivate-mark-hook', so the anchor never survives past its
+region regardless of what deactivated the mark — this command,
+`keyboard-quit', or anything else.  Without this, a stale anchor left
+over from an abandoned visual-line selection could hijack a later,
+unrelated region activation (e.g. via `set-mark-command') in the same
+buffer."
+  (setq donkey-visual-anchor nil))
+
+(add-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor)
 
 (defun donkey-visual-line-toggle ()
   "Start/cancel visual line selection."
@@ -869,7 +882,6 @@ Removes the active region first if one is present."
   (if (region-active-p)
       (progn
         (deactivate-mark)
-        (setq donkey-visual-anchor nil)
         (message "Visual line: cancelled"))
     (setq donkey-visual-anchor (line-beginning-position))
     (set-mark (line-beginning-position))
@@ -1636,9 +1648,25 @@ overlays."
       (let (input-method-activate-hook)
         (deactivate-input-method)))))
 
+(defun donkey--on-input-method-deactivate ()
+  "Forget the saved input method if deactivated while still in Insert state.
+
+Only `donkey--on-normal-entry' deactivates the input method as part of
+saving it for later restoration, and by the time its
+`donkey-normal-mode-hook' runs, `donkey-insert-mode' has already been
+turned off — so this only fires for deactivations that happen some
+other way (e.g. the user manually toggles the input method off) while
+Insert state is still active.  That is a deliberate choice, and
+without clearing the saved value here, the next Normal-to-Insert
+cycle would silently reactivate the very input method the user just
+turned off."
+  (when (bound-and-true-p donkey-insert-mode)
+    (setq donkey--saved-input-method nil)))
+
 (add-hook 'donkey-normal-mode-hook #'donkey--on-normal-entry)
 (add-hook 'donkey-insert-mode-hook #'donkey--on-insert-entry)
 (add-hook 'input-method-activate-hook #'donkey--on-input-method-activate)
+(add-hook 'input-method-deactivate-hook #'donkey--on-input-method-deactivate)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Enhanced Mode Activation Logic

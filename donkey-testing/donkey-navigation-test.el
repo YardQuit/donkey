@@ -508,6 +508,65 @@ at point-min since forward-line -1 there has nowhere to go."
       (call-interactively #'donkey-visual-line-toggle)
       (should (region-active-p)))))
 
+(ert-deftest donkey-visual-anchor-is-buffer-local ()
+  "`donkey-visual-anchor' must be buffer-local.  Regression test: it used
+to be a plain `defvar', so starting a visual-line selection in one
+buffer leaked its anchor position into any other buffer that
+separately activated a region (e.g. via `set-mark-command'), causing
+`donkey-visual-next-line' to extend the selection using a position
+that belongs to a completely different buffer."
+  (let ((buf-a (generate-new-buffer "donkey-visual-anchor-buf-a"))
+        (buf-b (generate-new-buffer "donkey-visual-anchor-buf-b")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf-a
+            (dotimes (_ 50) (insert "line in buffer A\n"))
+            (goto-char (point-min))
+            (forward-line 20)
+            (donkey-visual-line-toggle))
+          (with-current-buffer buf-b
+            (insert "short buffer B\nline2\nline3\n")
+            (goto-char (point-min))
+            ;; buf-b must not see buf-a's anchor at all.
+            (should-not donkey-visual-anchor)
+            ;; An unrelated region activation in buf-b (no anchor of
+            ;; its own) must behave like a plain downward motion:
+            ;; the mark must be left untouched.
+            (set-mark (point))
+            (activate-mark)
+            (forward-char 3)
+            (let ((mark-before (mark)))
+              (donkey-visual-next-line)
+              (should (= (mark) mark-before)))))
+      (when (buffer-live-p buf-a) (kill-buffer buf-a))
+      (when (buffer-live-p buf-b) (kill-buffer buf-b)))))
+
+(ert-deftest donkey-visual-anchor-cleared-on-external-deactivate-mark ()
+  "`donkey-visual-anchor' must be cleared whenever the mark is
+deactivated, not just when cancelled via `donkey-visual-line-toggle'
+itself.  Regression test: if some other command deactivated the mark
+(e.g. `keyboard-quit'), the anchor was left stale in the SAME buffer,
+so a later, unrelated region activation (e.g. via `set-mark-command')
+would have its selection hijacked by the leftover anchor position."
+  (with-temp-buffer
+    (dotimes (_ 20) (insert "line\n"))
+    (goto-char (point-min))
+    (forward-line 5)
+    (donkey-visual-line-toggle)
+    (should donkey-visual-anchor)
+    ;; Something else deactivates the mark, bypassing
+    ;; donkey-visual-line-toggle's own cancel branch entirely.
+    (deactivate-mark)
+    (should-not donkey-visual-anchor)
+    ;; A later, unrelated selection must not be hijacked by a stale anchor.
+    (goto-char (point-min))
+    (set-mark (point))
+    (activate-mark)
+    (forward-char 2)
+    (let ((mark-before (mark)))
+      (donkey-visual-next-line)
+      (should (= (mark) mark-before)))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-visual-next-line
 ;;; ---------------------------------------------------------------------------

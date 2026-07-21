@@ -576,6 +576,53 @@ preventing recursive hook invocation."
           (donkey--on-input-method-activate))))
     (should-not hook-during-deactivate)))
 
+(ert-deftest donkey-state-on-input-method-deactivate-clears-saved-in-insert-mode ()
+  "When the input method deactivates while donkey-insert-mode is active,
+clears the saved value so it won't be resurrected later."
+  (with-temp-buffer
+    (let ((donkey-insert-mode t)
+          (donkey--saved-input-method "swedish-postfix"))
+      (donkey--on-input-method-deactivate)
+      (should-not donkey--saved-input-method))))
+
+(ert-deftest donkey-state-on-input-method-deactivate-skips-when-not-insert-mode ()
+  "When donkey-insert-mode is not active (e.g. this is
+donkey--on-normal-entry's own save-and-deactivate step), leaves the
+saved value untouched."
+  (with-temp-buffer
+    (let ((donkey-insert-mode nil)
+          (donkey--saved-input-method "swedish-postfix"))
+      (donkey--on-input-method-deactivate)
+      (should (equal donkey--saved-input-method "swedish-postfix")))))
+
+(ert-deftest donkey-input-method-manual-deactivation-is-not-resurrected ()
+  "Regression test: manually deactivating an input method while remaining
+in Insert state used to leave the stale saved value in place, so the
+next Normal-to-Insert cycle silently reactivated the very input method
+the user had just turned off."
+  (with-temp-buffer
+    (fundamental-mode)
+    (donkey-enter-insert)
+    (cl-letf (((symbol-function 'activate-input-method)
+               (lambda (name)
+                 (setq current-input-method name)
+                 (run-hooks 'input-method-activate-hook)))
+              ((symbol-function 'deactivate-input-method)
+               (lambda ()
+                 (setq current-input-method nil)
+                 (run-hooks 'input-method-deactivate-hook))))
+      (setq current-input-method "swedish-postfix")
+      (donkey-enter-normal)
+      (donkey-enter-insert)
+      (should (equal current-input-method "swedish-postfix"))
+      ;; User manually turns the input method off while still in Insert state.
+      (deactivate-input-method)
+      (should-not donkey--saved-input-method)
+      ;; Cycling through Normal and back to Insert must NOT resurrect it.
+      (donkey-enter-normal)
+      (donkey-enter-insert)
+      (should-not current-input-method))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Integration: Basic Mode Transition (C-g through full pipeline)
 ;;; ---------------------------------------------------------------------------
