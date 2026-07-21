@@ -3,7 +3,7 @@
 
 * Overview
 
-Donky is an opinionated modal editing minor-mode for Emacs, that
+Donkey is an opinionated modal editing minor-mode for Emacs, that
 leverages Emacs' own built-in functions wherever possible. There is no
 overlay state — just a minor-mode keymap that toggles on and off.
 
@@ -18,27 +18,27 @@ overlay state — just a minor-mode keymap that toggles on and off.
 
 * Installation
 
-Place =donky.el= at =~/.config/emacs/donky/donky.el=, then
+Place =donkey.el= at =~/.config/emacs/donkey/donkey.el=, then
 add the following to your =init.el= or =config.el=:
 
 #+begin_src emacs-lisp
 
-  (let ((donky-path (expand-file-name "donky/donky.el"
+  (let ((donkey-path (expand-file-name "donkey/donkey.el"
                                      user-emacs-directory)))
-    (if (file-exists-p donky-path)
-        (load donky-path nil t)
-      (message "WARNING: Donky modal module not found at %s." donky-path)))
+    (if (file-exists-p donkey-path)
+        (load donkey-path nil t)
+      (message "WARNING: Donkey modal module not found at %s." donkey-path)))
 
-  (donky 1)
+  (donkey 1)
 
 #+end_src
 
 * Usage
 
-- Press =C-g= to enter DONKY Normal state.
+- Press =C-g= to enter DONKEY Normal state.
 - In Normal: =h=, =j=, =k=, =l= navigate; =i=, =I=, =a=, =A=, =o=, =O=, =c= enter Insert state.
 - In Insert: Standard Emacs behavior, press =C-g= to return to Normal.
-- State indicators show in modeline: =DONKY[N]= = Normal, =DONKY[I]= = Insert.
+- State indicators show in modeline: =DONKEY[N]= = Normal, =DONKEY[I]= = Insert.
 
 * Default Keybindings
 
@@ -55,40 +55,40 @@ add the following to your =init.el= or =config.el=:
 
 | Key | Command                     | Description                           |
 |-----+-----------------------------+---------------------------------------|
-| =J= | =donky-visual-next-line=     | Move down, extending visual selection |
-| =K= | =donky-visual-previous-line= | Move up, extending visual selection   |
-| =V= | =donky-visual-line-toggle=   | Toggle visual line selection          |
+| =J= | =donkey-visual-next-line=     | Move down, extending visual selection |
+| =K= | =donkey-visual-previous-line= | Move up, extending visual selection   |
+| =V= | =donkey-visual-line-toggle=   | Toggle visual line selection          |
 | =v= | =set-mark-command=          | Toggle mark                           |
 
 ** Insert Mode Entry
 
 | Key | Command                         | Description                         |
 |-----+---------------------------------+-------------------------------------|
-| =i= | =donky-insert-here=              | Insert at current position          |
-| =a= | =donky-insert-after=             | Insert after current char           |
-| =I= | =donky-insert-beginning-of-line= | Insert at beginning of line         |
-| =A= | =donky-insert-end-of-line=       | Insert at end of line               |
-| =o= | =donky-open-below=               | Open new line below, enter Insert   |
-| =O= | =donky-open-above=               | Open new line above, enter Insert   |
-| =c= | =donky-change=                   | Change char or region, enter Insert |
+| =i= | =donkey-insert-here=              | Insert at current position          |
+| =a= | =donkey-insert-after=             | Insert after current char           |
+| =I= | =donkey-insert-beginning-of-line= | Insert at beginning of line         |
+| =A= | =donkey-insert-end-of-line=       | Insert at end of line               |
+| =o= | =donkey-open-below=               | Open new line below, enter Insert   |
+| =O= | =donkey-open-above=               | Open new line above, enter Insert   |
+| =c= | =donkey-change=                   | Change char or region, enter Insert |
 
 ** Editing
 
 | Key   | Command                      | Description                      |
 |-------+------------------------------+----------------------------------|
-| =d=   | =donky-delete=                | Delete char or region            |
-| =x=   | =donky-delete=                | Delete char (same as =d=)        |
+| =d=   | =donkey-delete=                | Delete char or region            |
+| =x=   | =donkey-delete=                | Delete char (same as =d=)        |
 | =D=   | =kill-line=                  | Kill to end of line              |
-| =C=   | =donky-comment-dwim=          | Comment/uncomment line or region |
+| =C=   | =donkey-comment-dwim=          | Comment/uncomment line or region |
 | =C-j= | =join-line=                  | Join line with next              |
-| =>=   | =donky-indent-region-or-line= | Indent region or line            |
+| =>=   | =donkey-indent-region-or-line= | Indent region or line            |
 
 ** Yank and Paste
 
 | Key | Command          | Description                                 |
 |-----+------------------+---------------------------------------------|
-| =p= | =donky-yank=      | Yank from clipboard, replacing region       |
-| =P= | =donky-yank-pop=  | Replace last yank with next kill-ring entry |
+| =p= | =donkey-yank=      | Yank from clipboard, replacing region       |
+| =P= | =donkey-yank-pop=  | Replace last yank with next kill-ring entry |
 | =y= | =kill-ring-save= | Copy region to kill ring                    |
 
 ** Motions
@@ -99,21 +99,21 @@ add the following to your =init.el= or =config.el=:
 | =b= | =backward-word=  | Move backward by word            |
 | =W= | =forward-sexp=   | Move forward by sexp             |
 | =B= | =backward-sexp=  | Move backward by sexp            |
-| =S= | =donky-jump-back= | Jump to previous cursor position |
+| =S= | =donkey-jump-back= | Jump to previous cursor position |
 
 ** Mark Objects (=m= prefix)
 
 | Key   | Command                    | Description                          |
 |-------+----------------------------+--------------------------------------|
-| =m w= | =donky-mark-word=           | Mark word at point                   |
-| =m W= | =donky-mark-symbol=         | Mark symbol (includes hyphens)       |
-| =m s= | =donky-mark-sentence=       | Mark sentence                        |
-| =m p= | =donky-mark-paragraph=      | Mark paragraph                       |
-| =m i= | =donky-mark-inner=          | Mark inside delimiter pair (prompts) |
-| =m a= | =donky-mark-outer=          | Mark including delimiter pair        |
-| =m I= | =donky-mark-sexp-inner=     | Mark inside balanced expression      |
-| =m A= | =donky-mark-sexp-outer=     | Mark including balanced expression   |
-| =m v= | =donky-rectangle-mark-mode= | Toggle rectangle mark mode           |
+| =m w= | =donkey-mark-word=           | Mark word at point                   |
+| =m W= | =donkey-mark-symbol=         | Mark symbol (includes hyphens)       |
+| =m s= | =donkey-mark-sentence=       | Mark sentence                        |
+| =m p= | =donkey-mark-paragraph=      | Mark paragraph                       |
+| =m i= | =donkey-mark-inner=          | Mark inside delimiter pair (prompts) |
+| =m a= | =donkey-mark-outer=          | Mark including delimiter pair        |
+| =m I= | =donkey-mark-sexp-inner=     | Mark inside balanced expression      |
+| =m A= | =donkey-mark-sexp-outer=     | Mark including balanced expression   |
+| =m v= | =donkey-rectangle-mark-mode= | Toggle rectangle mark mode           |
 
 ** Buffer Navigation (=g= prefix and standalone)
 
@@ -126,10 +126,10 @@ add the following to your =init.el= or =config.el=:
 | =g q= | =fill-region=            | Fill region                 |
 | =g Q= | =fill-paragraph=         | Fill paragraph              |
 | =g t= | =beginning-of-buffer=    | Go to beginning of buffer   |
-| :=    | =donky-goto-line=         | Go to line number (prompts) |
+| :=    | =donkey-goto-line=         | Go to line number (prompts) |
 | =%=   | =mark-whole-buffer=      | Select entire buffer        |
 | =.=   | =repeat=                 | Repeat last command         |
-| =?=   | =donky-describe-bindings= | Show all DONKY keybindings   |
+| =?=   | =donkey-describe-bindings= | Show all DONKEY keybindings   |
 
 ** Search and Replace (=r= prefix)
 
@@ -150,7 +150,7 @@ add the following to your =init.el= or =config.el=:
 
 | Key               | Command           | Description                            |
 |-------------------+-------------------+----------------------------------------|
-| =RET= / =<enter>= | =donky-enter-dwim= | Context-aware Enter (see DWIM section) |
+| =RET= / =<enter>= | =donkey-enter-dwim= | Context-aware Enter (see DWIM section) |
 
 ** Suppressed Keys (ignored in Normal state)
 
@@ -169,15 +169,15 @@ These keys are explicitly suppressed to prevent unwanted behavior:
 * Customizing Keybindings
 
 You can override existing bindings or add new ones in your =config.el=
-by modifying =donky-normal-mode-map=.
+by modifying =donkey-normal-mode-map=.
 
 ** Override an existing binding:
 
 #+begin_src emacs-lisp
 
   ;; Replace the default behavior of ';' with consult-outline
-  (when (boundp 'donky-normal-mode-map)
-    (keymap-set donky-normal-mode-map ";" #'consult-outline))
+  (when (boundp 'donkey-normal-mode-map)
+    (keymap-set donkey-normal-mode-map ";" #'consult-outline))
 
 #+end_src
 
@@ -186,8 +186,8 @@ by modifying =donky-normal-mode-map=.
 #+begin_src emacs-lisp
 
   ;; Make ',' fall through to the major mode instead of being ignored
-  (when (boundp 'donky-normal-mode-map)
-    (keymap-unset donky-normal-mode-map ","))
+  (when (boundp 'donkey-normal-mode-map)
+    (keymap-unset donkey-normal-mode-map ","))
 
 #+end_src
 
@@ -196,19 +196,19 @@ by modifying =donky-normal-mode-map=.
 #+begin_src emacs-lisp
 
   ;; Leader Map Definition
-  (when (boundp 'donky-normal-mode-map)
-    (unless (boundp 'donky-leader-map)
-      (defvar donky-leader-map (make-sparse-keymap)
+  (when (boundp 'donkey-normal-mode-map)
+    (unless (boundp 'donkey-leader-map)
+      (defvar donkey-leader-map (make-sparse-keymap)
         "Leader key map under SPC."))
-    (keymap-set donky-normal-mode-map "SPC" 'donky-leader-map))
+    (keymap-set donkey-normal-mode-map "SPC" 'donkey-leader-map))
 
 #+end_src
 
 * Excluded Modes
 
-DONKY Normal state is permanently disabled in certain major modes where
-key suppression would break core functionality. In these modes, DONKY
-stays in Insert state (passthrough), keeping DONKY active but
+DONKEY Normal state is permanently disabled in certain major modes where
+key suppression would break core functionality. In these modes, DONKEY
+stays in Insert state (passthrough), keeping DONKEY active but
 non-interfering.
 
 ** Built-in Defaults
@@ -227,13 +227,13 @@ via =suppress-keymap= would break functionality:
 | =eshell-mode= | Own command-line parser and input loop.                                |
 
 Derived modes are caught automatically by the =derived-mode-p= check
-in =donky--ensure-default-state=, so listing =comint-mode= alone covers
+in =donkey--ensure-default-state=, so listing =comint-mode= alone covers
 dozens of comint derivatives.
 
 ** Adding Additional Excluded Modes
 
 Modes like =dired-mode=, =ibuffer-mode=, =magit-status-mode=, and
-=epa-key-list-mode= are NOT excluded by default. In these modes, DONKY
+=epa-key-list-mode= are NOT excluded by default. In these modes, DONKEY
 Normal state works (keys are suppressed, =hjkl= navigates), but some
 users may prefer passthrough to retain native keybindings.
 
@@ -241,9 +241,9 @@ To add modes to the exclusion list in your =config.el=:
 
 #+begin_src emacs-lisp
 
-  (with-eval-after-load 'donky
+  (with-eval-after-load 'donkey
     (dolist (mode '(dired-mode ibuffer-mode magit-status-mode epa-key-list-mode))
-      (add-to-list 'donky-excluded-modes mode)))
+      (add-to-list 'donkey-excluded-modes mode)))
 
 #+end_src
 
@@ -251,8 +251,8 @@ Or add a single mode:
 
 #+begin_src emacs-lisp
 
-  (with-eval-after-load 'donky
-    (add-to-list 'donky-excluded-modes 'pdf-view-mode))
+  (with-eval-after-load 'donkey
+    (add-to-list 'donkey-excluded-modes 'pdf-view-mode))
 
 #+end_src
 
@@ -260,34 +260,34 @@ Verify the current exclusion list:
 
 #+begin_src emacs-lisp
 
-  M-x eval-expression RET donky-excluded-modes RET
+  M-x eval-expression RET donkey-excluded-modes RET
 
 #+end_src
 
 * Enter Key Rules (DWIM)
 
-DONKY's =donky-enter-dwim= command dispatches the Enter (RET) key based
+DONKEY's =donkey-enter-dwim= command dispatches the Enter (RET) key based
 on context. In editing modes, Enter is blocked to prevent accidental
 line breaks. In non-editing modes, the native RET binding is invoked.
 
-For =org-mode= and =markdown-mode=, DONKY uses a rule-based dispatch
+For =org-mode= and =markdown-mode=, DONKEY uses a rule-based dispatch
 system to execute context-aware actions when Enter is pressed.
 
 ** Built-in Default Rules
 
 The following rules are installed by default (controlled by
-=donky-default-enter-rules-enabled=, which defaults to =t=):
+=donkey-default-enter-rules-enabled=, which defaults to =t=):
 
 #+begin_src emacs-lisp
 
   ;; Toggle checkboxes in org list items
-  (donky-add-enter-rule item :checkbox org-toggle-checkbox)
+  (donkey-add-enter-rule item :checkbox org-toggle-checkbox)
 
   ;; Toggle TODO/DONE on org headlines
-  (donky-add-enter-rule headline :todo-type donky-org-todo)
+  (donkey-add-enter-rule headline :todo-type donkey-org-todo)
 
   ;; Follow links in org, markdown, or plain text
-  (donky-add-enter-rule link nil org-open-at-point
+  (donkey-add-enter-rule link nil org-open-at-point
                        markdown-follow-thing-at-point
                        browse-url-at-point)
 
@@ -311,8 +311,8 @@ your =config.el= so it appears at the front of the dispatch list:
   ;; These will be checked in this order:
   ;; 1. shr-follow-link-at-point (added last, checked first)
   ;; 2. org-open-at-point (added first, checked second)
-  (donky-add-enter-rule link nil org-open-at-point)
-  (donky-add-enter-rule link nil shr-follow-link-at-point)
+  (donkey-add-enter-rule link nil org-open-at-point)
+  (donkey-add-enter-rule link nil shr-follow-link-at-point)
 
 #+end_src
 
@@ -321,9 +321,9 @@ add your own:
 
 #+begin_src emacs-lisp
 
-  (with-eval-after-load 'donky
-    (setq donky-default-enter-rules-enabled nil)
-    (donky-add-enter-rule link nil shr-follow-link-at-point))
+  (with-eval-after-load 'donkey
+    (setq donkey-default-enter-rules-enabled nil)
+    (donkey-add-enter-rule link nil shr-follow-link-at-point))
 
 #+end_src
 
@@ -333,33 +333,33 @@ To define your own rules entirely, disable the defaults:
 
 #+begin_src emacs-lisp
 
-  (with-eval-after-load 'donky
-    (setq donky-default-enter-rules-enabled nil))
+  (with-eval-after-load 'donkey
+    (setq donkey-default-enter-rules-enabled nil))
 
 #+end_src
 
 ** Adding Custom Enter Rules
 
-Rules can be added from =config.el= using the =donky-add-enter-rule=
+Rules can be added from =config.el= using the =donkey-add-enter-rule=
 macro. Example:
 
 #+begin_src emacs-lisp
 
-  (with-eval-after-load 'donky
+  (with-eval-after-load 'donkey
     ;; Follow links with shr-follow-link-at-point as first choice
-    (donky-add-enter-rule link nil shr-follow-link-at-point
+    (donkey-add-enter-rule link nil shr-follow-link-at-point
                          org-open-at-point
                          browse-url-at-point)
 
     ;; Open agenda files from org-agenda table view
-    (donky-add-enter-rule org-agenda-heading nil
+    (donkey-add-enter-rule org-agenda-heading nil
                          org-agenda-do-default-action))
 
 #+end_src
 
 ** Dispatch Order
 
-=donky-enter-dwim= checks elements in this order:
+=donkey-enter-dwim= checks elements in this order:
 
 1. =org-agenda-mode= RET binding (if in agenda)
 2. Context element (most specific, e.g. a link inside a headline)
@@ -377,7 +377,7 @@ Common org element types for rules:
 | Element Type | Useful Properties | Example Commands                           |
 |--------------+-------------------+--------------------------------------------|
 | =link=       | =nil=             | =org-open-at-point=, =browse-url-at-point= |
-| =headline=   | =:todo-type=      | =org-todo=, =donky-org-todo=                |
+| =headline=   | =:todo-type=      | =org-todo=, =donkey-org-todo=                |
 | =item=       | =:checkbox=       | =org-toggle-checkbox=                      |
 | =src-block=  | =nil=             | =org-edit-special=                         |
 | =table-row=  | =nil=             | =org-table-next-row=                       |
@@ -385,7 +385,7 @@ Common org element types for rules:
 
 * Cursor Management
 
-DONKY manages cursor shapes independently for Normal and Insert states.
+DONKEY manages cursor shapes independently for Normal and Insert states.
 In terminal mode (=emacs -nw=), DECSCUSR escape sequences are used for
 reliable cursor rendering across terminal emulators.
 
@@ -393,28 +393,28 @@ reliable cursor rendering across terminal emulators.
 
 #+begin_src emacs-lisp
 
-  (with-eval-after-load 'donky
-    (setq donky-cursor-normal 'box      ; box, bar, hollow, or nil for global default
-          donky-cursor-insert '(bar . 2))) ; bar with width 2
+  (with-eval-after-load 'donkey
+    (setq donkey-cursor-normal 'box      ; box, bar, hollow, or nil for global default
+          donkey-cursor-insert '(bar . 2))) ; bar with width 2
 
 #+end_src
 
 ** Terminal Compatibility
 
-Some terminals do not support DECSCUSR or produce garbled output. DONKY
+Some terminals do not support DECSCUSR or produce garbled output. DONKEY
 maintains a denylist of terminal types where escape sequences are
 suppressed:
 
 #+begin_src emacs-lisp
 
   ;; View current denylist
-  M-x eval-expression RET donky--decscusr-denied-terminals RET
+  M-x eval-expression RET donkey--decscusr-denied-terminals RET
 
   ;; Add a terminal to the denylist interactively
-  M-x donky--add-denylist-entry RET
+  M-x donkey--add-denylist-entry RET
 
   ;; Remove a terminal from the denylist
-  M-x donky--remove-denylist-entry RET
+  M-x donkey--remove-denylist-entry RET
 
 #+end_src
 
@@ -422,7 +422,7 @@ Default denied terminals: =dumb=, =linux= (framebuffer console).
 
 ** Platform Diagnostics
 
-Run =M-x donky-debug-platform= for a detailed report of:
+Run =M-x donkey-debug-platform= for a detailed report of:
 - System type and Emacs version
 - Display backend (GUI vs terminal)
 - TTY type and TERM environment variable
@@ -431,13 +431,13 @@ Run =M-x donky-debug-platform= for a detailed report of:
 
 * Clipboard Integration
 
-DONKY's =donky-yank= and =donky-yank-pop= commands integrate with the
+DONKEY's =donkey-yank= and =donkey-yank-pop= commands integrate with the
 system clipboard, falling back to the kill ring when no clipboard tools
 are available.
 
 ** Detection
 
-At load time, DONKY checks for:
+At load time, DONKEY checks for:
 - =wl-copy= / =wl-paste= (Wayland)
 - =xclip= / =xsel= (X11)
 - =pbcopy= / =pbpaste= (macOS)
@@ -450,7 +450,7 @@ silently after the first warning.
 
 * Input Method Management
 
-DONKY automatically saves and restores the active input method when
+DONKEY automatically saves and restores the active input method when
 transitioning between Normal and Insert states. This is useful for
 non-English keyboard layouts (e.g. Swedish Postfix).
 
@@ -462,59 +462,59 @@ mode keybindings.
 
 * Smartparens Integration
 
-When =smartparens= is loaded, DONKY automatically:
+When =smartparens= is loaded, DONKEY automatically:
 - Binds =C-g= in =smartparens-mode-map= and overlay keymaps
 - Clears transient smartparens overlays on Insert-to-Normal transition
 - Defers overlay cleanup via idle timer to avoid race conditions
 
 No configuration needed — integration is automatic when both packages
-are loaded. If smartparens is not installed, DONKY functions normally
+are loaded. If smartparens is not installed, DONKEY functions normally
 without errors.
 
 * Position Tracking
 
-=M-x donky-jump-back= (bound to =S=) rotates through a ring of
+=M-x donkey-jump-back= (bound to =S=) rotates through a ring of
 previously recorded cursor positions. Positions are tracked
 automatically via =post-command-hook= whenever the cursor moves to a
 different buffer or position.
 
-- Ring size controlled by =donky-position-ring-max= (default: 10)
+- Ring size controlled by =donkey-position-ring-max= (default: 10)
 - Skips markers whose buffer has been killed
 - Independent of the mark ring and region
 
 * Org-Scratch Buffer
 
-=M-x donky-org-scratch= creates or switches to a scratch buffer in
+=M-x donkey-org-scratch= creates or switches to a scratch buffer in
 =org-mode=. Useful for quick note-taking without creating a file.
 
 * Describe Bindings
 
-Press =?= in Normal state to see all active DONKY keybindings in a
+Press =?= in Normal state to see all active DONKEY keybindings in a
 formatted, clickable buffer. Bindings are grouped by prefix with
 section headers.
 
 #+begin_src emacs-lisp
 
-  M-x donky-describe-bindings
+  M-x donkey-describe-bindings
 
 #+end_src
 
 * Customization Group
 
-All DONKY variables are under the =donky= Customize group:
+All DONKEY variables are under the =donkey= Customize group:
 
 #+begin_src emacs-lisp
 
-  M-x customize-group RET donky RET
+  M-x customize-group RET donkey RET
 
 #+end_src
 
 | Variable                           | Type    | Default            | Description                            |
 |------------------------------------+---------+--------------------+----------------------------------------|
-| =donky-excluded-modes=              | list    | (see above)        | Modes where Normal state is disabled   |
-| =donky-cursor-normal=               | symbol  | =box=              | Cursor shape in Normal state           |
-| =donky-cursor-insert=               | cons    | =(bar . 2)=        | Cursor shape in Insert state           |
-| =donky-default-enter-rules-enabled= | boolean | =t=                | Install default Enter DWIM rules       |
-| =donky-position-ring-max=           | integer | =10=               | Number of positions in jump-back ring  |
-| =donky--decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
+| =donkey-excluded-modes=              | list    | (see above)        | Modes where Normal state is disabled   |
+| =donkey-cursor-normal=               | symbol  | =box=              | Cursor shape in Normal state           |
+| =donkey-cursor-insert=               | cons    | =(bar . 2)=        | Cursor shape in Insert state           |
+| =donkey-default-enter-rules-enabled= | boolean | =t=                | Install default Enter DWIM rules       |
+| =donkey-position-ring-max=           | integer | =10=               | Number of positions in jump-back ring  |
+| =donkey--decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
 
