@@ -816,6 +816,35 @@ displays a message instead of propagating."
                             (car messages)))
     (should-not caught-error-p)))
 
+(ert-deftest donkey-comment-dwim-in-org-src-block-exits-edit-buffer-on-comment-error ()
+  "Regression test: when `comment-or-uncomment-region' errors AFTER
+`org-edit-special' already succeeded (e.g. the src block's language,
+such as `fundamental-mode', has no comment syntax defined),
+`org-edit-src-exit' still runs -- returning to the Org buffer instead
+of stranding the user in the temporary edit buffer/window.
+
+Confirmed live in `emacs -nw': pressing the comment-dwim key on a
+`#+begin_src fundamental' block opened the `*Org Src ...*' edit
+buffer/window, `comment-or-uncomment-region' signalled \"No comment
+syntax is defined\", and without this fix the edit buffer/window was
+left open rather than being cleaned up by `org-edit-src-exit'."
+  (let (org-edit-called org-exit-called)
+    (cl-letf (((symbol-function 'org-element-at-point)
+               (lambda () '(src-block (:language "fundamental" :begin 1 :end 50))))
+              ((symbol-function 'org-edit-special)
+               (lambda () (interactive) (setq org-edit-called t)))
+              ((symbol-function 'comment-or-uncomment-region)
+               (lambda (&rest _) (error "No comment syntax is defined")))
+              ((symbol-function 'org-edit-src-exit)
+               (lambda () (interactive) (setq org-exit-called t))))
+      (with-temp-buffer
+        (insert "some text\n")
+        (goto-char (point-min))
+        (let ((major-mode 'org-mode))
+          (donkey-comment-dwim))))
+    (should org-edit-called)
+    (should org-exit-called)))
+
 (ert-deftest donkey-comment-dwim-org-src-takes-priority ()
   "When in org-mode on a src-block, the org delegation path is taken."
   (let (call-order)

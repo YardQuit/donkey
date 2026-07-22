@@ -651,22 +651,31 @@ then returns to the Org buffer."
       (condition-case err
           (progn
             (org-edit-special)
-            (if has-region
-                (let* ((cur-line-in-edit (line-number-at-pos))
-                       (diff (- cur-line-in-edit cur-line))
-                       (edit-beg-line (+ reg-beg-line diff))
-                       (edit-end-line (+ reg-end-line diff)))
-                  (save-excursion
-                    (goto-char (point-min))
-                    (forward-line (1- edit-beg-line))
-                    (let ((beg (line-beginning-position)))
-                      (forward-line (- edit-end-line edit-beg-line))
-                      (comment-or-uncomment-region
-                       beg (line-beginning-position 2)))))
-              (comment-or-uncomment-region
-               (line-beginning-position)
-               (line-beginning-position 2)))
-            (org-edit-src-exit)
+            ;; `org-edit-special' is outside `unwind-protect' on purpose: if
+            ;; IT fails, there is no edit buffer to exit from.  Everything
+            ;; after it (notably `comment-or-uncomment-region', which
+            ;; signals when the src block's language has no comment syntax
+            ;; defined -- e.g. `fundamental-mode') must not skip
+            ;; `org-edit-src-exit' on error, or the user is left stranded
+            ;; in the temporary edit buffer/window instead of back in the
+            ;; Org buffer.
+            (unwind-protect
+                (if has-region
+                    (let* ((cur-line-in-edit (line-number-at-pos))
+                           (diff (- cur-line-in-edit cur-line))
+                           (edit-beg-line (+ reg-beg-line diff))
+                           (edit-end-line (+ reg-end-line diff)))
+                      (save-excursion
+                        (goto-char (point-min))
+                        (forward-line (1- edit-beg-line))
+                        (let ((beg (line-beginning-position)))
+                          (forward-line (- edit-end-line edit-beg-line))
+                          (comment-or-uncomment-region
+                           beg (line-beginning-position 2)))))
+                  (comment-or-uncomment-region
+                   (line-beginning-position)
+                   (line-beginning-position 2)))
+              (org-edit-src-exit))
             (when has-region (deactivate-mark)))
         (error
          (message "donkey-comment-dwim (org-src): %s"
