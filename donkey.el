@@ -974,9 +974,16 @@ line instead of extending \"hello\" by one line."
                              donkey-visual-previous-line))))
 
 (defun donkey-visual-line-toggle ()
-  "Start/cancel visual line selection."
+  "Start/cancel visual line selection.
+
+Only cancels when a visual-line session is genuinely active (see
+`donkey--visual-line-session-active-p'); pressing this with some
+OTHER active region (e.g. a `donkey-mark-inner' selection) starts a
+fresh visual-line session anchored at the current line instead of
+just clearing it and reporting a misleading \"Visual line: cancelled\"
+for a selection that was never a visual-line session to begin with."
   (interactive)
-  (if (region-active-p)
+  (if (donkey--visual-line-session-active-p)
       (progn
         (deactivate-mark)
         (message "Visual line: cancelled"))

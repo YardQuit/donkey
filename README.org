@@ -1,6 +1,24 @@
 #+TITLE: README
 #+AUTHOR: Michael Jones (YardQuit)
 
+* Table of Contents
+
+- [[*Overview][Overview]]
+- [[*Installation][Installation]]
+- [[*Usage][Usage]]
+- [[*Default Keybindings][Default Keybindings]]
+- [[*Excluded Modes][Excluded Modes]]
+- [[*Customizing Keybindings][Customizing Keybindings]]
+- [[*Enter Key Rules (DWIM)][Enter Key Rules (DWIM)]]
+- [[*Cursor Management][Cursor Management]]
+- [[*Clipboard Integration][Clipboard Integration]]
+- [[*Input Method Management][Input Method Management]]
+- [[*Smartparens Integration][Smartparens Integration]]
+- [[*Position Tracking][Position Tracking]]
+- [[*Org-Scratch Buffer][Org-Scratch Buffer]]
+- [[*Describe Bindings][Describe Bindings]]
+- [[*Customization Group][Customization Group]]
+
 * Overview
 
 Donkey is an opinionated modal editing minor-mode for Emacs, that
@@ -86,10 +104,21 @@ and =quelpa-use-package= need to be installed first:
 
 * Usage
 
-- Press =C-g= to enter DONKEY Normal state.
-- In Normal: =h=, =j=, =k=, =l= navigate; =i=, =I=, =a=, =A=, =o=, =O=, =c= enter Insert state.
-- In Insert: Standard Emacs behavior, press =C-g= to return to Normal.
-- State indicators show in modeline: =DONKEY[N]= = Normal, =DONKEY[I]= = Insert.
+Once =(donkey-mode 1)= has run (see Installation above), every buffer
+starts in DONKEY Normal state, with one exception: buffers whose major
+mode is on the Excluded Modes list (see below) — things like =eshell=
+or a shell/terminal buffer — stay in ordinary Insert passthrough
+instead, since suppressing keys there would break the underlying
+process interaction.
+
+- Press =C-g= to enter Normal state from anywhere.
+- In Normal state: =h=/=j=/=k=/=l= navigate; =i=/=I=/=a=/=A=/=o=/=O=/=c=
+  enter Insert state at various positions (see Default Keybindings
+  below for the full reference).
+- In Insert state: standard Emacs behavior — nothing is remapped.
+  Press =C-g= to return to Normal.
+- The modeline shows the current state: =DONKEY[N]= (Normal) or
+  =DONKEY[I]= (Insert).
 
 * Default Keybindings
 
@@ -239,44 +268,6 @@ These keys are explicitly suppressed to prevent unwanted behavior:
 | =;=           | Ignored |
 | =_=           | Ignored |
 
-* Customizing Keybindings
-
-You can override existing bindings or add new ones in your =config.el=
-by modifying =donkey-normal-mode-map=.
-
-** Override an existing binding:
-
-#+begin_src emacs-lisp
-
-  ;; Replace the default behavior of ';' with consult-outline
-  (when (boundp 'donkey-normal-mode-map)
-    (keymap-set donkey-normal-mode-map ";" #'consult-outline))
-
-#+end_src
-
-** Unbind a suppressed key to fall through:
-
-#+begin_src emacs-lisp
-
-  ;; Make ',' fall through to the major mode instead of being ignored
-  (when (boundp 'donkey-normal-mode-map)
-    (keymap-unset donkey-normal-mode-map ","))
-
-#+end_src
-
-** Add a leader key map:
-
-#+begin_src emacs-lisp
-
-  ;; Leader Map Definition
-  (when (boundp 'donkey-normal-mode-map)
-    (unless (boundp 'donkey-leader-map)
-      (defvar donkey-leader-map (make-sparse-keymap)
-        "Leader key map under SPC."))
-    (keymap-set donkey-normal-mode-map "SPC" 'donkey-leader-map))
-
-#+end_src
-
 * Excluded Modes
 
 DONKEY Normal state is permanently disabled in certain major modes where
@@ -335,6 +326,44 @@ Verify the current exclusion list:
 #+begin_src emacs-lisp
 
   M-x eval-expression RET donkey-excluded-modes RET
+
+#+end_src
+
+* Customizing Keybindings
+
+You can override existing bindings or add new ones in your =config.el=
+by modifying =donkey-normal-mode-map=.
+
+** Override an existing binding:
+
+#+begin_src emacs-lisp
+
+  ;; Replace the default behavior of ';' with consult-outline
+  (when (boundp 'donkey-normal-mode-map)
+    (keymap-set donkey-normal-mode-map ";" #'consult-outline))
+
+#+end_src
+
+** Unbind a suppressed key to fall through:
+
+#+begin_src emacs-lisp
+
+  ;; Make ',' fall through to the major mode instead of being ignored
+  (when (boundp 'donkey-normal-mode-map)
+    (keymap-unset donkey-normal-mode-map ","))
+
+#+end_src
+
+** Add a leader key map:
+
+#+begin_src emacs-lisp
+
+  ;; Leader Map Definition
+  (when (boundp 'donkey-normal-mode-map)
+    (unless (boundp 'donkey-leader-map)
+      (defvar donkey-leader-map (make-sparse-keymap)
+        "Leader key map under SPC."))
+    (keymap-set donkey-normal-mode-map "SPC" 'donkey-leader-map))
 
 #+end_src
 
@@ -659,4 +688,3 @@ All DONKEY variables are under the =donkey= Customize group:
 | =donkey-decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
 | =donkey-wrap-delimiters=             | list    | =( [ { " ' `=      | Delimiters that wrap an active region  |
 | =donkey-mark-pair-delimiters=        | alist   | =(see above)=      | Delimiter pairs for mark-inner/outer   |
-

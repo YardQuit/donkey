@@ -497,11 +497,13 @@ at point-min since forward-line -1 there has nowhere to go."
       (should (= (point) (donkey--eol 1))))))
 
 (ert-deftest donkey-visual-line-toggle-cancels-active-region ()
-  "With an active region, deactivates the mark and clears the anchor."
+  "With a genuinely active visual-line session, deactivates the mark
+and clears the anchor."
   (with-temp-buffer
     (insert "hello world\n")
     (goto-char 1)
-    (let ((donkey-visual-anchor (point)))
+    (let ((donkey-visual-anchor (point))
+          (last-command 'donkey-visual-line-toggle))
       (set-mark 1)
       (activate-mark)
       (donkey-visual-line-toggle)
@@ -513,12 +515,42 @@ at point-min since forward-line -1 there has nowhere to go."
   (with-temp-buffer
     (insert "hello\n")
     (goto-char 1)
-    (let ((donkey-visual-anchor nil))
+    (let ((donkey-visual-anchor nil)
+          (last-command nil))
       (donkey-visual-line-toggle)
       (should (region-active-p))
+      (setq last-command 'donkey-visual-line-toggle)
       (donkey-visual-line-toggle)
       (should-not (region-active-p))
       (should-not donkey-visual-anchor))))
+
+(ert-deftest donkey-visual-line-toggle-with-unrelated-region-starts-fresh-session ()
+  "Regression test: pressing this with an active region that is NOT a
+genuine visual-line session (e.g. a `donkey-mark-inner' selection,
+where `last-command' is not one of the visual-line commands) must
+start a fresh visual-line session anchored at the current line,
+rather than just cancelling the unrelated region and reporting a
+misleading \"Visual line: cancelled\" for a selection that was never
+a visual-line session to begin with.
+
+Confirmed live in `emacs -nw': selecting \"hello\" via `donkey-mark-inner'
+then pressing `V' used to print \"Visual line: cancelled\" instead of
+starting a new visual-line selection on the current line."
+  (with-temp-buffer
+    (insert "\"hello\" world\n")
+    (goto-char 1)
+    (let ((donkey-visual-anchor nil)
+          (last-command 'donkey-mark-inner))
+      ;; Simulate donkey-mark-inner's own selection: mark/point active,
+      ;; but no visual-line anchor and an unrelated last-command.
+      (set-mark 1)
+      (goto-char 8)
+      (activate-mark)
+      (donkey-visual-line-toggle)
+      (should (region-active-p))
+      (should (= donkey-visual-anchor (donkey--bol 1)))
+      (should (= (mark) (donkey--bol 1)))
+      (should (= (point) (donkey--eol 1))))))
 
 (ert-deftest donkey-visual-line-toggle-call-interactively ()
   "Can be called via call-interactively."
