@@ -256,16 +256,16 @@ documentation."
   :type 'integer
   :group 'donkey)
 
-(defvar donkey--position-ring nil
+(defvar-local donkey--position-ring nil
   "List of markers recording previous cursor positions, most recent first.")
 
-(defvar donkey--position-index 0
+(defvar-local donkey--position-index 0
   "Current rotation offset into `donkey--position-ring'.
 
 0 = most recent entry.  Reset to 0 whenever a new position is
 recorded.")
 
-(defvar donkey--last-tracked-state nil
+(defvar-local donkey--last-tracked-state nil
   "Cons cell (BUFFER . POINT) captured after the previous command.")
 
 (defun donkey--track-position ()
