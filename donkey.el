@@ -510,6 +510,21 @@ Returns command symbol or nil if no handler matches."
          (ancestors (and parent
                          (fboundp 'org-element-lineage)
                          (org-element-lineage parent)))
+         ;; `org-element-at-point' resolves to the enclosing container
+         ;; (e.g. plain-list, for a checkbox `item') rather than the
+         ;; specific element covering point, when point sits exactly at
+         ;; `line-beginning-position' -- a very common position after
+         ;; most navigation (e.g. `j'/`k').  One character forward
+         ;; reliably resolves to the actual element there.  It must be
+         ;; tried right after `parent' and before `ancestors': `parent'
+         ;; here is itself just an outer ancestor (e.g. plain-list), so
+         ;; checking the real `ancestors' list first would let a broader,
+         ;; less specific enclosing element (e.g. an outer TODO headline)
+         ;; win over the correct, more specific match.
+         (fallback-parent (and (fboundp 'org-element-at-point)
+                               (= (point) (line-beginning-position))
+                               (< (point) (point-max))
+                               (org-element-at-point (1+ (point)))))
          (result nil))
     ;; Context FIRST (inline elements like links within tables/headlines)
     (dolist (rule donkey--enter-rules)
@@ -524,8 +539,9 @@ Returns command symbol or nil if no handler matches."
                          (fboundp candidate)
                          (commandp candidate))
                 (setq result candidate)))))))
-    ;; Parent, then ancestors — ALL rules checked per element level
-    (dolist (elem (cons parent ancestors))
+    ;; Parent, then its line-start fallback, then ancestors — ALL rules
+    ;; checked per element level, most specific first
+    (dolist (elem (append (list parent fallback-parent) ancestors))
       (when (null result)
         (dolist (rule donkey--enter-rules)
           (when (null result)

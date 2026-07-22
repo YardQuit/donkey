@@ -498,6 +498,42 @@ the headline rule (parent before ancestor)."
           (cl-remove 'table donkey--enter-rules :key #'car :test 'eq))
     (should (eq called-cmd 'org-open-at-point))))
 
+(ert-deftest donkey-find-enter-handler-checkbox-at-line-start ()
+  "Regression test using a REAL org buffer (not mocked): `org-element-at-point'
+resolves to the enclosing `plain-list' instead of the specific checkbox
+`item' when point sits exactly at `line-beginning-position' -- the
+position `j'/`k' navigation leave point at after every line move.
+Without the fallback lookup one character forward, the checkbox rule
+never matches at this very common cursor position."
+  (with-temp-buffer
+    (org-mode)
+    (insert "- [ ] a checkbox item\n")
+    (goto-char (point-min))
+    (should (bolp))
+    (should (eq (donkey--find-enter-handler) 'org-toggle-checkbox))))
+
+(ert-deftest donkey-enter-dwim-checkbox-at-line-start-under-todo-headline ()
+  "Regression test using a REAL org buffer (not mocked): when a checkbox
+item is nested under a TODO headline, the mis-resolved `plain-list'
+parent at line start must not let the broader, less specific ancestor
+headline's rule win over the correct checkbox toggle.  The line-start
+fallback has to be tried before ancestors, not after."
+  (with-temp-buffer
+    (org-mode)
+    (insert "* TODO Some task\n- [ ] a checkbox item\n")
+    (goto-char (point-min))
+    (forward-line 1)
+    (should (bolp))
+    (let (called-cmd)
+      (cl-letf (((symbol-function 'org-toggle-checkbox)
+                 (lambda () (interactive) nil))
+                ((symbol-function 'donkey-org-todo)
+                 (lambda () (interactive) nil))
+                ((symbol-function 'call-interactively)
+                 (lambda (cmd) (setq called-cmd cmd))))
+        (donkey-enter-dwim))
+      (should (eq called-cmd 'org-toggle-checkbox)))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-enter-dwim dispatcher - Org-Agenda Mode
 ;;;
