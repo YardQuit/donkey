@@ -1068,12 +1068,13 @@ runs in environments where smartparens is absent."
    (should (bound-and-true-p donkey-normal-mode))))
 
 (ert-deftest donkey-cg-no-sp-functions-bound-check ()
-  "The with-eval-after-load block should not error when smartparens is
-absent or present."
+  "donkey-setup-smartparens binds C-g without erroring, whether
+smartparens is absent or present."
   (should (fboundp 'donkey--exit-insert))
   (when (and (featurep 'smartparens)
              (boundp 'smartparens-mode-map))
     (require 'smartparens)
+    (donkey-setup-smartparens)
     (should (eq (keymap-lookup smartparens-mode-map "C-g")
                 #'donkey--exit-insert))))
 
