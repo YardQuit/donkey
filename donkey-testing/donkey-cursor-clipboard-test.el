@@ -151,6 +151,7 @@ otherwise qualify."
 (ert-deftest donkey-apply-cursor-setting-sends-decscusr-in-terminal ()
   "Sends DECSCUSR in terminal mode."
   (let ((send-called nil))
+    (clrhash donkey--last-applied-cursor-settings)
     (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
               ((symbol-function 'tty-type) (lambda () "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
@@ -170,6 +171,7 @@ transition runs `donkey--update-cursor' (and thus
 Without deduplication, that doubles DECSCUSR terminal I/O and the
 synchronous `sit-for' delay on every single transition."
   (let ((send-count 0))
+    (clrhash donkey--last-applied-cursor-settings)
     (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
               ((symbol-function 'tty-type) (lambda () "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
@@ -186,6 +188,7 @@ synchronous `sit-for' delay on every single transition."
 (ert-deftest donkey-apply-cursor-setting-resends-on-actual-change ()
   "Still sends DECSCUSR when the setting genuinely changes."
   (let ((sent nil))
+    (clrhash donkey--last-applied-cursor-settings)
     (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
               ((symbol-function 'tty-type) (lambda () "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
@@ -228,12 +231,52 @@ twice, even though donkey--update-cursor is registered on both
 donkey-normal-mode-hook and donkey-insert-mode-hook and each mode's
 body toggles the other off."
   (let ((send-count 0))
+    (clrhash donkey--last-applied-cursor-settings)
     (with-temp-buffer
       (donkey-insert-mode 1)
       (cl-letf (((symbol-function 'donkey--send-cursor-sequence)
                  (lambda (&rest _) (setq send-count (1+ send-count)))))
         (donkey-normal-mode 1))
       (should (= send-count 1)))))
+
+(ert-deftest donkey-apply-cursor-setting-cache-is-shared-across-buffers ()
+  "Regression test: the dedup cache is keyed by terminal, not by buffer.
+
+A terminal only has one actual cursor shape at a time.  Caching the
+last-applied SETTING per-buffer (the original implementation) let a
+buffer's own cache report its shape as already current right after a
+DIFFERENT buffer most recently changed what the terminal is actually
+showing -- e.g. switching between a Normal-state window and an
+Insert-state window via `other-window' would apply the correct shape
+on first visiting each buffer, but then wrongly skip resending on
+returning to a previously-visited buffer, since that buffer's own
+cache still (correctly, for itself) remembered its own last
+self-applied value. Confirmed live in `emacs -nw': switching from a
+Normal-state buffer to an Insert-state buffer and back sent no DECSCUSR
+sequence at all for the return trip until this was fixed."
+  (let ((send-log nil))
+    (clrhash donkey--last-applied-cursor-settings)
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
+              ((symbol-function 'tty-type) (lambda () "xterm-256color"))
+              ((symbol-function 'send-string-to-terminal)
+               (lambda (&rest _) (push 'sent send-log)))
+              ((symbol-function 'sit-for) (lambda (&rest _) t)))
+      (with-temp-buffer
+        (let ((buf-a (current-buffer)))
+          (with-temp-buffer
+            (let ((buf-b (current-buffer)))
+              ;; Buffer A applies 'box, buffer B applies 'bar -- as if
+              ;; each buffer's own donkey-normal-mode/insert-mode hook
+              ;; had already fired once, same as the live repro.
+              (with-current-buffer buf-a (donkey--apply-cursor-setting 'box))
+              (with-current-buffer buf-b (donkey--apply-cursor-setting 'bar))
+              (setq send-log nil)
+              ;; Simulate switching back to buffer A via `other-window':
+              ;; buffer A's own state (`box') hasn't changed, but the
+              ;; terminal's actual last-applied value is now `bar' (from
+              ;; B), so this must still resend.
+              (with-current-buffer buf-a (donkey--apply-cursor-setting 'box))
+              (should send-log))))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-decscusr-denied-terminals / donkey-add-denylist-entry /

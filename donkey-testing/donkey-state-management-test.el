@@ -1196,7 +1196,8 @@ post-command-hook functions."
         (donkey-mode 1)
         (should (memq #'donkey--ensure-default-state after-change-major-mode-hook))
         (should (memq #'donkey--track-position post-command-hook))
-        (should (memq #'donkey--check-post-command-non-editing post-command-hook)))
+        (should (memq #'donkey--check-post-command-non-editing post-command-hook))
+        (should (memq #'donkey--update-cursor post-command-hook)))
     (donkey-mode -1)))
 
 (ert-deftest donkey-mode-disable-removes-hooks ()
@@ -1205,7 +1206,32 @@ post-command-hook functions."
   (donkey-mode -1)
   (should-not (memq #'donkey--ensure-default-state after-change-major-mode-hook))
   (should-not (memq #'donkey--track-position post-command-hook))
-  (should-not (memq #'donkey--check-post-command-non-editing post-command-hook)))
+  (should-not (memq #'donkey--check-post-command-non-editing post-command-hook))
+  (should-not (memq #'donkey--update-cursor post-command-hook)))
+
+(ert-deftest donkey-mode-update-cursor-on-post-command-hook-resyncs-on-window-switch ()
+  "Regression test: `donkey--update-cursor' must run on the global
+`post-command-hook', not only on `donkey-normal-mode-hook'/
+`donkey-insert-mode-hook'.
+
+Those mode hooks only fire when a buffer's own DONKEY state actually
+toggles.  Switching the selected window between two buffers that
+already each have an established (but different) DONKEY state -- via
+`other-window', `switch-to-buffer', etc. -- never toggles either
+buffer's mode, so without this hook the terminal's cursor shape would
+never resync to the newly-selected buffer's actual state. Confirmed
+live in `emacs -nw': `other-window' between a Normal-state buffer and
+an Insert-state buffer sent no DECSCUSR sequence at all until this was
+added."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (let ((call-count 0))
+          (cl-letf (((symbol-function 'donkey--update-cursor)
+                     (lambda () (setq call-count (1+ call-count)))))
+            (run-hooks 'post-command-hook))
+          (should (= call-count 1))))
+    (donkey-mode -1)))
 
 (ert-deftest donkey-mode-check-post-command-non-editing-not-registered-before-enable ()
   "`donkey--check-post-command-non-editing' must not be a permanent,

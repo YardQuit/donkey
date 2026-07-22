@@ -1409,32 +1409,44 @@ on terminals that drop bytes during state transitions."
               (send-string-to-terminal seq))
           (error nil))))))
 
-(defvar-local donkey--last-applied-cursor-setting 'donkey--cursor-unset
-  "Last SETTING value actually sent to the terminal via
-`donkey--send-cursor-sequence'.  Lets `donkey--apply-cursor-setting'
-skip redundant terminal I/O when called again with an unchanged
-value -- notably, entering Normal or Insert state triggers this
-twice per transition, since each of `donkey-normal-mode' and
-`donkey-insert-mode' toggles the other off as part of its own body,
-running both modes' hooks (both of which include
-`donkey--update-cursor') for what is conceptually one transition.")
+(defvar donkey--last-applied-cursor-settings (make-hash-table :test 'eq)
+  "Hash table mapping each terminal to the SETTING value last actually
+sent to it via `donkey--send-cursor-sequence'.  Lets
+`donkey--apply-cursor-setting' skip redundant terminal I/O when called
+again with an unchanged value -- notably, entering Normal or Insert
+state triggers this twice per transition, since each of
+`donkey-normal-mode' and `donkey-insert-mode' toggles the other off as
+part of its own body, running both modes' hooks (both of which include
+`donkey--update-cursor') for what is conceptually one transition.
+
+Keyed by terminal, not per-buffer: a terminal's actual cursor shape is
+a single shared, global resource, so caching this per-buffer would let
+a buffer's own cache report the shape as already-current right after a
+DIFFERENT buffer's hook most recently changed what the terminal is
+actually showing -- e.g. switching between a Normal-state window and
+an Insert-state window via `other-window' applies the correct shape
+the first time each buffer is visited, but a per-buffer cache would
+then wrongly skip resending on returning to a previously-visited
+buffer, since that buffer's own cache still (correctly, for itself)
+remembers its own last self-applied value.")
 
 (defun donkey--apply-cursor-setting (setting)
   "Apply SETTING, falling back to global default if SETTING is nil.
 
 In terminal mode, also sends DECSCUSR escape sequence for visual
 cursor change -- but only when SETTING's effective value actually
-changed since the last call, to avoid redundant terminal I/O (see
-`donkey--last-applied-cursor-setting')."
+changed since the last call for this terminal, to avoid redundant
+terminal I/O (see `donkey--last-applied-cursor-settings')."
   (let ((effective (cond
                     (setting setting)
                     ((local-variable-p 'cursor-type) cursor-type)
-                    (t (default-value 'cursor-type)))))
+                    (t (default-value 'cursor-type))))
+        (terminal (frame-terminal)))
     (if setting
         (setq-local cursor-type setting)
       (kill-local-variable 'cursor-type))
-    (unless (equal effective donkey--last-applied-cursor-setting)
-      (setq donkey--last-applied-cursor-setting effective)
+    (unless (equal effective (gethash terminal donkey--last-applied-cursor-settings))
+      (puthash terminal effective donkey--last-applied-cursor-settings)
       (donkey--send-cursor-sequence effective))))
 
 (defun donkey--update-cursor ()
@@ -1848,12 +1860,14 @@ donkey-mode' to toggle."
         (add-hook 'after-change-major-mode-hook #'donkey--ensure-default-state)
         (add-hook 'post-command-hook #'donkey--track-position)
         (add-hook 'post-command-hook #'donkey--check-post-command-non-editing)
+        (add-hook 'post-command-hook #'donkey--update-cursor)
         (dolist (buf (buffer-list))
           (with-current-buffer buf
             (donkey--ensure-default-state))))
     (remove-hook 'after-change-major-mode-hook #'donkey--ensure-default-state)
     (remove-hook 'post-command-hook #'donkey--track-position)
     (remove-hook 'post-command-hook #'donkey--check-post-command-non-editing)
+    (remove-hook 'post-command-hook #'donkey--update-cursor)
     (dolist (buf (buffer-list))
       (with-current-buffer buf
         (when (bound-and-true-p donkey-normal-mode)
