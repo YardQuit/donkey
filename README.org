@@ -18,8 +18,17 @@ overlay state — just a minor-mode keymap that toggles on and off.
 
 * Installation
 
-Place =donkey.el= at =~/.config/emacs/donkey/donkey.el=, then
-add the following to your =init.el= or =config.el=:
+Donkey isn't on MELPA, so pick whichever of these fits your setup.
+All are equivalent; they just differ in how =donkey.el= gets onto
+disk and onto your =load-path=.
+
+** Manual
+
+Place =donkey.el= at =donkey/donkey.el= inside your
+=user-emacs-directory= (run =C-h v user-emacs-directory= to see
+where that is on your system — typically =~/.config/emacs/= or
+=~/.emacs.d/= on Linux and macOS, or the equivalent under =%APPDATA%=
+on Windows), then add the following to your =init.el= or =config.el=:
 
 #+begin_src emacs-lisp
 
@@ -30,6 +39,57 @@ add the following to your =init.el= or =config.el=:
       (message "WARNING: Donkey modal module not found at %s." donkey-path)))
 
   (donkey-mode 1)
+
+#+end_src
+
+** use-package with a manual clone
+
+Clone the repository yourself, then point =use-package= at it with
+=:load-path=:
+
+#+begin_src emacs-lisp
+
+  (use-package donkey
+    :load-path (expand-file-name "donkey" user-emacs-directory)
+    :config
+    (donkey-mode 1))
+
+#+end_src
+
+** use-package with =:vc= (Emacs 30+)
+
+Emacs 30's =use-package= has a built-in =:vc= keyword (backed by
+=package-vc.el=, available since Emacs 29) that clones and
+byte-compiles directly from a Git URL — no MELPA needed:
+
+#+begin_src emacs-lisp
+
+  (use-package donkey
+    :vc (:url "https://github.com/yardquit/donkey" :rev :newest)
+    :config
+    (donkey-mode 1))
+
+#+end_src
+
+** use-package with =straight.el=
+
+#+begin_src emacs-lisp
+
+  (use-package donkey
+    :straight (:host github :repo "yardquit/donkey")
+    :config
+    (donkey-mode 1))
+
+#+end_src
+
+** use-package with =quelpa=
+
+#+begin_src emacs-lisp
+
+  (use-package donkey
+    :quelpa (donkey :fetcher github :repo "yardquit/donkey")
+    :config
+    (donkey-mode 1))
 
 #+end_src
 
