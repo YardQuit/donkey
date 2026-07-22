@@ -803,6 +803,15 @@ mark-sexp should treat them as one unit."
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "pipe"))))
 
+(ert-deftest donkey-mark-inner-backslash ()
+  "Marks content inside backslashes, excluding backslashes."
+  (with-temp-buffer
+    (insert "\\escaped\\")
+    (goto-char 1)
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "escaped"))))
+
 (ert-deftest donkey-mark-inner-edge-empty ()
   "Empty braces produce no selectable content, raising error."
   (with-temp-buffer
@@ -1006,6 +1015,15 @@ mark-sexp should treat them as one unit."
     (donkey-mark-outer)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "|pipe|"))))
+
+(ert-deftest donkey-mark-outer-backslash ()
+  "Marks content including backslashes."
+  (with-temp-buffer
+    (insert "\\escaped\\")
+    (goto-char 1)
+    (donkey-mark-outer)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "\\escaped\\"))))
 
 (ert-deftest donkey-mark-outer-edge-empty ()
   "Empty braces produce minimal selection including both delimiters."
