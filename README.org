@@ -477,6 +477,13 @@ its overlay keymaps. This binding is opt-in and not installed
 automatically. If smartparens is not installed, DONKEY functions
 normally without errors.
 
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'smartparens
+    (donkey-setup-smartparens))
+
+#+end_src
+
 * Position Tracking
 
 =M-x donkey-jump-back= (bound to =S=) rotates through a ring of
