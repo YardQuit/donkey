@@ -59,7 +59,7 @@ add the following to your =init.el= or =config.el=:
 | =K= | =donkey-visual-previous-line= | Move up, extending visual selection   |
 | =V= | =donkey-visual-line-toggle=   | Toggle visual line selection          |
 | =v= | =set-mark-command=          | Toggle mark                           |
-| =(= =[= ={= ="= ='= | =donkey-wrap-region= | Wrap active region with delimiter, see below |
+| =(= =[= ={= ="= ='= =`= | =donkey-wrap-region= | Wrap active region with delimiter, see below |
 
 ** Insert Mode Entry
 
@@ -499,10 +499,10 @@ at the same point as =with-eval-after-load=:
 
 ** Wrapping a Selection with a Delimiter
 
-Select a region (=v=/=V=), then press one of =(=, =[=, ={=, ="=, ='=
-while still in Normal state to wrap it — e.g. selecting =word= and
-pressing =(= yields =(word)= when Smartparens is loaded. This works
-without leaving Normal state stuck in Insert afterward.
+Select a region (=v=/=V=), then press one of =(=, =[=, ={=, ="=, ='=,
+=`= while still in Normal state to wrap it — e.g. selecting =word=
+and pressing =(= yields =(word)= when Smartparens is loaded. This
+works without leaving Normal state stuck in Insert afterward.
 
 Under the hood, =donkey-normal-mode-map= normally suppresses every
 printable key so it can't accidentally self-insert. These delimiters
@@ -565,5 +565,5 @@ All DONKEY variables are under the =donkey= Customize group:
 | =donkey-default-enter-rules-enabled= | boolean | =t=                | Install default Enter DWIM rules       |
 | =donkey-position-ring-max=           | integer | =10=               | Number of positions in jump-back ring  |
 | =donkey-decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
-| =donkey-wrap-delimiters=             | list    | =( [ { " '=        | Delimiters that wrap an active region  |
+| =donkey-wrap-delimiters=             | list    | =( [ { " ' `=      | Delimiters that wrap an active region  |
 

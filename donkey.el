@@ -396,7 +396,7 @@ recorded positions in this buffer."
     (delete-char 1)
     (donkey-enter-insert)))
 
-(defcustom donkey-wrap-delimiters '(?\( ?\[ ?\{ ?\" ?\')
+(defcustom donkey-wrap-delimiters '(?\( ?\[ ?\{ ?\" ?\' ?\`)
   "Characters that trigger `donkey-wrap-region' in Normal state.
 
 Bound in `donkey-normal-mode-map'; only takes effect while a
