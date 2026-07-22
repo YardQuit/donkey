@@ -44,13 +44,15 @@ on Windows), then add the following to your =init.el= or =config.el=:
 
 ** use-package with a manual clone
 
-Clone the repository yourself, then point =use-package= at it with
-=:load-path=:
+Clone the repository into =donkey/= inside your
+=user-emacs-directory=, then point =use-package= at it with
+=:load-path=. A relative path is resolved against
+=user-emacs-directory= automatically:
 
 #+begin_src emacs-lisp
 
   (use-package donkey
-    :load-path (expand-file-name "donkey" user-emacs-directory)
+    :load-path "donkey"
     :config
     (donkey-mode 1))
 
@@ -83,6 +85,10 @@ byte-compiles directly from a Git URL — no MELPA needed:
 #+end_src
 
 ** use-package with =quelpa=
+
+The =:quelpa= keyword isn't built into =use-package= itself — it's
+added by the separate =quelpa-use-package= package, so both =quelpa=
+and =quelpa-use-package= need to be installed first:
 
 #+begin_src emacs-lisp
 
