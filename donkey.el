@@ -1630,14 +1630,20 @@ Operates on the current buffer only."
 
 Removes active mark, enters normal mode, and schedules deferred
 overlay cleanup.  In the minibuffer, in a `donkey-excluded-modes'
-buffer, or when `donkey-mode' is globally off, delegates to
-`keyboard-quit' instead.  The `donkey-mode' check matters because
-`donkey-setup-smartparens' binds this command directly into
-Smartparens' own keymaps (`smartparens-mode-map' and its overlay
-keymaps), which are independent of DONKEY's lifecycle: disabling
-`donkey-mode' does not undo that binding, so without this guard a
-stray `C-g' after disabling DONKEY would still land here and turn
-`donkey-normal-mode' back on.
+buffer, or when `donkey-insert-mode' is not actually active in the
+current buffer, delegates to `keyboard-quit' instead.  The
+`donkey-insert-mode' check matters because `donkey-setup-smartparens'
+binds this command directly into Smartparens' own keymaps
+(`smartparens-mode-map' and its overlay keymaps), which are
+independent of DONKEY's lifecycle: disabling `donkey-mode' turns off
+`donkey-insert-mode' in every buffer but does not undo that binding,
+so without this guard a stray `C-g' reaching this function through it
+afterward would still turn `donkey-normal-mode' back on.  Checking
+`donkey-insert-mode' rather than the global `donkey-mode' matters too:
+`donkey-insert-mode'/`donkey-normal-mode' are usable standalone
+without ever enabling `donkey-mode', and a `donkey-mode' check would
+make `C-g' always fall through to `keyboard-quit' for that usage,
+never actually transitioning to Normal state.
 
 For the minibuffer/excluded-mode case: those buffers stay in Insert
 state permanently, so forcing a Normal-state transition here would
@@ -1645,7 +1651,7 @@ just get reverted immediately, silently swallowing `C-g' and
 preventing it from reaching the underlying mode (e.g. interrupting a
 subprocess or aborting a recursive edit)."
   (interactive)
-  (if (or (not (bound-and-true-p donkey-mode))
+  (if (or (not (bound-and-true-p donkey-insert-mode))
           (minibufferp)
           (donkey--excluded-mode-p))
       (keyboard-quit)

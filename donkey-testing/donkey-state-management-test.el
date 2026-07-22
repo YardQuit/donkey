@@ -301,7 +301,7 @@ insert mode."
   "Calls deactivate-mark before entering normal mode."
   (let (deactivated)
     (with-temp-buffer
-      (let ((donkey-mode t)
+      (let ((donkey-insert-mode t)
             (donkey-normal-mode t))
         (cl-letf (((symbol-function 'minibufferp)
                    (lambda () nil))
@@ -316,7 +316,7 @@ insert mode."
   "Calls donkey-enter-normal to switch to normal mode."
   (let (called)
     (with-temp-buffer
-      (let ((donkey-mode t)
+      (let ((donkey-insert-mode t)
             (donkey-normal-mode t))
         (cl-letf (((symbol-function 'minibufferp)
                    (lambda () nil))
@@ -332,7 +332,7 @@ insert mode."
 via (donkey-normal-mode 1)."
   (let (force-arg)
     (with-temp-buffer
-      (let ((donkey-mode t)
+      (let ((donkey-insert-mode t)
             (donkey-normal-mode nil))
         (cl-letf (((symbol-function 'minibufferp)
                    (lambda () nil))
@@ -350,7 +350,7 @@ via (donkey-normal-mode 1)."
 fallback (donkey-normal-mode 1) is not called."
   (let (force-called)
     (with-temp-buffer
-      (let ((donkey-mode t)
+      (let ((donkey-insert-mode t)
             (donkey-normal-mode t))
         (cl-letf (((symbol-function 'minibufferp)
                    (lambda () nil))
@@ -379,15 +379,18 @@ fallback (donkey-normal-mode 1) is not called."
     (should-not deactivated)
     (should-not entered-normal)))
 
-(ert-deftest donkey-state-exit-insert-donkey-mode-off-delegates-to-keyboard-quit ()
-  "When donkey-mode is globally off, delegates to keyboard-quit and skips
-all other steps.  Regression test: `donkey-setup-smartparens' binds this
-command directly into Smartparens' own keymaps (independent of DONKEY's
-lifecycle), so a stray key press routed there after disabling
-donkey-mode must not resurrect donkey-normal-mode."
+(ert-deftest donkey-state-exit-insert-insert-mode-inactive-delegates-to-keyboard-quit ()
+  "When donkey-insert-mode is not actually active, delegates to
+keyboard-quit and skips all other steps.  Regression test:
+`donkey-setup-smartparens' binds this command directly into
+Smartparens' own keymaps (independent of DONKEY's lifecycle), so a
+stray key press routed there after disabling `donkey-mode' (which
+turns off `donkey-insert-mode' in every buffer) must not resurrect
+`donkey-normal-mode'."
   (let (quit-called deactivated entered-normal)
     (with-temp-buffer
-      (let ((donkey-mode nil))
+      (let ((donkey-mode nil)
+            (donkey-insert-mode nil))
         (cl-letf (((symbol-function 'minibufferp)
                    (lambda () nil))
                   ((symbol-function 'keyboard-quit)
@@ -400,6 +403,26 @@ donkey-mode must not resurrect donkey-normal-mode."
     (should quit-called)
     (should-not deactivated)
     (should-not entered-normal)))
+
+(ert-deftest donkey-state-exit-insert-standalone-usage-without-donkey-mode-still-transitions ()
+  "donkey-insert-mode/donkey-normal-mode are usable standalone, without
+ever enabling the global `donkey-mode'.  Regression test: checking
+`donkey-mode' here (instead of the buffer-local `donkey-insert-mode')
+would make `C-g' always fall through to `keyboard-quit' for that
+usage, since `donkey-mode' would never be on -- never actually
+transitioning to Normal state."
+  (let (entered-normal)
+    (with-temp-buffer
+      (let ((donkey-mode nil)
+            (donkey-insert-mode t))
+        (cl-letf (((symbol-function 'minibufferp)
+                   (lambda () nil))
+                  ((symbol-function 'deactivate-mark)
+                   (lambda () nil))
+                  ((symbol-function 'donkey-enter-normal)
+                   (lambda () (setq entered-normal t))))
+          (donkey--exit-insert))))
+    (should entered-normal)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--intercept-quit-in-insert (unit level)
