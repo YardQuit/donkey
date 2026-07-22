@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max, Claude [Claude Code]
 ;; URL: https://github.com/yardquit/donkey
-;; Version: 1.0.0
+;; Version: 1.0.1
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/donkey
