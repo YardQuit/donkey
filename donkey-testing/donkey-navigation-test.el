@@ -588,6 +588,42 @@ would have its selection hijacked by the leftover anchor position."
       (donkey-visual-next-line)
       (should (= (mark) mark-before)))))
 
+(ert-deftest donkey-visual-anchor-stale-does-not-hijack-region-set-without-deactivating ()
+  "Regression test: an unrelated command that sets a NEW region WITHOUT
+first deactivating the old one (e.g. `donkey-mark-inner', which calls
+`push-mark'/`activate-mark' directly) must not have its selection
+hijacked by a stale `donkey-visual-anchor' left over from an earlier
+`donkey-visual-line-toggle' session.
+
+Unlike `donkey-visual-anchor-cleared-on-external-deactivate-mark', the
+mark here is never deactivated in between -- it stays continuously
+active, just repositioned -- so `deactivate-mark-hook' never fires and
+`donkey-visual-anchor' is never cleared.  Confirmed live in `emacs
+-nw': selecting \"hello\" via `donkey-mark-inner' right after a
+visual-line session, then pressing `J' (`donkey-visual-next-line'),
+snapped the region all the way back to the visual-line session's
+original anchor line instead of extending \"hello\" by one line."
+  (with-temp-buffer
+    (insert "line1\nline2\nline3\n\"hello\"\nline5\nline6\n")
+    (goto-char (point-min))
+    (donkey-visual-line-toggle)
+    (donkey-visual-next-line)
+    (donkey-visual-next-line)
+    (should donkey-visual-anchor)
+    ;; donkey-mark-inner replaces the region without ever deactivating
+    ;; it first -- last-command afterward is donkey-mark-inner, not one
+    ;; of the visual-line commands.
+    (goto-char (+ (point-min) 18))
+    (let ((last-command 'donkey-mark-inner))
+      (donkey-mark-inner)
+      (let ((mark-before (mark))
+            (point-before (point)))
+        (donkey-visual-next-line)
+        ;; A plain motion (forward-line), not a hijack back to the
+        ;; stale anchor: mark stays put, point simply advances.
+        (should (= (mark) mark-before))
+        (should (> (point) point-before))))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-visual-next-line
 ;;; ---------------------------------------------------------------------------
@@ -618,7 +654,8 @@ would have its selection hijacked by the leftover anchor position."
     (insert "line1\nline2\nline3\nline4\nline5\n")
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 2)
-      (let ((donkey-visual-anchor anchor))
+      (let ((donkey-visual-anchor anchor)
+            (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
         (activate-mark)
@@ -633,13 +670,15 @@ would have its selection hijacked by the leftover anchor position."
     (insert "line1\nline2\nline3\nline4\nline5\n")
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 2)
-      (let ((donkey-visual-anchor anchor))
+      (let ((donkey-visual-anchor anchor)
+            (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
         (activate-mark)
         (donkey-visual-next-line)
         (should (= (point) (donkey--bol 3)))
         (should (= (mark) (donkey--eol 3)))
+        (setq last-command 'donkey-visual-next-line)
         (donkey-visual-next-line)
         (should (= (point) (donkey--eol 4)))
         (should (= (mark) anchor))))))
@@ -650,7 +689,8 @@ would have its selection hijacked by the leftover anchor position."
     (insert "line1\nline2\nline3\nline4\nline5\n")
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 4)
-      (let ((donkey-visual-anchor anchor))
+      (let ((donkey-visual-anchor anchor)
+            (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
         (activate-mark)
@@ -676,7 +716,8 @@ would have its selection hijacked by the leftover anchor position."
     (insert "hello\n\nworld\n")
     (let ((anchor (donkey--bol 1)))
       (donkey--goto-line 2)
-      (let ((donkey-visual-anchor anchor))
+      (let ((donkey-visual-anchor anchor)
+            (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
         (activate-mark)
@@ -690,7 +731,8 @@ would have its selection hijacked by the leftover anchor position."
     (insert "line1\nline2\nline3\n")
     (let ((anchor (donkey--bol 2)))
       (donkey--goto-line 1)
-      (let ((donkey-visual-anchor anchor))
+      (let ((donkey-visual-anchor anchor)
+            (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
         (activate-mark)
@@ -741,7 +783,8 @@ would have its selection hijacked by the leftover anchor position."
     (insert "line1\nline2\nline3\nline4\nline5\n")
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 4)
-      (let ((donkey-visual-anchor anchor))
+      (let ((donkey-visual-anchor anchor)
+            (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
         (activate-mark)
@@ -756,13 +799,15 @@ would have its selection hijacked by the leftover anchor position."
     (insert "line1\nline2\nline3\nline4\nline5\n")
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 4)
-      (let ((donkey-visual-anchor anchor))
+      (let ((donkey-visual-anchor anchor)
+            (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
         (activate-mark)
         (donkey-visual-previous-line)
         (should (= (point) (donkey--eol 3)))
         (should (= (mark) anchor))
+        (setq last-command 'donkey-visual-previous-line)
         (donkey-visual-previous-line)
         (should (= (point) (donkey--bol 2)))
         (should (= (mark) (donkey--eol 3)))))))
@@ -773,7 +818,8 @@ would have its selection hijacked by the leftover anchor position."
     (insert "line1\nline2\nline3\nline4\nline5\n")
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 2)
-      (let ((donkey-visual-anchor anchor))
+      (let ((donkey-visual-anchor anchor)
+            (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
         (activate-mark)
@@ -798,7 +844,8 @@ would have its selection hijacked by the leftover anchor position."
   (with-temp-buffer
     (insert "single line\n")
     (goto-char (point-min))
-    (let ((donkey-visual-anchor (point-min)))
+    (let ((donkey-visual-anchor (point-min))
+          (last-command 'donkey-visual-line-toggle))
       (set-mark (point-min))
       (end-of-line)
       (activate-mark)
@@ -813,7 +860,8 @@ would have its selection hijacked by the leftover anchor position."
     (insert "hello\n\nworld\n")
     (let ((anchor (donkey--bol 1)))
       (donkey--goto-line 2)
-      (let ((donkey-visual-anchor anchor))
+      (let ((donkey-visual-anchor anchor)
+            (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
         (activate-mark)
@@ -827,7 +875,8 @@ would have its selection hijacked by the leftover anchor position."
     (insert "line1\nline2\nline3\n")
     (let ((anchor (donkey--bol 2)))
       (donkey--goto-line 3)
-      (let ((donkey-visual-anchor anchor))
+      (let ((donkey-visual-anchor anchor)
+            (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
         (activate-mark)

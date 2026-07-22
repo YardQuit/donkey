@@ -926,6 +926,32 @@ buffer."
 
 (add-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor)
 
+(defun donkey--visual-line-session-active-p ()
+  "Return non-nil if point is continuing an active visual-line selection.
+
+Requires an active region, a recorded `donkey-visual-anchor', AND that
+the previous command was one of the visual-line commands themselves.
+
+That last check matters: setting a brand new region while one is
+already active (e.g. `donkey-mark-inner', `donkey-mark-outer', or any
+other mark command) never runs `deactivate-mark-hook' -- that hook
+only fires on the active -> inactive transition, not when the region
+is simply repositioned -- so `donkey--clear-visual-anchor' never gets
+a chance to clear a stale `donkey-visual-anchor' left over from an
+earlier `donkey-visual-line-toggle' session.  Without this check,
+`donkey-visual-next-line'/`donkey-visual-previous-line' would still
+treat that stale anchor as valid and try to extend from it instead of
+the region an unrelated command just set up.  Confirmed live: pressing
+`J' right after using `donkey-mark-inner' to select \"hello\" (with a
+leftover anchor from an earlier visual-line session) snapped the
+region all the way back to the visual-line session's original anchor
+line instead of extending \"hello\" by one line."
+  (and (region-active-p)
+       donkey-visual-anchor
+       (memq last-command '(donkey-visual-line-toggle
+                             donkey-visual-next-line
+                             donkey-visual-previous-line))))
+
 (defun donkey-visual-line-toggle ()
   "Start/cancel visual line selection."
   (interactive)
@@ -942,7 +968,7 @@ buffer."
 (defun donkey-visual-next-line ()
   "Move down.  Extend visual selection if active."
   (interactive)
-  (if (and (region-active-p) donkey-visual-anchor)
+  (if (donkey--visual-line-session-active-p)
       (progn
         (forward-line 1)
         (if (> (line-beginning-position) donkey-visual-anchor)
@@ -960,7 +986,7 @@ buffer."
 (defun donkey-visual-previous-line ()
   "Move up.  Extend visual selection if active."
   (interactive)
-  (if (and (region-active-p) donkey-visual-anchor)
+  (if (donkey--visual-line-session-active-p)
       (progn
         (forward-line -1)
         (if (< (line-beginning-position) donkey-visual-anchor)
