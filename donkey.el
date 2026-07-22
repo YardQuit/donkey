@@ -1581,14 +1581,25 @@ Operates on the current buffer only."
   "Exit insert state and enter normal mode.
 
 Removes active mark, enters normal mode, and schedules deferred
-overlay cleanup.  In the minibuffer, or in a `donkey-excluded-modes'
-buffer, delegates to `keyboard-quit' instead: these buffers stay in
-Insert state permanently, so forcing a Normal-state transition here
-would just get reverted immediately, silently swallowing `C-g' and
+overlay cleanup.  In the minibuffer, in a `donkey-excluded-modes'
+buffer, or when `donkey-mode' is globally off, delegates to
+`keyboard-quit' instead.  The `donkey-mode' check matters because
+`donkey-setup-smartparens' binds this command directly into
+Smartparens' own keymaps (`smartparens-mode-map' and its overlay
+keymaps), which are independent of DONKEY's lifecycle: disabling
+`donkey-mode' does not undo that binding, so without this guard a
+stray `C-g' after disabling DONKEY would still land here and turn
+`donkey-normal-mode' back on.
+
+For the minibuffer/excluded-mode case: those buffers stay in Insert
+state permanently, so forcing a Normal-state transition here would
+just get reverted immediately, silently swallowing `C-g' and
 preventing it from reaching the underlying mode (e.g. interrupting a
 subprocess or aborting a recursive edit)."
   (interactive)
-  (if (or (minibufferp) (donkey--excluded-mode-p))
+  (if (or (not (bound-and-true-p donkey-mode))
+          (minibufferp)
+          (donkey--excluded-mode-p))
       (keyboard-quit)
     (deactivate-mark)
     (donkey-enter-normal)

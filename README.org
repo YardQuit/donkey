@@ -529,6 +529,12 @@ its overlay keymaps. This binding is opt-in and not installed
 automatically. If smartparens is not installed, DONKEY functions
 normally without errors.
 
+These bindings live in Smartparens' own keymaps, independent of
+=donkey-mode='s lifecycle, so they are not undone when =donkey-mode=
+is disabled. That's safe: with =donkey-mode= off, pressing =C-g=
+through one of these bindings falls through to =keyboard-quit=
+instead of re-enabling DONKEY's Normal state.
+
 #+begin_src emacs-lisp
 
   (with-eval-after-load 'smartparens

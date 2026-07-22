@@ -271,7 +271,8 @@ insert mode."
   "Calls deactivate-mark before entering normal mode."
   (let (deactivated)
     (with-temp-buffer
-      (let ((donkey-normal-mode t))
+      (let ((donkey-mode t)
+            (donkey-normal-mode t))
         (cl-letf (((symbol-function 'minibufferp)
                    (lambda () nil))
                   ((symbol-function 'deactivate-mark)
@@ -285,7 +286,8 @@ insert mode."
   "Calls donkey-enter-normal to switch to normal mode."
   (let (called)
     (with-temp-buffer
-      (let ((donkey-normal-mode t))
+      (let ((donkey-mode t)
+            (donkey-normal-mode t))
         (cl-letf (((symbol-function 'minibufferp)
                    (lambda () nil))
                   ((symbol-function 'deactivate-mark)
@@ -300,7 +302,8 @@ insert mode."
 via (donkey-normal-mode 1)."
   (let (force-arg)
     (with-temp-buffer
-      (let ((donkey-normal-mode nil))
+      (let ((donkey-mode t)
+            (donkey-normal-mode nil))
         (cl-letf (((symbol-function 'minibufferp)
                    (lambda () nil))
                   ((symbol-function 'deactivate-mark)
@@ -317,7 +320,8 @@ via (donkey-normal-mode 1)."
 fallback (donkey-normal-mode 1) is not called."
   (let (force-called)
     (with-temp-buffer
-      (let ((donkey-normal-mode t))
+      (let ((donkey-mode t)
+            (donkey-normal-mode t))
         (cl-letf (((symbol-function 'minibufferp)
                    (lambda () nil))
                   ((symbol-function 'deactivate-mark)
@@ -345,6 +349,28 @@ fallback (donkey-normal-mode 1) is not called."
     (should-not deactivated)
     (should-not entered-normal)))
 
+(ert-deftest donkey-state-exit-insert-donkey-mode-off-delegates-to-keyboard-quit ()
+  "When donkey-mode is globally off, delegates to keyboard-quit and skips
+all other steps.  Regression test: `donkey-setup-smartparens' binds this
+command directly into Smartparens' own keymaps (independent of DONKEY's
+lifecycle), so a stray key press routed there after disabling
+donkey-mode must not resurrect donkey-normal-mode."
+  (let (quit-called deactivated entered-normal)
+    (with-temp-buffer
+      (let ((donkey-mode nil))
+        (cl-letf (((symbol-function 'minibufferp)
+                   (lambda () nil))
+                  ((symbol-function 'keyboard-quit)
+                   (lambda () (setq quit-called t)))
+                  ((symbol-function 'deactivate-mark)
+                   (lambda () (setq deactivated t)))
+                  ((symbol-function 'donkey-enter-normal)
+                   (lambda () (setq entered-normal t))))
+          (donkey--exit-insert))))
+    (should quit-called)
+    (should-not deactivated)
+    (should-not entered-normal)))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--intercept-quit-in-insert (unit level)
 ;;; ---------------------------------------------------------------------------
@@ -355,7 +381,8 @@ intercepts: sets this-command to ignore, deactivates mark, enters
 normal mode."
   (let (cmd-set deactivated entered-normal)
     (with-temp-buffer
-      (let ((donkey-insert-mode t)
+      (let ((donkey-mode t)
+            (donkey-insert-mode t)
             (donkey-normal-mode t)
             (donkey--just-exited-from-insert nil)
             (this-command 'original))

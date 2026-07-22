@@ -1039,7 +1039,8 @@ Smartparens' region-wrap) to see it."
   "End-to-end with a real (non-mocked) self-insert-command: the pressed
 character lands in the buffer at point, same as ordinary self-insert."
   (with-temp-buffer
-    (let ((transient-mark-mode t))
+    (let ((transient-mark-mode t)
+          (donkey-mode t))
       (insert "hello world")
       (goto-char 1)
       (push-mark (point) t t)
@@ -1052,7 +1053,8 @@ character lands in the buffer at point, same as ordinary self-insert."
   "After wrapping, DONKEY ends up back in Normal state, not stuck in Insert."
   (with-temp-buffer
     (donkey-normal-mode 1)
-    (let ((transient-mark-mode t))
+    (let ((transient-mark-mode t)
+          (donkey-mode t))
       (insert "hello")
       (goto-char 1)
       (push-mark (point) t t)
