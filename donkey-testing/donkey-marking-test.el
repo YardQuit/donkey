@@ -844,6 +844,42 @@ mark-sexp should treat them as one unit."
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "line1\nline2"))))
 
+(ert-deftest donkey-mark-inner-symmetric-delimiter-at-closing-position ()
+  "Regression test: point on the CLOSING occurrence of a symmetric
+delimiter (open-char equals close-char, e.g. a quote) must still
+select the pair it actually encloses, not a neighboring unrelated
+pair.
+
+The character at point is otherwise indistinguishable from an opening
+occurrence, so blindly treating it as the opener searches forward
+from past it for the next occurrence of the same character --
+matching a later, unrelated pair's closing delimiter instead.
+Confirmed live in `emacs -nw': with point on the closing quote of
+\"hello\" in `foo \"hello\" bar \"unrelated\" baz', this silently
+selected \" bar \" before the fix."
+  (with-temp-buffer
+    (insert "foo \"hello\" bar \"unrelated\" baz")
+    (goto-char 1)
+    (search-forward "hello")
+    (should (eq (char-after) ?\"))
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "hello"))))
+
+(ert-deftest donkey-mark-inner-symmetric-delimiter-at-closing-position-no-following-pair ()
+  "Regression test: point on the CLOSING quote with no further pair
+ahead must still find the ENCLOSING pair (searching backward for the
+matching opener), not error out because there is nothing left to
+match searching forward."
+  (with-temp-buffer
+    (insert "foo \"hello\" bar")
+    (goto-char 1)
+    (search-forward "hello")
+    (should (eq (char-after) ?\"))
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "hello"))))
+
 (ert-deftest donkey-mark-inner-edge-has-mark ()
   "Mark is set after command."
   (with-temp-buffer
@@ -1058,6 +1094,20 @@ mark-sexp should treat them as one unit."
     (donkey-mark-outer)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "{line1\nline2}"))))
+
+(ert-deftest donkey-mark-outer-symmetric-delimiter-at-closing-position ()
+  "Regression test: point on the CLOSING occurrence of a symmetric
+delimiter must still select the pair it actually encloses (delimiters
+included), not a neighboring unrelated pair.  See
+`donkey-mark-inner-symmetric-delimiter-at-closing-position'."
+  (with-temp-buffer
+    (insert "foo \"hello\" bar \"unrelated\" baz")
+    (goto-char 1)
+    (search-forward "hello")
+    (should (eq (char-after) ?\"))
+    (donkey-mark-outer)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "\"hello\""))))
 
 (ert-deftest donkey-mark-outer-edge-has-mark ()
   "Mark is set after command."

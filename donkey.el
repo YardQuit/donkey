@@ -985,6 +985,61 @@ buffer."
     (rectangle-mark-mode 1)
     (right-char 1)))
 
+(defun donkey--mark-pair-positions (open-char close-char on-opener)
+  "Return (START-POS . END-POS) for the delimiter pair around point.
+
+OPEN-CHAR/CLOSE-CHAR are the pair's delimiters.  ON-OPENER is non-nil
+when the character at point already matched OPEN-CHAR (i.e. no
+`read-char' prompt was needed to pick a delimiter).
+
+For asymmetric delimiters (OPEN-CHAR distinct from CLOSE-CHAR, e.g.
+`(' and `)'), ON-OPENER unambiguously means point sits on the opening
+delimiter -- the closing one (`)') is never itself a member of the
+recognized-opener set.  For symmetric ones (e.g. `\"', `|', `~' -- the
+same character both opens and closes a pair), that assumption breaks
+the moment point happens to land on the CLOSING occurrence instead:
+it looks identical to an opening one, so blindly treating it as the
+opener searches forward from past it for the pair's true closer,
+matching some unrelated, later occurrence of the same character (or
+failing outright) instead of the occurrence that actually encloses
+point.  Disambiguated here by counting occurrences of OPEN-CHAR
+strictly before point: an odd count means point's own occurrence is a
+closer, not an opener.
+
+START-POS is the position of the opening delimiter; END-POS is the
+position immediately after the closing delimiter."
+  (let* ((symmetric (= open-char close-char))
+         (point-is-closer
+          (and on-opener
+               symmetric
+               (cl-oddp
+                (save-excursion
+                  (let ((n 0))
+                    (while (search-backward (string open-char) nil t)
+                      (setq n (1+ n)))
+                    n))))))
+    (if point-is-closer
+        (let ((end-pos (1+ (point))))
+          (condition-case nil
+              (cons (search-backward (string open-char) nil nil) end-pos)
+            (search-failed
+             (error "No matching '%c' found before cursor" open-char))))
+      (let (start-pos end-pos)
+        (if on-opener
+            (setq start-pos (point))
+          (if (and (char-after) (= (char-after) open-char))
+              (setq start-pos (point))
+            (condition-case nil
+                (setq start-pos (search-backward (string open-char) nil nil))
+              (search-failed
+               (error "No '%c' found near cursor" open-char)))))
+        (goto-char (1+ start-pos))
+        (condition-case nil
+            (setq end-pos (search-forward (string close-char) nil nil))
+          (search-failed
+           (error "No matching '%c' found after cursor" close-char)))
+        (cons start-pos end-pos)))))
+
 (defun donkey-mark-inner ()
   "Mark text INSIDE CHAR pairs (excluding delimiters)."
   (interactive)
@@ -1018,19 +1073,8 @@ buffer."
            ((= open-char ?$) ?$)
            (t
             (error "Unsupported delimiter '%c'" open-char))))
-    (if on-opener
-        (setq start-pos (point))
-      (if (and (char-after) (= (char-after) open-char))
-          (setq start-pos (point))
-        (condition-case nil
-            (setq start-pos (search-backward (string open-char) nil nil))
-          (search-failed
-           (error "No '%c' found near cursor" open-char)))))
-    (goto-char (1+ start-pos))
-    (condition-case nil
-        (setq end-pos (search-forward (string close-char) nil nil))
-      (search-failed
-       (error "No matching '%c' found after cursor" close-char)))
+    (let ((bounds (donkey--mark-pair-positions open-char close-char on-opener)))
+      (setq start-pos (car bounds) end-pos (cdr bounds)))
     (push-mark (1+ start-pos))
     (goto-char (1- end-pos))
     (activate-mark)
@@ -1072,19 +1116,8 @@ buffer."
            ((= open-char ?$) ?$)
            (t
             (error "Unsupported delimiter '%c'.  Use: { [ ( < ' \" ` | \\" open-char))))
-    (if on-opener
-        (setq start-pos (point))
-      (if (and (char-after) (= (char-after) open-char))
-          (setq start-pos (point))
-        (condition-case nil
-            (setq start-pos (search-backward (string open-char) nil nil))
-          (search-failed
-           (error "No '%c' found near cursor" open-char)))))
-    (goto-char (1+ start-pos))
-    (condition-case nil
-        (setq end-pos (search-forward (string close-char) nil nil))
-      (search-failed
-       (error "No matching '%c' found after cursor" close-char)))
+    (let ((bounds (donkey--mark-pair-positions open-char close-char on-opener)))
+      (setq start-pos (car bounds) end-pos (cdr bounds)))
     (push-mark start-pos)
     (goto-char end-pos)
     (activate-mark)
