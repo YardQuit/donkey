@@ -530,6 +530,20 @@ moves.
 - Ring is buffer-local — each buffer keeps its own history
 - Independent of the mark ring and region
 
+To keep more (or fewer) positions, set =donkey-position-ring-max= in
+your =init.el= or =config.el=, e.g. after the =load= call from
+Installation:
+
+#+begin_src emacs-lisp
+
+  (setq donkey-position-ring-max 20)
+
+#+end_src
+
+Unlike =donkey-wrap-delimiters=, this takes effect immediately —
+`donkey--track-position` reads it fresh on every call, so it can be
+changed at any time, not just before =donkey.el= loads.
+
 * Org-Scratch Buffer
 
 =M-x donkey-org-scratch= creates or switches to a scratch buffer in
