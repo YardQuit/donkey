@@ -131,123 +131,6 @@ everywhere this predicate is used."
       (message "*org-scratch* buffer doesn't exist, creating."))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Donkey Describe Bindings
-;;; ---------------------------------------------------------------------------
-
-(defun donkey--desc-bindings-collect-leaves (map prefix)
-  "Recursively walk MAP and return a list of (FULL-KEY . DEF) cons cells.
-
-PREFIX is the accumulated key sequence string for the current path."
-  (let (acc)
-    (map-keymap
-     (lambda (key def)
-       (when def
-         (let ((full-key (concat prefix (key-description (vector key)))))
-           (unless (and (eq key 'remap)
-                        (keymapp def)
-                        (lookup-key def [self-insert-command]))
-             (cond
-              ((keymapp def)
-               (setq acc (append acc
-                                 (donkey--desc-bindings-collect-leaves
-                                  def (concat full-key " ")))))
-              ((and (consp def) (keymapp (cdr def)))
-               (setq acc (append acc
-                                 (donkey--desc-bindings-collect-leaves
-                                  (cdr def) (concat full-key " ")))))
-              (t
-               (push (cons full-key def) acc)))))))
-     map)
-    (nreverse acc)))
-
-(defun donkey--binding-group-name (prefix)
-  "Return a human-readable group name for PREFIX."
-  (cond
-   ((string= prefix "single") "Single Keys")
-   ((string= prefix "g")      "Goto / Scroll")
-   ((string= prefix "m")      "Mark Objects")
-   ((string= prefix "r")      "Search / Replace")
-   ((string= prefix "z")      "Scroll")
-   (t (format "%s Prefix" (upcase prefix)))))
-
-(defun donkey-describe-bindings ()
-  "Display all leaf keybindings in `donkey-normal-mode-map' with formatting.
-
-Bindings are grouped by prefix, separated by blank rows and section
-headers.  Command names are clickable buttons that open their
-documentation."
-  (interactive)
-  (unless (boundp 'donkey-normal-mode-map)
-    (user-error "Variable `donkey-normal-mode-map' is not defined yet"))
-  (let* ((buf (get-buffer-create "*DONKEY Bindings*"))
-         (raw (donkey--desc-bindings-collect-leaves donkey-normal-mode-map ""))
-         (sorted-raw (sort raw (lambda (a b) (string< (car a) (car b))))))
-    (with-current-buffer buf
-      (setq buffer-read-only nil)
-      (erase-buffer)
-      ;; Title
-      (insert (propertize "DONKEY Normal Mode Key Bindings\n"
-                          'face '(bold font-lock-function-name-face :height 1.2)))
-      (insert (propertize (make-string 50 ?=)
-                          'face 'font-lock-comment-face) "\n\n")
-      ;; Column header
-      (insert (propertize (format "%-14s %s\n" "KEY" "COMMAND")
-                          'face 'font-lock-keyword-face))
-      (insert (propertize (make-string 50 ?-)
-                          'face 'font-lock-comment-face) "\n")
-      ;; Binding entries
-      (let ((prev-group nil)
-            (lines-added 0))
-        (dolist (entry sorted-raw)
-          (let* ((full-key (car entry))
-                 (def      (cdr entry))
-                 (group    (if (string-match "\\(.+?\\) " full-key)
-                               (match-string 1 full-key)
-                             "single"))
-                 (new-block-p (and (> lines-added 0)
-                                   (not (equal prev-group group)))))
-            ;; Separator + header on group transition
-            (when new-block-p
-              (insert "\n")
-              (insert (propertize (format "  %s" (donkey--binding-group-name group))
-                                  'face '(bold font-lock-comment-delimiter-face)))
-              (insert "\n")
-              (insert (propertize (make-string 50 ?-)
-                                  'face 'font-lock-comment-face) "\n"))
-            ;; Key column
-            (insert (propertize (format "%-14s " full-key)
-                                'face 'font-lock-variable-name-face))
-            ;; Command name as clickable button
-            (if (symbolp def)
-                (insert-text-button (symbol-name def)
-                                    'action (lambda (_) (describe-function def))
-                                    'follow-link t
-                                    'help-echo (format "Describe %s" def))
-              (insert "[complex]"))
-            (insert "\n")
-            (setq lines-added (1+ lines-added)
-                  prev-group  group))))
-      ;; Footer
-      (insert "\n")
-      (insert (propertize (make-string 50 ?=)
-                          'face 'font-lock-comment-face) "\n")
-      (insert (propertize "q: quit  |  RET or click: describe command"
-                          'face 'font-lock-comment-face))
-      ;; Buffer settings
-      (special-mode)
-      (setq-local buffer-read-only t)
-      (setq-local truncate-lines t)
-      ;; Local keymap — avoids polluting shared special-mode-map
-      (let ((local-map (make-sparse-keymap)))
-        (set-keymap-parent local-map special-mode-map)
-        (keymap-set local-map "q"   #'quit-window)
-        (keymap-set local-map "RET" #'push-button)
-        (use-local-map local-map))
-
-      (goto-char (point-min)))
-    (display-buffer buf)))
-
-;;; ---------------------------------------------------------------------------
 ;;; Line and Buffer Navigation Commands
 ;;; ---------------------------------------------------------------------------
 
@@ -395,61 +278,6 @@ recorded positions in this buffer."
         (donkey-enter-insert))
     (delete-char 1)
     (donkey-enter-insert)))
-
-(defcustom donkey-wrap-delimiters '(?\( ?\[ ?\{ ?\" ?\' ?\`)
-  "Characters that trigger `donkey-wrap-region' in Normal state.
-
-Bound in `donkey-normal-mode-map'; only takes effect while a
-region is active (see `donkey-wrap-region').  Changing this after
-`donkey.el' has loaded has no effect on already-bound keys -- set
-it before loading, or re-run the `dolist' near
-`donkey-normal-mode-map's definition."
-  :type '(repeat character)
-  :group 'donkey)
-
-(defun donkey-wrap-region ()
-  "Insert the pressed delimiter into the active region without deselecting.
-
-Bound to each of `donkey-wrap-delimiters' in Normal state.  With
-no active region, or with `rectangle-mark-mode' active, falls
-through to `undefined', same as any other suppressed key.
-`self-insert-command' operates on `region-beginning'/`region-end'
-as a single linear span; against a rectangle selection that
-inserts the delimiters at the rectangle's linear start/end
-positions instead of on each covered line, corrupting the buffer
-rather than wrapping anything meaningful.  With an ordinary
-active region, enters Insert state without deactivating the mark,
-inserts the pressed character via `self-insert-command' -- letting
-packages that hook it, such as Smartparens' region-wrap, act on
-the still-active region -- then returns to Normal state."
-  (interactive)
-  (if (or (not (use-region-p))
-          (bound-and-true-p rectangle-mark-mode))
-      (call-interactively #'undefined)
-    (donkey-insert-mode 1)
-    (self-insert-command 1)
-    (donkey--exit-insert)))
-
-(defun donkey-org-todo ()
-  "Toggle headline TODO state between TODO and DONE.
-
-Uses `org-element-at-point' to detect :todo-type property and
-dispatches `org-todo' accordingly.  No keyword string parsing needed."
-  (interactive)
-  (when (and (fboundp 'org-element-at-point)
-             (fboundp 'org-element-property)
-             (fboundp 'org-todo))
-    (let* ((elem (org-element-at-point))
-           (todo-type (and (consp elem)
-                           (eq (car elem) 'headline)
-                           (org-element-property :todo-type elem))))
-      (cond
-       ((eq todo-type 'todo)
-        (org-todo 'done))
-       ((eq todo-type 'done)
-        (org-todo 'todo))
-       (t
-        (org-todo 'todo))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Enter DWIM
@@ -601,6 +429,27 @@ Returns command symbol or nil if no handler matches."
                (commandp donkey--saved-ret-binding))
       (call-interactively donkey--saved-ret-binding)
       t)))
+
+(defun donkey-org-todo ()
+  "Toggle headline TODO state between TODO and DONE.
+
+Uses `org-element-at-point' to detect :todo-type property and
+dispatches `org-todo' accordingly.  No keyword string parsing needed."
+  (interactive)
+  (when (and (fboundp 'org-element-at-point)
+             (fboundp 'org-element-property)
+             (fboundp 'org-todo))
+    (let* ((elem (org-element-at-point))
+           (todo-type (and (consp elem)
+                           (eq (car elem) 'headline)
+                           (org-element-property :todo-type elem))))
+      (cond
+       ((eq todo-type 'todo)
+        (org-todo 'done))
+       ((eq todo-type 'done)
+        (org-todo 'todo))
+       (t
+        (org-todo 'todo))))))
 
 (when donkey-default-enter-rules-enabled
   (donkey-add-enter-rule item :checkbox org-toggle-checkbox)
@@ -834,7 +683,7 @@ Output goes to a temporary buffer named '*DONKEY Platform Debug*'."
       (special-mode))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Yank and Delete Commands
+;;; Yank, Copy, and Delete Commands
 ;;; ---------------------------------------------------------------------------
 
 (defun donkey--clipboard-yank ()
@@ -926,6 +775,44 @@ at point."
             (call-interactively #'kill-rectangle)
           (kill-region (mark) (point))))
     (delete-char 1)))
+
+;;; ---------------------------------------------------------------------------
+;;; Wrap Region Commands
+;;; ---------------------------------------------------------------------------
+
+(defcustom donkey-wrap-delimiters '(?\( ?\[ ?\{ ?\" ?\' ?\`)
+  "Characters that trigger `donkey-wrap-region' in Normal state.
+
+Bound in `donkey-normal-mode-map'; only takes effect while a
+region is active (see `donkey-wrap-region').  Changing this after
+`donkey.el' has loaded has no effect on already-bound keys -- set
+it before loading, or re-run the `dolist' near
+`donkey-normal-mode-map's definition."
+  :type '(repeat character)
+  :group 'donkey)
+
+(defun donkey-wrap-region ()
+  "Insert the pressed delimiter into the active region without deselecting.
+
+Bound to each of `donkey-wrap-delimiters' in Normal state.  With
+no active region, or with `rectangle-mark-mode' active, falls
+through to `undefined', same as any other suppressed key.
+`self-insert-command' operates on `region-beginning'/`region-end'
+as a single linear span; against a rectangle selection that
+inserts the delimiters at the rectangle's linear start/end
+positions instead of on each covered line, corrupting the buffer
+rather than wrapping anything meaningful.  With an ordinary
+active region, enters Insert state without deactivating the mark,
+inserts the pressed character via `self-insert-command' -- letting
+packages that hook it, such as Smartparens' region-wrap, act on
+the still-active region -- then returns to Normal state."
+  (interactive)
+  (if (or (not (use-region-p))
+          (bound-and-true-p rectangle-mark-mode))
+      (call-interactively #'undefined)
+    (donkey-insert-mode 1)
+    (self-insert-command 1)
+    (donkey--exit-insert)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mark and Text Object Selection Commands
@@ -1268,6 +1155,123 @@ Trailing commas or periods are omitted from the selection."
   (backward-sexp 1)
   (activate-mark)
   (message "Symbol marked"))
+
+;;; ---------------------------------------------------------------------------
+;;; Donkey Describe Bindings
+;;; ---------------------------------------------------------------------------
+
+(defun donkey--desc-bindings-collect-leaves (map prefix)
+  "Recursively walk MAP and return a list of (FULL-KEY . DEF) cons cells.
+
+PREFIX is the accumulated key sequence string for the current path."
+  (let (acc)
+    (map-keymap
+     (lambda (key def)
+       (when def
+         (let ((full-key (concat prefix (key-description (vector key)))))
+           (unless (and (eq key 'remap)
+                        (keymapp def)
+                        (lookup-key def [self-insert-command]))
+             (cond
+              ((keymapp def)
+               (setq acc (append acc
+                                 (donkey--desc-bindings-collect-leaves
+                                  def (concat full-key " ")))))
+              ((and (consp def) (keymapp (cdr def)))
+               (setq acc (append acc
+                                 (donkey--desc-bindings-collect-leaves
+                                  (cdr def) (concat full-key " ")))))
+              (t
+               (push (cons full-key def) acc)))))))
+     map)
+    (nreverse acc)))
+
+(defun donkey--binding-group-name (prefix)
+  "Return a human-readable group name for PREFIX."
+  (cond
+   ((string= prefix "single") "Single Keys")
+   ((string= prefix "g")      "Goto / Scroll")
+   ((string= prefix "m")      "Mark Objects")
+   ((string= prefix "r")      "Search / Replace")
+   ((string= prefix "z")      "Scroll")
+   (t (format "%s Prefix" (upcase prefix)))))
+
+(defun donkey-describe-bindings ()
+  "Display all leaf keybindings in `donkey-normal-mode-map' with formatting.
+
+Bindings are grouped by prefix, separated by blank rows and section
+headers.  Command names are clickable buttons that open their
+documentation."
+  (interactive)
+  (unless (boundp 'donkey-normal-mode-map)
+    (user-error "Variable `donkey-normal-mode-map' is not defined yet"))
+  (let* ((buf (get-buffer-create "*DONKEY Bindings*"))
+         (raw (donkey--desc-bindings-collect-leaves donkey-normal-mode-map ""))
+         (sorted-raw (sort raw (lambda (a b) (string< (car a) (car b))))))
+    (with-current-buffer buf
+      (setq buffer-read-only nil)
+      (erase-buffer)
+      ;; Title
+      (insert (propertize "DONKEY Normal Mode Key Bindings\n"
+                          'face '(bold font-lock-function-name-face :height 1.2)))
+      (insert (propertize (make-string 50 ?=)
+                          'face 'font-lock-comment-face) "\n\n")
+      ;; Column header
+      (insert (propertize (format "%-14s %s\n" "KEY" "COMMAND")
+                          'face 'font-lock-keyword-face))
+      (insert (propertize (make-string 50 ?-)
+                          'face 'font-lock-comment-face) "\n")
+      ;; Binding entries
+      (let ((prev-group nil)
+            (lines-added 0))
+        (dolist (entry sorted-raw)
+          (let* ((full-key (car entry))
+                 (def      (cdr entry))
+                 (group    (if (string-match "\\(.+?\\) " full-key)
+                               (match-string 1 full-key)
+                             "single"))
+                 (new-block-p (and (> lines-added 0)
+                                   (not (equal prev-group group)))))
+            ;; Separator + header on group transition
+            (when new-block-p
+              (insert "\n")
+              (insert (propertize (format "  %s" (donkey--binding-group-name group))
+                                  'face '(bold font-lock-comment-delimiter-face)))
+              (insert "\n")
+              (insert (propertize (make-string 50 ?-)
+                                  'face 'font-lock-comment-face) "\n"))
+            ;; Key column
+            (insert (propertize (format "%-14s " full-key)
+                                'face 'font-lock-variable-name-face))
+            ;; Command name as clickable button
+            (if (symbolp def)
+                (insert-text-button (symbol-name def)
+                                    'action (lambda (_) (describe-function def))
+                                    'follow-link t
+                                    'help-echo (format "Describe %s" def))
+              (insert "[complex]"))
+            (insert "\n")
+            (setq lines-added (1+ lines-added)
+                  prev-group  group))))
+      ;; Footer
+      (insert "\n")
+      (insert (propertize (make-string 50 ?=)
+                          'face 'font-lock-comment-face) "\n")
+      (insert (propertize "q: quit  |  RET or click: describe command"
+                          'face 'font-lock-comment-face))
+      ;; Buffer settings
+      (special-mode)
+      (setq-local buffer-read-only t)
+      (setq-local truncate-lines t)
+      ;; Local keymap — avoids polluting shared special-mode-map
+      (let ((local-map (make-sparse-keymap)))
+        (set-keymap-parent local-map special-mode-map)
+        (keymap-set local-map "q"   #'quit-window)
+        (keymap-set local-map "RET" #'push-button)
+        (use-local-map local-map))
+
+      (goto-char (point-min)))
+    (display-buffer buf)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Donkey Normal Mode Keymap Definition
