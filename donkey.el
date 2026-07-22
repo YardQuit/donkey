@@ -1009,7 +1009,14 @@ line instead of extending \"hello\" by one line."
         (rectangle-mark-mode -1)
         (deactivate-mark))
     (rectangle-mark-mode 1)
-    (right-char 1)))
+    ;; Give the rectangle some initial width beyond the single starting
+    ;; column.  At the very end of the buffer there's nothing to widen
+    ;; into, and `right-char' signals `end-of-buffer' -- harmless to
+    ;; skip, since rectangle-mark-mode is already correctly enabled
+    ;; with a (valid, if zero-width) selection at that point.
+    (condition-case nil
+        (right-char 1)
+      (end-of-buffer nil))))
 
 (defcustom donkey-mark-pair-delimiters
   '((?\{ . ?\}) (?\[ . ?\]) (?\( . ?\)) (?\< . ?>)

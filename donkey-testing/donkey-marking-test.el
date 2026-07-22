@@ -1624,12 +1624,11 @@ different, unrelated pair.  See
     (should-not (region-active-p))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-empty ()
-  "In an empty buffer, stub right-char to avoid end-of-buffer."
+  "In an empty buffer, right-char has nowhere to go but does not error."
   (with-temp-buffer
     (should (equal (buffer-string) ""))
-    (cl-letf (((symbol-function 'right-char) (lambda (&optional n) nil)))
-      (donkey-rectangle-mark-mode)
-      (should (bound-and-true-p rectangle-mark-mode)))))
+    (donkey-rectangle-mark-mode)
+    (should (bound-and-true-p rectangle-mark-mode))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-at-buffer-start ()
   "Activating rect mark mode at buffer start succeeds."
@@ -1641,22 +1640,28 @@ different, unrelated pair.  See
     (should (<= (point) (point-max)))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-at-buffer-end ()
-  "At buffer end, stub right-char to avoid error."
+  "At buffer end, right-char has nowhere to go but does not error.
+
+Regression test: `right-char' signals `end-of-buffer' with nothing
+left to widen the rectangle into.  Confirmed live in `emacs -nw':
+pressing `m v' at the end of a buffer used to surface an uncaught
+\"End of buffer\" error message instead of cleanly toggling on (with a
+valid, if zero-width, initial rectangle selection)."
   (with-temp-buffer
     (insert "hello")
     (goto-char (point-max))
-    (cl-letf (((symbol-function 'right-char) (lambda (&optional n) nil)))
-      (donkey-rectangle-mark-mode)
-      (should (bound-and-true-p rectangle-mark-mode)))))
+    (donkey-rectangle-mark-mode)
+    (should (bound-and-true-p rectangle-mark-mode))
+    (should (mark))
+    (should (= (mark) (point-max)))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-single-character ()
-  "On a single character, stub right-char."
+  "On a single character, right-char has one column to move into."
   (with-temp-buffer
     (insert "x")
     (goto-char 1)
-    (cl-letf (((symbol-function 'right-char) (lambda (&optional n) nil)))
-      (donkey-rectangle-mark-mode)
-      (should (bound-and-true-p rectangle-mark-mode)))))
+    (donkey-rectangle-mark-mode)
+    (should (bound-and-true-p rectangle-mark-mode))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-multi-line ()
   "With multi-line buffer, rect mark mode selects correctly."
@@ -1739,12 +1744,12 @@ different, unrelated pair.  See
       (should (bound-and-true-p rectangle-mark-mode)))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-empty-at-start ()
-  "Empty buffer with point at min, stubs right-char."
+  "Empty buffer with point at min: right-char has nowhere to go but
+does not error."
   (with-temp-buffer
     (goto-char (point-min))
-    (cl-letf (((symbol-function 'right-char) (lambda (&optional n) nil)))
-      (donkey-rectangle-mark-mode)
-      (should (bound-and-true-p rectangle-mark-mode)))))
+    (donkey-rectangle-mark-mode)
+    (should (bound-and-true-p rectangle-mark-mode))))
 
 (provide 'donkey-marking-test)
 
