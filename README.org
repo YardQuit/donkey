@@ -172,11 +172,17 @@ by default -- an alist of (OPEN . CLOSE) pairs in =donkey-mark-pair-delimiters=
 (a Customization Group variable). For symmetric delimiters (e.g. quotes,
 where the same character both opens and closes a pair), OPEN and CLOSE
 are identical. Add or remove entries in your =config.el= to change what's
-recognized, e.g.:
+recognized, e.g. to add =#= as a language's inline-comment marker and
+remove =~= (freeing that key up for something else):
 
 #+begin_src emacs-lisp
 
+  ;; Add a pair
   (add-to-list 'donkey-mark-pair-delimiters '(?# . ?#))
+
+  ;; Remove a pair
+  (setq donkey-mark-pair-delimiters
+        (assq-delete-all ?~ donkey-mark-pair-delimiters))
 
 #+end_src
 
