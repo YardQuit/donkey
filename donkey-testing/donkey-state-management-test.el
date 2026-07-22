@@ -136,7 +136,8 @@ slot, so an inner minibuffer's setup/exit would overwrite and then clear
 the outer minibuffer's saved state, leaving the original buffer's DONKEY
 state unrestored once the outer minibuffer finally exited."
   (let ((buf (generate-new-buffer "donkey-nested-minibuf-test"))
-        (donkey--minibuffer-pre-state-stack nil))
+        (donkey--minibuffer-pre-state-stack nil)
+        (donkey-mode t))
     (unwind-protect
         (with-current-buffer buf
           (fundamental-mode)
@@ -160,6 +161,35 @@ state unrestored once the outer minibuffer finally exited."
             (run-hooks 'minibuffer-exit-hook)
             (should (null donkey--minibuffer-pre-state-stack))
             (should (bound-and-true-p donkey-normal-mode))))
+      (when (buffer-live-p buf) (kill-buffer buf)))))
+
+(ert-deftest donkey-minibuffer-exit-skips-restore-when-donkey-mode-off ()
+  "Does not resurrect Normal/Insert state on minibuffer exit when
+donkey-mode has been globally disabled in the meantime, but still pops
+the stack so it does not leak.  Regression test: `donkey-mode' being
+disabled mid-minibuffer-session (e.g. via a keybinding, from a
+recursive minibuffer) used to leave the exit hook unconditionally
+calling `donkey-enter-normal'/`donkey-enter-insert' from the saved
+state, resurrecting DONKEY in the originating buffer -- the same bug
+class `donkey--exit-insert' has its own `donkey-mode' guard for."
+  (let ((buf (generate-new-buffer "donkey-minibuf-mode-off-test"))
+        (donkey--minibuffer-pre-state-stack nil)
+        (donkey-mode t))
+    (unwind-protect
+        (with-current-buffer buf
+          (fundamental-mode)
+          (donkey-normal-mode 1)
+          (cl-letf (((symbol-function 'minibuffer-selected-window)
+                     (lambda () 'donkey-fake-window))
+                    ((symbol-function 'window-buffer)
+                     (lambda (_win) buf)))
+            (run-hooks 'minibuffer-setup-hook)
+            (should (equal donkey--minibuffer-pre-state-stack '(normal)))
+            ;; User disables donkey-mode while the minibuffer is still open.
+            (setq donkey-mode nil)
+            (run-hooks 'minibuffer-exit-hook)
+            (should (null donkey--minibuffer-pre-state-stack))
+            (should-not (bound-and-true-p donkey-normal-mode))))
       (when (buffer-live-p buf) (kill-buffer buf)))))
 
 ;;; ---------------------------------------------------------------------------
@@ -1057,6 +1087,32 @@ disabling the `C-g' interception fallback for it."
      (should (overlay-start ov))
      (donkey--clear-transient-overlays)
      (should (overlay-start ov)))))
+
+(ert-deftest donkey-clear-overlays-removes-tracked-pair-overlay-from-sp-list ()
+  "Strategy 3 removes an overlay tracked in `sp-pair-overlay-list' via
+`sp--remove-overlay' instead of a raw `delete-overlay'.
+
+Regression test: raw `delete-overlay' on an overlay Smartparens still
+has in `sp-pair-overlay-list' leaves a stale, deleted-overlay
+reference there.  `overlay-start'/`overlay-end' on a deleted overlay
+return nil, so the next command then crashed
+`sp--pair-overlay-post-command-handler' (still buffer-locally
+registered, since only `sp--remove-overlay' also unregisters it) with
+\(wrong-type-argument number-or-marker-p nil) -- reproduced live in a
+real `emacs -nw' session."
+  (skip-unless (and (featurep 'smartparens)
+                     (boundp 'sp-pair-overlay-keymap)
+                     (fboundp 'sp--remove-overlay)))
+  (require 'smartparens)
+  (donkey--with-test-buffer
+   (donkey-enter-insert)
+   (let* ((ov (make-overlay (point) (1+ (point))))
+          (sp-pair-overlay-list (list ov)))
+     (overlay-put ov 'keymap sp-pair-overlay-keymap)
+     (should (memq ov sp-pair-overlay-list))
+     (donkey--clear-transient-overlays)
+     (should-not (overlay-start ov))
+     (should-not (memq ov sp-pair-overlay-list)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Deferred Cleanup Timer

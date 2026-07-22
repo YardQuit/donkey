@@ -1387,11 +1387,23 @@ on terminals that drop bytes during state transitions."
               (send-string-to-terminal seq))
           (error nil))))))
 
+(defvar-local donkey--last-applied-cursor-setting 'donkey--cursor-unset
+  "Last SETTING value actually sent to the terminal via
+`donkey--send-cursor-sequence'.  Lets `donkey--apply-cursor-setting'
+skip redundant terminal I/O when called again with an unchanged
+value -- notably, entering Normal or Insert state triggers this
+twice per transition, since each of `donkey-normal-mode' and
+`donkey-insert-mode' toggles the other off as part of its own body,
+running both modes' hooks (both of which include
+`donkey--update-cursor') for what is conceptually one transition.")
+
 (defun donkey--apply-cursor-setting (setting)
   "Apply SETTING, falling back to global default if SETTING is nil.
 
 In terminal mode, also sends DECSCUSR escape sequence for visual
-cursor change."
+cursor change -- but only when SETTING's effective value actually
+changed since the last call, to avoid redundant terminal I/O (see
+`donkey--last-applied-cursor-setting')."
   (let ((effective (cond
                     (setting setting)
                     ((local-variable-p 'cursor-type) cursor-type)
@@ -1399,7 +1411,9 @@ cursor change."
     (if setting
         (setq-local cursor-type setting)
       (kill-local-variable 'cursor-type))
-    (donkey--send-cursor-sequence effective)))
+    (unless (equal effective donkey--last-applied-cursor-setting)
+      (setq donkey--last-applied-cursor-setting effective)
+      (donkey--send-cursor-sequence effective))))
 
 (defun donkey--update-cursor ()
   "Update cursor based on current DONKEY state."
@@ -1464,26 +1478,41 @@ buffer-local because we need to read it after switching buffers.")
    ((bound-and-true-p donkey-insert-mode) 'insert)
    (t nil)))
 
-(add-hook 'minibuffer-setup-hook
-          (lambda ()
-            ;; Capture state from the buffer that initiated the minibuffer
-            (let ((orig-state
-                   (with-current-buffer
-                       (window-buffer (minibuffer-selected-window))
-                     (donkey--minibuffer-current-state))))
-              (push orig-state donkey--minibuffer-pre-state-stack))
-            ;; Force insert mode (passthrough) in the minibuffer itself
-            (when (bound-and-true-p donkey-normal-mode)
-              (donkey-normal-mode -1))))
+(defun donkey--minibuffer-setup ()
+  "Save the originating buffer's DONKEY state and force Insert passthrough
+in the minibuffer itself."
+  ;; Capture state from the buffer that initiated the minibuffer
+  (let ((orig-state
+         (with-current-buffer
+             (window-buffer (minibuffer-selected-window))
+           (donkey--minibuffer-current-state))))
+    (push orig-state donkey--minibuffer-pre-state-stack))
+  ;; Force insert mode (passthrough) in the minibuffer itself
+  (when (bound-and-true-p donkey-normal-mode)
+    (donkey-normal-mode -1)))
 
-(add-hook 'minibuffer-exit-hook
-          (lambda ()
-            ;; Restore state in the originating buffer
-            (with-current-buffer
-                (window-buffer (minibuffer-selected-window))
-              (pcase (pop donkey--minibuffer-pre-state-stack)
-                ('normal (donkey-enter-normal))
-                ('insert (donkey-enter-insert))))))
+(defun donkey--minibuffer-exit ()
+  "Restore the originating buffer's saved DONKEY state.
+
+Always pops `donkey--minibuffer-pre-state-stack' to keep it balanced
+with `donkey--minibuffer-setup', but only re-enters Normal/Insert
+state when `donkey-mode' is still globally on.  Without this check,
+disabling `donkey-mode' while a minibuffer session is in progress
+(e.g. via a keybinding, from a recursive minibuffer) would have this
+hook resurrect Normal or Insert state in the originating buffer on
+exit, the same way a stray `C-g' through `donkey-setup-smartparens''
+keymaps could before `donkey--exit-insert' gained its own
+`donkey-mode' guard."
+  (let ((saved-state (pop donkey--minibuffer-pre-state-stack)))
+    (when (bound-and-true-p donkey-mode)
+      (with-current-buffer
+          (window-buffer (minibuffer-selected-window))
+        (pcase saved-state
+          ('normal (donkey-enter-normal))
+          ('insert (donkey-enter-insert)))))))
+
+(add-hook 'minibuffer-setup-hook #'donkey--minibuffer-setup)
+(add-hook 'minibuffer-exit-hook #'donkey--minibuffer-exit)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Insert to Normal Transition
@@ -1549,7 +1578,18 @@ Operates on the current buffer only."
                            (cl-some (lambda (f) (memq f transient-faces)) face)))))
             (delete-overlay ov)
             (setq cleared (1+ cleared))))))
-    ;; Strategy 3: Remove overlays carrying smartparens keymap properties
+    ;; Strategy 3: Remove overlays carrying smartparens keymap properties.
+    ;;
+    ;; For overlays Smartparens is actively tracking in
+    ;; `sp-pair-overlay-list', go through its own `sp--remove-overlay'
+    ;; instead of a raw `delete-overlay': deleting a still-tracked pair
+    ;; overlay out from under Smartparens leaves a stale, deleted-overlay
+    ;; reference sitting in that list.  `overlay-start'/`overlay-end' on
+    ;; a deleted overlay return nil, and the very next command then
+    ;; crashes `sp--pair-overlay-post-command-handler' (still registered
+    ;; as a local `post-command-hook', since only `sp--remove-overlay'
+    ;; also unregisters it) with
+    ;; (wrong-type-argument number-or-marker-p nil).
     (dolist (ov (overlays-in beg end))
       (when (overlay-start ov)
         (let ((km (overlay-get ov 'keymap)))
@@ -1558,7 +1598,11 @@ Operates on the current buffer only."
                               (eq km sp-pair-overlay-keymap))
                          (and (boundp 'sp-overlay-keymap)
                               (eq km sp-overlay-keymap))))
-            (delete-overlay ov)
+            (if (and (boundp 'sp-pair-overlay-list)
+                     (fboundp 'sp--remove-overlay)
+                     (memq ov sp-pair-overlay-list))
+                (sp--remove-overlay ov)
+              (delete-overlay ov))
             (setq cleared (1+ cleared))))))
     cleared))
 
