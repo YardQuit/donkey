@@ -136,7 +136,8 @@ slot, so an inner minibuffer's setup/exit would overwrite and then clear
 the outer minibuffer's saved state, leaving the original buffer's DONKEY
 state unrestored once the outer minibuffer finally exited."
   (let ((buf (generate-new-buffer "donkey-nested-minibuf-test"))
-        (donkey--minibuffer-pre-state-stack nil))
+        (donkey--minibuffer-pre-state-stack nil)
+        (donkey-mode t))
     (unwind-protect
         (with-current-buffer buf
           (fundamental-mode)
@@ -160,6 +161,35 @@ state unrestored once the outer minibuffer finally exited."
             (run-hooks 'minibuffer-exit-hook)
             (should (null donkey--minibuffer-pre-state-stack))
             (should (bound-and-true-p donkey-normal-mode))))
+      (when (buffer-live-p buf) (kill-buffer buf)))))
+
+(ert-deftest donkey-minibuffer-exit-skips-restore-when-donkey-mode-off ()
+  "Does not resurrect Normal/Insert state on minibuffer exit when
+donkey-mode has been globally disabled in the meantime, but still pops
+the stack so it does not leak.  Regression test: `donkey-mode' being
+disabled mid-minibuffer-session (e.g. via a keybinding, from a
+recursive minibuffer) used to leave the exit hook unconditionally
+calling `donkey-enter-normal'/`donkey-enter-insert' from the saved
+state, resurrecting DONKEY in the originating buffer -- the same bug
+class `donkey--exit-insert' has its own `donkey-mode' guard for."
+  (let ((buf (generate-new-buffer "donkey-minibuf-mode-off-test"))
+        (donkey--minibuffer-pre-state-stack nil)
+        (donkey-mode t))
+    (unwind-protect
+        (with-current-buffer buf
+          (fundamental-mode)
+          (donkey-normal-mode 1)
+          (cl-letf (((symbol-function 'minibuffer-selected-window)
+                     (lambda () 'donkey-fake-window))
+                    ((symbol-function 'window-buffer)
+                     (lambda (_win) buf)))
+            (run-hooks 'minibuffer-setup-hook)
+            (should (equal donkey--minibuffer-pre-state-stack '(normal)))
+            ;; User disables donkey-mode while the minibuffer is still open.
+            (setq donkey-mode nil)
+            (run-hooks 'minibuffer-exit-hook)
+            (should (null donkey--minibuffer-pre-state-stack))
+            (should-not (bound-and-true-p donkey-normal-mode))))
       (when (buffer-live-p buf) (kill-buffer buf)))))
 
 ;;; ---------------------------------------------------------------------------
