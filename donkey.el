@@ -992,53 +992,50 @@ OPEN-CHAR/CLOSE-CHAR are the pair's delimiters.  ON-OPENER is non-nil
 when the character at point already matched OPEN-CHAR (i.e. no
 `read-char' prompt was needed to pick a delimiter).
 
-For asymmetric delimiters (OPEN-CHAR distinct from CLOSE-CHAR, e.g.
-`(' and `)'), ON-OPENER unambiguously means point sits on the opening
-delimiter -- the closing one (`)') is never itself a member of the
-recognized-opener set.  For symmetric ones (e.g. `\"', `|', `~' -- the
-same character both opens and closes a pair), that assumption breaks
-the moment point happens to land on the CLOSING occurrence instead:
-it looks identical to an opening one, so blindly treating it as the
-opener searches forward from past it for the pair's true closer,
-matching some unrelated, later occurrence of the same character (or
-failing outright) instead of the occurrence that actually encloses
-point.  Disambiguated here by counting occurrences of OPEN-CHAR
-strictly before point: an odd count means point's own occurrence is a
-closer, not an opener.
+When ON-OPENER, point is always assumed to be the OPENING delimiter
+first, and the search goes forward for its close -- same as if the
+user had just typed it.  For symmetric delimiters (OPEN-CHAR equals
+CLOSE-CHAR, e.g. `\"', `|', `~'), that assumption can be wrong: point
+may actually be sitting on the pair's CLOSING occurrence instead (e.g.
+the closing quote of \"hello\"), which looks identical to an opening
+one.  If the forward search fails to find a close, this falls back to
+treating point as the closer instead and searches backward for the
+matching opener.  Only symmetric delimiters get this fallback:
+asymmetric ones (e.g. `(' and `)') can never have this ambiguity,
+since the closing character is never itself a member of the
+recognized-opener set, so point being ON-OPENER there always
+genuinely means the opening delimiter.
 
 START-POS is the position of the opening delimiter; END-POS is the
 position immediately after the closing delimiter."
-  (let* ((symmetric (= open-char close-char))
-         (point-is-closer
-          (and on-opener
-               symmetric
-               (cl-oddp
-                (save-excursion
-                  (let ((n 0))
-                    (while (search-backward (string open-char) nil t)
-                      (setq n (1+ n)))
-                    n))))))
-    (if point-is-closer
-        (let ((end-pos (1+ (point))))
+  (let (start-pos end-pos)
+    (if on-opener
+        (progn
+          (setq start-pos (point))
+          (goto-char (1+ start-pos))
           (condition-case nil
-              (cons (search-backward (string open-char) nil nil) end-pos)
+              (setq end-pos (search-forward (string close-char) nil nil))
             (search-failed
-             (error "No matching '%c' found before cursor" open-char))))
-      (let (start-pos end-pos)
-        (if on-opener
-            (setq start-pos (point))
-          (if (and (char-after) (= (char-after) open-char))
-              (setq start-pos (point))
-            (condition-case nil
-                (setq start-pos (search-backward (string open-char) nil nil))
-              (search-failed
-               (error "No '%c' found near cursor" open-char)))))
-        (goto-char (1+ start-pos))
+             (unless (= open-char close-char)
+               (error "No matching '%c' found after cursor" close-char))
+             (goto-char start-pos)
+             (setq end-pos (1+ start-pos))
+             (condition-case nil
+                 (setq start-pos (search-backward (string open-char) nil nil))
+               (search-failed
+                (error "No matching '%c' found before cursor" open-char))))))
+      (if (and (char-after) (= (char-after) open-char))
+          (setq start-pos (point))
         (condition-case nil
-            (setq end-pos (search-forward (string close-char) nil nil))
+            (setq start-pos (search-backward (string open-char) nil nil))
           (search-failed
-           (error "No matching '%c' found after cursor" close-char)))
-        (cons start-pos end-pos)))))
+           (error "No '%c' found near cursor" open-char))))
+      (goto-char (1+ start-pos))
+      (condition-case nil
+          (setq end-pos (search-forward (string close-char) nil nil))
+        (search-failed
+         (error "No matching '%c' found after cursor" close-char))))
+    (cons start-pos end-pos)))
 
 (defun donkey-mark-inner ()
   "Mark text INSIDE CHAR pairs (excluding delimiters)."
