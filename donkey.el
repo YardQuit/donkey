@@ -985,6 +985,50 @@ buffer."
     (rectangle-mark-mode 1)
     (right-char 1)))
 
+(defcustom donkey-mark-pair-delimiters
+  '((?\{ . ?\}) (?\[ . ?\]) (?\( . ?\)) (?\< . ?>)
+    (?\" . ?\") (?\' . ?\') (?\` . ?\`)
+    (?= . ?=) (?* . ?*) (?~ . ?~) (?\| . ?\|) (?\\ . ?\\)
+    (?/ . ?/) (?: . ?:) (?+ . ?+) (?_ . ?_) (?$ . ?$))
+  "Alist of (OPEN . CLOSE) delimiter characters for `donkey-mark-inner'
+and `donkey-mark-outer'.  For symmetric delimiters (e.g. quotes, where
+the same character both opens and closes a pair), OPEN and CLOSE are
+identical.
+
+Customize this to add or remove supported delimiters -- e.g. add
+`(?# . ?#)' for a language that uses # as an inline marker, or remove
+pairs you never use.  Order matters only for the `read-char' prompt
+string, which lists the OPEN characters in this order."
+  :type '(alist :key-type (character :tag "Open")
+                :value-type (character :tag "Close"))
+  :group 'donkey)
+
+(defun donkey--mark-pair-prompt ()
+  "Build the `read-char' prompt string from `donkey-mark-pair-delimiters'."
+  (format "Char (%s): "
+          (mapconcat (lambda (pair) (char-to-string (car pair)))
+                     donkey-mark-pair-delimiters "")))
+
+(defun donkey--mark-pair-unsupported-error (char)
+  "Signal an error for CHAR not found in `donkey-mark-pair-delimiters'."
+  (error "Unsupported delimiter '%c'.  Use: %s" char
+         (mapconcat (lambda (pair) (char-to-string (car pair)))
+                    donkey-mark-pair-delimiters " ")))
+
+(defun donkey--mark-pair-read-delimiter ()
+  "Return (OPEN-CHAR CLOSE-CHAR ON-OPENER) for the char pair to mark.
+
+Uses the character at point when it is a recognized delimiter (see
+`donkey-mark-pair-delimiters'); otherwise prompts via `read-char'."
+  (let* ((default-char (char-after))
+         (on-opener (and default-char (assq default-char donkey-mark-pair-delimiters)))
+         (open-char (if on-opener
+                        default-char
+                      (read-char (donkey--mark-pair-prompt))))
+         (close-char (or (cdr (assq open-char donkey-mark-pair-delimiters))
+                         (donkey--mark-pair-unsupported-error open-char))))
+    (list open-char close-char on-opener)))
+
 (defun donkey--mark-pair-positions (open-char close-char on-opener)
   "Return (START-POS . END-POS) for the delimiter pair around point.
 
@@ -1040,38 +1084,10 @@ position immediately after the closing delimiter."
 (defun donkey-mark-inner ()
   "Mark text INSIDE CHAR pairs (excluding delimiters)."
   (interactive)
-  (let* ((default-char (char-after))
-         (supported-openers '(?: ?/ ?+ ?_ ?$ ?= ?* ?~ ?\| ?\\ ?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
-         (on-opener (and default-char (memq default-char supported-openers)))
-         (open-char (if on-opener
-                        default-char
-                      (read-char "Char (:/+_$=*~|\\{[<>'\"`): ")))
-         (close-char nil)
-         (start-pos nil)
-         (end-pos nil))
-    (setq close-char
-          (cond
-           ((= open-char ?\{) ?\})
-           ((= open-char ?\[) ?\])
-           ((= open-char ?\() ?\))
-           ((= open-char ?\<) ?>)
-           ((= open-char ?\") ?\")
-           ((= open-char ?\') ?\')
-           ((= open-char ?`) ?`)
-           ((= open-char ?=) ?=)
-           ((= open-char ?*) ?*)
-           ((= open-char ?~) ?~)
-           ((= open-char ?\|) ?\|)
-           ((= open-char ?\\) ?\\)
-           ((= open-char ?/) ?/)
-           ((= open-char ?:) ?:)
-           ((= open-char ?+) ?+)
-           ((= open-char ?_) ?_)
-           ((= open-char ?$) ?$)
-           (t
-            (error "Unsupported delimiter '%c'" open-char))))
-    (let ((bounds (donkey--mark-pair-positions open-char close-char on-opener)))
-      (setq start-pos (car bounds) end-pos (cdr bounds)))
+  (pcase-let*
+      ((`(,open-char ,close-char ,on-opener) (donkey--mark-pair-read-delimiter))
+       (`(,start-pos . ,end-pos)
+        (donkey--mark-pair-positions open-char close-char on-opener)))
     (push-mark (1+ start-pos))
     (goto-char (1- end-pos))
     (activate-mark)
@@ -1083,38 +1099,10 @@ position immediately after the closing delimiter."
 (defun donkey-mark-outer ()
   "Mark text INCLUDING CHAR pairs (delimiters included)."
   (interactive)
-  (let* ((default-char (char-after))
-         (supported-openers '(?: ?/ ?+ ?_ ?$ ?= ?* ?~ ?\| ?\\ ?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
-         (on-opener (and default-char (memq default-char supported-openers)))
-         (open-char (if on-opener
-                        default-char
-                      (read-char "Char (:/+_$=*~|\\{[<>'\"`): ")))
-         (close-char nil)
-         (start-pos nil)
-         (end-pos nil))
-    (setq close-char
-          (cond
-           ((= open-char ?\{) ?\})
-           ((= open-char ?\[) ?\])
-           ((= open-char ?\() ?\))
-           ((= open-char ?\<) ?>)
-           ((= open-char ?\") ?\")
-           ((= open-char ?\') ?\')
-           ((= open-char ?`) ?`)
-           ((= open-char ?=) ?=)
-           ((= open-char ?*) ?*)
-           ((= open-char ?~) ?~)
-           ((= open-char ?\|) ?\|)
-           ((= open-char ?\\) ?\\)
-           ((= open-char ?/) ?/)
-           ((= open-char ?:) ?:)
-           ((= open-char ?+) ?+)
-           ((= open-char ?_) ?_)
-           ((= open-char ?$) ?$)
-           (t
-            (error "Unsupported delimiter '%c'.  Use: { [ ( < ' \" ` | \\" open-char))))
-    (let ((bounds (donkey--mark-pair-positions open-char close-char on-opener)))
-      (setq start-pos (car bounds) end-pos (cdr bounds)))
+  (pcase-let*
+      ((`(,open-char ,close-char ,on-opener) (donkey--mark-pair-read-delimiter))
+       (`(,start-pos . ,end-pos)
+        (donkey--mark-pair-positions open-char close-char on-opener)))
     (push-mark start-pos)
     (goto-char end-pos)
     (activate-mark)

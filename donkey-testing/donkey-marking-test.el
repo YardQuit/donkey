@@ -945,6 +945,52 @@ for another `(' would not find a `)' anyway, so it stays an error."
       (should-error (donkey-mark-inner) :type 'error))))
 
 ;;; ---------------------------------------------------------------------------
+;;; donkey-mark-pair-delimiters (customization)
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-mark-pair-delimiters-customization-adds-new-pair ()
+  "Adding a pair to `donkey-mark-pair-delimiters' makes it recognized
+without prompting via `read-char'."
+  (let ((donkey-mark-pair-delimiters
+         (cons (cons ?# ?#) donkey-mark-pair-delimiters)))
+    (with-temp-buffer
+      (insert "#comment#")
+      (goto-char 1)
+      (donkey-mark-inner)
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     "comment")))))
+
+(ert-deftest donkey-mark-pair-delimiters-customization-removes-pair ()
+  "Removing a pair from `donkey-mark-pair-delimiters' makes it fall
+through to the `read-char' prompt instead of being auto-recognized."
+  (let* ((donkey-mark-pair-delimiters
+          (assq-delete-all ?~ (copy-alist donkey-mark-pair-delimiters)))
+         (prompted nil))
+    (with-temp-buffer
+      (insert "~bold~")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'read-char)
+                 (lambda (&rest _) (setq prompted t) ?~)))
+        (should-error (donkey-mark-inner) :type 'error))
+      (should prompted))))
+
+(ert-deftest donkey-mark-pair-delimiters-prompt-reflects-customization ()
+  "The `read-char' prompt string is built from the current value of
+`donkey-mark-pair-delimiters', so it stays in sync with customization."
+  (let ((donkey-mark-pair-delimiters '((?# . ?#))))
+    (should (equal (donkey--mark-pair-prompt) "Char (#): "))))
+
+(ert-deftest donkey-mark-pair-delimiters-unsupported-error-reflects-customization ()
+  "The \"unsupported delimiter\" error message lists the characters
+from the current value of `donkey-mark-pair-delimiters'."
+  (let ((donkey-mark-pair-delimiters '((?# . ?#))))
+    (should-error (donkey--mark-pair-unsupported-error ?!) :type 'error)
+    (condition-case err
+        (donkey--mark-pair-unsupported-error ?!)
+      (error
+       (should (string-match-p "Use: #" (error-message-string err)))))))
+
+;;; ---------------------------------------------------------------------------
 ;;; donkey-mark-outer
 ;;; ---------------------------------------------------------------------------
 

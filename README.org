@@ -167,6 +167,19 @@ and =quelpa-use-package= need to be installed first:
 | =m A= | =donkey-mark-sexp-outer=     | Mark including balanced expression   |
 | =m v= | =donkey-rectangle-mark-mode= | Toggle rectangle mark mode           |
 
+=donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` = * ~ | \ / : + _ $=
+by default -- an alist of (OPEN . CLOSE) pairs in =donkey-mark-pair-delimiters=
+(a Customization Group variable). For symmetric delimiters (e.g. quotes,
+where the same character both opens and closes a pair), OPEN and CLOSE
+are identical. Add or remove entries in your =config.el= to change what's
+recognized, e.g.:
+
+#+begin_src emacs-lisp
+
+  (add-to-list 'donkey-mark-pair-delimiters '(?# . ?#))
+
+#+end_src
+
 ** Buffer Navigation (=g= prefix and standalone)
 
 | Key   | Command                  | Description                 |
@@ -637,4 +650,5 @@ All DONKEY variables are under the =donkey= Customize group:
 | =donkey-position-ring-max=           | integer | =10=               | Number of positions in jump-back ring  |
 | =donkey-decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
 | =donkey-wrap-delimiters=             | list    | =( [ { " ' `=      | Delimiters that wrap an active region  |
+| =donkey-mark-pair-delimiters=        | alist   | =(see above)=      | Delimiter pairs for mark-inner/outer   |
 
