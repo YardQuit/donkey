@@ -958,11 +958,11 @@ buffer."
   "Mark text INSIDE CHAR pairs (excluding delimiters)."
   (interactive)
   (let* ((default-char (char-after))
-         (supported-openers '(?: ?/ ?+ ?_ ?$ ?= ?* ?~ ?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
+         (supported-openers '(?: ?/ ?+ ?_ ?$ ?= ?* ?~ ?\| ?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
          (on-opener (and default-char (memq default-char supported-openers)))
          (open-char (if on-opener
                         default-char
-                      (read-char "Char (:/+_$=*~{[<>'\"`): ")))
+                      (read-char "Char (:/+_$=*~|{[<>'\"`): ")))
          (close-char nil)
          (start-pos nil)
          (end-pos nil))
@@ -978,6 +978,7 @@ buffer."
            ((= open-char ?=) ?=)
            ((= open-char ?*) ?*)
            ((= open-char ?~) ?~)
+           ((= open-char ?\|) ?\|)
            ((= open-char ?/) ?/)
            ((= open-char ?:) ?:)
            ((= open-char ?+) ?+)
@@ -1010,11 +1011,11 @@ buffer."
   "Mark text INCLUDING CHAR pairs (delimiters included)."
   (interactive)
   (let* ((default-char (char-after))
-         (supported-openers '(?: ?/ ?+ ?_ ?$ ?= ?* ?~ ?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
+         (supported-openers '(?: ?/ ?+ ?_ ?$ ?= ?* ?~ ?\| ?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
          (on-opener (and default-char (memq default-char supported-openers)))
          (open-char (if on-opener
                         default-char
-                      (read-char "Char (:/+_$=*~{[<>'\"`): ")))
+                      (read-char "Char (:/+_$=*~|{[<>'\"`): ")))
          (close-char nil)
          (start-pos nil)
          (end-pos nil))
@@ -1030,13 +1031,14 @@ buffer."
            ((= open-char ?=) ?=)
            ((= open-char ?*) ?*)
            ((= open-char ?~) ?~)
+           ((= open-char ?\|) ?\|)
            ((= open-char ?/) ?/)
            ((= open-char ?:) ?:)
            ((= open-char ?+) ?+)
            ((= open-char ?_) ?_)
            ((= open-char ?$) ?$)
            (t
-            (error "Unsupported delimiter '%c'.  Use: { [ ( < ' \" `" open-char))))
+            (error "Unsupported delimiter '%c'.  Use: { [ ( < ' \" ` |" open-char))))
     (if on-opener
         (setq start-pos (point))
       (if (and (char-after) (= (char-after) open-char))
