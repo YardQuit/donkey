@@ -98,7 +98,7 @@ does not linger once yanked."
 (ert-deftest donkey-copy-rectangle-mode-calls-copy-rectangle-as-kill ()
   "With region active and rectangle-mark-mode enabled, delegates to
 copy-rectangle-as-kill via call-interactively."
-  (let (called-cmd)
+  (let (called-cmd donkey--last-kill-rectangle-p)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -281,7 +281,7 @@ paste it back via `yank-rectangle' instead of the clipboard/kill ring."
 (ert-deftest donkey-delete-rectangle-mode-calls-kill-rectangle ()
   "With region active and rectangle-mark-mode enabled, delegates to
 `kill-rectangle' via `call-interactively'."
-  (let (called-cmd)
+  (let (called-cmd donkey--last-kill-rectangle-p)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -405,6 +405,57 @@ kill-ring entry instead of pushing a new one)."
     (setq kill-ring-yank-pointer kill-ring)
     (kill-append " more" nil)
     (should-not donkey--last-kill-rectangle-p)))
+
+;;; ---------------------------------------------------------------------------
+;;; donkey--replace-rectangle-selection-with-killed-rectangle
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-rectangle-top-left-returns-first-row-start ()
+  "Returns the buffer position of the rectangle's top-left corner,
+regardless of which diagonal corners point/mark actually sit at."
+  (with-temp-buffer
+    (insert "aaXXbb\nccXXdd\neeXXff\n")
+    (goto-char (point-min))
+    (forward-char 2)
+    (let ((start (point)))
+      (goto-char (point-min))
+      (forward-line 2)
+      (forward-char 4)
+      (should (= (donkey--rectangle-top-left start (point)) start)))))
+
+(ert-deftest donkey-replace-rectangle-selection-replaces-matching-rows ()
+  "Integration test: replaces a same-row-count rectangle selection with
+`killed-rectangle', using `delete-rectangle' (not `kill-rectangle') so
+the source content survives the destination's own deletion."
+  (with-temp-buffer
+    (insert ";;aaa\n;;bbb\n;;ccc\n,,ddd\n,,eee\n,,fff\n")
+    (goto-char (point-min))
+    (forward-line 3)
+    (rectangle-mark-mode 1)
+    (forward-line 2)
+    (forward-char 2)
+    (let ((killed-rectangle '(";;" ";;" ";;")))
+      (donkey--replace-rectangle-selection-with-killed-rectangle)
+      (should (string= (buffer-string)
+                       ";;aaa\n;;bbb\n;;ccc\n;;ddd\n;;eee\n;;fff\n"))
+      ;; Source rectangle must survive the destination's own deletion.
+      (should (equal killed-rectangle '(";;" ";;" ";;"))))))
+
+(ert-deftest donkey-replace-rectangle-selection-refuses-row-count-mismatch ()
+  "Refuses via `user-error', without touching the buffer at all, when
+the selection's row count doesn't match `killed-rectangle's row count."
+  (with-temp-buffer
+    (insert ";;aaa\n;;bbb\n;;ccc\n,,ddd\n,,eee\n,,fff\n")
+    (goto-char (point-min))
+    (forward-line 3)
+    (rectangle-mark-mode 1)
+    (forward-line 1)                   ; only 2 rows selected, not 3
+    (forward-char 2)
+    (let ((killed-rectangle '(";;" ";;" ";;")) ; 3 rows
+          (original (buffer-string)))
+      (should-error (donkey--replace-rectangle-selection-with-killed-rectangle)
+                    :type 'user-error)
+      (should (string= (buffer-string) original)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-yank
@@ -550,8 +601,13 @@ deletion deactivates the mark, which auto-disables
 `rectangle-mark-mode' via its own hook -- so a plain linear yank
 immediately after would land on only one row, silently leaving every
 other row of the just-deleted rectangle with nothing to replace it.
-Must call `undefined' instead, same as `donkey-wrap-region' does."
-  (let (called-cmd deleted yanked)
+Must call `undefined' instead, same as `donkey-wrap-region' does.
+
+Explicitly binds `donkey--last-kill-rectangle-p' to nil: with it set,
+`donkey-yank' instead delegates to
+`donkey--replace-rectangle-selection-with-killed-rectangle' -- see the
+dedicated tests for that path."
+  (let (called-cmd deleted yanked donkey--last-kill-rectangle-p)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -571,7 +627,7 @@ Must call `undefined' instead, same as `donkey-wrap-region' does."
 
 (ert-deftest donkey-yank-rectangle-mode-falls-back-when-disabled ()
   "When rectangle-mark-mode is nil, yanks normally as before."
-  (let (called-cmd deleted yanked)
+  (let (called-cmd deleted yanked donkey--last-kill-rectangle-p)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -588,6 +644,26 @@ Must call `undefined' instead, same as `donkey-wrap-region' does."
     (should-not called-cmd)
     (should deleted)
     (should yanked)))
+
+(ert-deftest donkey-yank-rectangle-mode-with-flag-calls-replace-function ()
+  "With rectangle-mark-mode active and the flag set, must delegate to
+`donkey--replace-rectangle-selection-with-killed-rectangle' instead of
+falling through to `undefined'."
+  (let ((donkey--last-kill-rectangle-p t)
+        replace-called called-cmd)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 3)
+      (cl-letf (((symbol-function
+                  'donkey--replace-rectangle-selection-with-killed-rectangle)
+                 (lambda () (setq replace-called t)))
+                ((symbol-function 'call-interactively)
+                 (lambda (cmd) (setq called-cmd cmd))))
+        (let ((rectangle-mark-mode t))
+          (donkey-yank))))
+    (should replace-called)
+    (should-not called-cmd)))
 
 (ert-deftest donkey-yank-pastes-rectangle-when-flag-set ()
   "Regression test: after `donkey-copy'/`donkey-delete' kill a rectangle
@@ -792,6 +868,59 @@ see `donkey-yank-rectangle-mode-falls-through-to-undefined'."
           (donkey-yank-pop))))
     (should-not called-cmd)
     (should deleted)
+    (should popped)))
+
+(ert-deftest donkey-yank-pop-signals-error-right-after-rectangle-paste ()
+  "Regression test: `yank-rectangle' (unlike `yank'/`clipboard-yank')
+never sets `this-command' to `yank', so calling `donkey-yank-pop'
+immediately after a rectangle paste must not delegate to `yank-pop' --
+which would otherwise fail confusingly deep inside its own
+`yank-from-kill-ring'/`read-from-kill-ring' fallback path.  Signals a
+clear `user-error' instead, since `killed-rectangle' has no history to
+pop through regardless."
+  (let ((donkey--last-kill-rectangle-p t)
+        (last-command 'donkey-yank)
+        popped)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'yank-pop)
+                 (lambda () (setq popped t))))
+        (should-error (donkey-yank-pop) :type 'user-error)))
+    (should-not popped)))
+
+(ert-deftest donkey-yank-pop-pops-normally-after-non-rectangle-yank ()
+  "Even with last-command `donkey-yank', a nil flag (the previous
+donkey-yank was an ordinary clipboard/kill-ring paste) must still pop
+normally."
+  (let (donkey--last-kill-rectangle-p
+        (last-command 'donkey-yank)
+        popped)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'yank-pop)
+                 (lambda () (setq popped t))))
+        (donkey-yank-pop)))
+    (should popped)))
+
+(ert-deftest donkey-yank-pop-pops-normally-when-last-command-is-not-donkey-yank ()
+  "Even with the flag set, if the immediately preceding command wasn't
+donkey-yank (e.g. the rectangle copy happened long ago and other
+commands ran since), must still fall through to plain yank-pop rather
+than signalling the rectangle-specific error."
+  (let ((donkey--last-kill-rectangle-p t)
+        (last-command 'some-other-command)
+        popped)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'yank-pop)
+                 (lambda () (setq popped t))))
+        (donkey-yank-pop)))
     (should popped)))
 
 ;;; ---------------------------------------------------------------------------

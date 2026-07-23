@@ -44,6 +44,7 @@
 
 (require 'thingatpt) ;(donkey-mark-word)
 (require 'cl-lib)    ; Explicitly load cl-lib for cl-some
+(require 'rect)      ; killed-rectangle, extract-rectangle-bounds, etc.
 (eval-and-compile
   (declare-function org-open-at-point "org")     ;(donkey-enter-dwim)
   (declare-function org-element-at-point "org")  ;(donkey-enter-dwim)
@@ -762,6 +763,47 @@ the freshest kill."
 (advice-add 'kill-new :before #'donkey--clear-last-kill-rectangle-flag)
 (advice-add 'kill-append :before #'donkey--clear-last-kill-rectangle-flag)
 
+(defun donkey--rectangle-top-left (start end)
+  "Return the buffer position of the top-left corner of the rectangle
+spanning START and END.
+
+`extract-rectangle-bounds' returns one (START . END) cons per row of
+the rectangle, top row first; that first row's START column position
+IS the rectangle's top-left corner, computed the exact same way
+`rect.el' itself computes it for every other rectangle operation."
+  (caar (extract-rectangle-bounds start end)))
+
+(defun donkey--replace-rectangle-selection-with-killed-rectangle ()
+  "Replace the active rectangle-mark-mode selection with `killed-rectangle'.
+
+Refuses via `user-error', without touching the buffer at all, when the
+selection's row count doesn't match `killed-rectangle's row count --
+silently replacing a differently-sized selection would either lose
+rows of the pasted content or leave rows of the selection only
+partially overwritten, either way not what \"replace this rectangle
+with that one\" should ever silently do.
+
+Uses `delete-rectangle', not `kill-rectangle', to clear the
+destination: `kill-rectangle' would ALSO save what it deletes into the
+very same `killed-rectangle' slot we're about to read from, clobbering
+the source rectangle before it's ever pasted back.  The top-left
+corner is captured before deleting -- deleting the rectangle only
+ever removes text at or after that position on its own row, never
+before it, so the captured position stays valid afterward without
+needing any adjustment."
+  (let* ((start (region-beginning))
+         (end (region-end))
+         (source killed-rectangle)
+         (dest-row-count (length (extract-rectangle start end))))
+    (unless (= dest-row-count (length source))
+      (user-error
+       "Rectangle row mismatch: selection has %d row%s, copied rectangle has %d -- paste refused"
+       dest-row-count (if (= dest-row-count 1) "" "s") (length source)))
+    (let ((top-left (donkey--rectangle-top-left start end)))
+      (delete-rectangle start end)
+      (goto-char top-left)
+      (insert-rectangle source))))
+
 (defun donkey-yank ()
   "Yank clipboard content, replacing the active region if present.
 
@@ -769,32 +811,37 @@ Falls back to the kill ring when the system clipboard is
 inaccessible.  This provides consistent behavior across GUI and
 terminal Emacs on Linux (X11/Wayland), macOS, and Windows.
 
-With `rectangle-mark-mode' active, falls through to `undefined',
-same as `donkey-wrap-region' does for that case.  System clipboard
-content is inherently linear text, with no notion of a rectangular
-shape to paste it as; `yank-rectangle' only works from the separate
-`killed-rectangle' variable populated by `kill-rectangle'/
-`copy-rectangle-as-kill', which is a different thing entirely from
-what's on the clipboard.  Without this guard,
-`donkey--delete-active-region-safe' correctly deletes the whole
-rectangle first (via `region-extract-function', which `rect.el'
-advises to respect `rectangle-mark-mode'), but that deletion
-deactivates the mark, which `rectangle-mark-mode' itself is hooked
-to auto-disable on -- so by the time the plain linear yank below ran,
-`rectangle-mark-mode' was already nil, and the paste landed only on
-whichever single row point ended up on, silently leaving every other
-row of the just-deleted rectangle with nothing to replace it.
+With `rectangle-mark-mode' active AND the most recent kill itself a
+rectangle (see `donkey--last-kill-rectangle-p'), replaces the active
+rectangle selection with `killed-rectangle' via
+`donkey--replace-rectangle-selection-with-killed-rectangle' -- which
+refuses the paste if the row counts don't match, rather than risk a
+silent, lossy, mismatched replace.  With `rectangle-mark-mode' active
+but no rectangle to paste, falls through to `undefined' instead, same
+as `donkey-wrap-region' does for that case: system clipboard content
+is inherently linear text, with no notion of a rectangular shape to
+paste it as.  Without this guard, `donkey--delete-active-region-safe'
+correctly deletes the whole rectangle first (via
+`region-extract-function', which `rect.el' advises to respect
+`rectangle-mark-mode'), but that deletion deactivates the mark, which
+`rectangle-mark-mode' itself is hooked to auto-disable on -- so by the
+time a plain linear yank ran, `rectangle-mark-mode' was already nil,
+and the paste landed only on whichever single row point ended up on,
+silently leaving every other row of the just-deleted rectangle with
+nothing to replace it.
 
-Otherwise, if the most recent kill was a rectangle (see
-`donkey--last-kill-rectangle-p'), pastes it back via `yank-rectangle'
-at point instead of pulling from the clipboard/kill ring -- completing
-the round trip for `donkey-copy'/`donkey-delete's rectangle handling,
-which would otherwise populate `killed-rectangle' with no way to
-paste it back anywhere outside of `rectangle-mark-mode' itself."
+Outside of `rectangle-mark-mode', if the most recent kill was a
+rectangle, pastes it back via `yank-rectangle' at point instead of
+pulling from the clipboard/kill ring -- completing the round trip for
+`donkey-copy'/`donkey-delete's rectangle handling, which would
+otherwise populate `killed-rectangle' with no way to paste it back
+anywhere outside of `rectangle-mark-mode' itself."
   (interactive)
   (cond
    ((bound-and-true-p rectangle-mark-mode)
-    (call-interactively #'undefined))
+    (if donkey--last-kill-rectangle-p
+        (donkey--replace-rectangle-selection-with-killed-rectangle)
+      (call-interactively #'undefined)))
    (donkey--last-kill-rectangle-p
     (donkey--delete-active-region-safe)
     (yank-rectangle))
@@ -807,12 +854,31 @@ paste it back anywhere outside of `rectangle-mark-mode' itself."
 
 Removes the active region first if one is present.  With
 `rectangle-mark-mode' active, falls through to `undefined' -- see
-`donkey-yank', which has the same guard for the same reason."
+`donkey-yank', which has the same guard for the same reason.
+
+Right after a rectangle paste (`donkey-yank' having just called
+`yank-rectangle'), signals a clear `user-error' instead of delegating
+to `yank-pop'.  Unlike ordinary `yank'/`clipboard-yank', which set
+`this-command' to `yank' so a following `yank-pop' can detect it's
+continuing a yank, `yank-rectangle' does no such bookkeeping -- so
+`last-command' here is `donkey-yank', not `yank', and `yank-pop' would
+otherwise fall into its own `yank-from-kill-ring'/`read-from-kill-ring'
+path meant for popping without a preceding real yank, which has
+nothing to do with the rectangle just pasted and fails confusingly
+\(e.g. \"Kill ring is empty\" whenever the kill ring genuinely has
+nothing in it, since a rectangle kill never touches it\).
+`killed-rectangle' is a single slot with no history to begin with, so
+there is nothing meaningful to \"pop\" to regardless -- re-press `p'
+to paste the same rectangle again."
   (interactive)
-  (if (bound-and-true-p rectangle-mark-mode)
-      (call-interactively #'undefined)
+  (cond
+   ((bound-and-true-p rectangle-mark-mode)
+    (call-interactively #'undefined))
+   ((and donkey--last-kill-rectangle-p (eq last-command 'donkey-yank))
+    (user-error "No further rectangle kills to cycle through; press `p' again to re-paste it"))
+   (t
     (donkey--delete-active-region-safe)
-    (yank-pop)))
+    (yank-pop))))
 
 (defun donkey-copy ()
   "Copy the active region, or the character at point if no region is active.
