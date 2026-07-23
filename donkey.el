@@ -807,12 +807,31 @@ paste it back anywhere outside of `rectangle-mark-mode' itself."
 
 Removes the active region first if one is present.  With
 `rectangle-mark-mode' active, falls through to `undefined' -- see
-`donkey-yank', which has the same guard for the same reason."
+`donkey-yank', which has the same guard for the same reason.
+
+Right after a rectangle paste (`donkey-yank' having just called
+`yank-rectangle'), signals a clear `user-error' instead of delegating
+to `yank-pop'.  Unlike ordinary `yank'/`clipboard-yank', which set
+`this-command' to `yank' so a following `yank-pop' can detect it's
+continuing a yank, `yank-rectangle' does no such bookkeeping -- so
+`last-command' here is `donkey-yank', not `yank', and `yank-pop' would
+otherwise fall into its own `yank-from-kill-ring'/`read-from-kill-ring'
+path meant for popping without a preceding real yank, which has
+nothing to do with the rectangle just pasted and fails confusingly
+\(e.g. \"Kill ring is empty\" whenever the kill ring genuinely has
+nothing in it, since a rectangle kill never touches it\).
+`killed-rectangle' is a single slot with no history to begin with, so
+there is nothing meaningful to \"pop\" to regardless -- re-press `p'
+to paste the same rectangle again."
   (interactive)
-  (if (bound-and-true-p rectangle-mark-mode)
-      (call-interactively #'undefined)
+  (cond
+   ((bound-and-true-p rectangle-mark-mode)
+    (call-interactively #'undefined))
+   ((and donkey--last-kill-rectangle-p (eq last-command 'donkey-yank))
+    (user-error "No further rectangle kills to cycle through; press `p' again to re-paste it"))
+   (t
     (donkey--delete-active-region-safe)
-    (yank-pop)))
+    (yank-pop))))
 
 (defun donkey-copy ()
   "Copy the active region, or the character at point if no region is active.

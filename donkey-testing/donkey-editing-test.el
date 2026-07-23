@@ -98,7 +98,7 @@ does not linger once yanked."
 (ert-deftest donkey-copy-rectangle-mode-calls-copy-rectangle-as-kill ()
   "With region active and rectangle-mark-mode enabled, delegates to
 copy-rectangle-as-kill via call-interactively."
-  (let (called-cmd)
+  (let (called-cmd donkey--last-kill-rectangle-p)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -281,7 +281,7 @@ paste it back via `yank-rectangle' instead of the clipboard/kill ring."
 (ert-deftest donkey-delete-rectangle-mode-calls-kill-rectangle ()
   "With region active and rectangle-mark-mode enabled, delegates to
 `kill-rectangle' via `call-interactively'."
-  (let (called-cmd)
+  (let (called-cmd donkey--last-kill-rectangle-p)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -792,6 +792,59 @@ see `donkey-yank-rectangle-mode-falls-through-to-undefined'."
           (donkey-yank-pop))))
     (should-not called-cmd)
     (should deleted)
+    (should popped)))
+
+(ert-deftest donkey-yank-pop-signals-error-right-after-rectangle-paste ()
+  "Regression test: `yank-rectangle' (unlike `yank'/`clipboard-yank')
+never sets `this-command' to `yank', so calling `donkey-yank-pop'
+immediately after a rectangle paste must not delegate to `yank-pop' --
+which would otherwise fail confusingly deep inside its own
+`yank-from-kill-ring'/`read-from-kill-ring' fallback path.  Signals a
+clear `user-error' instead, since `killed-rectangle' has no history to
+pop through regardless."
+  (let ((donkey--last-kill-rectangle-p t)
+        (last-command 'donkey-yank)
+        popped)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'yank-pop)
+                 (lambda () (setq popped t))))
+        (should-error (donkey-yank-pop) :type 'user-error)))
+    (should-not popped)))
+
+(ert-deftest donkey-yank-pop-pops-normally-after-non-rectangle-yank ()
+  "Even with last-command `donkey-yank', a nil flag (the previous
+donkey-yank was an ordinary clipboard/kill-ring paste) must still pop
+normally."
+  (let (donkey--last-kill-rectangle-p
+        (last-command 'donkey-yank)
+        popped)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'yank-pop)
+                 (lambda () (setq popped t))))
+        (donkey-yank-pop)))
+    (should popped)))
+
+(ert-deftest donkey-yank-pop-pops-normally-when-last-command-is-not-donkey-yank ()
+  "Even with the flag set, if the immediately preceding command wasn't
+donkey-yank (e.g. the rectangle copy happened long ago and other
+commands ran since), must still fall through to plain yank-pop rather
+than signalling the rectangle-specific error."
+  (let ((donkey--last-kill-rectangle-p t)
+        (last-command 'some-other-command)
+        popped)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'yank-pop)
+                 (lambda () (setq popped t))))
+        (donkey-yank-pop)))
     (should popped)))
 
 ;;; ---------------------------------------------------------------------------
