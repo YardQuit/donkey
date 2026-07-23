@@ -732,18 +732,40 @@ the function `delete-active-region'.  Handles both cases gracefully."
 
 Falls back to the kill ring when the system clipboard is
 inaccessible.  This provides consistent behavior across GUI and
-terminal Emacs on Linux (X11/Wayland), macOS, and Windows."
+terminal Emacs on Linux (X11/Wayland), macOS, and Windows.
+
+With `rectangle-mark-mode' active, falls through to `undefined',
+same as `donkey-wrap-region' does for that case.  System clipboard
+content is inherently linear text, with no notion of a rectangular
+shape to paste it as; `yank-rectangle' only works from the separate
+`killed-rectangle' variable populated by `kill-rectangle'/
+`copy-rectangle-as-kill', which is a different thing entirely from
+what's on the clipboard.  Without this guard,
+`donkey--delete-active-region-safe' correctly deletes the whole
+rectangle first (via `region-extract-function', which `rect.el'
+advises to respect `rectangle-mark-mode'), but that deletion
+deactivates the mark, which `rectangle-mark-mode' itself is hooked
+to auto-disable on -- so by the time the plain linear yank below ran,
+`rectangle-mark-mode' was already nil, and the paste landed only on
+whichever single row point ended up on, silently leaving every other
+row of the just-deleted rectangle with nothing to replace it."
   (interactive)
-  (donkey--delete-active-region-safe)
-  (donkey--clipboard-yank))
+  (if (bound-and-true-p rectangle-mark-mode)
+      (call-interactively #'undefined)
+    (donkey--delete-active-region-safe)
+    (donkey--clipboard-yank)))
 
 (defun donkey-yank-pop ()
   "Replace the last yanked text with the next `kill-ring' entry.
 
-Removes the active region first if one is present."
+Removes the active region first if one is present.  With
+`rectangle-mark-mode' active, falls through to `undefined' -- see
+`donkey-yank', which has the same guard for the same reason."
   (interactive)
-  (donkey--delete-active-region-safe)
-  (yank-pop))
+  (if (bound-and-true-p rectangle-mark-mode)
+      (call-interactively #'undefined)
+    (donkey--delete-active-region-safe)
+    (yank-pop)))
 
 (defun donkey-copy ()
   "Copy the active region, or the character at point if no region is active.

@@ -476,6 +476,54 @@ in that order."
           (call-interactively #'donkey-yank)))
       (should yanked))))
 
+(ert-deftest donkey-yank-rectangle-mode-falls-through-to-undefined ()
+  "Regression test: with rectangle-mark-mode active, must not delete the
+region and then paste linearly.  `donkey--delete-active-region-safe'
+correctly deletes the whole rectangle (via `region-extract-function',
+which rect.el advises to respect `rectangle-mark-mode'), but that
+deletion deactivates the mark, which auto-disables
+`rectangle-mark-mode' via its own hook -- so a plain linear yank
+immediately after would land on only one row, silently leaving every
+other row of the just-deleted rectangle with nothing to replace it.
+Must call `undefined' instead, same as `donkey-wrap-region' does."
+  (let (called-cmd deleted yanked)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 3)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'call-interactively)
+                 (lambda (cmd) (setq called-cmd cmd)))
+                ((symbol-function 'delete-active-region)
+                 (lambda () (setq deleted t)))
+                ((symbol-function 'clipboard-yank)
+                 (lambda () (setq yanked t))))
+        (let ((rectangle-mark-mode t))
+          (donkey-yank))))
+    (should (eq called-cmd 'undefined))
+    (should-not deleted)
+    (should-not yanked)))
+
+(ert-deftest donkey-yank-rectangle-mode-falls-back-when-disabled ()
+  "When rectangle-mark-mode is nil, yanks normally as before."
+  (let (called-cmd deleted yanked)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 3)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'call-interactively)
+                 (lambda (cmd) (setq called-cmd cmd)))
+                ((symbol-function 'delete-active-region)
+                 (lambda () (setq deleted t)))
+                ((symbol-function 'clipboard-yank)
+                 (lambda () (setq yanked t))))
+        (let ((rectangle-mark-mode nil))
+          (donkey-yank))))
+    (should-not called-cmd)
+    (should deleted)
+    (should yanked)))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-yank-pop
 ;;; ---------------------------------------------------------------------------
@@ -580,6 +628,47 @@ in that order."
                    (lambda () (setq popped t))))
           (call-interactively #'donkey-yank-pop)))
       (should popped))))
+
+(ert-deftest donkey-yank-pop-rectangle-mode-falls-through-to-undefined ()
+  "Regression test: same guard as `donkey-yank', for the same reason --
+see `donkey-yank-rectangle-mode-falls-through-to-undefined'."
+  (let (called-cmd deleted popped)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 3)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'call-interactively)
+                 (lambda (cmd) (setq called-cmd cmd)))
+                ((symbol-function 'delete-active-region)
+                 (lambda () (setq deleted t)))
+                ((symbol-function 'yank-pop)
+                 (lambda () (setq popped t))))
+        (let ((rectangle-mark-mode t))
+          (donkey-yank-pop))))
+    (should (eq called-cmd 'undefined))
+    (should-not deleted)
+    (should-not popped)))
+
+(ert-deftest donkey-yank-pop-rectangle-mode-falls-back-when-disabled ()
+  "When rectangle-mark-mode is nil, pops normally as before."
+  (let (called-cmd deleted popped)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 3)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'call-interactively)
+                 (lambda (cmd) (setq called-cmd cmd)))
+                ((symbol-function 'delete-active-region)
+                 (lambda () (setq deleted t)))
+                ((symbol-function 'yank-pop)
+                 (lambda () (setq popped t))))
+        (let ((rectangle-mark-mode nil))
+          (donkey-yank-pop))))
+    (should-not called-cmd)
+    (should deleted)
+    (should popped)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-indent-region-or-line
