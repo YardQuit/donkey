@@ -743,14 +743,22 @@ Not buffer-local: `killed-rectangle' itself isn't either, and a
 rectangle copied in one buffer is meant to be pastable in another, the
 same way the kill ring is shared across buffers.
 
-Set to t directly by `donkey-copy'/`donkey-delete' whenever they
-kill/copy a rectangle.  Cleared back to nil automatically by advising
-`kill-new'/`kill-append' below -- the two functions ANY kill-ring
-push funnels through, including ones with no Donkey wrapper at all
-(e.g. `kill-line' bound directly to \"D\", or any stock kill command
-reached via Insert state's passthrough to standard Emacs keys)  so a
-stale rectangle copy from earlier in the session doesn't get pasted
-in place of a more recent, ordinary kill.")
+Set to t automatically by advising `kill-rectangle'/
+`copy-rectangle-as-kill' below -- the only two functions that ever
+populate `killed-rectangle' -- so this stays correct regardless of how
+the rectangle was killed/copied: via `donkey-copy'/`donkey-delete',
+directly through `M-x', or from any other code that calls those stock
+commands.  `donkey-copy'/`donkey-delete' also set it explicitly as
+a defense-in-depth belt-and-braces measure, redundant with the advice
+in the common case but harmless.
+
+Cleared back to nil automatically by advising `kill-new'/`kill-append'
+-- the two functions ANY kill-ring push funnels through, including
+ones with no Donkey wrapper at all (e.g. `kill-line' bound directly to
+\"D\", or any stock kill command reached via Insert state's passthrough
+to standard Emacs keys) -- so a stale rectangle copy from earlier in
+the session doesn't get pasted in place of a more recent, ordinary
+kill.")
 
 (defun donkey--clear-last-kill-rectangle-flag (&rest _)
   "Clear `donkey--last-kill-rectangle-p'.
@@ -762,6 +770,24 @@ the freshest kill."
 
 (advice-add 'kill-new :before #'donkey--clear-last-kill-rectangle-flag)
 (advice-add 'kill-append :before #'donkey--clear-last-kill-rectangle-flag)
+
+(defun donkey--set-last-kill-rectangle-flag (&rest _)
+  "Set `donkey--last-kill-rectangle-p' to t.
+
+Advised onto `kill-rectangle'/`copy-rectangle-as-kill' -- the only two
+functions that ever populate `killed-rectangle' -- so the flag stays
+correct no matter how the rectangle was killed/copied.  Without this,
+a rectangle killed/copied any way other than through `donkey-copy'/
+`donkey-delete' (e.g. `M-x copy-rectangle-as-kill' directly) would
+leave the flag at nil, and `donkey-yank' would then treat the freshly
+populated `killed-rectangle' as stale -- outside `rectangle-mark-mode'
+that means crashing straight into `donkey--clipboard-yank's own
+kill-ring/clipboard fallback with a raw \"Kill ring is empty\" error,
+since the kill ring itself was never touched by a rectangle kill/copy."
+  (setq donkey--last-kill-rectangle-p t))
+
+(advice-add 'kill-rectangle :after #'donkey--set-last-kill-rectangle-flag)
+(advice-add 'copy-rectangle-as-kill :after #'donkey--set-last-kill-rectangle-flag)
 
 (defun donkey--rectangle-top-left (start end)
   "Return the buffer position of the top-left corner of the rectangle

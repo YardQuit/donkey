@@ -406,6 +406,36 @@ kill-ring entry instead of pushing a new one)."
     (kill-append " more" nil)
     (should-not donkey--last-kill-rectangle-p)))
 
+(ert-deftest donkey-set-last-kill-rectangle-flag-sets-t ()
+  "Directly sets the flag regardless of prior value."
+  (let (donkey--last-kill-rectangle-p)
+    (donkey--set-last-kill-rectangle-flag)
+    (should donkey--last-kill-rectangle-p)))
+
+(ert-deftest donkey-copy-rectangle-as-kill-advice-sets-flag-directly ()
+  "Regression test: calling `copy-rectangle-as-kill' any way OTHER than
+through `donkey-copy' -- directly via `M-x', or from any third-party
+code -- must still set `donkey--last-kill-rectangle-p', or
+`donkey-yank' would treat the freshly populated `killed-rectangle' as
+stale and, outside `rectangle-mark-mode', crash into
+`donkey--clipboard-yank's kill-ring/clipboard fallback with a raw
+\"Kill ring is empty\" error, since a rectangle copy never touches the
+kill ring itself."
+  (let (donkey--last-kill-rectangle-p)
+    (with-temp-buffer
+      (insert "hello\n")
+      (copy-rectangle-as-kill 1 3))
+    (should donkey--last-kill-rectangle-p)))
+
+(ert-deftest donkey-kill-rectangle-advice-sets-flag-directly ()
+  "Same as `donkey-copy-rectangle-as-kill-advice-sets-flag-directly', for
+`kill-rectangle'."
+  (let (donkey--last-kill-rectangle-p)
+    (with-temp-buffer
+      (insert "hello\n")
+      (kill-rectangle 1 3))
+    (should donkey--last-kill-rectangle-p)))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--replace-rectangle-selection-with-killed-rectangle
 ;;; ---------------------------------------------------------------------------
