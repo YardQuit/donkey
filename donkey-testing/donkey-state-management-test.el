@@ -729,6 +729,69 @@ the user had just turned off."
       (should-not current-input-method))))
 
 ;;; ---------------------------------------------------------------------------
+;;; donkey-disable-input-method
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-disable-input-method-clears-saved-value-in-normal-state ()
+  "Regression test: `deactivate-input-method' alone is a no-op in Normal
+state, since Donkey already deactivated the live input method on entry
+and `current-input-method' is already nil -- so it never clears the
+buffer-local `donkey--saved-input-method' stash, and the next
+Insert-state entry resurrects the input method the user just tried to
+turn off.  `donkey-disable-input-method' must clear the saved value
+unconditionally, regardless of `current-input-method''s live state."
+  (with-temp-buffer
+    (let ((donkey--saved-input-method "swedish-postfix")
+          (current-input-method nil)
+          (deactivate-called nil))
+      (cl-letf (((symbol-function 'deactivate-input-method)
+                 (lambda () (setq deactivate-called t))))
+        (donkey-disable-input-method))
+      (should-not donkey--saved-input-method)
+      (should-not deactivate-called))))
+
+(ert-deftest donkey-disable-input-method-deactivates-live-method ()
+  "When an input method is actually active (e.g. called from Insert
+state), also deactivates it, not just the saved stash."
+  (with-temp-buffer
+    (let ((donkey--saved-input-method nil)
+          (current-input-method "swedish-postfix")
+          (deactivate-called nil))
+      (cl-letf (((symbol-function 'deactivate-input-method)
+                 (lambda ()
+                   (setq deactivate-called t
+                         current-input-method nil))))
+        (donkey-disable-input-method))
+      (should deactivate-called)
+      (should-not current-input-method)
+      (should-not donkey--saved-input-method))))
+
+(ert-deftest donkey-disable-input-method-prevents-resurrection-on-insert-entry ()
+  "End-to-end regression: after `donkey-disable-input-method' in Normal
+state, re-entering Insert state must not reactivate the input method."
+  (with-temp-buffer
+    (fundamental-mode)
+    (donkey-enter-insert)
+    (cl-letf (((symbol-function 'activate-input-method)
+               (lambda (name)
+                 (setq current-input-method name)
+                 (run-hooks 'input-method-activate-hook)))
+              ((symbol-function 'deactivate-input-method)
+               (lambda ()
+                 (setq current-input-method nil)
+                 (run-hooks 'input-method-deactivate-hook))))
+      (setq current-input-method "swedish-postfix")
+      (donkey-enter-normal)
+      ;; donkey--on-normal-entry already deactivated it and stashed it;
+      ;; current-input-method is nil here, same as the bug's repro.
+      (should-not current-input-method)
+      (should (equal donkey--saved-input-method "swedish-postfix"))
+      (donkey-disable-input-method)
+      (should-not donkey--saved-input-method)
+      (donkey-enter-insert)
+      (should-not current-input-method))))
+
+;;; ---------------------------------------------------------------------------
 ;;; Integration: Basic Mode Transition (C-g through full pipeline)
 ;;; ---------------------------------------------------------------------------
 
