@@ -987,6 +987,30 @@ the still-active region -- then returns to Normal state."
 ;;; Mark and Text Object Selection Commands
 ;;; ---------------------------------------------------------------------------
 
+(defun donkey--ensure-non-rectangle-selection ()
+  "Disable `rectangle-mark-mode' if it is currently active.
+
+`rectangle-mark-mode' only auto-disables via `deactivate-mark-hook',
+which fires on the mark's active -> inactive transition -- not when a
+command simply repositions an ALREADY-active mark, which is exactly
+what `push-mark'/`set-mark'/`activate-mark' do for every Donkey
+selection command (`donkey-mark-inner', `donkey-mark-paragraph',
+`donkey-set-mark', etc.).  Without this, a rectangle selection left
+active from an earlier, unrelated `donkey-rectangle-mark-mode' session
+would silently persist underneath a brand new, intended-to-be-linear
+selection, and the next `donkey-copy'/`donkey-delete'/`donkey-yank'
+would misinterpret the new selection as a rectangle instead of the
+intended linear span.  Confirmed live: after `m v' (rectangle-mark) on
+one line, then `m p' (mark-paragraph) elsewhere without cancelling the
+rectangle first, pressing `d' silently killed a zero-width \"rectangle\"
+(one empty string per line) instead of deleting the paragraph, with no
+error and no visible change to the buffer at all.
+
+Called at the start of every Donkey command that establishes a new
+selection, before that command's own `push-mark'/`set-mark' call."
+  (when (bound-and-true-p rectangle-mark-mode)
+    (rectangle-mark-mode -1)))
+
 (defvar-local donkey-visual-anchor nil
   "Anchor position for visual line selection.")
 
@@ -1037,12 +1061,17 @@ Only cancels when a visual-line session is genuinely active (see
 OTHER active region (e.g. a `donkey-mark-inner' selection) starts a
 fresh visual-line session anchored at the current line instead of
 just clearing it and reporting a misleading \"Visual line: cancelled\"
-for a selection that was never a visual-line session to begin with."
+for a selection that was never a visual-line session to begin with.
+
+See `donkey--ensure-non-rectangle-selection' for why a stale active
+`rectangle-mark-mode' selection is disabled before starting the new
+session."
   (interactive)
   (if (donkey--visual-line-session-active-p)
       (progn
         (deactivate-mark)
         (message "Visual line: cancelled"))
+    (donkey--ensure-non-rectangle-selection)
     (setq donkey-visual-anchor (line-beginning-position))
     (set-mark (line-beginning-position))
     (end-of-line)
@@ -1204,8 +1233,12 @@ the buffer, silently pairing with the wrong occurrence."
     (cons start-pos end-pos)))
 
 (defun donkey-mark-inner ()
-  "Mark text INSIDE CHAR pairs (excluding delimiters)."
+  "Mark text INSIDE CHAR pairs (excluding delimiters).
+
+See `donkey--ensure-non-rectangle-selection' for why a stale active
+`rectangle-mark-mode' selection is disabled first."
   (interactive)
+  (donkey--ensure-non-rectangle-selection)
   (pcase-let*
       ((`(,open-char ,close-char ,on-opener) (donkey--mark-pair-read-delimiter))
        (`(,start-pos . ,end-pos)
@@ -1219,8 +1252,12 @@ the buffer, silently pairing with the wrong occurrence."
     (message "Selected content for '%c'" open-char)))
 
 (defun donkey-mark-outer ()
-  "Mark text INCLUDING CHAR pairs (delimiters included)."
+  "Mark text INCLUDING CHAR pairs (delimiters included).
+
+See `donkey--ensure-non-rectangle-selection' for why a stale active
+`rectangle-mark-mode' selection is disabled first."
   (interactive)
+  (donkey--ensure-non-rectangle-selection)
   (pcase-let*
       ((`(,open-char ,close-char ,on-opener) (donkey--mark-pair-read-delimiter))
        (`(,start-pos . ,end-pos)
@@ -1240,8 +1277,12 @@ Uses the syntax table to identify delimiters (parentheses,
 brackets, braces).  If point is on an opening or closing
 delimiter, marks content within that pair.  If point is inside
 a pair, finds the enclosing delimiters and marks everything
-within, excluding the delimiters themselves."
+within, excluding the delimiters themselves.
+
+See `donkey--ensure-non-rectangle-selection' for why a stale active
+`rectangle-mark-mode' selection is disabled first."
   (interactive)
+  (donkey--ensure-non-rectangle-selection)
   (unless (looking-at "\\s(")
     (condition-case nil
         (backward-up-list)
@@ -1265,8 +1306,12 @@ within, excluding the delimiters themselves."
 Uses the syntax table to identify delimiters (parentheses,
 brackets, braces).  If point is on a delimiter, marks that
 pair.  If point is inside a pair, finds the enclosing pair
-and marks it including delimiters."
+and marks it including delimiters.
+
+See `donkey--ensure-non-rectangle-selection' for why a stale active
+`rectangle-mark-mode' selection is disabled first."
   (interactive)
+  (donkey--ensure-non-rectangle-selection)
   (unless (looking-at "\\s(")
     (condition-case nil
         (backward-up-list)
@@ -1283,8 +1328,12 @@ and marks it including delimiters."
     (message "Marked outer expression")))
 
 (defun donkey-mark-word ()
-  "Select the entire word at or adjacent to point."
+  "Select the entire word at or adjacent to point.
+
+See `donkey--ensure-non-rectangle-selection' for why a stale active
+`rectangle-mark-mode' selection is disabled first."
   (interactive)
+  (donkey--ensure-non-rectangle-selection)
   (unless (and (char-after)
                (member (char-syntax (char-after)) '(?\w ?_)))
     (backward-word 1))
@@ -1293,15 +1342,23 @@ and marks it including delimiters."
   (message "Word marked"))
 
 (defun donkey-mark-sentence ()
-  "Select sentence at point."
+  "Select sentence at point.
+
+See `donkey--ensure-non-rectangle-selection' for why a stale active
+`rectangle-mark-mode' selection is disabled first."
   (interactive)
+  (donkey--ensure-non-rectangle-selection)
   (backward-sentence 1)
   (mark-end-of-sentence 1)
   (message "Sentence marked"))
 
 (defun donkey-mark-paragraph ()
-  "Select the paragraph at or adjacent to point."
+  "Select the paragraph at or adjacent to point.
+
+See `donkey--ensure-non-rectangle-selection' for why a stale active
+`rectangle-mark-mode' selection is disabled first."
   (interactive)
+  (donkey--ensure-non-rectangle-selection)
   (backward-paragraph 1)
   (push-mark (point) nil t)
   (forward-paragraph 1)
@@ -1311,8 +1368,12 @@ and marks it including delimiters."
 (defun donkey-mark-symbol ()
   "Select the entire symbol at or adjacent to point.
 
-Trailing commas or periods are omitted from the selection."
+Trailing commas or periods are omitted from the selection.
+
+See `donkey--ensure-non-rectangle-selection' for why a stale active
+`rectangle-mark-mode' selection is disabled first."
   (interactive)
+  (donkey--ensure-non-rectangle-selection)
   (unless (and (char-after)
                (member (char-syntax (char-after)) '(?\w ?_)))
     (backward-sexp 1))
@@ -1324,6 +1385,15 @@ Trailing commas or periods are omitted from the selection."
   (backward-sexp 1)
   (activate-mark)
   (message "Symbol marked"))
+
+(defun donkey-set-mark ()
+  "Like `set-mark-command', but first disables a stale active
+`rectangle-mark-mode' selection.
+
+See `donkey--ensure-non-rectangle-selection' for why."
+  (interactive)
+  (donkey--ensure-non-rectangle-selection)
+  (call-interactively #'set-mark-command))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Donkey Describe Bindings
@@ -1494,7 +1564,7 @@ documentation."
 
 ;; Visual selection
 (keymap-set donkey-normal-mode-map "V" #'donkey-visual-line-toggle)
-(keymap-set donkey-normal-mode-map "v" #'set-mark-command)
+(keymap-set donkey-normal-mode-map "v" #'donkey-set-mark)
 
 ;; Wrap region with delimiter (region-active only; see donkey-wrap-region)
 (dolist (ch donkey-wrap-delimiters)

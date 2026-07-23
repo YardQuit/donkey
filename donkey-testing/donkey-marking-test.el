@@ -6,6 +6,114 @@
 (require 'donkey)
 
 ;;; ---------------------------------------------------------------------------
+;;; donkey--ensure-non-rectangle-selection
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-ensure-non-rectangle-selection-disables-active-rectangle-mode ()
+  "Disables `rectangle-mark-mode' when it is active."
+  (with-temp-buffer
+    (insert "hello\nworld\n")
+    (goto-char 1)
+    (rectangle-mark-mode 1)
+    (should (bound-and-true-p rectangle-mark-mode))
+    (donkey--ensure-non-rectangle-selection)
+    (should-not (bound-and-true-p rectangle-mark-mode))))
+
+(ert-deftest donkey-ensure-non-rectangle-selection-noop-when-inactive ()
+  "Does nothing (no error) when `rectangle-mark-mode' is already off."
+  (with-temp-buffer
+    (insert "hello\n")
+    (should-not (bound-and-true-p rectangle-mark-mode))
+    (donkey--ensure-non-rectangle-selection)
+    (should-not (bound-and-true-p rectangle-mark-mode))))
+
+(defmacro donkey--test-clears-stale-rectangle-mode (test-name command-form)
+  "Define an ERT test asserting COMMAND-FORM clears a pre-existing
+active `rectangle-mark-mode' selection.
+
+Regression tests for the bug found live: `m v' on one line, then a
+mark command elsewhere (without cancelling the rectangle first) left
+`rectangle-mark-mode' active underneath the new, intended-to-be-linear
+selection.  The next `donkey-copy'/`donkey-delete'/`donkey-yank' would
+then misinterpret it as a rectangle -- confirmed to silently kill a
+zero-width \"rectangle\" (one empty string per line) instead of
+deleting a marked paragraph, with no error and no visible buffer
+change at all."
+  (declare (indent 1))
+  `(ert-deftest ,test-name ()
+     (with-temp-buffer
+       (insert "(foo bar)\nsecond line\nthird line here\nfourth\n")
+       (goto-char 1)
+       (rectangle-mark-mode 1)
+       (forward-line 1)
+       (forward-char 2)
+       (should (bound-and-true-p rectangle-mark-mode))
+       (goto-char 1)
+       ,command-form
+       (should-not (bound-and-true-p rectangle-mark-mode)))))
+
+(donkey--test-clears-stale-rectangle-mode
+    donkey-mark-inner-clears-stale-rectangle-mode
+  (progn (goto-char 1) (donkey-mark-inner)))
+
+(donkey--test-clears-stale-rectangle-mode
+    donkey-mark-outer-clears-stale-rectangle-mode
+  (progn (goto-char 1) (donkey-mark-outer)))
+
+(donkey--test-clears-stale-rectangle-mode
+    donkey-mark-sexp-inner-clears-stale-rectangle-mode
+  (progn (goto-char 1) (donkey-mark-sexp-inner)))
+
+(donkey--test-clears-stale-rectangle-mode
+    donkey-mark-sexp-outer-clears-stale-rectangle-mode
+  (progn (goto-char 1) (donkey-mark-sexp-outer)))
+
+(donkey--test-clears-stale-rectangle-mode
+    donkey-mark-word-clears-stale-rectangle-mode
+  (progn (goto-char 2) (donkey-mark-word)))
+
+(donkey--test-clears-stale-rectangle-mode
+    donkey-mark-sentence-clears-stale-rectangle-mode
+  (progn (goto-char 2) (donkey-mark-sentence)))
+
+(donkey--test-clears-stale-rectangle-mode
+    donkey-mark-paragraph-clears-stale-rectangle-mode
+  (progn (goto-char 2) (donkey-mark-paragraph)))
+
+(donkey--test-clears-stale-rectangle-mode
+    donkey-mark-symbol-clears-stale-rectangle-mode
+  (progn (goto-char 2) (donkey-mark-symbol)))
+
+(donkey--test-clears-stale-rectangle-mode
+    donkey-visual-line-toggle-clears-stale-rectangle-mode
+  (progn (goto-char 2) (donkey-visual-line-toggle)))
+
+(donkey--test-clears-stale-rectangle-mode
+    donkey-set-mark-clears-stale-rectangle-mode
+  (progn (goto-char 2) (donkey-set-mark)))
+
+(ert-deftest donkey-mark-paragraph-clears-stale-rectangle-mode-and-selects-correctly ()
+  "End-to-end regression test matching the exact live repro: a stale
+rectangle selection from an unrelated `m v' session must not corrupt
+the NEW multi-line selection `donkey-mark-paragraph' creates, and
+`donkey-delete' run right after must delete the whole paragraph, not a
+zero-width \"rectangle\" slice of it."
+  (with-temp-buffer
+    (insert "AABBCC\nDDEEFF\n\nfirst line of paragraph\nsecond line here\nthird line too\n\nlast\n")
+    (goto-char 1)
+    (rectangle-mark-mode 1)
+    (forward-line 1)
+    (forward-char 2)
+    (should (bound-and-true-p rectangle-mark-mode))
+    (goto-char (point-min))
+    (forward-line 3)
+    (forward-char 5)
+    (donkey-mark-paragraph)
+    (should-not (bound-and-true-p rectangle-mark-mode))
+    (donkey-delete)
+    (should (string= (buffer-string) "AABBCC\nDDEEFF\n\nlast\n"))))
+
+;;; ---------------------------------------------------------------------------
 ;;; donkey-mark-word
 ;;; ---------------------------------------------------------------------------
 

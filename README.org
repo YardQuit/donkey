@@ -138,7 +138,7 @@ process interaction.
 | =J= | =donkey-visual-next-line=     | Move down, extending visual selection |
 | =K= | =donkey-visual-previous-line= | Move up, extending visual selection   |
 | =V= | =donkey-visual-line-toggle=   | Toggle visual line selection          |
-| =v= | =set-mark-command=          | Toggle mark                           |
+| =v= | =donkey-set-mark=           | Toggle mark                           |
 | =(= =[= ={= ="= ='= =`= | =donkey-wrap-region= | Wrap active region with delimiter, see below |
 
 ** Insert Mode Entry
