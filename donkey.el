@@ -1115,21 +1115,38 @@ session."
     (forward-line -1)))
 
 (defun donkey-rectangle-mark-mode ()
-  "Toggle rectangle mark mode."
+  "Toggle rectangle mark mode.
+
+If a region is already active (e.g. from `donkey-mark-inner') when
+enabling, `rectangle-mark-mode' reinterprets that EXISTING region as a
+rectangle using its own corners, rather than starting a fresh
+single-column selection at point -- matching stock Emacs's own
+documented behavior for entering `rectangle-mark-mode' with an active
+region.  Only widen the initial selection by one column when there was
+no region to begin with: doing it unconditionally would otherwise
+silently extend an existing selection being converted to a rectangle
+by one extra character past its real, intended boundary.  Checks
+`mark-active' directly rather than `region-active-p', since the latter
+also requires `transient-mark-mode', which is off by default in
+`--batch' Emacs and would always read as nil there regardless of
+whether a region was genuinely active."
   (interactive)
   (if (bound-and-true-p rectangle-mark-mode)
       (progn
         (rectangle-mark-mode -1)
         (deactivate-mark))
-    (rectangle-mark-mode 1)
-    ;; Give the rectangle some initial width beyond the single starting
-    ;; column.  At the very end of the buffer there's nothing to widen
-    ;; into, and `right-char' signals `end-of-buffer' -- harmless to
-    ;; skip, since rectangle-mark-mode is already correctly enabled
-    ;; with a (valid, if zero-width) selection at that point.
-    (condition-case nil
-        (right-char 1)
-      (end-of-buffer nil))))
+    (let ((had-active-region mark-active))
+      (rectangle-mark-mode 1)
+      ;; Give the rectangle some initial width beyond the single starting
+      ;; column, but only for a genuinely fresh selection.  At the very
+      ;; end of the buffer there's nothing to widen into, and `right-char'
+      ;; signals `end-of-buffer' -- harmless to skip, since
+      ;; rectangle-mark-mode is already correctly enabled with a (valid,
+      ;; if zero-width) selection at that point.
+      (unless had-active-region
+        (condition-case nil
+            (right-char 1)
+          (end-of-buffer nil))))))
 
 (defcustom donkey-mark-pair-delimiters
   '((?\{ . ?\}) (?\[ . ?\]) (?\( . ?\)) (?\< . ?>)

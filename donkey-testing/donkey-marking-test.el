@@ -1752,6 +1752,38 @@ different, unrelated pair.  See
       (donkey-rectangle-mark-mode)
       (should (= (point) (1+ initial-pos))))))
 
+(ert-deftest donkey-rectangle-mark-mode-does-not-widen-existing-region ()
+  "Regression test: converting an already-active region (e.g. from
+`donkey-mark-inner') into a rectangle must use its own existing
+corners, not widen it by one extra column.  `transient-mark-mode' is
+bound to t here because `region-active-p'/`mark-active' only mean
+anything when it's on -- off by default in `--batch', which would
+otherwise make the region look inactive regardless of `activate-mark'."
+  (with-temp-buffer
+    (let ((transient-mark-mode t))
+      (insert "(hello)")
+      (goto-char 2)
+      (push-mark (point) t t)
+      (goto-char 7)
+      (activate-mark)
+      (should (string= (buffer-substring (region-beginning) (region-end))
+                       "hello"))
+      (donkey-rectangle-mark-mode)
+      (should (bound-and-true-p rectangle-mark-mode))
+      (should (string= (buffer-substring (region-beginning) (region-end))
+                       "hello")))))
+
+(ert-deftest donkey-rectangle-mark-mode-still-widens-fresh-selection ()
+  "Starting rectangle-mark-mode with no pre-existing region still gets
+its initial one-column widening."
+  (with-temp-buffer
+    (let ((transient-mark-mode t))
+      (insert "AAAA\nBBBB\nCCCC\n")
+      (goto-char 1)
+      (should-not mark-active)
+      (donkey-rectangle-mark-mode)
+      (should (string= (buffer-substring (region-beginning) (region-end)) "A")))))
+
 (ert-deftest donkey-rectangle-mark-mode-creates-rectangular-selection ()
   "Rect mark mode creates a rectangular region selection."
   (with-temp-buffer
