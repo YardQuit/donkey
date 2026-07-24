@@ -227,6 +227,10 @@ For balanced expressions in real code, use =donkey-mark-sexp-inner=/
 =donkey-mark-sexp-outer= instead -- those are always syntax-aware and
 need no delimiter list.
 
+With no matching pair either way, both commands signal an error and
+leave point exactly where it was, instead of landing somewhere else in
+the buffer as a side effect of the failed search.
+
 ** Buffer Navigation (=g= prefix and standalone)
 
 | Key   | Command                  | Description                 |

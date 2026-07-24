@@ -1314,42 +1314,57 @@ position immediately after the closing delimiter.
 Searches are always case-sensitive (`case-fold-search' bound to nil),
 regardless of the buffer's own `case-fold-search' setting -- otherwise
 a delimiter like an uppercase `X' would also match a lowercase `x' in
-the buffer, silently pairing with the wrong occurrence."
+the buffer, silently pairing with the wrong occurrence.
+
+Wrapped in `save-excursion': every search above moves point as a means
+to compute START-POS/END-POS, not as a side effect callers should see.
+That matters most when no pair is found at all -- e.g. point sitting
+well outside any bracket on a line with several unrelated pairs, like
+after the last `)' on \";; To (create a (file), visit) it with...\".
+The nesting-aware backward scan there walks past several real `('/`)'
+occurrences (correctly counting depth as it goes) before ultimately
+running out of buffer and signalling `search-failed', converted to the
+error below -- but each of those intermediate matches really did move
+point, so without `save-excursion' the error would still leave point
+sitting at the last successfully-found delimiter (confusingly, on some
+unrelated `(' elsewhere in the buffer) instead of exactly where the
+user invoked the command from."
   (let ((symmetric (= open-char close-char))
         start-pos end-pos (case-fold-search nil))
-    (if on-opener
-        (progn
-          (setq start-pos (point))
-          (goto-char (1+ start-pos))
+    (save-excursion
+      (if on-opener
+          (progn
+            (setq start-pos (point))
+            (goto-char (1+ start-pos))
+            (condition-case nil
+                (setq end-pos (if symmetric
+                                   (search-forward (string close-char) nil nil)
+                                 (donkey--mark-pair-scan-forward open-char close-char)))
+              (search-failed
+               (unless symmetric
+                 (error "No matching '%c' found after cursor" close-char))
+               (goto-char start-pos)
+               (setq end-pos (1+ start-pos))
+               (condition-case nil
+                   (setq start-pos (search-backward (string open-char) nil nil))
+                 (search-failed
+                  (error "No matching '%c' found before cursor" open-char))))))
+        (if (and (char-after) (= (char-after) open-char))
+            (setq start-pos (point))
           (condition-case nil
-              (setq end-pos (if symmetric
-                                 (search-forward (string close-char) nil nil)
-                               (donkey--mark-pair-scan-forward open-char close-char)))
+              (setq start-pos (if symmetric
+                                   (search-backward (string open-char) nil nil)
+                                 (donkey--mark-pair-scan-backward open-char close-char)))
             (search-failed
-             (unless symmetric
-               (error "No matching '%c' found after cursor" close-char))
-             (goto-char start-pos)
-             (setq end-pos (1+ start-pos))
-             (condition-case nil
-                 (setq start-pos (search-backward (string open-char) nil nil))
-               (search-failed
-                (error "No matching '%c' found before cursor" open-char))))))
-      (if (and (char-after) (= (char-after) open-char))
-          (setq start-pos (point))
+             (error "No '%c' found near cursor" open-char))))
+        (goto-char (1+ start-pos))
         (condition-case nil
-            (setq start-pos (if symmetric
-                                 (search-backward (string open-char) nil nil)
-                               (donkey--mark-pair-scan-backward open-char close-char)))
+            (setq end-pos (if symmetric
+                               (search-forward (string close-char) nil nil)
+                             (donkey--mark-pair-scan-forward open-char close-char)))
           (search-failed
-           (error "No '%c' found near cursor" open-char))))
-      (goto-char (1+ start-pos))
-      (condition-case nil
-          (setq end-pos (if symmetric
-                             (search-forward (string close-char) nil nil)
-                           (donkey--mark-pair-scan-forward open-char close-char)))
-        (search-failed
-         (error "No matching '%c' found after cursor" close-char))))
-    (cons start-pos end-pos)))
+           (error "No matching '%c' found after cursor" close-char))))
+      (cons start-pos end-pos))))
 
 (defun donkey--mark-pair-select (inner-p)
   "Shared implementation for `donkey-mark-inner'/`donkey-mark-outer'.
@@ -1387,6 +1402,11 @@ This is a plain character scan, not syntax-table aware: unlike
 so the delimiter character appearing inside one can still throw off
 the match.  Use `donkey-mark-sexp-inner' for balanced expressions in
 real code instead.
+
+With no matching pair either way (point outside any delimiter, and no
+enclosing pair to fall back on), signals an error and leaves point
+exactly where it was -- it never lands somewhere else in the buffer as
+a side effect of the failed search.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
