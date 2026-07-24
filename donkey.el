@@ -963,28 +963,65 @@ it before loading, or re-run the `dolist' near
   :type '(repeat character)
   :group 'donkey)
 
+(defvar donkey-mark-pair-delimiters) ;(donkey--wrap-close-char); defined below, in "Mark and Text Object Selection Commands"
+
+(defun donkey--wrap-close-char (open-char)
+  "Return the character that closes OPEN-CHAR for `donkey-wrap-region'.
+
+Looked up in `donkey-mark-pair-delimiters' when OPEN-CHAR is a
+recognized pair there, so bracket-type wrap delimiters (e.g. `(') close
+with their real counterpart (`)') instead of themselves; otherwise
+OPEN-CHAR is symmetric (e.g. `\"') and closes with itself."
+  (or (cdr (assq open-char donkey-mark-pair-delimiters)) open-char))
+
+(defun donkey--wrap-rectangle-region (open-char)
+  "Wrap each line of the active rectangle selection with OPEN-CHAR and
+its matching close character (see `donkey--wrap-close-char'), inserted
+at that line's own rectangle start/end column.  Uses `move-to-column'
+with FORCE non-nil, same as `string-rectangle-line' and other
+rectangle commands, so lines shorter than the rectangle are padded
+with spaces up to each column instead of bunching both characters
+together at end of line."
+  (let ((close-char (donkey--wrap-close-char open-char)))
+    (apply-on-rectangle
+     (lambda (startcol endcol)
+       (move-to-column endcol t)
+       (insert (string close-char))
+       (move-to-column startcol t)
+       (insert (string open-char)))
+     (region-beginning) (region-end))))
+
 (defun donkey-wrap-region ()
   "Insert the pressed delimiter into the active region without deselecting.
 
-Bound to each of `donkey-wrap-delimiters' in Normal state.  With
-no active region, or with `rectangle-mark-mode' active, falls
-through to `undefined', same as any other suppressed key.
-`self-insert-command' operates on `region-beginning'/`region-end'
-as a single linear span; against a rectangle selection that
-inserts the delimiters at the rectangle's linear start/end
-positions instead of on each covered line, corrupting the buffer
-rather than wrapping anything meaningful.  With an ordinary
-active region, enters Insert state without deactivating the mark,
-inserts the pressed character via `self-insert-command' -- letting
-packages that hook it, such as Smartparens' region-wrap, act on
-the still-active region -- then returns to Normal state."
+Bound to each of `donkey-wrap-delimiters' in Normal state.  With no
+active region, falls through to `undefined', same as any other
+suppressed key.
+
+With `rectangle-mark-mode' active, wraps each line of the rectangle at
+its own start/end column instead (see `donkey--wrap-rectangle-region')
+rather than running `self-insert-command': that operates on
+`region-beginning'/`region-end' as a single linear span, so run
+directly against a rectangle selection it would insert the delimiters
+at the rectangle's linear start/end buffer positions instead of on
+each covered line, corrupting the buffer rather than wrapping anything
+meaningful.
+
+With an ordinary active region, enters Insert state without
+deactivating the mark, inserts the pressed character via
+`self-insert-command' -- letting packages that hook it, such as
+Smartparens' region-wrap, act on the still-active region -- then
+returns to Normal state."
   (interactive)
-  (if (or (not (use-region-p))
-          (bound-and-true-p rectangle-mark-mode))
-      (call-interactively #'undefined)
+  (cond
+   ((not (use-region-p))
+    (call-interactively #'undefined))
+   ((bound-and-true-p rectangle-mark-mode)
+    (donkey--wrap-rectangle-region last-command-event))
+   (t
     (donkey-insert-mode 1)
     (self-insert-command 1)
-    (donkey--exit-insert)))
+    (donkey--exit-insert))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mark and Text Object Selection Commands
