@@ -921,12 +921,38 @@ mark-sexp should treat them as one unit."
                    "escaped"))))
 
 (ert-deftest donkey-mark-inner-curly-single-quote ()
-  "Marks content inside curly single quotes (U+2019), a default
+  "Marks content inside curly single quotes (U+2018/U+2019), a default
 delimiter pair, excluding the quotes."
   (with-temp-buffer
-    (insert (concat (string ?’) "quoted" (string ?’)))
+    (insert (concat (string ?‘) "quoted" (string ?’)))
     (goto-char 1)
     (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "quoted"))))
+
+(ert-deftest donkey-mark-inner-curly-single-quote-distinct-open-close ()
+  "Regression test: `donkey-mark-pair-delimiters' previously mapped
+U+2019 (closing curly single quote) to itself for BOTH the open and
+close side, instead of pairing U+2018 (opening) with U+2019 (closing).
+That made the opening quote unrecognized as an opener (falling through
+to the `read-char' prompt instead of auto-detecting), and made the
+forward-then-backward-fallback search for a pair starting from the
+closing quote search for the wrong character in both directions, so it
+found nothing at all."
+  (should (equal (assq ?‘ donkey-mark-pair-delimiters) (cons ?‘ ?’)))
+  (should (equal (assq ?’ donkey-mark-pair-delimiters) nil)))
+
+(ert-deftest donkey-mark-inner-curly-single-quote-from-closing-quote ()
+  "Point on the CLOSING curly single quote falls through to the
+`read-char' prompt (same as any other asymmetric closing delimiter,
+e.g. `)'), and searching backward for the real opener (U+2018) then
+correctly finds the pair."
+  (with-temp-buffer
+    (insert (concat (string ?‘) "quoted" (string ?’)))
+    (goto-char (point-max))
+    (backward-char 1)
+    (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?‘)))
+      (donkey-mark-inner))
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "quoted"))))
 
@@ -1932,6 +1958,64 @@ does not error."
     (goto-char (point-min))
     (donkey-rectangle-mark-mode)
     (should (bound-and-true-p rectangle-mark-mode))))
+
+;;; ---------------------------------------------------------------------------
+;;; donkey-mark-inner: exhaustive coverage of every default delimiter pair
+;;; ---------------------------------------------------------------------------
+;;;
+;;; These three tests iterate `donkey-mark-pair-delimiters' itself (rather
+;;; than hardcoding a handful of pairs), so a future typo like the one that
+;;; silently broke curly single quotes -- mapping U+2019 to itself for both
+;;; OPEN and CLOSE, instead of pairing it with U+2018 -- is always caught,
+;;; for any pair, without needing a dedicated regression test per delimiter.
+
+(ert-deftest donkey-mark-inner-all-default-delimiters-from-open-char ()
+  "For every default (OPEN . CLOSE) pair, point on the OPEN character
+auto-detects the delimiter (no `read-char' prompt needed) and selects
+the content up to the next CLOSE occurrence."
+  (dolist (pair donkey-mark-pair-delimiters)
+    (let ((open (car pair)) (close (cdr pair)))
+      (ert-info ((format "pair (%c . %c)" open close))
+        (with-temp-buffer
+          (insert (string open) "quoted" (string close))
+          (goto-char (point-min))
+          (cl-letf (((symbol-function 'read-char)
+                     (lambda (&rest _) (error "read-char should not be called"))))
+            (donkey-mark-inner))
+          (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                         "quoted")))))))
+
+(ert-deftest donkey-mark-inner-all-default-delimiters-from-close-char ()
+  "For every default (OPEN . CLOSE) pair, point on the CLOSE character
+still selects the content between the delimiters -- via the
+forward-then-backward fallback when OPEN and CLOSE are the same
+character, or via a `read-char' prompt (mocked here to answer with
+OPEN) when they differ."
+  (dolist (pair donkey-mark-pair-delimiters)
+    (let ((open (car pair)) (close (cdr pair)))
+      (ert-info ((format "pair (%c . %c)" open close))
+        (with-temp-buffer
+          (insert (string open) "quoted" (string close))
+          (goto-char (1- (point-max)))
+          (cl-letf (((symbol-function 'read-char) (lambda (&rest _) open)))
+            (donkey-mark-inner))
+          (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                         "quoted")))))))
+
+(ert-deftest donkey-mark-inner-all-default-delimiters-from-inside-with-manual-char ()
+  "For every default (OPEN . CLOSE) pair, point somewhere INSIDE the
+pair (on neither delimiter) always falls through to the `read-char'
+prompt; answering with OPEN correctly finds the enclosing pair."
+  (dolist (pair donkey-mark-pair-delimiters)
+    (let ((open (car pair)) (close (cdr pair)))
+      (ert-info ((format "pair (%c . %c)" open close))
+        (with-temp-buffer
+          (insert (string open) "quoted" (string close))
+          (goto-char (+ (point-min) 3))
+          (cl-letf (((symbol-function 'read-char) (lambda (&rest _) open)))
+            (donkey-mark-inner))
+          (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                         "quoted")))))))
 
 (provide 'donkey-marking-test)
 
