@@ -45,6 +45,7 @@
 (require 'thingatpt) ;(donkey-mark-word)
 (require 'cl-lib)    ; Explicitly load cl-lib for cl-some
 (require 'rect)      ; killed-rectangle, extract-rectangle-bounds, etc.
+(require 'seq)       ; seq-find
 (eval-and-compile
   (declare-function org-open-at-point "org")     ;(donkey-enter-dwim)
   (declare-function org-element-at-point "org")  ;(donkey-enter-dwim)
@@ -339,6 +340,10 @@ Set to nil in `config.el' if you want to define rules manually."
   :type 'boolean
   :group 'donkey)
 
+(defun donkey--callable-command-p (cmd)
+  "Return non-nil if CMD is a bound, callable interactive command."
+  (and cmd (fboundp cmd) (commandp cmd)))
+
 (defun donkey--find-enter-handler ()
   "Find command for Enter key based on element at point.
 
@@ -376,11 +381,7 @@ Returns command symbol or nil if no handler matches."
           (when (and ctx
                      (eq (car ctx) rule-type)
                      (null (nth 1 rule)))
-            (dolist (candidate rule-cmds)
-              (when (and (null result)
-                         (fboundp candidate)
-                         (commandp candidate))
-                (setq result candidate)))))))
+            (setq result (seq-find #'donkey--callable-command-p rule-cmds))))))
     ;; Parent, then its line-start fallback, then ancestors — ALL rules
     ;; checked per element level, most specific first
     (dolist (elem (append (list parent fallback-parent) ancestors))
@@ -395,16 +396,12 @@ Returns command symbol or nil if no handler matches."
                          (or (null rule-prop)
                              (and (fboundp 'org-element-property)
                                   (org-element-property rule-prop elem))))
-                (dolist (candidate rule-cmds)
-                  (when (and (null result)
-                             (fboundp candidate)
-                             (commandp candidate))
-                    (setq result candidate)))))))))
+                (setq result (seq-find #'donkey--callable-command-p rule-cmds))))))))
     result))
 
 (defun donkey--execute-handler (cmd)
   "Execute CMD if it exists and is callable."
-  (when (and cmd (fboundp cmd) (commandp cmd))
+  (when (donkey--callable-command-p cmd)
     (call-interactively cmd)))
 
 (defun donkey--org-agenda-enter-handler ()
@@ -1172,17 +1169,19 @@ string, which lists the OPEN characters in this order."
                 :value-type (character :tag "Close"))
   :group 'donkey)
 
+(defun donkey--mark-pair-open-chars-string (separator)
+  "Return the open characters of `donkey-mark-pair-delimiters' joined by SEPARATOR."
+  (mapconcat (lambda (pair) (char-to-string (car pair)))
+             donkey-mark-pair-delimiters separator))
+
 (defun donkey--mark-pair-prompt ()
   "Build the `read-char' prompt string from `donkey-mark-pair-delimiters'."
-  (format "Char (%s): "
-          (mapconcat (lambda (pair) (char-to-string (car pair)))
-                     donkey-mark-pair-delimiters "")))
+  (format "Char (%s): " (donkey--mark-pair-open-chars-string "")))
 
 (defun donkey--mark-pair-unsupported-error (char)
   "Signal an error for CHAR not found in `donkey-mark-pair-delimiters'."
   (error "Unsupported delimiter '%c'.  Use: %s" char
-         (mapconcat (lambda (pair) (char-to-string (car pair)))
-                    donkey-mark-pair-delimiters " ")))
+         (donkey--mark-pair-open-chars-string " ")))
 
 (defun donkey--mark-pair-read-delimiter ()
   "Return (OPEN-CHAR CLOSE-CHAR ON-OPENER) for the char pair to mark.
