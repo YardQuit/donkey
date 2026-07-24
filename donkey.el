@@ -1242,6 +1242,42 @@ path instead of assuming point is the opener."
                          (donkey--mark-pair-unsupported-error open-char))))
     (list open-char close-char on-opener)))
 
+(defun donkey--mark-pair-scan-forward (open-char close-char)
+  "Scan forward from point for the CLOSE-CHAR that balances one
+already-open OPEN-CHAR occurrence, counting nested OPEN-CHAR/CLOSE-CHAR
+occurrences of the SAME type along the way so a nested pair of the
+same delimiter (e.g. the inner `(...)' in \"(a(b)c)\") does not get
+mistaken for the enclosing one's close.  Returns the position
+immediately after the matching CLOSE-CHAR.  Signals `search-failed' if
+the nesting never closes before the end of the buffer.  Only valid
+when OPEN-CHAR and CLOSE-CHAR differ -- nesting is meaningless for a
+symmetric delimiter, where the same character both opens and closes."
+  (let ((regexp (concat (regexp-quote (string open-char))
+                         "\\|" (regexp-quote (string close-char))))
+        (depth 1))
+    (while (> depth 0)
+      (unless (re-search-forward regexp nil t)
+        (signal 'search-failed (list (string close-char))))
+      (setq depth (if (eq (char-before) open-char) (1+ depth) (1- depth))))
+    (point)))
+
+(defun donkey--mark-pair-scan-backward (open-char close-char)
+  "Scan backward from point for the OPEN-CHAR that balances one
+already-closed CLOSE-CHAR occurrence, counting nested OPEN-CHAR/
+CLOSE-CHAR occurrences of the SAME type along the way, mirroring
+`donkey--mark-pair-scan-forward'.  Returns the position of the
+matching OPEN-CHAR.  Signals `search-failed' if the nesting never opens
+before the start of the buffer.  Only valid when OPEN-CHAR and
+CLOSE-CHAR differ."
+  (let ((regexp (concat (regexp-quote (string open-char))
+                         "\\|" (regexp-quote (string close-char))))
+        (depth 1))
+    (while (> depth 0)
+      (unless (re-search-backward regexp nil t)
+        (signal 'search-failed (list (string open-char))))
+      (setq depth (if (eq (char-after) close-char) (1+ depth) (1- depth))))
+    (point)))
+
 (defun donkey--mark-pair-positions (open-char close-char on-opener)
   "Return (START-POS . END-POS) for the delimiter pair around point.
 
@@ -1263,6 +1299,15 @@ since the closing character is never itself a member of the
 recognized-opener set, so point being ON-OPENER there always
 genuinely means the opening delimiter.
 
+For asymmetric delimiters, forward/backward searches go through
+`donkey--mark-pair-scan-forward'/`donkey--mark-pair-scan-backward'
+instead of a plain `search-forward'/`search-backward', so nested
+occurrences of the SAME delimiter (e.g. `(a(b)c)') resolve to the
+correct enclosing pair rather than the nearest occurrence of the
+character regardless of nesting.  Symmetric delimiters keep using a
+plain search: nesting has no well-defined meaning when the same
+character serves as both open and close.
+
 START-POS is the position of the opening delimiter; END-POS is the
 position immediately after the closing delimiter.
 
@@ -1270,15 +1315,18 @@ Searches are always case-sensitive (`case-fold-search' bound to nil),
 regardless of the buffer's own `case-fold-search' setting -- otherwise
 a delimiter like an uppercase `X' would also match a lowercase `x' in
 the buffer, silently pairing with the wrong occurrence."
-  (let (start-pos end-pos (case-fold-search nil))
+  (let ((symmetric (= open-char close-char))
+        start-pos end-pos (case-fold-search nil))
     (if on-opener
         (progn
           (setq start-pos (point))
           (goto-char (1+ start-pos))
           (condition-case nil
-              (setq end-pos (search-forward (string close-char) nil nil))
+              (setq end-pos (if symmetric
+                                 (search-forward (string close-char) nil nil)
+                               (donkey--mark-pair-scan-forward open-char close-char)))
             (search-failed
-             (unless (= open-char close-char)
+             (unless symmetric
                (error "No matching '%c' found after cursor" close-char))
              (goto-char start-pos)
              (setq end-pos (1+ start-pos))
@@ -1289,12 +1337,16 @@ the buffer, silently pairing with the wrong occurrence."
       (if (and (char-after) (= (char-after) open-char))
           (setq start-pos (point))
         (condition-case nil
-            (setq start-pos (search-backward (string open-char) nil nil))
+            (setq start-pos (if symmetric
+                                 (search-backward (string open-char) nil nil)
+                               (donkey--mark-pair-scan-backward open-char close-char)))
           (search-failed
            (error "No '%c' found near cursor" open-char))))
       (goto-char (1+ start-pos))
       (condition-case nil
-          (setq end-pos (search-forward (string close-char) nil nil))
+          (setq end-pos (if symmetric
+                             (search-forward (string close-char) nil nil)
+                           (donkey--mark-pair-scan-forward open-char close-char)))
         (search-failed
          (error "No matching '%c' found after cursor" close-char))))
     (cons start-pos end-pos)))
