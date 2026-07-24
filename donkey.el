@@ -244,7 +244,7 @@ nothing meaningful to deselect."
 (defun donkey-insert-after ()
   "Insert after current char - enters INSERT state."
   (interactive)
-  (deactivate-mark)
+  (donkey--deactivate-region-if-active)
   (condition-case _err
       (forward-char 1)
     (end-of-buffer nil))
@@ -678,13 +678,6 @@ Output goes to a temporary buffer named '*DONKEY Platform Debug*'."
       (princ "\nPress 'q' to close this buffer.\n"))
 
     (with-current-buffer "*DONKEY Platform Debug*"
-      (let ((local-map (make-sparse-keymap)))
-        (set-keymap-parent local-map
-                           (if (boundp 'help-map)
-                               help-map
-                             special-mode-map))
-        (keymap-set local-map "q" #'quit-window)
-        (use-local-map local-map))
       (special-mode))))
 
 ;;; ---------------------------------------------------------------------------

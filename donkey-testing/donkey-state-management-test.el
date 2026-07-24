@@ -22,17 +22,29 @@
 
 (defmacro donkey--with-test-buffer (&rest body)
   "Create a fresh buffer in `fundamental-mode', enable DONKEY, and
-evaluate BODY with point at the start."
+evaluate BODY with point at the start.
+
+`donkey-mode' is a GLOBAL minor mode: turning it on for the duration
+of BODY and never back off would leak into every other test that
+happens to run afterward in the same batch Emacs process, regardless
+of file or test order -- e.g. a later test creating an unrelated
+buffer would find `donkey-mode' already active and get an unexpected
+Normal/Insert state applied to it.  Wrapped in `unwind-protect' so
+`donkey-mode' is always turned back off once BODY completes, whether
+normally or via a signalled error, leaving no trace for whichever test
+runs next."
   (declare (indent 0))
-  `(with-temp-buffer
-     (fundamental-mode)
-     (donkey-mode -1)
-     (donkey-mode 1)
-     (donkey--ensure-default-state)
-     (donkey-enter-insert)
-     (insert "(defun foo ()\n  (let ((x 1))\n    (concat \"bar\" x)))")
-     (goto-char (point-min))
-     ,@body))
+  `(unwind-protect
+       (with-temp-buffer
+         (fundamental-mode)
+         (donkey-mode -1)
+         (donkey-mode 1)
+         (donkey--ensure-default-state)
+         (donkey-enter-insert)
+         (insert "(defun foo ()\n  (let ((x 1))\n    (concat \"bar\" x)))")
+         (goto-char (point-min))
+         ,@body)
+     (donkey-mode -1)))
 
 (defun donkey--simulate-cg ()
   "Simulate pressing C-g. Mocks `this-single-command-keys' so
