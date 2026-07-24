@@ -554,6 +554,34 @@ where a GUI frame (`emacsclient -c') and a terminal frame
     (when (get-buffer "*DONKEY Platform Debug*")
       (kill-buffer "*DONKEY Platform Debug*"))))
 
+(ert-deftest donkey-debug-platform-retains-special-mode-map-bindings ()
+  "The debug buffer keeps `special-mode-map's other default bindings
+\(scrolling, revert), not just 'q'.
+
+`donkey-debug-platform' used to build a custom keymap (parented to
+`help-map' or `special-mode-map') and install it via `use-local-map'
+BEFORE calling `special-mode' -- but every major mode function,
+including `special-mode', calls `kill-all-local-variables' on
+activation, which discards any local keymap set before it ran.  That
+custom keymap was silently thrown away the moment `special-mode' ran,
+replaced by plain `special-mode-map' regardless -- so it was dead code
+with NO observable effect either way (confirmed: this exact test
+passes identically whether that dead code is present or removed).  It
+was removed since it no longer served any purpose and, if someone
+later \"fixed\" only the ordering without questioning why `help-map'
+was the parent, `special-mode-map's own useful bindings asserted here
+would have actually been lost for real at that point."
+  (when (get-buffer "*DONKEY Platform Debug*")
+    (kill-buffer "*DONKEY Platform Debug*"))
+  (unwind-protect
+      (progn
+        (donkey-debug-platform)
+        (with-current-buffer "*DONKEY Platform Debug*"
+          (should (eq (key-binding "g") #'revert-buffer))
+          (should (eq (key-binding " ") #'scroll-up-command))))
+    (when (get-buffer "*DONKEY Platform Debug*")
+      (kill-buffer "*DONKEY Platform Debug*"))))
+
 (ert-deftest donkey-debug-platform-includes-system-info ()
   "The debug buffer mentions the running Emacs version."
   (when (get-buffer "*DONKEY Platform Debug*")
