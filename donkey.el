@@ -1186,13 +1186,21 @@ string, which lists the OPEN characters in this order."
 (defun donkey--mark-pair-read-delimiter ()
   "Return (OPEN-CHAR CLOSE-CHAR ON-OPENER) for the char pair to mark.
 
-Uses the character at point when it is a recognized delimiter (see
-`donkey-mark-pair-delimiters'); otherwise prompts via `read-char'."
+Uses the character at point when it is a recognized OPEN or CLOSE
+delimiter (see `donkey-mark-pair-delimiters'); otherwise prompts via
+`read-char'.  ON-OPENER is non-nil only when point sits on the OPEN
+side -- when it sits on the CLOSE side of an asymmetric pair (e.g. `)'
+for `(', where OPEN and CLOSE differ), OPEN-CHAR is still resolved
+automatically here, but ON-OPENER comes back nil so
+`donkey--mark-pair-positions' takes its search-backward-then-forward
+path instead of assuming point is the opener."
   (let* ((default-char (char-after))
          (on-opener (and default-char (assq default-char donkey-mark-pair-delimiters)))
-         (open-char (if on-opener
-                        default-char
-                      (read-char (donkey--mark-pair-prompt))))
+         (on-closer (and default-char (not on-opener)
+                          (rassq default-char donkey-mark-pair-delimiters)))
+         (open-char (cond (on-opener default-char)
+                           (on-closer (car on-closer))
+                           (t (read-char (donkey--mark-pair-prompt)))))
          (close-char (or (cdr (assq open-char donkey-mark-pair-delimiters))
                          (donkey--mark-pair-unsupported-error open-char))))
     (list open-char close-char on-opener)))
