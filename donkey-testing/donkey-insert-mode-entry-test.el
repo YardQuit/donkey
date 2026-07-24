@@ -515,7 +515,7 @@ donkey-enter-insert still runs."
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
-      (cl-letf (((symbol-function 'region-active-p)
+      (cl-letf (((symbol-function 'use-region-p)
                  (lambda () t))
                 ((symbol-function 'deactivate-mark)
                  (lambda () (setq deactivated t)))
@@ -536,7 +536,7 @@ donkey-enter-insert still runs."
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
-      (cl-letf (((symbol-function 'region-active-p)
+      (cl-letf (((symbol-function 'use-region-p)
                  (lambda () nil))
                 ((symbol-function 'deactivate-mark)
                  (lambda () (setq deactivated t)))
@@ -676,7 +676,7 @@ donkey-enter-insert still runs."
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
-      (cl-letf (((symbol-function 'region-active-p)
+      (cl-letf (((symbol-function 'use-region-p)
                  (lambda () t))
                 ((symbol-function 'deactivate-mark)
                  (lambda () (setq deactivated t)))
@@ -693,7 +693,7 @@ donkey-enter-insert still runs."
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
-      (cl-letf (((symbol-function 'region-active-p)
+      (cl-letf (((symbol-function 'use-region-p)
                  (lambda () nil))
                 ((symbol-function 'deactivate-mark)
                  (lambda () (setq deactivated t)))
