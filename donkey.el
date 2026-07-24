@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max, Claude [Claude Code]
 ;; URL: https://github.com/yardquit/donkey
-;; Version: 1.0.1
+;; Version: 1.0.2
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/donkey
@@ -45,6 +45,7 @@
 (require 'thingatpt) ;(donkey-mark-word)
 (require 'cl-lib)    ; Explicitly load cl-lib for cl-some
 (require 'rect)      ; killed-rectangle, extract-rectangle-bounds, etc.
+(require 'seq)       ; seq-find
 (eval-and-compile
   (declare-function org-open-at-point "org")     ;(donkey-enter-dwim)
   (declare-function org-element-at-point "org")  ;(donkey-enter-dwim)
@@ -75,14 +76,18 @@ explicitly if desired."
   :type '(repeat symbol)
   :group 'donkey)
 
-(defun donkey--excluded-mode-p ()
-  "Return non-nil if the current major mode is in `donkey-excluded-modes'.
+(defun donkey--major-mode-in-p (mode-list)
+  "Return non-nil if the current major mode is in MODE-LIST.
 
-Checks both exact membership and derivation, so modes like
-`shell-mode' (derived from `comint-mode') are caught consistently
-everywhere this predicate is used."
-  (or (memq major-mode donkey-excluded-modes)
-      (apply #'derived-mode-p donkey-excluded-modes)))
+Checks both exact membership and derivation via `derived-mode-p', so a
+concrete mode (e.g. `shell-mode', derived from `comint-mode') is
+caught even when only its parent mode is listed."
+  (or (memq major-mode mode-list)
+      (apply #'derived-mode-p mode-list)))
+
+(defun donkey--excluded-mode-p ()
+  "Return non-nil if the current major mode is in `donkey-excluded-modes'."
+  (donkey--major-mode-in-p donkey-excluded-modes))
 
 (defun donkey--handle-non-editing-buffer ()
   "Enter insert mode in excluded major modes when `donkey-normal-mode' activates."
@@ -218,11 +223,22 @@ recorded positions in this buffer."
   "Switch to INSERT state."
   (donkey-insert-mode 1))
 
+(defun donkey--deactivate-region-if-active ()
+  "Deactivate the mark if there is an active region.
+
+Uses `use-region-p' rather than `region-active-p': the latter is
+`(and transient-mark-mode mark-active)' with no regard for whether the
+region is empty, whereas `use-region-p' additionally requires it be
+non-empty (per `use-empty-active-region'), matching what these Insert-
+entry commands actually care about -- an empty active region has
+nothing meaningful to deselect."
+  (when (use-region-p)
+    (deactivate-mark)))
+
 (defun donkey-insert-here ()
   "Insert at current position - enters INSERT state."
   (interactive)
-  (when (and mark-active (use-region-p))
-    (deactivate-mark))
+  (donkey--deactivate-region-if-active)
   (donkey-enter-insert))
 
 (defun donkey-insert-after ()
@@ -237,23 +253,21 @@ recorded positions in this buffer."
 (defun donkey-insert-beginning-of-line ()
   "Insert at beginning of line - enters INSERT state."
   (interactive)
-  (when (and mark-active (use-region-p))
-    (deactivate-mark))
+  (donkey--deactivate-region-if-active)
   (beginning-of-line)
   (donkey-enter-insert))
 
 (defun donkey-insert-end-of-line ()
   "Insert at end of line - enters INSERT state."
   (interactive)
-  (when (and mark-active (use-region-p))
-    (deactivate-mark))
+  (donkey--deactivate-region-if-active)
   (move-end-of-line 1)
   (donkey-enter-insert))
 
 (defun donkey-open-below ()
   "Open a new line below and enter INSERT state."
   (interactive)
-  (when (region-active-p) (deactivate-mark))
+  (donkey--deactivate-region-if-active)
   (move-end-of-line 1)
   (newline-and-indent)
   (donkey-enter-insert))
@@ -261,7 +275,7 @@ recorded positions in this buffer."
 (defun donkey-open-above ()
   "Open a new line above and enter INSERT state."
   (interactive)
-  (when (region-active-p) (deactivate-mark))
+  (donkey--deactivate-region-if-active)
   (move-beginning-of-line 1)
   (newline-and-indent)
   (forward-line -1)
@@ -295,14 +309,8 @@ recorded positions in this buffer."
   "Major modes where Enter should be blocked to prevent accidental line breaks.")
 
 (defun donkey--editing-mode-p ()
-  "Return non-nil if current major mode is in `donkey-editing-modes'.
-
-Checks both exact membership and derivation via `derived-mode-p', so
-concrete modes like `python-mode' or `emacs-lisp-mode' (derived from
-`prog-mode') are recognized, not just the literal parent-mode symbols
-themselves — which are essentially never a real buffer's major mode."
-  (or (memq major-mode donkey-editing-modes)
-      (apply #'derived-mode-p donkey-editing-modes)))
+  "Return non-nil if current major mode is in `donkey-editing-modes'."
+  (donkey--major-mode-in-p donkey-editing-modes))
 
 (defun donkey--register-enter-rule (rule)
   "Register RULE for ENTER DWIM dispatch.
@@ -331,6 +339,10 @@ See `donkey-enter-dwim' for how these rules are evaluated."
 Set to nil in `config.el' if you want to define rules manually."
   :type 'boolean
   :group 'donkey)
+
+(defun donkey--callable-command-p (cmd)
+  "Return non-nil if CMD is a bound, callable interactive command."
+  (and cmd (fboundp cmd) (commandp cmd)))
 
 (defun donkey--find-enter-handler ()
   "Find command for Enter key based on element at point.
@@ -369,11 +381,7 @@ Returns command symbol or nil if no handler matches."
           (when (and ctx
                      (eq (car ctx) rule-type)
                      (null (nth 1 rule)))
-            (dolist (candidate rule-cmds)
-              (when (and (null result)
-                         (fboundp candidate)
-                         (commandp candidate))
-                (setq result candidate)))))))
+            (setq result (seq-find #'donkey--callable-command-p rule-cmds))))))
     ;; Parent, then its line-start fallback, then ancestors — ALL rules
     ;; checked per element level, most specific first
     (dolist (elem (append (list parent fallback-parent) ancestors))
@@ -388,16 +396,12 @@ Returns command symbol or nil if no handler matches."
                          (or (null rule-prop)
                              (and (fboundp 'org-element-property)
                                   (org-element-property rule-prop elem))))
-                (dolist (candidate rule-cmds)
-                  (when (and (null result)
-                             (fboundp candidate)
-                             (commandp candidate))
-                    (setq result candidate)))))))))
+                (setq result (seq-find #'donkey--callable-command-p rule-cmds))))))))
     result))
 
 (defun donkey--execute-handler (cmd)
   "Execute CMD if it exists and is callable."
-  (when (and cmd (fboundp cmd) (commandp cmd))
+  (when (donkey--callable-command-p cmd)
     (call-interactively cmd)))
 
 (defun donkey--org-agenda-enter-handler ()
@@ -748,9 +752,12 @@ Set to t automatically by advising `kill-rectangle'/
 populate `killed-rectangle' -- so this stays correct regardless of how
 the rectangle was killed/copied: via `donkey-copy'/`donkey-delete',
 directly through `M-x', or from any other code that calls those stock
-commands.  `donkey-copy'/`donkey-delete' also set it explicitly as
-a defense-in-depth belt-and-braces measure, redundant with the advice
-in the common case but harmless.
+commands.  `donkey-copy'/`donkey-delete' rely on this advice rather
+than setting the flag themselves: the advice runs synchronously as
+part of the `call-interactively' that invokes it, so it has always
+already fired by the time either function's own body could set
+anything -- an explicit set there would just be a no-op re-set of the
+same value, never real defense-in-depth.
 
 Cleared back to nil automatically by advising `kill-new'/`kill-append'
 -- the two functions ANY kill-ring push funnels through, including
@@ -922,9 +929,7 @@ at point."
   (interactive)
   (if (use-region-p)
       (if (bound-and-true-p rectangle-mark-mode)
-          (progn
-            (call-interactively #'copy-rectangle-as-kill)
-            (setq donkey--last-kill-rectangle-p t))
+          (call-interactively #'copy-rectangle-as-kill)
         (kill-ring-save (region-beginning) (region-end)))
     (kill-ring-save (point) (min (point-max) (1+ (point)))))
   (deactivate-mark))
@@ -939,9 +944,7 @@ With `rectangle-mark-mode' active, kills the rectangle via
   (if (use-region-p)
       (progn
         (if (bound-and-true-p rectangle-mark-mode)
-            (progn
-              (call-interactively #'kill-rectangle)
-              (setq donkey--last-kill-rectangle-p t))
+            (call-interactively #'kill-rectangle)
           (kill-region (mark) (point))))
     (delete-char 1)))
 
@@ -1166,17 +1169,19 @@ string, which lists the OPEN characters in this order."
                 :value-type (character :tag "Close"))
   :group 'donkey)
 
+(defun donkey--mark-pair-open-chars-string (separator)
+  "Return the open characters of `donkey-mark-pair-delimiters' joined by SEPARATOR."
+  (mapconcat (lambda (pair) (char-to-string (car pair)))
+             donkey-mark-pair-delimiters separator))
+
 (defun donkey--mark-pair-prompt ()
   "Build the `read-char' prompt string from `donkey-mark-pair-delimiters'."
-  (format "Char (%s): "
-          (mapconcat (lambda (pair) (char-to-string (car pair)))
-                     donkey-mark-pair-delimiters "")))
+  (format "Char (%s): " (donkey--mark-pair-open-chars-string "")))
 
 (defun donkey--mark-pair-unsupported-error (char)
   "Signal an error for CHAR not found in `donkey-mark-pair-delimiters'."
   (error "Unsupported delimiter '%c'.  Use: %s" char
-         (mapconcat (lambda (pair) (char-to-string (car pair)))
-                    donkey-mark-pair-delimiters " ")))
+         (donkey--mark-pair-open-chars-string " ")))
 
 (defun donkey--mark-pair-read-delimiter ()
   "Return (OPEN-CHAR CLOSE-CHAR ON-OPENER) for the char pair to mark.
@@ -1249,24 +1254,34 @@ the buffer, silently pairing with the wrong occurrence."
          (error "No matching '%c' found after cursor" close-char))))
     (cons start-pos end-pos)))
 
+(defun donkey--mark-pair-select (inner-p)
+  "Shared implementation for `donkey-mark-inner'/`donkey-mark-outer'.
+
+With INNER-P non-nil, selects the content between the delimiters,
+excluding them; otherwise selects the delimiters too."
+  (donkey--ensure-non-rectangle-selection)
+  (pcase-let*
+      ((`(,open-char ,close-char ,on-opener) (donkey--mark-pair-read-delimiter))
+       (`(,start-pos . ,end-pos)
+        (donkey--mark-pair-positions open-char close-char on-opener)))
+    (push-mark (if inner-p (1+ start-pos) start-pos))
+    (goto-char (if inner-p (1- end-pos) end-pos))
+    (activate-mark)
+    (when (>= (region-beginning) (region-end))
+      (deactivate-mark)
+      (error "Empty selection between %c and %c" open-char close-char))
+    (message (if inner-p
+                 "Selected content for '%c'"
+               "Selected OUTER content including '%c'")
+             open-char)))
+
 (defun donkey-mark-inner ()
   "Mark text INSIDE CHAR pairs (excluding delimiters).
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
   (interactive)
-  (donkey--ensure-non-rectangle-selection)
-  (pcase-let*
-      ((`(,open-char ,close-char ,on-opener) (donkey--mark-pair-read-delimiter))
-       (`(,start-pos . ,end-pos)
-        (donkey--mark-pair-positions open-char close-char on-opener)))
-    (push-mark (1+ start-pos))
-    (goto-char (1- end-pos))
-    (activate-mark)
-    (when (>= (region-beginning) (region-end))
-      (deactivate-mark)
-      (error "Empty selection between %c and %c" open-char close-char))
-    (message "Selected content for '%c'" open-char)))
+  (donkey--mark-pair-select t))
 
 (defun donkey-mark-outer ()
   "Mark text INCLUDING CHAR pairs (delimiters included).
@@ -1274,18 +1289,36 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
   (interactive)
+  (donkey--mark-pair-select nil))
+
+(defun donkey--mark-sexp-select (inner-p)
+  "Shared implementation for `donkey-mark-sexp-inner'/`donkey-mark-sexp-outer'.
+
+Uses the syntax table to identify delimiters (parentheses, brackets,
+braces).  If point is on an opening or closing delimiter, uses that
+pair; if point is inside a pair, finds the enclosing delimiters.
+
+With INNER-P non-nil, selects the expression's content, excluding its
+delimiters, and errors if that content is empty (e.g. \"()\");
+otherwise selects the delimiters too."
   (donkey--ensure-non-rectangle-selection)
-  (pcase-let*
-      ((`(,open-char ,close-char ,on-opener) (donkey--mark-pair-read-delimiter))
-       (`(,start-pos . ,end-pos)
-        (donkey--mark-pair-positions open-char close-char on-opener)))
-    (push-mark start-pos)
-    (goto-char end-pos)
+  (unless (looking-at "\\s(")
+    (condition-case nil
+        (backward-up-list)
+      (scan-error
+       (user-error "Not inside a balanced expression"))))
+  (let ((start (if inner-p (1+ (point)) (point))) end)
+    (condition-case nil
+        (setq end (progn (forward-list 1)
+                          (if inner-p (1- (point)) (point))))
+      (scan-error
+       (user-error "Unbalanced expression")))
+    (when (and inner-p (>= start end))
+      (user-error "Empty expression"))
+    (push-mark start t)
+    (goto-char end)
     (activate-mark)
-    (when (>= (region-beginning) (region-end))
-      (deactivate-mark)
-      (error "Empty selection between %c and %c" open-char close-char))
-    (message "Selected OUTER content including '%c'" open-char)))
+    (message (if inner-p "Marked inner expression" "Marked outer expression"))))
 
 (defun donkey-mark-sexp-inner ()
   "Mark content inside the balanced expression at point.
@@ -1299,23 +1332,7 @@ within, excluding the delimiters themselves.
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
   (interactive)
-  (donkey--ensure-non-rectangle-selection)
-  (unless (looking-at "\\s(")
-    (condition-case nil
-        (backward-up-list)
-      (scan-error
-       (user-error "Not inside a balanced expression"))))
-  (let ((start (1+ (point))) end)
-    (condition-case nil
-        (setq end (1- (progn (forward-list 1) (point))))
-      (scan-error
-       (user-error "Unbalanced expression")))
-    (when (>= start end)
-      (user-error "Empty expression"))
-    (push-mark start t)
-    (goto-char end)
-    (activate-mark)
-    (message "Marked inner expression")))
+  (donkey--mark-sexp-select t))
 
 (defun donkey-mark-sexp-outer ()
   "Mark the balanced expression at point, including delimiters.
@@ -1328,21 +1345,7 @@ and marks it including delimiters.
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
   (interactive)
-  (donkey--ensure-non-rectangle-selection)
-  (unless (looking-at "\\s(")
-    (condition-case nil
-        (backward-up-list)
-      (scan-error
-       (user-error "Not inside a balanced expression"))))
-  (let ((start (point)) end)
-    (condition-case nil
-        (setq end (progn (forward-list 1) (point)))
-      (scan-error
-       (user-error "Unbalanced expression")))
-    (push-mark start t)
-    (goto-char end)
-    (activate-mark)
-    (message "Marked outer expression")))
+  (donkey--mark-sexp-select nil))
 
 (defun donkey-mark-word ()
   "Select the entire word at or adjacent to point.
@@ -1889,15 +1892,23 @@ buffer-local because we need to read it after switching buffers.")
    (t nil)))
 
 (defun donkey--minibuffer-setup ()
-  "Save the originating buffer's DONKEY state and force Insert passthrough
-in the minibuffer itself."
+  "Save the originating buffer's DONKEY state, and ensure the minibuffer
+itself is never left in Normal state.
+
+The minibuffer is never actively put into Insert state here -- it
+never runs `donkey--ensure-default-state' the way an ordinary buffer's
+major-mode setup does, so `donkey-normal-mode' is essentially never
+already on in a fresh minibuffer.  This is a defensive check for the
+rare case where it somehow is, so the minibuffer instead falls through
+to plain Emacs passthrough by default, same as any other buffer
+Donkey never activated in."
   ;; Capture state from the buffer that initiated the minibuffer
   (let ((orig-state
          (with-current-buffer
              (window-buffer (minibuffer-selected-window))
            (donkey--minibuffer-current-state))))
     (push orig-state donkey--minibuffer-pre-state-stack))
-  ;; Force insert mode (passthrough) in the minibuffer itself
+  ;; Guard against donkey-normal-mode somehow already being on here
   (when (bound-and-true-p donkey-normal-mode)
     (donkey-normal-mode -1)))
 

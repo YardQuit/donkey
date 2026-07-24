@@ -111,22 +111,6 @@ copy-rectangle-as-kill via call-interactively."
           (donkey-copy))))
     (should (eq called-cmd 'copy-rectangle-as-kill))))
 
-(ert-deftest donkey-copy-rectangle-mode-sets-last-kill-rectangle-flag ()
-  "Regression test: copying a rectangle must set
-`donkey--last-kill-rectangle-p' to t, so `donkey-yank' later knows to
-paste it back via `yank-rectangle' instead of the clipboard/kill ring."
-  (let (donkey--last-kill-rectangle-p)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 3)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-                ((symbol-function 'call-interactively) (lambda (_cmd) nil))
-                ((symbol-function 'deactivate-mark) (lambda () nil)))
-        (let ((rectangle-mark-mode t))
-          (donkey-copy))))
-    (should donkey--last-kill-rectangle-p)))
-
 (ert-deftest donkey-copy-rectangle-mode-falls-back-when-disabled ()
   "When rectangle-mark-mode is nil, falls back to plain kill-ring-save."
   (let (copy-called ci-called)
@@ -293,21 +277,6 @@ paste it back via `yank-rectangle' instead of the clipboard/kill ring."
         (let ((rectangle-mark-mode t))
           (donkey-delete))))
     (should (eq called-cmd 'kill-rectangle))))
-
-(ert-deftest donkey-delete-rectangle-mode-sets-last-kill-rectangle-flag ()
-  "Regression test: killing a rectangle must set
-`donkey--last-kill-rectangle-p' to t -- see the analogous donkey-copy
-test for why."
-  (let (donkey--last-kill-rectangle-p)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 3)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-                ((symbol-function 'call-interactively) (lambda (_cmd) nil)))
-        (let ((rectangle-mark-mode t))
-          (donkey-delete))))
-    (should donkey--last-kill-rectangle-p)))
 
 (ert-deftest donkey-delete-rectangle-mode-falls-back-when-disabled ()
   "When rectangle-mark-mode is nil, falls back to kill-region."
