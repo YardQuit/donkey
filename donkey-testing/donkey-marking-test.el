@@ -1238,6 +1238,31 @@ for another `(' would not find a `)' anyway, so it stays an error."
     (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?!)))
       (should-error (donkey-mark-inner) :type 'error))))
 
+(ert-deftest donkey-mark-inner-no-match-either-way-leaves-point-untouched ()
+  "Regression test: point outside any matching pair, with several
+unrelated same-type pairs earlier in the buffer, signals an error
+without moving point.
+
+`donkey--mark-pair-scan-backward' walks past those earlier pairs
+(correctly counting nesting depth as it goes) before it runs out of
+buffer and fails -- each intermediate match genuinely moves point, so
+without `save-excursion' wrapping the scan, the signalled error still
+left point sitting at the last delimiter the scan happened to pass
+through (here, the very first `(' in the buffer) instead of where the
+command was actually invoked from.  Confirmed live: point after the
+last `)' on \";; To (create a (file), visit) it with 'C-x C-f' ...\",
+pressing `m i (' silently landed on the first `(' with the error
+message easy to miss, instead of just staying put."
+  (with-temp-buffer
+    (insert ";; To (create a (file), visit) it with 'C-x C-f' and enter text.")
+    (goto-char (point-min))
+    (search-forward "visit)")
+    (let ((point-before (point)))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
+        (should-error (donkey-mark-inner) :type 'error))
+      (should (= (point) point-before))
+      (should-not (use-region-p)))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-mark-pair-delimiters (customization)
 ;;; ---------------------------------------------------------------------------
