@@ -1136,6 +1136,24 @@ without prompting via `read-char'."
       (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                      "comment")))))
 
+(ert-deftest donkey-mark-pair-delimiters-customization-asymmetric-pair-from-close-char ()
+  "A custom ASYMMETRIC pair added via `donkey-mark-pair-delimiters'
+\(as one would in config.el, e.g. `(add-to-list \\='donkey-mark-pair-delimiters
+\\='(?# . ?%))' for a hypothetical `#comment%' marker style) is
+recognized from its CLOSE character too, not just its OPEN character --
+the same fix that makes standing on a closing parenthesis work for the
+built-in `(...)' pair applies equally to user-added pairs."
+  (let ((donkey-mark-pair-delimiters
+         (cons (cons ?# ?%) donkey-mark-pair-delimiters)))
+    (with-temp-buffer
+      (insert "#comment%")
+      (goto-char (1- (point-max)))
+      (cl-letf (((symbol-function 'read-char)
+                 (lambda (&rest _) (error "read-char should not be called"))))
+        (donkey-mark-inner))
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     "comment")))))
+
 (ert-deftest donkey-mark-pair-delimiters-customization-removes-pair ()
   "Removing a pair from `donkey-mark-pair-delimiters' makes it fall
 through to the `read-char' prompt instead of being auto-recognized."
@@ -1987,17 +2005,19 @@ the content up to the next CLOSE occurrence."
 
 (ert-deftest donkey-mark-inner-all-default-delimiters-from-close-char ()
   "For every default (OPEN . CLOSE) pair, point on the CLOSE character
-still selects the content between the delimiters -- via the
-forward-then-backward fallback when OPEN and CLOSE are the same
-character, or via a `read-char' prompt (mocked here to answer with
-OPEN) when they differ."
+auto-detects the delimiter (no `read-char' prompt needed) and selects
+the content between the delimiters -- via the forward-then-backward
+fallback when OPEN and CLOSE are the same character, or by resolving
+OPEN from CLOSE directly (see `donkey--mark-pair-read-delimiter') when
+they differ, e.g. standing on a closing parenthesis."
   (dolist (pair donkey-mark-pair-delimiters)
     (let ((open (car pair)) (close (cdr pair)))
       (ert-info ((format "pair (%c . %c)" open close))
         (with-temp-buffer
           (insert (string open) "quoted" (string close))
           (goto-char (1- (point-max)))
-          (cl-letf (((symbol-function 'read-char) (lambda (&rest _) open)))
+          (cl-letf (((symbol-function 'read-char)
+                     (lambda (&rest _) (error "read-char should not be called"))))
             (donkey-mark-inner))
           (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                          "quoted")))))))
