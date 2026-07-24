@@ -1001,33 +1001,92 @@ delete-region rather than string-rectangle."
       (should-not insert-mode-called)
       (should-not self-insert-called))))
 
-(ert-deftest donkey-wrap-region-rectangle-mark-mode-falls-through-to-undefined ()
-  "Regression test: with `rectangle-mark-mode' active, delegates to
-`undefined' instead of self-inserting.
+(ert-deftest donkey-wrap-region-rectangle-mark-mode-wraps-each-line ()
+  "Regression test: with `rectangle-mark-mode' active, wraps each line
+of the rectangle at its own start/end column instead of delegating to
+`self-insert-command' or `undefined'.
 
 `self-insert-command' operates on `region-beginning'/`region-end' as a
-single linear span.  Run against a rectangle selection, that inserts
-the delimiters at the rectangle's linear start/end buffer positions
-instead of on each covered line, corrupting the buffer -- confirmed
-live: a rectangle spanning columns 0-1 across three lines produced
-\"(aaa\\nbbb\\nc)cc\\n\" instead of leaving the buffer alone or wrapping
-each line."
-  (let (undefined-called insert-mode-called self-insert-called)
+single linear span.  Run directly against a rectangle selection, that
+used to insert the delimiters at the rectangle's linear start/end
+buffer positions instead of on each covered line, corrupting the
+buffer -- confirmed live: a rectangle spanning columns 0-1 across
+three lines produced \"(aaa\\nbbb\\nc)cc\\n\".  Falling through to
+`undefined' was a safe stopgap for that corruption, but
+`donkey--wrap-rectangle-region' now wraps every line correctly instead
+of doing nothing."
+  (let ((transient-mark-mode t))
     (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-                ((symbol-function 'undefined)
-                 (lambda () (interactive) (setq undefined-called t)))
-                ((symbol-function 'donkey-insert-mode)
-                 (lambda (&rest _) (setq insert-mode-called t)))
-                ((symbol-function 'self-insert-command)
-                 (lambda (&rest _) (setq self-insert-called t))))
-        (let ((rectangle-mark-mode t))
-          (donkey-wrap-region)))
-      (should undefined-called)
-      (should-not insert-mode-called)
-      (should-not self-insert-called))))
+      (insert "aaa\n" "bbb\n" "ccc\n")
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 2)
+      (forward-char 1)
+      (rectangle-mark-mode 1)
+      (let ((last-command-event ?\())
+        (donkey-wrap-region))
+      (should (string= (buffer-string) "(a)aa\n(b)bb\n(c)cc\n")))))
+
+(ert-deftest donkey-wrap-region-rectangle-mark-mode-symmetric-delimiter ()
+  "A symmetric delimiter (not a recognized pair in
+`donkey-mark-pair-delimiters', e.g. `\"') wraps each rectangle line
+with the SAME character on both sides."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "aaa\n" "bbb\n")
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 1)
+      (forward-char 1)
+      (rectangle-mark-mode 1)
+      (let ((last-command-event ?\"))
+        (donkey-wrap-region))
+      (should (string= (buffer-string) "\"a\"aa\n\"b\"bb\n")))))
+
+(ert-deftest donkey-wrap-region-rectangle-mark-mode-pads-short-lines ()
+  "A line shorter than the rectangle's columns is padded with spaces up
+to each column before wrapping, same as `string-rectangle-line' and
+other rectangle commands do for short lines, rather than bunching both
+delimiters together at end of line."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "aaaa\n" "bb\n" "cccc\n")
+      (goto-char (point-min))
+      (forward-char 2)
+      (push-mark (point) t t)
+      (forward-line 2)
+      (forward-char 4)
+      (rectangle-mark-mode 1)
+      (let ((last-command-event ?\())
+        (donkey-wrap-region))
+      (should (string= (buffer-string) "aa(aa)\nbb(  )\ncc(cc)\n")))))
+
+(ert-deftest donkey-wrap-region-rectangle-mark-mode-stays-active ()
+  "Rectangle wrapping does not deactivate the mark or exit
+`rectangle-mark-mode', matching the linear case's own
+\"does-not-deactivate-mark-itself\" behavior."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "aaa\n" "bbb\n" "ccc\n")
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 2)
+      (forward-char 1)
+      (rectangle-mark-mode 1)
+      (let ((last-command-event ?\())
+        (donkey-wrap-region))
+      (should (bound-and-true-p rectangle-mark-mode))
+      (should (use-region-p)))))
+
+(ert-deftest donkey-wrap-close-char-uses-mark-pair-delimiters ()
+  "`donkey--wrap-close-char' resolves the close side of a recognized
+`donkey-mark-pair-delimiters' entry, falling back to OPEN-CHAR itself
+when it is not a recognized pair (symmetric delimiters, or any
+character a user has not added to `donkey-mark-pair-delimiters')."
+  (should (equal (donkey--wrap-close-char ?\() ?\)))
+  (should (equal (donkey--wrap-close-char ?\[) ?\]))
+  (should (equal (donkey--wrap-close-char ?\") ?\"))
+  (should (equal (donkey--wrap-close-char ?!) ?!)))
 
 (ert-deftest donkey-wrap-region-with-region-enters-insert-inserts-then-exits ()
   "With an active region, enters Insert, self-inserts, then exits back

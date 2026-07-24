@@ -92,6 +92,35 @@ change at all."
     donkey-set-mark-clears-stale-rectangle-mode
   (progn (goto-char 2) (donkey-set-mark)))
 
+(ert-deftest donkey-set-mark-activates-mark-at-point ()
+  "Sets the mark at point and activates the region, like plain
+`set-mark-command' with no prefix argument.
+
+Checks `mark-active' directly rather than `use-region-p': the mark and
+point are still at the SAME position right after `donkey-set-mark'
+(point has not moved to select anything yet), so the region is
+genuinely empty and `use-region-p' correctly reports nil for that per
+its own documented, deliberate exclusion of empty regions."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "hello world")
+      (goto-char 6)
+      (donkey-set-mark)
+      (should mark-active)
+      (should (= (mark) 6)))))
+
+(ert-deftest donkey-set-mark-delegates-to-set-mark-command ()
+  "Delegates to `set-mark-command' via `call-interactively', so
+prefix-argument behaviors (e.g. popping the mark ring with `C-u')
+keep working exactly as they do for the underlying command."
+  (let (called-with-prefix)
+    (cl-letf (((symbol-function 'set-mark-command)
+               (lambda (arg) (interactive "P") (setq called-with-prefix arg))))
+      (with-temp-buffer
+        (let ((current-prefix-arg '(4)))
+          (call-interactively #'donkey-set-mark))))
+    (should (equal called-with-prefix '(4)))))
+
 (ert-deftest donkey-mark-paragraph-clears-stale-rectangle-mode-and-selects-correctly ()
   "End-to-end regression test matching the exact live repro: a stale
 rectangle selection from an unrelated `m v' session must not corrupt
@@ -1010,6 +1039,95 @@ uppercase `X') before this fix."
     (donkey-mark-inner)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "inner"))))
+
+(ert-deftest donkey-mark-inner-nested-same-type-from-outer-open ()
+  "Regression test: point on the OUTER opening delimiter of a
+same-type nested pair (e.g. the outer `{' of \"{{inner}}\") must select
+the content up to the OUTER closing delimiter, not the nearest one.
+
+Before `donkey--mark-pair-scan-forward' existed, this used a plain
+`search-forward' for the close character, which stops at the FIRST
+occurrence regardless of nesting -- for \"{{inner}}\" from the outer
+`{', that found the inner pair's `}' instead of the outer one,
+silently producing the nonsensical selection \"{inner\" (a stray
+opening brace with no matching close) instead of erroring or
+selecting the correct \"{inner}\"."
+  (dolist (case '(("{{inner}}" . "{inner}")
+                   ("((inner))" . "(inner)")
+                   ("[[inner]]" . "[inner]")))
+    (let ((text (car case)) (expected (cdr case)))
+      (ert-info ((format "text %S" text))
+        (with-temp-buffer
+          (insert text)
+          (goto-char (point-min))
+          (donkey-mark-inner)
+          (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                         expected)))))))
+
+(ert-deftest donkey-mark-inner-nested-same-type-from-outer-close ()
+  "Same regression as `donkey-mark-inner-nested-same-type-from-outer-open',
+but with point on the OUTER closing delimiter instead (exercising the
+nesting-aware backward scan, `donkey--mark-pair-scan-backward')."
+  (dolist (case '(("{{inner}}" . "{inner}")
+                   ("((inner))" . "(inner)")
+                   ("[[inner]]" . "[inner]")))
+    (let ((text (car case)) (expected (cdr case)))
+      (ert-info ((format "text %S" text))
+        (with-temp-buffer
+          (insert text)
+          (goto-char (1- (point-max)))
+          (donkey-mark-inner)
+          (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                         expected)))))))
+
+(ert-deftest donkey-mark-inner-nested-same-type-with-content-around-inner-pair ()
+  "Nesting-aware scan still finds the correct enclosing pair when the
+nested same-type pair is surrounded by other text, not just adjacent
+delimiters -- e.g. \"(a(b)c)\" from the outer `(' must select
+\"a(b)c\", not stop at the inner pair's `)' and produce \"a(b\"."
+  (with-temp-buffer
+    (insert "(a(b)c)")
+    (goto-char (point-min))
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "a(b)c"))))
+
+(ert-deftest donkey-mark-inner-nested-same-type-triple-nesting ()
+  "Nesting-aware scan correctly resolves three levels of the same
+delimiter, both from the outermost pair and from a middle pair."
+  (with-temp-buffer
+    (insert "(a(b(c)d)e)")
+    (goto-char (point-min))
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "a(b(c)d)e"))
+    (deactivate-mark)
+    (goto-char 3)                      ; the middle '(', opening "b(c)d"
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "b(c)d"))))
+
+(ert-deftest donkey-mark-inner-nested-mixed-delimiter-types-unaffected ()
+  "Nesting-depth counting only tracks the SAME open/close characters
+being searched for, so a different bracket type nested inside (e.g.
+`[...]' inside `(...)') does not confuse the scan -- it is simply
+ignored, exactly as a plain (non-nesting) search already treated any
+unrelated character."
+  (with-temp-buffer
+    (insert "(a[b]c)")
+    (goto-char (point-min))
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "a[b]c"))))
+
+(ert-deftest donkey-mark-inner-nested-same-type-unbalanced-signals-error ()
+  "An unbalanced nested same-type delimiter (missing outer close)
+signals an error via `donkey--mark-pair-scan-forward' failing, rather
+than silently matching the wrong (inner) close."
+  (with-temp-buffer
+    (insert "(a(b)c")
+    (goto-char (point-min))
+    (should-error (donkey-mark-inner) :type 'error)))
 
 (ert-deftest donkey-mark-inner-edge-multiline ()
   "Multiline content between delimiters selected."

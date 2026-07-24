@@ -963,28 +963,65 @@ it before loading, or re-run the `dolist' near
   :type '(repeat character)
   :group 'donkey)
 
+(defvar donkey-mark-pair-delimiters) ;(donkey--wrap-close-char); defined below, in "Mark and Text Object Selection Commands"
+
+(defun donkey--wrap-close-char (open-char)
+  "Return the character that closes OPEN-CHAR for `donkey-wrap-region'.
+
+Looked up in `donkey-mark-pair-delimiters' when OPEN-CHAR is a
+recognized pair there, so bracket-type wrap delimiters (e.g. `(') close
+with their real counterpart (`)') instead of themselves; otherwise
+OPEN-CHAR is symmetric (e.g. `\"') and closes with itself."
+  (or (cdr (assq open-char donkey-mark-pair-delimiters)) open-char))
+
+(defun donkey--wrap-rectangle-region (open-char)
+  "Wrap each line of the active rectangle selection with OPEN-CHAR and
+its matching close character (see `donkey--wrap-close-char'), inserted
+at that line's own rectangle start/end column.  Uses `move-to-column'
+with FORCE non-nil, same as `string-rectangle-line' and other
+rectangle commands, so lines shorter than the rectangle are padded
+with spaces up to each column instead of bunching both characters
+together at end of line."
+  (let ((close-char (donkey--wrap-close-char open-char)))
+    (apply-on-rectangle
+     (lambda (startcol endcol)
+       (move-to-column endcol t)
+       (insert (string close-char))
+       (move-to-column startcol t)
+       (insert (string open-char)))
+     (region-beginning) (region-end))))
+
 (defun donkey-wrap-region ()
   "Insert the pressed delimiter into the active region without deselecting.
 
-Bound to each of `donkey-wrap-delimiters' in Normal state.  With
-no active region, or with `rectangle-mark-mode' active, falls
-through to `undefined', same as any other suppressed key.
-`self-insert-command' operates on `region-beginning'/`region-end'
-as a single linear span; against a rectangle selection that
-inserts the delimiters at the rectangle's linear start/end
-positions instead of on each covered line, corrupting the buffer
-rather than wrapping anything meaningful.  With an ordinary
-active region, enters Insert state without deactivating the mark,
-inserts the pressed character via `self-insert-command' -- letting
-packages that hook it, such as Smartparens' region-wrap, act on
-the still-active region -- then returns to Normal state."
+Bound to each of `donkey-wrap-delimiters' in Normal state.  With no
+active region, falls through to `undefined', same as any other
+suppressed key.
+
+With `rectangle-mark-mode' active, wraps each line of the rectangle at
+its own start/end column instead (see `donkey--wrap-rectangle-region')
+rather than running `self-insert-command': that operates on
+`region-beginning'/`region-end' as a single linear span, so run
+directly against a rectangle selection it would insert the delimiters
+at the rectangle's linear start/end buffer positions instead of on
+each covered line, corrupting the buffer rather than wrapping anything
+meaningful.
+
+With an ordinary active region, enters Insert state without
+deactivating the mark, inserts the pressed character via
+`self-insert-command' -- letting packages that hook it, such as
+Smartparens' region-wrap, act on the still-active region -- then
+returns to Normal state."
   (interactive)
-  (if (or (not (use-region-p))
-          (bound-and-true-p rectangle-mark-mode))
-      (call-interactively #'undefined)
+  (cond
+   ((not (use-region-p))
+    (call-interactively #'undefined))
+   ((bound-and-true-p rectangle-mark-mode)
+    (donkey--wrap-rectangle-region last-command-event))
+   (t
     (donkey-insert-mode 1)
     (self-insert-command 1)
-    (donkey--exit-insert)))
+    (donkey--exit-insert))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mark and Text Object Selection Commands
@@ -1205,6 +1242,42 @@ path instead of assuming point is the opener."
                          (donkey--mark-pair-unsupported-error open-char))))
     (list open-char close-char on-opener)))
 
+(defun donkey--mark-pair-scan-forward (open-char close-char)
+  "Scan forward from point for the CLOSE-CHAR that balances one
+already-open OPEN-CHAR occurrence, counting nested OPEN-CHAR/CLOSE-CHAR
+occurrences of the SAME type along the way so a nested pair of the
+same delimiter (e.g. the inner `(...)' in \"(a(b)c)\") does not get
+mistaken for the enclosing one's close.  Returns the position
+immediately after the matching CLOSE-CHAR.  Signals `search-failed' if
+the nesting never closes before the end of the buffer.  Only valid
+when OPEN-CHAR and CLOSE-CHAR differ -- nesting is meaningless for a
+symmetric delimiter, where the same character both opens and closes."
+  (let ((regexp (concat (regexp-quote (string open-char))
+                         "\\|" (regexp-quote (string close-char))))
+        (depth 1))
+    (while (> depth 0)
+      (unless (re-search-forward regexp nil t)
+        (signal 'search-failed (list (string close-char))))
+      (setq depth (if (eq (char-before) open-char) (1+ depth) (1- depth))))
+    (point)))
+
+(defun donkey--mark-pair-scan-backward (open-char close-char)
+  "Scan backward from point for the OPEN-CHAR that balances one
+already-closed CLOSE-CHAR occurrence, counting nested OPEN-CHAR/
+CLOSE-CHAR occurrences of the SAME type along the way, mirroring
+`donkey--mark-pair-scan-forward'.  Returns the position of the
+matching OPEN-CHAR.  Signals `search-failed' if the nesting never opens
+before the start of the buffer.  Only valid when OPEN-CHAR and
+CLOSE-CHAR differ."
+  (let ((regexp (concat (regexp-quote (string open-char))
+                         "\\|" (regexp-quote (string close-char))))
+        (depth 1))
+    (while (> depth 0)
+      (unless (re-search-backward regexp nil t)
+        (signal 'search-failed (list (string open-char))))
+      (setq depth (if (eq (char-after) close-char) (1+ depth) (1- depth))))
+    (point)))
+
 (defun donkey--mark-pair-positions (open-char close-char on-opener)
   "Return (START-POS . END-POS) for the delimiter pair around point.
 
@@ -1226,6 +1299,15 @@ since the closing character is never itself a member of the
 recognized-opener set, so point being ON-OPENER there always
 genuinely means the opening delimiter.
 
+For asymmetric delimiters, forward/backward searches go through
+`donkey--mark-pair-scan-forward'/`donkey--mark-pair-scan-backward'
+instead of a plain `search-forward'/`search-backward', so nested
+occurrences of the SAME delimiter (e.g. `(a(b)c)') resolve to the
+correct enclosing pair rather than the nearest occurrence of the
+character regardless of nesting.  Symmetric delimiters keep using a
+plain search: nesting has no well-defined meaning when the same
+character serves as both open and close.
+
 START-POS is the position of the opening delimiter; END-POS is the
 position immediately after the closing delimiter.
 
@@ -1233,15 +1315,18 @@ Searches are always case-sensitive (`case-fold-search' bound to nil),
 regardless of the buffer's own `case-fold-search' setting -- otherwise
 a delimiter like an uppercase `X' would also match a lowercase `x' in
 the buffer, silently pairing with the wrong occurrence."
-  (let (start-pos end-pos (case-fold-search nil))
+  (let ((symmetric (= open-char close-char))
+        start-pos end-pos (case-fold-search nil))
     (if on-opener
         (progn
           (setq start-pos (point))
           (goto-char (1+ start-pos))
           (condition-case nil
-              (setq end-pos (search-forward (string close-char) nil nil))
+              (setq end-pos (if symmetric
+                                 (search-forward (string close-char) nil nil)
+                               (donkey--mark-pair-scan-forward open-char close-char)))
             (search-failed
-             (unless (= open-char close-char)
+             (unless symmetric
                (error "No matching '%c' found after cursor" close-char))
              (goto-char start-pos)
              (setq end-pos (1+ start-pos))
@@ -1252,12 +1337,16 @@ the buffer, silently pairing with the wrong occurrence."
       (if (and (char-after) (= (char-after) open-char))
           (setq start-pos (point))
         (condition-case nil
-            (setq start-pos (search-backward (string open-char) nil nil))
+            (setq start-pos (if symmetric
+                                 (search-backward (string open-char) nil nil)
+                               (donkey--mark-pair-scan-backward open-char close-char)))
           (search-failed
            (error "No '%c' found near cursor" open-char))))
       (goto-char (1+ start-pos))
       (condition-case nil
-          (setq end-pos (search-forward (string close-char) nil nil))
+          (setq end-pos (if symmetric
+                             (search-forward (string close-char) nil nil)
+                           (donkey--mark-pair-scan-forward open-char close-char)))
         (search-failed
          (error "No matching '%c' found after cursor" close-char))))
     (cons start-pos end-pos)))
@@ -1286,6 +1375,19 @@ excluding them; otherwise selects the delimiters too."
 (defun donkey-mark-inner ()
   "Mark text INSIDE CHAR pairs (excluding delimiters).
 
+Auto-detects the delimiter when point is on a recognized OPEN or CLOSE
+character in `donkey-mark-pair-delimiters'; otherwise prompts via
+`read-char'.  For asymmetric pairs (e.g. `(' and `)'), nested
+occurrences of the SAME pair resolve to the correctly balanced match
+-- e.g. the outer `(' of \"(a(b)c)\" selects \"a(b)c\", not just up to
+the first `)' found.
+
+This is a plain character scan, not syntax-table aware: unlike
+`donkey-mark-sexp-inner', it does not know about strings or comments,
+so the delimiter character appearing inside one can still throw off
+the match.  Use `donkey-mark-sexp-inner' for balanced expressions in
+real code instead.
+
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
   (interactive)
@@ -1293,6 +1395,11 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
 
 (defun donkey-mark-outer ()
   "Mark text INCLUDING CHAR pairs (delimiters included).
+
+See `donkey-mark-inner' for delimiter auto-detection, nested-pair
+matching, and its syntax-awareness caveat versus `donkey-mark-sexp-outer'
+-- all of it applies here identically, just with the delimiters
+themselves included in the selection.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."

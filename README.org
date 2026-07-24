@@ -190,7 +190,7 @@ process interaction.
 | =m W= | =donkey-mark-symbol=         | Mark symbol (includes hyphens)       |
 | =m s= | =donkey-mark-sentence=       | Mark sentence                        |
 | =m p= | =donkey-mark-paragraph=      | Mark paragraph                       |
-| =m i= | =donkey-mark-inner=          | Mark inside delimiter pair (prompts) |
+| =m i= | =donkey-mark-inner=          | Mark inside delimiter pair           |
 | =m a= | =donkey-mark-outer=          | Mark including delimiter pair        |
 | =m I= | =donkey-mark-sexp-inner=     | Mark inside balanced expression      |
 | =m A= | =donkey-mark-sexp-outer=     | Mark including balanced expression   |
@@ -216,6 +216,16 @@ key up for something else):
         (assq-delete-all ?~ donkey-mark-pair-delimiters))
 
 #+end_src
+
+For asymmetric pairs (e.g. =(= and =)=), nested occurrences of the same
+pair are matched correctly -- the outer =(= of =(a(b)c)= selects
+=a(b)c=, not just up to the first =)= found. This is a plain character
+scan, though, not syntax-table aware: unlike =donkey-mark-sexp-inner=/
+=donkey-mark-sexp-outer=, it doesn't know about strings or comments, so
+the same character appearing inside one can still throw off the match.
+For balanced expressions in real code, use =donkey-mark-sexp-inner=/
+=donkey-mark-sexp-outer= instead -- those are always syntax-aware and
+need no delimiter list.
 
 ** Buffer Navigation (=g= prefix and standalone)
 
