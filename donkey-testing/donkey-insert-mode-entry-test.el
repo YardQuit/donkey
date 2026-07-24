@@ -212,6 +212,41 @@ donkey-enter-insert still runs."
         (call-interactively #'donkey-insert-after)))
     (should (= (point) 2))))
 
+(ert-deftest donkey-insert-after-deactivates-active-region ()
+  "When a non-empty region is active, deactivates the mark before proceeding."
+  (let (deactivated)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'deactivate-mark)
+                 (lambda () (setq deactivated t)))
+                ((symbol-function 'donkey-enter-insert) (lambda () nil)))
+        (donkey-insert-after))
+      (should deactivated))))
+
+(ert-deftest donkey-insert-after-skips-deactivate-when-no-region ()
+  "When no region is active, does not call deactivate-mark.
+
+Regression test: donkey-insert-after previously called plain
+`deactivate-mark' unconditionally, inconsistent with its sibling
+Insert-entry commands (donkey-insert-here, -beginning-of-line,
+-end-of-line, donkey-open-below/-above), all of which use
+`donkey--deactivate-region-if-active' and so leave an EMPTY active
+region alone. Confirmed live: pushing an empty active region (mark ==
+point) then calling donkey-insert-after left `mark-active' nil
+afterward, unlike every sibling command in the same category."
+  (let (deactivated)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'deactivate-mark)
+                 (lambda () (setq deactivated t)))
+                ((symbol-function 'donkey-enter-insert) (lambda () nil)))
+        (donkey-insert-after))
+      (should-not deactivated))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-insert-beginning-of-line
 ;;; ---------------------------------------------------------------------------

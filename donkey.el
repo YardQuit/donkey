@@ -244,7 +244,7 @@ nothing meaningful to deselect."
 (defun donkey-insert-after ()
   "Insert after current char - enters INSERT state."
   (interactive)
-  (deactivate-mark)
+  (donkey--deactivate-region-if-active)
   (condition-case _err
       (forward-char 1)
     (end-of-buffer nil))
