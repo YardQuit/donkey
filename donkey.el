@@ -1375,6 +1375,19 @@ excluding them; otherwise selects the delimiters too."
 (defun donkey-mark-inner ()
   "Mark text INSIDE CHAR pairs (excluding delimiters).
 
+Auto-detects the delimiter when point is on a recognized OPEN or CLOSE
+character in `donkey-mark-pair-delimiters'; otherwise prompts via
+`read-char'.  For asymmetric pairs (e.g. `(' and `)'), nested
+occurrences of the SAME pair resolve to the correctly balanced match
+-- e.g. the outer `(' of \"(a(b)c)\" selects \"a(b)c\", not just up to
+the first `)' found.
+
+This is a plain character scan, not syntax-table aware: unlike
+`donkey-mark-sexp-inner', it does not know about strings or comments,
+so the delimiter character appearing inside one can still throw off
+the match.  Use `donkey-mark-sexp-inner' for balanced expressions in
+real code instead.
+
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
   (interactive)
@@ -1382,6 +1395,11 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
 
 (defun donkey-mark-outer ()
   "Mark text INCLUDING CHAR pairs (delimiters included).
+
+See `donkey-mark-inner' for delimiter auto-detection, nested-pair
+matching, and its syntax-awareness caveat versus `donkey-mark-sexp-outer'
+-- all of it applies here identically, just with the delimiters
+themselves included in the selection.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
