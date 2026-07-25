@@ -1046,13 +1046,26 @@ whatever position the mark last happened to be at, regardless of
 whether the region is actually ACTIVE -- a mark left over from an
 earlier, unrelated command (e.g. a stale `donkey-mark-inner'
 selection) would silently get copied instead of the single character
-at point."
+at point.
+
+At the very end of the buffer there is no character to copy, so
+nothing is pushed onto the `kill-ring' at all.  Copying the empty
+range there instead would silently push an empty string, displacing
+whatever was previously copied as the entry a following \"p\" pastes
+-- so one stray \"y\" past the last character would make the next
+paste insert nothing, with no error to explain it.  Confirmed live:
+with \"IMPORTANT\" freshly copied, pressing \"y\" at `point-max' left
+the kill ring's newest entry as \"\"."
   (interactive)
-  (if (use-region-p)
-      (if (bound-and-true-p rectangle-mark-mode)
-          (call-interactively #'copy-rectangle-as-kill)
-        (kill-ring-save (region-beginning) (region-end)))
-    (kill-ring-save (point) (min (point-max) (1+ (point)))))
+  (cond
+   ((use-region-p)
+    (if (bound-and-true-p rectangle-mark-mode)
+        (call-interactively #'copy-rectangle-as-kill)
+      (kill-ring-save (region-beginning) (region-end))))
+   ((< (point) (point-max))
+    (kill-ring-save (point) (1+ (point))))
+   (t
+    (message "End of buffer -- nothing to copy")))
   (deactivate-mark))
 
 (defun donkey-delete ()
