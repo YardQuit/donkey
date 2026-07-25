@@ -1917,6 +1917,17 @@ it off."
   (should (eq (keymap-lookup donkey-normal-mode-map "m U")
               #'donkey-unbank-section)))
 
+(ert-deftest donkey-bank-selection-bound-to-m-l ()
+  "Banking is reached with `m l', and `m SPC' no longer shadows it.
+
+`l' alone stays `forward-char'; `m l' is a separate sequence under the
+mark prefix."
+  (should (eq (keymap-lookup donkey-normal-mode-map "m l")
+              #'donkey-bank-selection))
+  (should-not (keymap-lookup donkey-normal-mode-map "m SPC"))
+  (should (eq (keymap-lookup donkey-normal-mode-map "l")
+              #'forward-char)))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here

@@ -210,7 +210,7 @@ next navigation keypress self-insert.
 | =m I= | =donkey-mark-sexp-inner=     | Mark inside balanced expression      |
 | =m A= | =donkey-mark-sexp-outer=     | Mark including balanced expression   |
 | =m v= | =donkey-rectangle-mark-mode= | Toggle rectangle mark mode           |
-| =m SPC= | =donkey-bank-selection=      | Bank lines, keep navigating          |
+| =m l=   | =donkey-bank-selection=      | Bank lines, keep navigating          |
 | =m u=   | =donkey-unbank-line=         | Unbank the line at point             |
 | =m U=   | =donkey-unbank-section=      | Unbank the whole run at point        |
 | =m DEL= | =donkey-clear-banked-selection= | Discard all banked lines (Backspace or Delete) |
@@ -253,7 +253,7 @@ the buffer as a side effect of the failed search.
 ** Banking Lines (Non-Contiguous Selection)
 
 Emacs has a single region, so you normally can't select line 3, skip a
-few, and add line 9 to the same selection. =m SPC= works around that:
+few, and add line 9 to the same selection. =m l= works around that:
 it *banks* the lines you have selected right now, highlights them with
 the =donkey-banked-selection= face, and releases the mark so you can
 carry on navigating and selecting freely.
@@ -264,10 +264,10 @@ banked line at once:
 #+begin_example
 
   V J          select lines 0-1
-  m SPC        bank them, mark released
+  m l          bank them, mark released
   j j j        navigate past lines you want to skip
   V J          select lines 4-5
-  m SPC        bank those too
+  m l          bank those too
   j j j        navigate on
   V            select line 8
   y            copies lines 0,1,4,5,8 as one kill
@@ -276,9 +276,9 @@ banked line at once:
 
 The live region counts too, so the final piece never has to be banked
 explicitly — in the example above, line 8 is included by =y= without a
-third =m SPC=.
+third =m l=.
 
-=m SPC= toggles, with or without a region:
+=m l= toggles, with or without a region:
 
 - *No region* — banks the current line; pressing it again on an
   already-banked line *unbanks* that line.
