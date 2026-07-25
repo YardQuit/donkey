@@ -1991,6 +1991,51 @@ package's declared minimum honest."
                          offenders)))))))))
     (should-not offenders)))
 
+(ert-deftest donkey-bank-selection-empty-final-line-reports-nothing-banked ()
+  "Banking the empty final line says so instead of claiming a bank.
+
+Regression: the span there is zero width -- `line-beginning-position'
+and the clamped end both land on `point-max' -- so `donkey--bank-span'
+never entered its per-line loop and created no overlay, yet the message
+still read \"Banked this line (0 total)\": a claimed success and a count
+of zero in the same breath.  Most files end in a newline, so `g e'
+lands on exactly this spot."
+  (let (shown)
+    (with-temp-buffer
+      (insert "a\nb\n")
+      (goto-char (point-max))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-bank-selection))
+      (should (equal shown "Nothing to bank -- empty final line"))
+      (should (= 0 (donkey--banked-line-count)))
+      (should-not donkey--banked-overlays))))
+
+(ert-deftest donkey-bank-selection-empty-buffer-reports-nothing-banked ()
+  "An empty buffer has no line to bank, and says so."
+  (let (shown)
+    (with-temp-buffer
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-bank-selection))
+      (should (equal shown "Nothing to bank -- empty final line"))
+      (should (= 0 (donkey--banked-line-count))))))
+
+(ert-deftest donkey-bank-selection-final-line-without-newline-still-banks ()
+  "A final line with no trailing newline is real text and still banks.
+
+Guards the empty-final-line check against over-reaching: that line also
+ends at `point-max', but its span is not empty."
+  (let (shown)
+    (with-temp-buffer
+      (insert "a\nlast")
+      (goto-char (point-max))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-bank-selection))
+      (should (equal shown "Banked this line (1 total) -- navigate, then y/d"))
+      (should (= 1 (donkey--banked-line-count))))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here

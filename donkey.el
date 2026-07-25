@@ -1946,9 +1946,18 @@ discards them without doing anything else."
             (message "Unbanked this line (%d total)"
                      (donkey--banked-line-count)))
         (let ((span (donkey--whole-line-span (point) (point))))
-          (donkey--bank-span (car span) (cdr span))
-          (message "Banked this line (%d total) -- navigate, then y/d"
-                   (donkey--banked-line-count)))))))
+          ;; The empty final line of a newline-terminated buffer spans no
+          ;; text at all: `line-beginning-position' and the clamped end
+          ;; both land on `point-max'.  `donkey--bank-span' walks the span
+          ;; line by line, so its loop body never runs and no overlay is
+          ;; created -- reporting "Banked this line" there claimed a bank
+          ;; that did not exist, in the same breath as "(0 total)".  Most
+          ;; files end in a newline, so `g e' lands on exactly this spot.
+          (if (>= (car span) (cdr span))
+              (message "Nothing to bank -- empty final line")
+            (donkey--bank-span (car span) (cdr span))
+            (message "Banked this line (%d total) -- navigate, then y/d"
+                     (donkey--banked-line-count))))))))
 
 (defun donkey--banked-overlay-at (pos)
   "Return the banked overlay covering the line POS is on, or nil.
