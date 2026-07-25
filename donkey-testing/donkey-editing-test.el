@@ -1737,6 +1737,18 @@ the mode is off -- so the highlights were permanent."
       (when (bound-and-true-p donkey-mode)
         (donkey-mode -1)))))
 
+(ert-deftest donkey-clear-banked-selection-bound-to-backspace-and-delete ()
+  "Both Backspace and Delete clear the bank, under the `m' prefix.
+
+`DEL' is Emacs's name for ASCII 127, which is what BACKSPACE sends; the
+physical Delete key is a different key that arrives as `<deletechar>'
+in a terminal or `<delete>' on a graphical frame.  Regression: only
+`m DEL' was bound, so pressing `m' and the Delete key reported
+\"m <deletechar> is undefined\" -- confirmed live before binding it."
+  (dolist (key '("m DEL" "m <deletechar>" "m <delete>"))
+    (should (eq (keymap-lookup donkey-normal-mode-map key)
+                #'donkey-clear-banked-selection))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here

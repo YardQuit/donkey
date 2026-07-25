@@ -2205,7 +2205,14 @@ documentation."
 (keymap-set donkey-normal-mode-map "m w" #'donkey-mark-word)
 (keymap-set donkey-normal-mode-map "m W" #'donkey-mark-symbol)
 (keymap-set donkey-normal-mode-map "m SPC" #'donkey-bank-selection)
+;; Backspace and Delete both clear the bank.  "DEL" is Emacs's name for
+;; ASCII 127, which is what BACKSPACE sends -- the physical Delete key is
+;; a different key entirely and arrives as <deletechar> in a terminal or
+;; <delete> on a graphical frame, so all three are bound rather than
+;; leaving whichever key the user reaches for reporting "is undefined".
 (keymap-set donkey-normal-mode-map "m DEL" #'donkey-clear-banked-selection)
+(keymap-set donkey-normal-mode-map "m <deletechar>" #'donkey-clear-banked-selection)
+(keymap-set donkey-normal-mode-map "m <delete>" #'donkey-clear-banked-selection)
 
 ;; Buffer navigation
 (keymap-set donkey-normal-mode-map "%" #'mark-whole-buffer)

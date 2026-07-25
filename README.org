@@ -210,7 +210,7 @@ next navigation keypress self-insert.
 | =m A= | =donkey-mark-sexp-outer=     | Mark including balanced expression   |
 | =m v= | =donkey-rectangle-mark-mode= | Toggle rectangle mark mode           |
 | =m SPC= | =donkey-bank-selection=      | Bank lines, keep navigating          |
-| =m DEL= | =donkey-clear-banked-selection= | Discard all banked lines          |
+| =m DEL= | =donkey-clear-banked-selection= | Discard all banked lines (Backspace or Delete) |
 
 =donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ’ “ ” = * ~ | \ / : + _ $=
 by default -- an alist of (OPEN . CLOSE) pairs in =donkey-mark-pair-delimiters=
@@ -279,8 +279,11 @@ With no region active, =m SPC= banks just the current line, and
 pressing it again on an already-banked line *unbanks* that line — the
 quickest way to drop one you added by mistake.
 
-Banked lines are consumed by =y= or =d=. To discard them without doing
-anything else, use =m DEL=.
+Banked lines are consumed by =y= or =d=. To discard them all without
+doing anything else, use =m DEL= — that is =m= followed by *Backspace*,
+which is what Emacs calls =DEL=. The physical *Delete* key is bound to
+the same command, so whichever of the two you reach for clears the
+bank.
 
 Notes:
 
