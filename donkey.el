@@ -321,7 +321,19 @@ nothing meaningful to deselect."
   (donkey-enter-insert))
 
 (defun donkey-change ()
-  "Change marked char or region - enters INSERT state."
+  "Delete the active region (or the character at point) and enter INSERT state.
+
+Under `rectangle-mark-mode' the region is replaced via
+`string-rectangle', so each covered line is changed at its own
+columns rather than the rectangle being treated as one linear span.
+
+Entering INSERT state is the whole point of this command, so it
+happens even when there is nothing to delete: at the very end of the
+buffer `delete-char' signals `end-of-buffer', which would otherwise
+abort before the state transition and leave Normal state active --
+pressing \"change\" and silently staying in Normal, with only an
+\"End of buffer\" message to explain it.  Caught here the same way
+`donkey-insert-after' catches it for its own `forward-char'."
   (interactive)
   (if (use-region-p)
       (progn
@@ -329,7 +341,9 @@ nothing meaningful to deselect."
             (call-interactively #'string-rectangle)
           (delete-region (mark) (point)))
         (donkey-enter-insert))
-    (delete-char 1)
+    (condition-case nil
+        (delete-char 1)
+      (end-of-buffer nil))
     (donkey-enter-insert)))
 
 ;;; ---------------------------------------------------------------------------
