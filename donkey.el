@@ -324,22 +324,34 @@ nothing meaningful to deselect."
   "Delete the active region (or the character at point) and enter INSERT state.
 
 Under `rectangle-mark-mode' the region is replaced via
-`string-rectangle', so each covered line is changed at its own
-columns rather than the rectangle being treated as one linear span.
+`string-rectangle' and DONKEY stays in NORMAL state instead.
+`string-rectangle' prompts for the replacement text in the minibuffer
+and applies it to every covered line itself, so by the time it returns
+the edit is already complete and there is nothing left to type --
+dropping into INSERT there just means the next navigation keypress
+self-inserts.  Confirmed live: after `m v', `c', a replacement string
+and RET, pressing `j' and `l' typed a literal \"jl\" into the buffer
+instead of moving.
 
-Entering INSERT state is the whole point of this command, so it
-happens even when there is nothing to delete: at the very end of the
-buffer `delete-char' signals `end-of-buffer', which would otherwise
-abort before the state transition and leave Normal state active --
-pressing \"change\" and silently staying in Normal, with only an
-\"End of buffer\" message to explain it.  Caught here the same way
-`donkey-insert-after' catches it for its own `forward-char'."
+Entering INSERT state in the other cases is the whole point of this
+command, so it happens even when there is nothing to delete: at the
+very end of the buffer `delete-char' signals `end-of-buffer', which
+would otherwise abort before the state transition and leave Normal
+state active -- pressing \"change\" and silently staying in Normal,
+with only an \"End of buffer\" message to explain it.  Caught here the
+same way `donkey-insert-after' catches it for its own `forward-char'."
   (interactive)
   (if (use-region-p)
-      (progn
-        (if (bound-and-true-p rectangle-mark-mode)
+      (if (bound-and-true-p rectangle-mark-mode)
+          (progn
             (call-interactively #'string-rectangle)
-          (delete-region (mark) (point)))
+            ;; Explicit rather than implicit: the minibuffer
+            ;; save/restore in `donkey--minibuffer-exit' already tends to
+            ;; land back in Normal here, but that depends on this having
+            ;; been reached FROM Normal state, which nothing guarantees
+            ;; for a command also callable via \\[execute-extended-command].
+            (donkey-enter-normal))
+        (delete-region (mark) (point))
         (donkey-enter-insert))
     (condition-case nil
         (delete-char 1)
