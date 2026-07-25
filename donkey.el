@@ -90,9 +90,9 @@ caught even when only its parent mode is listed."
   (donkey--major-mode-in-p donkey-excluded-modes))
 
 (defun donkey--handle-non-editing-buffer ()
-  "Bounce straight back to Insert state if `donkey-normal-mode' just
-turned on in an excluded major mode.
+  "Bounce straight back to Insert state in an excluded major mode.
 
+Runs whenever `donkey-normal-mode' just turned on.
 `donkey--ensure-default-state' (on `after-change-major-mode-hook')
 already keeps a FRESH buffer out of Normal state in an excluded mode,
 but that only covers the buffer's initial activation.  This hook
@@ -114,10 +114,10 @@ toggle function (so this hook never fires at all)."
 (add-hook 'donkey-normal-mode-hook #'donkey--handle-non-editing-buffer)
 
 (defun donkey--check-post-command-non-editing ()
-  "Force Insert state if Normal state is somehow still active in an
-excluded major mode, after any command whatsoever.
+  "Force Insert state if Normal state is somehow active in an excluded mode.
 
-Registered on the global `post-command-hook' by `donkey-mode', so it
+Checked after any command whatsoever.  Registered on the global
+`post-command-hook' by `donkey-mode', so it
 runs after EVERY command in EVERY buffer, checking the raw
 `donkey-normal-mode' variable directly rather than relying on a hook.
 This is deliberately redundant with `donkey--handle-non-editing-buffer'
@@ -188,10 +188,10 @@ recorded.")
   "Cons cell (BUFFER . POINT) captured after the previous command.")
 
 (defun donkey--track-position ()
-  "Record previous cursor position when point changes.
+  "Record the previous cursor position.
 
-Runs on `post-command-hook'.  Independent of the mark ring and
-region."
+Runs on `post-command-hook', recording point whenever it has moved
+since the last command.  Independent of the mark ring and region."
   (unless (minibufferp)
     (let ((now-pt (point)))
       (when (and donkey--last-tracked-state
@@ -816,7 +816,7 @@ separate from the kill ring/system clipboard, and it is never cleared
 by a later, ordinary non-rectangle kill -- its mere presence doesn't
 mean it's the freshest thing killed.  This flag tracks which store is
 actually current, so `donkey-yank' knows whether \"p\" should paste it
-back via `yank-rectangle' instead of the ordinary clipboard/kill-ring
+back via `yank-rectangle' instead of the ordinary clipboard/`kill-ring'
 path.
 
 Not buffer-local: `killed-rectangle' itself isn't either, and a
@@ -836,7 +836,7 @@ anything -- an explicit set there would just be a no-op re-set of the
 same value, never real defense-in-depth.
 
 Cleared back to nil automatically by advising `kill-new'/`kill-append'
--- the two functions ANY kill-ring push funnels through, including
+-- the two functions ANY `kill-ring' push funnels through, including
 ones with no Donkey wrapper at all (e.g. `kill-line' bound directly to
 \"D\", or any stock kill command reached via Insert state's passthrough
 to standard Emacs keys) -- so a stale rectangle copy from earlier in
@@ -873,17 +873,17 @@ since the kill ring itself was never touched by a rectangle kill/copy."
 (advice-add 'copy-rectangle-as-kill :after #'donkey--set-last-kill-rectangle-flag)
 
 (defun donkey--rectangle-top-left (start end)
-  "Return the buffer position of the top-left corner of the rectangle
-spanning START and END.
+  "Return the buffer position of the top-left corner of the rectangle.
 
-`extract-rectangle-bounds' returns one (START . END) cons per row of
-the rectangle, top row first; that first row's START column position
-IS the rectangle's top-left corner, computed the exact same way
-`rect.el' itself computes it for every other rectangle operation."
+START and END are the rectangle's corners.  `extract-rectangle-bounds'
+returns one (START . END) cons per row of the rectangle, top row
+first; that first row's START column position IS the rectangle's
+top-left corner, computed the exact same way `rect.el' itself computes
+it for every other rectangle operation."
   (caar (extract-rectangle-bounds start end)))
 
 (defun donkey--replace-rectangle-selection-with-killed-rectangle ()
-  "Replace the active rectangle-mark-mode selection with `killed-rectangle'.
+  "Replace the active `rectangle-mark-mode' selection with `killed-rectangle'.
 
 Refuses via `user-error', without touching the buffer at all, when the
 selection's row count doesn't match `killed-rectangle's row count --
@@ -1051,13 +1051,14 @@ OPEN-CHAR is symmetric (e.g. `\"') and closes with itself."
   (or (cdr (assq open-char donkey-mark-pair-delimiters)) open-char))
 
 (defun donkey--wrap-rectangle-region (open-char)
-  "Wrap each line of the active rectangle selection with OPEN-CHAR and
-its matching close character (see `donkey--wrap-close-char'), inserted
-at that line's own rectangle start/end column.  Uses `move-to-column'
-with FORCE non-nil, same as `string-rectangle-line' and other
-rectangle commands, so lines shorter than the rectangle are padded
-with spaces up to each column instead of bunching both characters
-together at end of line."
+  "Wrap each line of the active rectangle selection with OPEN-CHAR.
+
+Also inserts OPEN-CHAR's matching close character (see
+`donkey--wrap-close-char'), each at that line's own rectangle
+start/end column.  Uses `move-to-column' with FORCE non-nil, same as
+`string-rectangle-line' and other rectangle commands, so lines
+shorter than the rectangle are padded with spaces up to each column
+instead of bunching both characters together at end of line."
   (let ((close-char (donkey--wrap-close-char open-char)))
     (apply-on-rectangle
      (lambda (startcol endcol)
@@ -1119,7 +1120,7 @@ would misinterpret the new selection as a rectangle instead of the
 intended linear span.  Confirmed live: after `m v' (rectangle-mark) on
 one line, then `m p' (mark-paragraph) elsewhere without cancelling the
 rectangle first, pressing `d' silently killed a zero-width \"rectangle\"
-(one empty string per line) instead of deleting the paragraph, with no
+\(one empty string per line) instead of deleting the paragraph, with no
 error and no visible change to the buffer at all.
 
 Called at the start of every Donkey command that establishes a new
@@ -1195,9 +1196,10 @@ session."
     (message "Visual line: j/k to extend, V to cancel")))
 
 (defun donkey-visual-next-line ()
-  "Move down one line.  Extends the visual-line selection if one is
-active (see `donkey--visual-line-session-active-p'); otherwise a plain
-`forward-line'.
+  "Move down one line, extending the visual-line selection if active.
+
+See `donkey--visual-line-session-active-p' for what \"active\" means
+here; otherwise this is a plain `forward-line'.
 
 The selection always spans whole lines from `donkey-visual-anchor' to
 point, on whichever side of the anchor point currently is: moving down
@@ -1224,9 +1226,10 @@ and then past, the anchor line itself."
     (forward-line 1)))
 
 (defun donkey-visual-previous-line ()
-  "Move up one line.  Extends the visual-line selection if one is
-active (see `donkey--visual-line-session-active-p'); otherwise a plain
-`forward-line' with a negative count.
+  "Move up one line, extending the visual-line selection if active.
+
+See `donkey--visual-line-session-active-p' for what \"active\" means
+here; otherwise this is a plain `forward-line' with a negative count.
 
 Mirrors `donkey-visual-next-line': moving up while already above the
 anchor keeps growing upward; moving up while still below the anchor
@@ -1287,10 +1290,10 @@ whether a region was genuinely active."
     (?\" . ?\") (?\' . ?\') (?\` . ?\`) (?‘ . ?’) (?“ . ?”)
     (?= . ?=) (?* . ?*) (?~ . ?~) (?\| . ?\|) (?\\ . ?\\)
     (?/ . ?/) (?: . ?:) (?+ . ?+) (?_ . ?_) (?$ . ?$))
-  "Alist of (OPEN . CLOSE) delimiter characters for `donkey-mark-inner'
-and `donkey-mark-outer'.  For symmetric delimiters (e.g. quotes, where
-the same character both opens and closes a pair), OPEN and CLOSE are
-identical.
+  "Delimiter pairs (OPEN . CLOSE) for `donkey-mark-inner'/`donkey-mark-outer'.
+
+For symmetric delimiters (e.g. quotes, where the same character both
+opens and closes a pair), OPEN and CLOSE are identical.
 
 Customize this to add or remove supported delimiters -- e.g. add
 `(?# . ?#)' for a language that uses # as an inline marker, or remove
@@ -1337,15 +1340,16 @@ path instead of assuming point is the opener."
     (list open-char close-char on-opener)))
 
 (defun donkey--mark-pair-scan-forward (open-char close-char)
-  "Scan forward from point for the CLOSE-CHAR that balances one
-already-open OPEN-CHAR occurrence, counting nested OPEN-CHAR/CLOSE-CHAR
-occurrences of the SAME type along the way so a nested pair of the
-same delimiter (e.g. the inner `(...)' in \"(a(b)c)\") does not get
-mistaken for the enclosing one's close.  Returns the position
-immediately after the matching CLOSE-CHAR.  Signals `search-failed' if
-the nesting never closes before the end of the buffer.  Only valid
-when OPEN-CHAR and CLOSE-CHAR differ -- nesting is meaningless for a
-symmetric delimiter, where the same character both opens and closes."
+  "Scan forward for the CLOSE-CHAR balancing one already-open OPEN-CHAR.
+
+Counts nested OPEN-CHAR/CLOSE-CHAR occurrences of the SAME type along
+the way, so a nested pair of the same delimiter (e.g. the inner
+`(...)' in \"(a(b)c)\") does not get mistaken for the enclosing one's
+close.  Returns the position immediately after the matching CLOSE-CHAR.
+Signals `search-failed' if the nesting never closes before the end of
+the buffer.  Only valid when OPEN-CHAR and CLOSE-CHAR differ --
+nesting is meaningless for a symmetric delimiter, where the same
+character both opens and closes."
   (let ((regexp (concat (regexp-quote (string open-char))
                          "\\|" (regexp-quote (string close-char))))
         (depth 1))
@@ -1356,13 +1360,13 @@ symmetric delimiter, where the same character both opens and closes."
     (point)))
 
 (defun donkey--mark-pair-scan-backward (open-char close-char)
-  "Scan backward from point for the OPEN-CHAR that balances one
-already-closed CLOSE-CHAR occurrence, counting nested OPEN-CHAR/
-CLOSE-CHAR occurrences of the SAME type along the way, mirroring
-`donkey--mark-pair-scan-forward'.  Returns the position of the
-matching OPEN-CHAR.  Signals `search-failed' if the nesting never opens
-before the start of the buffer.  Only valid when OPEN-CHAR and
-CLOSE-CHAR differ."
+  "Scan backward for the OPEN-CHAR balancing one already-closed CLOSE-CHAR.
+
+Counts nested OPEN-CHAR/CLOSE-CHAR occurrences of the SAME type along
+the way, mirroring `donkey--mark-pair-scan-forward'.  Returns the
+position of the matching OPEN-CHAR.  Signals `search-failed' if the
+nesting never opens before the start of the buffer.  Only valid when
+OPEN-CHAR and CLOSE-CHAR differ."
   (let ((regexp (concat (regexp-quote (string open-char))
                          "\\|" (regexp-quote (string close-char))))
         (depth 1))
@@ -1644,8 +1648,7 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
   (message "Symbol marked"))
 
 (defun donkey-set-mark ()
-  "Like `set-mark-command', but first disables a stale active
-`rectangle-mark-mode' selection.
+  "Call `set-mark-command', disabling a stale `rectangle-mark-mode' first.
 
 See `donkey--ensure-non-rectangle-selection' for why."
   (interactive)
@@ -2003,10 +2006,11 @@ on terminals that drop bytes during state transitions."
           (error nil))))))
 
 (defvar donkey--last-applied-cursor-settings (make-hash-table :test 'eq)
-  "Hash table mapping each terminal to the SETTING value last actually
-sent to it via `donkey--send-cursor-sequence'.  Lets
-`donkey--apply-cursor-setting' skip redundant terminal I/O when called
-again with an unchanged value -- notably, entering Normal or Insert
+  "Hash table mapping each terminal to the SETTING value last sent.
+
+Sending happens via `donkey--send-cursor-sequence'.  Caching it here
+lets `donkey--apply-cursor-setting' skip redundant terminal I/O when
+called again with an unchanged value -- notably, entering Normal or Insert
 state triggers this twice per transition, since each of
 `donkey-normal-mode' and `donkey-insert-mode' toggles the other off as
 part of its own body, running both modes' hooks (both of which include
@@ -2129,8 +2133,7 @@ buffer-local because we need to read it after switching buffers.")
    (t nil)))
 
 (defun donkey--minibuffer-setup ()
-  "Save the originating buffer's DONKEY state, and ensure the minibuffer
-itself is never left in Normal state.
+  "Save the originating buffer's DONKEY state; never leave Normal state on.
 
 The minibuffer is never actively put into Insert state here -- it
 never runs `donkey--ensure-default-state' the way an ordinary buffer's
@@ -2156,7 +2159,7 @@ Always pops `donkey--minibuffer-pre-state-stack' to keep it balanced
 with `donkey--minibuffer-setup', but only re-enters Normal/Insert
 state when `donkey-mode' is still globally on.  Without this check,
 disabling `donkey-mode' while a minibuffer session is in progress
-(e.g. via a keybinding, from a recursive minibuffer) would have this
+\(e.g. via a keybinding, from a recursive minibuffer) would have this
 hook resurrect Normal or Insert state in the originating buffer on
 exit, the same way a stray `C-g' through `donkey-setup-smartparens''
 keymaps could before `donkey--exit-insert' gained its own
@@ -2292,7 +2295,7 @@ buffer, or when `donkey-insert-mode' is not actually active in the
 current buffer, delegates to `keyboard-quit' instead.  The
 `donkey-insert-mode' check matters because `donkey-setup-smartparens'
 binds this command directly into Smartparens' own keymaps
-(`smartparens-mode-map' and its overlay keymaps), which are
+\(`smartparens-mode-map' and its overlay keymaps), which are
 independent of DONKEY's lifecycle: disabling `donkey-mode' turns off
 `donkey-insert-mode' in every buffer but does not undo that binding,
 so without this guard a stray `C-g' reaching this function through it
@@ -2385,23 +2388,21 @@ overlays."
   "Buffer-local saved input method name for restoration on Insert entry.")
 
 (defun donkey--on-normal-entry ()
-  "Deactivate any active input method when entering Normal state, saving
-it in `donkey--saved-input-method' for `donkey--on-insert-entry' to
-restore later.
+  "Deactivate any active input method when entering Normal state.
 
-Input methods (e.g. for CJK or accented-character entry) are for text
-entry; without this, Normal state's own keybindings (h/j/k/l and the
-rest) would be run through whatever conversion the active input method
-applies to raw keystrokes instead, breaking navigation entirely for
-anyone using one."
+Saved in `donkey--saved-input-method' for `donkey--on-insert-entry' to
+restore later.  Input methods (e.g. for CJK or accented-character
+entry) are for text entry; without this, Normal state's own
+keybindings (h/j/k/l and the rest) would be run through whatever
+conversion the active input method applies to raw keystrokes instead,
+breaking navigation entirely for anyone using one."
   (when donkey-normal-mode
     (when current-input-method
       (setq donkey--saved-input-method current-input-method)
       (deactivate-input-method))))
 
 (defun donkey--on-insert-entry ()
-  "Reactivate the input method `donkey--on-normal-entry' saved, if any,
-when returning to Insert state.
+  "Reactivate on Insert entry the input method `donkey--on-normal-entry' saved.
 
 Only acts when no input method is ALREADY active -- e.g. the user
 manually turned a different one on while still in Normal state, via
@@ -2413,10 +2414,10 @@ whichever one is genuinely current by the time Insert state resumes."
       (activate-input-method donkey--saved-input-method))))
 
 (defun donkey--on-input-method-activate ()
-  "Immediately undo an input method activated directly while in Normal
-state, saving it the same way `donkey--on-normal-entry' does.
+  "Immediately undo an input method activated while in Normal state.
 
-Registered on the global `input-method-activate-hook' rather than a
+Saves it the same way `donkey--on-normal-entry' does.  Registered on
+the global `input-method-activate-hook' rather than a
 DONKEY mode-hook, since this needs to catch activation through ANY
 means -- `M-x set-input-method', `C-\\', a toggle command from some
 other package -- not just the Normal-state entry transition itself.
