@@ -1475,6 +1475,42 @@ surrounding block lines are untouched."
                    (list (cons (save-excursion (forward-line 0) (point))
                                (save-excursion (forward-line 1) (point))))))))
 
+(ert-deftest donkey-bank-selection-does-not-outlive-the-buffer-being-refilled ()
+  "Regression test: a bank must not survive the text it banked.
+
+Emptying a buffer collapses an overlay to zero width rather than
+removing it, and banked overlays advance with text inserted at their
+end -- so refilling the buffer regrew the overlay over whatever
+replaced the banked line.  Banking one line of three and then
+refilling reported the entire new buffer as banked, while
+`donkey--banked-line-count' still said one line, so `y'/`d' acted on
+text that was never picked out.
+
+`donkey--prune-banked-overlays' cannot catch this: the insertion
+re-expands the overlay before the spans are next asked for, so it never
+looks collapsed.  The overlays evaporate instead."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 3)
+    (goto-char (point-min))
+    (donkey-bank-selection)
+    (should (= 1 (length (donkey--banked-spans))))
+    ;; Anything that empties and refills the buffer.
+    (erase-buffer)
+    (insert "one\ntwo\nthree\nfour\n")
+    (should (null (donkey--banked-spans)))
+    (should (zerop (donkey--banked-line-count)))
+    (should-not (donkey--banked-selection-p))))
+
+(ert-deftest donkey-bank-selection-does-not-outlive-its-line ()
+  "A banked line deleted by ordinary editing takes its bank with it."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 3)
+    (goto-char (point-min))
+    (donkey-bank-selection)
+    (should (= 1 (length (donkey--banked-spans))))
+    (delete-region (point-min) (save-excursion (forward-line 1) (point)))
+    (should (null (donkey--banked-spans)))))
+
 (ert-deftest donkey-bank-selection-toggles-off-on-same-line ()
   "Regression test: banking twice on one line unbanks just that line,
 leaving any adjacent banked line alone.

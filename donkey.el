@@ -2078,6 +2078,16 @@ indistinguishable on screen."
           (overlay-put ov 'face 'donkey-banked-selection)
           (overlay-put ov 'donkey-banked t)
           (overlay-put ov 'priority -50)
+          ;; Emptying a buffer collapses an overlay to zero width rather than
+          ;; removing it, and this one advances with text inserted at its end
+          ;; -- so refilling the buffer regrows it over whatever replaced the
+          ;; line it banked.  A bank of one line silently becomes a bank of
+          ;; the whole buffer, which `y' and `d' then act on while
+          ;; `donkey--banked-line-count' still reports one.
+          ;; `donkey--prune-banked-overlays' cannot catch it: the insertion
+          ;; re-expands the overlay before the spans are next asked for, so
+          ;; it never looks collapsed.  Evaporating removes it with its text.
+          (overlay-put ov 'evaporate t)
           (push ov donkey--banked-overlays))))))
 
 (defun donkey--banked-line-count ()
