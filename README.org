@@ -210,6 +210,8 @@ next navigation keypress self-insert.
 | =m A= | =donkey-mark-sexp-outer=     | Mark including balanced expression   |
 | =m v= | =donkey-rectangle-mark-mode= | Toggle rectangle mark mode           |
 | =m SPC= | =donkey-bank-selection=      | Bank lines, keep navigating          |
+| =m u=   | =donkey-unbank-line=         | Unbank the line at point             |
+| =m U=   | =donkey-unbank-section=      | Unbank the whole run at point        |
 | =m DEL= | =donkey-clear-banked-selection= | Discard all banked lines (Backspace or Delete) |
 
 =donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ’ “ ” = * ~ | \ / : + _ $=
@@ -287,11 +289,30 @@ third =m SPC=.
   only toggles off once it is uniformly on, so press again to then
   clear it.
 
-Banked lines are consumed by =y= or =d=. To discard them all without
-doing anything else, use =m DEL= — that is =m= followed by *Backspace*,
-which is what Emacs calls =DEL=. The physical *Delete* key is bound to
-the same command, so whichever of the two you reach for clears the
-bank.
+*** Taking banks back
+
+Banked lines are consumed by =y= or =d=. To remove them without doing
+anything else, there are three levels:
+
+| Key     | Removes                                          |
+|---------+--------------------------------------------------|
+| =m u=   | the banked line at point                         |
+| =m U=   | the whole contiguous run point is standing on    |
+| =m DEL= | every bank in the buffer                         |
+
+=m u= and =m U= only ever *remove*. Pressing either on a line that is
+not banked reports =No banked line at point= / =No banked section at
+point= and changes nothing, so you can lean on them without tracking
+the state of each line.
+
+A "run" is every banked line adjacent to the one you are on — exactly
+the stretch that =y= and =d= treat as one piece — so a block you banked
+line by line comes back off in one press of =m U=, without re-selecting
+it. Banks outside the run are left alone.
+
+=m DEL= is =m= followed by *Backspace*, which is what Emacs calls
+=DEL=. The physical *Delete* key is bound to the same command, so
+whichever of the two you reach for clears the bank.
 
 Notes:
 

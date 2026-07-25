@@ -1951,12 +1951,72 @@ discards them without doing anything else."
                    (donkey--banked-line-count)))))))
 
 (defun donkey--banked-overlay-at (pos)
-  "Return the banked overlay covering POS, or nil."
-  (seq-find (lambda (ov)
-              (and (overlay-buffer ov)
-                   (<= (overlay-start ov) pos)
-                   (< pos (overlay-end ov))))
-            donkey--banked-overlays))
+  "Return the banked overlay covering the line POS is on, or nil.
+
+The containment test is anchored at that line's own start rather than
+at POS itself.  A strict interior test on POS misses point sitting at
+`point-max' on a banked FINAL line with no trailing newline, where the
+overlay ends exactly at point -- confirmed: pressing the bank key there
+re-banked the line instead of toggling it off, since the lookup found
+nothing to remove."
+  (let ((line-start (car (donkey--whole-line-span pos pos))))
+    (seq-find (lambda (ov)
+                (and (overlay-buffer ov)
+                     (<= (overlay-start ov) line-start)
+                     (< line-start (overlay-end ov))))
+              donkey--banked-overlays)))
+
+(defun donkey--banked-run-at (pos)
+  "Return the contiguous banked run covering POS as (START . END), or nil.
+
+A run is a maximal group of adjacent banked lines.  Banked lines are
+stored one overlay per line (see `donkey--bank-span'), so the run is
+recovered by merging the live spans and picking the merged one covering
+POS's line -- the same merge `donkey--effective-line-spans' uses, so a
+run is exactly the stretch that `y'/`d' would treat as one piece."
+  (let ((line-start (car (donkey--whole-line-span pos pos))))
+    (seq-find (lambda (span)
+                (and (<= (car span) line-start)
+                     (< line-start (cdr span))))
+              (donkey--merge-spans (donkey--banked-spans)))))
+
+(defun donkey-unbank-line ()
+  "Unbank the banked line at point, leaving every other bank alone.
+
+Unlike `donkey-bank-selection', this only ever removes: pressing it on
+a line that is not banked reports so instead of banking it, so it is
+safe to lean on when clearing up a bank without watching the state of
+each line.  To drop a whole contiguous run at once use
+`donkey-unbank-section'; for everything, `donkey-clear-banked-selection'."
+  (interactive)
+  (let ((ov (donkey--banked-overlay-at (point))))
+    (if (not ov)
+        (message "No banked line at point")
+      (delete-overlay ov)
+      (setq donkey--banked-overlays (delq ov donkey--banked-overlays))
+      (message "Unbanked this line (%d total)"
+               (donkey--banked-line-count)))))
+
+(defun donkey-unbank-section ()
+  "Unbank the whole contiguous banked run point is standing on.
+
+The run is every banked line adjacent to this one (see
+`donkey--banked-run-at') -- exactly the stretch `y'/`d' would treat as
+one piece -- so a block banked line by line comes back off in a single
+press, with no need to re-select it.  Banks outside the run are left
+untouched.  Reports and does nothing when point is not on a banked
+line, rather than guessing at a nearby run the user may not be looking
+at."
+  (interactive)
+  (let ((run (donkey--banked-run-at (point))))
+    (if (not run)
+        (message "No banked section at point")
+      (let ((lines (count-lines (car run) (cdr run))))
+        (donkey--unbank-span (car run) (cdr run))
+        (message "Unbanked %d line%s (%d total)"
+                 lines
+                 (if (= 1 lines) "" "s")
+                 (donkey--banked-line-count))))))
 
 (defun donkey--map-line-spans (beg end fn)
   "Call FN once per whole line between BEG and END, with that line's span.
@@ -2255,6 +2315,8 @@ documentation."
 ;; a different key entirely and arrives as <deletechar> in a terminal or
 ;; <delete> on a graphical frame, so all three are bound rather than
 ;; leaving whichever key the user reaches for reporting "is undefined".
+(keymap-set donkey-normal-mode-map "m u" #'donkey-unbank-line)
+(keymap-set donkey-normal-mode-map "m U" #'donkey-unbank-section)
 (keymap-set donkey-normal-mode-map "m DEL" #'donkey-clear-banked-selection)
 (keymap-set donkey-normal-mode-map "m <deletechar>" #'donkey-clear-banked-selection)
 (keymap-set donkey-normal-mode-map "m <delete>" #'donkey-clear-banked-selection)
