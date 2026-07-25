@@ -453,6 +453,32 @@ Return list (POINT MARK TEXT) describing the resulting region."
   ;; This may error — testing graceful handling
   (should-error (donkey-test--symbol-result "," 1) :type 'error))
 
+(ert-deftest donkey-mark-symbol-blank-line-after-list-signals-user-error ()
+  "Point on a blank line after a list reports cleanly instead of erroring.
+
+Regression: `backward-sexp' lands on the list's opening paren, which is
+no symbol, and `beginning-of-thing' signalled a bare `error' -- which
+pops the debugger for anyone running with `debug-on-error' on.  A blank
+line under an expression is an ordinary place to press this."
+  (with-temp-buffer
+    (insert "(foo bar)\n\n")
+    (goto-char (point-max))
+    (should-error (donkey-mark-symbol) :type 'user-error)))
+
+(ert-deftest donkey-mark-symbol-whitespace-only-buffer-signals-user-error ()
+  "A buffer with nothing to mark reports cleanly rather than signalling `error'."
+  (with-temp-buffer
+    (insert "   ")
+    (goto-char (point-min))
+    (should-error (donkey-mark-symbol) :type 'user-error)))
+
+(ert-deftest donkey-mark-word-whitespace-only-buffer-signals-user-error ()
+  "`donkey-mark-word' reports cleanly with no word anywhere before point."
+  (with-temp-buffer
+    (insert "   ")
+    (goto-char (point-min))
+    (should-error (donkey-mark-word) :type 'user-error)))
+
 (ert-deftest donkey-mark-symbol-bob-trailing-comma ()
   "Symbol at BOB with trailing comma."
   (should (equal (nth 2 (donkey-test--symbol-result "foobar, rest" 3)) "foobar")))

@@ -201,7 +201,16 @@ since the last command.  Independent of the mark ring and region."
           (push m donkey--position-ring)
           (when (> (length donkey--position-ring) donkey-position-ring-max)
             (set-marker (car (last donkey--position-ring)) nil)
-            (nbutlast donkey--position-ring)))
+            ;; Assigned back, not just called for effect: `nbutlast'
+            ;; cannot destructively empty a ONE-element list -- it
+            ;; returns nil while leaving the variable pointing at the
+            ;; original cons.  With `donkey-position-ring-max' set to 0
+            ;; (a reasonable way to switch position tracking off) every
+            ;; trim hits exactly that case, so the ring kept the marker
+            ;; that was just pointed nowhere and `donkey-jump-back'
+            ;; failed with "Marker does not point anywhere".
+            (setq donkey--position-ring
+                  (nbutlast donkey--position-ring))))
         (setq donkey--position-index 0))
       (setq donkey--last-tracked-state (cons (current-buffer) now-pt)))))
 
@@ -1702,6 +1711,12 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
   (donkey--ensure-non-rectangle-selection)
   (unless (donkey--point-on-word-or-symbol-char-p)
     (backward-word 1))
+  ;; See `donkey-mark-symbol' for why this is a `user-error' rather than
+  ;; letting `beginning-of-thing' signal a bare `error': a buffer with
+  ;; no word before point at all (empty, or nothing but whitespace and
+  ;; punctuation) is a normal thing to press this on by accident.
+  (unless (thing-at-point 'word)
+    (user-error "No word at or before point"))
   (beginning-of-thing 'word)
   (mark-word)
   (message "Word marked"))
@@ -1740,7 +1755,17 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
   (interactive)
   (donkey--ensure-non-rectangle-selection)
   (unless (donkey--point-on-word-or-symbol-char-p)
-    (backward-sexp 1))
+    (condition-case nil
+        (backward-sexp 1)
+      (scan-error nil)))
+  ;; `beginning-of-thing' signals a bare `error' when there is no symbol
+  ;; to be found, which pops the debugger for anyone running with
+  ;; `debug-on-error' on.  Reaching it is ordinary, not exceptional:
+  ;; `backward-sexp' above lands on whatever sexp precedes point, which
+  ;; on a blank line in code is typically a bracket rather than a symbol
+  ;; -- confirmed with point on the trailing empty line of "(foo bar)".
+  (unless (thing-at-point 'symbol)
+    (user-error "No symbol at or before point"))
   (beginning-of-thing 'symbol)
   (forward-sexp 1)
   (while (memq (char-before) '(?, ?.))
@@ -1798,13 +1823,34 @@ line rather than leaving a blank."
                          (min (point-max) (1+ (line-end-position))))))
       (cons start finish))))
 
+(defun donkey--prune-banked-overlays ()
+  "Drop banked overlays that no longer cover any text.
+
+An overlay collapses to zero width when the line it banked is later
+removed by ordinary editing.  Such an overlay highlights nothing, so
+the bank is invisible, yet it would still count as live: `y'/`d' would
+act on the empty bank instead of on the character at point, pushing
+\"\" over whatever was last copied -- the same silent empty-kill this
+package already guards against at `point-max'.  It could not even be
+toggled off, since `donkey--banked-overlay-at' requires POS to be
+strictly inside the overlay and no position is ever inside an empty
+range."
+  (setq donkey--banked-overlays
+        (seq-filter (lambda (ov)
+                      (or (and (overlay-buffer ov)
+                               (< (overlay-start ov) (overlay-end ov)))
+                          (ignore (delete-overlay ov))))
+                    donkey--banked-overlays)))
+
 (defun donkey--banked-spans ()
-  "Return live banked spans as a list of (START . END), in buffer order."
-  (sort (delq nil
-              (mapcar (lambda (ov)
-                        (when (overlay-buffer ov)
-                          (cons (overlay-start ov) (overlay-end ov))))
-                      donkey--banked-overlays))
+  "Return live banked spans as a list of (START . END), in buffer order.
+
+Prunes collapsed overlays first (see `donkey--prune-banked-overlays'),
+so every span returned covers real text."
+  (donkey--prune-banked-overlays)
+  (sort (mapcar (lambda (ov)
+                  (cons (overlay-start ov) (overlay-end ov)))
+                donkey--banked-overlays)
         (lambda (a b) (< (car a) (car b)))))
 
 (defun donkey--merge-spans (spans)
@@ -1865,9 +1911,13 @@ needed: `donkey-copy' and `donkey-delete' then act on all banked lines
 at once, plus whatever region happens to be active at the time, so the
 final piece never has to be banked explicitly.
 
-With no region active, this toggles: point on an already-banked line
-unbanks that line, which is how to drop one you added by mistake
-without starting over.
+This toggles, with or without a region.  With no region, point on an
+already-banked line unbanks that line.  With a region whose lines are
+ALL already banked, the whole block is unbanked in one press -- which
+is how to take back a multi-line bank without either walking it line
+by line or clearing every other bank too.  A region covering a only
+partly-banked block banks the rest instead, so a block only ever
+toggles off once it is uniformly on; press again to then clear it.
 
 Banked lines are discarded automatically once `donkey-copy' or
 `donkey-delete' consumes them; `donkey-clear-banked-selection'
@@ -1875,13 +1925,18 @@ discards them without doing anything else."
   (interactive)
   (if (use-region-p)
       (let* ((span (donkey--whole-line-span (region-beginning) (region-end)))
-             (lines (count-lines (car span) (cdr span))))
-        (donkey--bank-span (car span) (cdr span))
+             (lines (count-lines (car span) (cdr span)))
+             (unbanking (donkey--span-lines-banked-p (car span) (cdr span))))
+        (if unbanking
+            (donkey--unbank-span (car span) (cdr span))
+          (donkey--bank-span (car span) (cdr span)))
         (deactivate-mark)
-        (message "Banked %d line%s (%d total) -- navigate, then y/d"
+        (message "%s %d line%s (%d total)%s"
+                 (if unbanking "Unbanked" "Banked")
                  lines
                  (if (= 1 lines) "" "s")
-                 (donkey--banked-line-count)))
+                 (donkey--banked-line-count)
+                 (if unbanking "" " -- navigate, then y/d")))
     (let ((existing (donkey--banked-overlay-at (point))))
       (if existing
           (progn
@@ -1896,12 +1951,111 @@ discards them without doing anything else."
                    (donkey--banked-line-count)))))))
 
 (defun donkey--banked-overlay-at (pos)
-  "Return the banked overlay covering POS, or nil."
-  (seq-find (lambda (ov)
-              (and (overlay-buffer ov)
-                   (<= (overlay-start ov) pos)
-                   (< pos (overlay-end ov))))
-            donkey--banked-overlays))
+  "Return the banked overlay covering the line POS is on, or nil.
+
+The containment test is anchored at that line's own start rather than
+at POS itself.  A strict interior test on POS misses point sitting at
+`point-max' on a banked FINAL line with no trailing newline, where the
+overlay ends exactly at point -- confirmed: pressing the bank key there
+re-banked the line instead of toggling it off, since the lookup found
+nothing to remove."
+  (let ((line-start (car (donkey--whole-line-span pos pos))))
+    (seq-find (lambda (ov)
+                (and (overlay-buffer ov)
+                     (<= (overlay-start ov) line-start)
+                     (< line-start (overlay-end ov))))
+              donkey--banked-overlays)))
+
+(defun donkey--banked-run-at (pos)
+  "Return the contiguous banked run covering POS as (START . END), or nil.
+
+A run is a maximal group of adjacent banked lines.  Banked lines are
+stored one overlay per line (see `donkey--bank-span'), so the run is
+recovered by merging the live spans and picking the merged one covering
+POS's line -- the same merge `donkey--effective-line-spans' uses, so a
+run is exactly the stretch that `y'/`d' would treat as one piece."
+  (let ((line-start (car (donkey--whole-line-span pos pos))))
+    (seq-find (lambda (span)
+                (and (<= (car span) line-start)
+                     (< line-start (cdr span))))
+              (donkey--merge-spans (donkey--banked-spans)))))
+
+(defun donkey-unbank-line ()
+  "Unbank the banked line at point, leaving every other bank alone.
+
+Unlike `donkey-bank-selection', this only ever removes: pressing it on
+a line that is not banked reports so instead of banking it, so it is
+safe to lean on when clearing up a bank without watching the state of
+each line.  To drop a whole contiguous run at once use
+`donkey-unbank-section'; for everything, `donkey-clear-banked-selection'."
+  (interactive)
+  (let ((ov (donkey--banked-overlay-at (point))))
+    (if (not ov)
+        (message "No banked line at point")
+      (delete-overlay ov)
+      (setq donkey--banked-overlays (delq ov donkey--banked-overlays))
+      (message "Unbanked this line (%d total)"
+               (donkey--banked-line-count)))))
+
+(defun donkey-unbank-section ()
+  "Unbank the whole contiguous banked run point is standing on.
+
+The run is every banked line adjacent to this one (see
+`donkey--banked-run-at') -- exactly the stretch `y'/`d' would treat as
+one piece -- so a block banked line by line comes back off in a single
+press, with no need to re-select it.  Banks outside the run are left
+untouched.  Reports and does nothing when point is not on a banked
+line, rather than guessing at a nearby run the user may not be looking
+at."
+  (interactive)
+  (let ((run (donkey--banked-run-at (point))))
+    (if (not run)
+        (message "No banked section at point")
+      (let ((lines (count-lines (car run) (cdr run))))
+        (donkey--unbank-span (car run) (cdr run))
+        (message "Unbanked %d line%s (%d total)"
+                 lines
+                 (if (= 1 lines) "" "s")
+                 (donkey--banked-line-count))))))
+
+(defun donkey--map-line-spans (beg end fn)
+  "Call FN once per whole line between BEG and END, with that line's span.
+
+FN receives a (START . END) cons.  Walking line by line, rather than
+treating BEG..END as one range, is what keeps banking per-line
+throughout -- see `donkey--bank-span' for why that matters."
+  (declare (indent 2))
+  (save-excursion
+    (goto-char beg)
+    (while (< (point) end)
+      (let ((line-span (donkey--whole-line-span (point) (point))))
+        (funcall fn line-span)
+        (goto-char (cdr line-span))))))
+
+(defun donkey--span-lines-banked-p (beg end)
+  "Return non-nil if EVERY whole line in BEG..END is already banked.
+
+Used by `donkey-bank-selection' to decide whether a region press banks
+or unbanks.  Requiring ALL of them, rather than any, is what makes a
+press over a partly-banked block complete it instead of clearing it:
+the block only toggles off once it is uniformly on, the same rule the
+single-line toggle follows."
+  (let ((all t))
+    (donkey--map-line-spans beg end
+      (lambda (span)
+        (unless (donkey--banked-overlay-at (car span))
+          (setq all nil))))
+    all))
+
+(defun donkey--unbank-span (beg end)
+  "Unbank every whole line in BEG..END that is currently banked."
+  (donkey--map-line-spans beg end
+    (lambda (span)
+      (let ((ov (donkey--banked-overlay-at (car span))))
+        (when ov
+          (delete-overlay ov)
+          (setq donkey--banked-overlays
+                (delq ov donkey--banked-overlays)))))))
 
 (defun donkey--bank-span (beg end)
   "Bank every whole line in BEG..END that is not already banked.
@@ -1917,17 +2071,14 @@ Nothing is lost by keeping them separate: `donkey--effective-line-spans'
 merges adjacent spans at use time, so a contiguous run is still copied
 and deleted as one piece, and identically-faced adjacent overlays are
 indistinguishable on screen."
-  (save-excursion
-    (goto-char beg)
-    (while (< (point) end)
-      (let ((line-span (donkey--whole-line-span (point) (point))))
-        (unless (donkey--banked-overlay-at (car line-span))
-          (let ((ov (make-overlay (car line-span) (cdr line-span) nil nil t)))
-            (overlay-put ov 'face 'donkey-banked-selection)
-            (overlay-put ov 'donkey-banked t)
-            (overlay-put ov 'priority -50)
-            (push ov donkey--banked-overlays)))
-        (goto-char (cdr line-span))))))
+  (donkey--map-line-spans beg end
+    (lambda (line-span)
+      (unless (donkey--banked-overlay-at (car line-span))
+        (let ((ov (make-overlay (car line-span) (cdr line-span) nil nil t)))
+          (overlay-put ov 'face 'donkey-banked-selection)
+          (overlay-put ov 'donkey-banked t)
+          (overlay-put ov 'priority -50)
+          (push ov donkey--banked-overlays))))))
 
 (defun donkey--banked-line-count ()
   "Return how many lines are currently banked.
@@ -2159,7 +2310,16 @@ documentation."
 (keymap-set donkey-normal-mode-map "m w" #'donkey-mark-word)
 (keymap-set donkey-normal-mode-map "m W" #'donkey-mark-symbol)
 (keymap-set donkey-normal-mode-map "m SPC" #'donkey-bank-selection)
+;; Backspace and Delete both clear the bank.  "DEL" is Emacs's name for
+;; ASCII 127, which is what BACKSPACE sends -- the physical Delete key is
+;; a different key entirely and arrives as <deletechar> in a terminal or
+;; <delete> on a graphical frame, so all three are bound rather than
+;; leaving whichever key the user reaches for reporting "is undefined".
+(keymap-set donkey-normal-mode-map "m u" #'donkey-unbank-line)
+(keymap-set donkey-normal-mode-map "m U" #'donkey-unbank-section)
 (keymap-set donkey-normal-mode-map "m DEL" #'donkey-clear-banked-selection)
+(keymap-set donkey-normal-mode-map "m <deletechar>" #'donkey-clear-banked-selection)
+(keymap-set donkey-normal-mode-map "m <delete>" #'donkey-clear-banked-selection)
 
 ;; Buffer navigation
 (keymap-set donkey-normal-mode-map "%" #'mark-whole-buffer)
@@ -2863,6 +3023,13 @@ donkey-mode' to toggle."
           (donkey-normal-mode -1))
         (when (bound-and-true-p donkey-insert-mode)
           (donkey-insert-mode -1))
+        ;; Banked lines are Donkey state drawn on the buffer, and this
+        ;; mode promises to clear all of it.  Left behind, the
+        ;; highlights would be permanent: the only command that removes
+        ;; them is `donkey-clear-banked-selection', reachable solely
+        ;; through a Normal-state key that no longer exists once the
+        ;; mode is off.
+        (donkey-clear-banked-selection)
         (donkey--apply-cursor-setting nil)))))
 
 ;;; ---------------------------------------------------------------------------

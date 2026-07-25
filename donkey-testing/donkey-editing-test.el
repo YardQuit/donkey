@@ -1659,6 +1659,264 @@ three lines where the middle one was empty reported \"Copied 2 lines\"."
       (should (equal shown "Discarded 2 banked lines"))
       (should-not (donkey--banked-selection-p)))))
 
+(ert-deftest donkey-banked-overlay-collapsed-by-editing-is-pruned ()
+  "Deleting a banked line's text drops the bank instead of leaving a ghost.
+
+Regression: the overlay collapsed to zero width, which highlights
+nothing, but still counted as a live bank."
+  (with-temp-buffer
+    (insert "one\ntwo\nthree\n")
+    (goto-char (point-min))
+    (forward-line 1)
+    (donkey-bank-selection)
+    (should (donkey--banked-selection-p))
+    (goto-char (point-min))
+    (forward-line 1)
+    (delete-region (line-beginning-position) (line-beginning-position 2))
+    (should-not (donkey--banked-selection-p))
+    (should (= 0 (donkey--banked-line-count)))
+    (should-not donkey--banked-overlays)))
+
+(ert-deftest donkey-copy-after-collapsed-bank-does-not-clobber-kill-ring ()
+  "A ghost bank must not turn `y' into a silent empty kill.
+
+Regression: `donkey--banked-selection-p' stayed true for a zero-width
+overlay, so `donkey-copy' took the banked branch, reported \"Copied 0
+lines\" and pushed \"\" over whatever was previously copied -- the same
+empty-kill failure already guarded against at `point-max'."
+  (let ((kill-ring (list "IMPORTANT")) kill-ring-yank-pointer)
+    (with-temp-buffer
+      (insert "one\ntwo\nthree\n")
+      (goto-char (point-min))
+      (forward-line 1)
+      (donkey-bank-selection)
+      (goto-char (point-min))
+      (forward-line 1)
+      (delete-region (line-beginning-position) (line-beginning-position 2))
+      (goto-char (point-min))
+      (donkey-copy)
+      ;; Falls through to the character at point, as with no bank at all.
+      (should (equal (current-kill 0) "o")))))
+
+(ert-deftest donkey-collapsed-bank-does-not-block-banking-that-line-again ()
+  "A ghost bank must not make its line permanently un-bankable.
+
+Regression: `donkey--banked-overlay-at' requires POS strictly inside
+the overlay, which no position ever is for an empty range -- so the
+ghost could neither be toggled off nor banked over."
+  (with-temp-buffer
+    (insert "one\ntwo\nthree\n")
+    (goto-char (point-min))
+    (forward-line 1)
+    (donkey-bank-selection)
+    (goto-char (point-min))
+    (forward-line 1)
+    (delete-region (line-beginning-position) (line-beginning-position 2))
+    (goto-char (point-min))
+    (donkey-bank-selection)
+    (should (= 1 (donkey--banked-line-count)))
+    (should (equal (donkey--banked-spans) (list (cons 1 5))))))
+
+(ert-deftest donkey-mode-disable-clears-banked-lines ()
+  "Turning off variable `donkey-mode' clears banked highlights.
+
+Regression: they survived, and the only command that removes them is
+reachable solely through a Normal-state key that no longer exists once
+the mode is off -- so the highlights were permanent."
+  (with-temp-buffer
+    (insert "a\nb\nc\n")
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (goto-char (point-min))
+          (donkey-bank-selection)
+          (should (= 1 (donkey--banked-line-count)))
+          (donkey-mode -1)
+          (should (= 0 (donkey--banked-line-count)))
+          (should-not donkey--banked-overlays))
+      (when (bound-and-true-p donkey-mode)
+        (donkey-mode -1)))))
+
+(ert-deftest donkey-clear-banked-selection-bound-to-backspace-and-delete ()
+  "Both Backspace and Delete clear the bank, under the `m' prefix.
+
+`DEL' is Emacs's name for ASCII 127, which is what BACKSPACE sends; the
+physical Delete key is a different key that arrives as `<deletechar>'
+in a terminal or `<delete>' on a graphical frame.  Regression: only
+`m DEL' was bound, so pressing `m' and the Delete key reported
+\"m <deletechar> is undefined\" -- confirmed live before binding it."
+  (dolist (key '("m DEL" "m <deletechar>" "m <delete>"))
+    (should (eq (keymap-lookup donkey-normal-mode-map key)
+                #'donkey-clear-banked-selection))))
+
+(ert-deftest donkey-bank-selection-region-over-banked-block-unbanks-it ()
+  "Re-selecting an already-banked block unbanks the whole block.
+
+Previously a region press could only ever ADD: `donkey--bank-span'
+skips lines that are already banked, so taking back a multi-line bank
+meant toggling each line individually or clearing every bank."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (donkey--test-lines-buffer 5)
+      (push-mark (point) t t)
+      (forward-line 3)
+      (donkey-bank-selection)
+      (should (= 3 (donkey--banked-line-count)))
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 3)
+      (donkey-bank-selection)
+      (should (= 0 (donkey--banked-line-count)))
+      (should-not donkey--banked-overlays))))
+
+(ert-deftest donkey-bank-selection-unbanking-a-block-keeps-other-banks ()
+  "Unbanking a block leaves banks outside it alone."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (donkey--test-lines-buffer 6)
+      (forward-line 5)
+      (donkey-bank-selection)
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 3)
+      (donkey-bank-selection)
+      (should (= 4 (donkey--banked-line-count)))
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 3)
+      (donkey-bank-selection)
+      (should (= 1 (donkey--banked-line-count)))
+      ;; The survivor is the last line, banked separately.
+      (should (equal (donkey--banked-spans)
+                     (list (cons (save-excursion (goto-char (point-min))
+                                                 (forward-line 5)
+                                                 (point))
+                                 (point-max))))))))
+
+(ert-deftest donkey-bank-selection-region-over-partial-block-completes-it ()
+  "A region over a partly-banked block banks the rest instead of clearing.
+
+A block only toggles off once it is uniformly on, matching the
+single-line toggle's rule."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (donkey--test-lines-buffer 4)
+      (forward-line 1)
+      (donkey-bank-selection)
+      (should (= 1 (donkey--banked-line-count)))
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 3)
+      (donkey-bank-selection)
+      (should (= 3 (donkey--banked-line-count))))))
+
+(ert-deftest donkey-bank-selection-region-unbank-reports-unbanked ()
+  "Unbanking a block says so, rather than reporting it as banked."
+  (let ((transient-mark-mode t) shown)
+    (with-temp-buffer
+      (donkey--test-lines-buffer 4)
+      (push-mark (point) t t)
+      (forward-line 2)
+      (donkey-bank-selection)
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 2)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-bank-selection))
+      (should (equal shown "Unbanked 2 lines (0 total)")))))
+
+(ert-deftest donkey-unbank-line-removes-only-that-line ()
+  "`m u' drops the line at point and nothing else."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 4)
+    (dolist (n '(0 1 2))
+      (goto-char (point-min))
+      (forward-line n)
+      (donkey-bank-selection))
+    (should (= 3 (donkey--banked-line-count)))
+    (goto-char (point-min))
+    (forward-line 1)
+    (donkey-unbank-line)
+    (should (= 2 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-unbank-line-on-unbanked-line-changes-nothing ()
+  "`m u' only ever removes; on an unbanked line it reports and stops."
+  (let (shown)
+    (with-temp-buffer
+      (donkey--test-lines-buffer 4)
+      (donkey-bank-selection)
+      (forward-line 2)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-unbank-line))
+      (should (equal shown "No banked line at point"))
+      (should (= 1 (donkey--banked-line-count))))))
+
+(ert-deftest donkey-unbank-section-removes-the-whole-run ()
+  "`m U' drops every banked line adjacent to point, and only those."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 6)
+    (dolist (n '(0 1 2 5))
+      (goto-char (point-min))
+      (forward-line n)
+      (donkey-bank-selection))
+    (should (= 4 (donkey--banked-line-count)))
+    (goto-char (point-min))
+    (forward-line 2)
+    (donkey-unbank-section)
+    ;; The isolated bank on the last line survives.
+    (should (= 1 (donkey--banked-line-count)))
+    (should (equal (donkey--banked-spans)
+                   (list (cons (save-excursion (goto-char (point-min))
+                                               (forward-line 5)
+                                               (point))
+                               (point-max)))))))
+
+(ert-deftest donkey-unbank-section-on-unbanked-line-changes-nothing ()
+  "`m U' reports rather than guessing at a run point is not standing on."
+  (let (shown)
+    (with-temp-buffer
+      (donkey--test-lines-buffer 5)
+      (donkey-bank-selection)
+      (forward-line 3)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-unbank-section))
+      (should (equal shown "No banked section at point"))
+      (should (= 1 (donkey--banked-line-count))))))
+
+(ert-deftest donkey-banked-final-line-without-newline-toggles-at-point-max ()
+  "A banked final line with no trailing newline can be unbanked at `point-max'.
+
+Regression: `donkey--banked-overlay-at' tested POS strictly inside the
+overlay, and there the overlay ends exactly at point -- so the lookup
+found nothing and the bank key re-banked the line instead of toggling
+it off."
+  (with-temp-buffer
+    (insert "a\nb\nlast-no-newline")
+    (goto-char (point-max))
+    (donkey-bank-selection)
+    (should (= 1 (donkey--banked-line-count)))
+    (donkey-bank-selection)
+    (should (= 0 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-unbank-line-works-at-point-max-without-newline ()
+  "`m u' reaches a banked final line that has no trailing newline."
+  (with-temp-buffer
+    (insert "a\nb\nlast-no-newline")
+    (goto-char (point-max))
+    (donkey-bank-selection)
+    (donkey-unbank-line)
+    (should (= 0 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-unbank-keys-are-bound ()
+  "`m u' and `m U' reach the two unbank commands."
+  (should (eq (keymap-lookup donkey-normal-mode-map "m u")
+              #'donkey-unbank-line))
+  (should (eq (keymap-lookup donkey-normal-mode-map "m U")
+              #'donkey-unbank-section)))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here

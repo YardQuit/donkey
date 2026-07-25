@@ -210,7 +210,9 @@ next navigation keypress self-insert.
 | =m A= | =donkey-mark-sexp-outer=     | Mark including balanced expression   |
 | =m v= | =donkey-rectangle-mark-mode= | Toggle rectangle mark mode           |
 | =m SPC= | =donkey-bank-selection=      | Bank lines, keep navigating          |
-| =m DEL= | =donkey-clear-banked-selection= | Discard all banked lines          |
+| =m u=   | =donkey-unbank-line=         | Unbank the line at point             |
+| =m U=   | =donkey-unbank-section=      | Unbank the whole run at point        |
+| =m DEL= | =donkey-clear-banked-selection= | Discard all banked lines (Backspace or Delete) |
 
 =donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ’ “ ” = * ~ | \ / : + _ $=
 by default -- an alist of (OPEN . CLOSE) pairs in =donkey-mark-pair-delimiters=
@@ -275,12 +277,42 @@ The live region counts too, so the final piece never has to be banked
 explicitly — in the example above, line 8 is included by =y= without a
 third =m SPC=.
 
-With no region active, =m SPC= banks just the current line, and
-pressing it again on an already-banked line *unbanks* that line — the
-quickest way to drop one you added by mistake.
+=m SPC= toggles, with or without a region:
 
-Banked lines are consumed by =y= or =d=. To discard them without doing
-anything else, use =m DEL=.
+- *No region* — banks the current line; pressing it again on an
+  already-banked line *unbanks* that line.
+- *Region over an already-banked block* — unbanks the whole block in
+  one press, leaving every other bank untouched. This is how to take
+  back a multi-line bank without walking it line by line or clearing
+  everything.
+- *Region over a partly-banked block* — banks the rest of it. A block
+  only toggles off once it is uniformly on, so press again to then
+  clear it.
+
+*** Taking banks back
+
+Banked lines are consumed by =y= or =d=. To remove them without doing
+anything else, there are three levels:
+
+| Key     | Removes                                          |
+|---------+--------------------------------------------------|
+| =m u=   | the banked line at point                         |
+| =m U=   | the whole contiguous run point is standing on    |
+| =m DEL= | every bank in the buffer                         |
+
+=m u= and =m U= only ever *remove*. Pressing either on a line that is
+not banked reports =No banked line at point= / =No banked section at
+point= and changes nothing, so you can lean on them without tracking
+the state of each line.
+
+A "run" is every banked line adjacent to the one you are on — exactly
+the stretch that =y= and =d= treat as one piece — so a block you banked
+line by line comes back off in one press of =m U=, without re-selecting
+it. Banks outside the run are left alone.
+
+=m DEL= is =m= followed by *Backspace*, which is what Emacs calls
+=DEL=. The physical *Delete* key is bound to the same command, so
+whichever of the two you reach for clears the bank.
 
 Notes:
 
@@ -292,6 +324,11 @@ Notes:
 - =d= deletes back-to-front internally, so the lines you banked are the
   lines that get removed regardless of how the earlier deletions shift
   positions.
+- Banked lines follow the text as you edit around them. If a banked
+  line is deleted outright, its bank goes with it rather than lingering
+  as an invisible, empty selection.
+- Turning off =donkey-mode= discards any banked lines along with the
+  rest of DONKEY's state.
 
 ** Buffer Navigation (=g= prefix and standalone)
 
