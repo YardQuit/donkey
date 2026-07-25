@@ -390,6 +390,30 @@ line breaks. In non-editing modes, the native RET binding is invoked.
 For =org-mode= and =markdown-mode=, DONKEY uses a rule-based dispatch
 system to execute context-aware actions when Enter is pressed.
 
+** Which Modes Block Enter
+
+=donkey-editing-modes= (a Customization Group variable) lists the major
+modes where Enter does nothing: =prog-mode=, =text-mode=, =org-mode=,
+=fundamental-mode=, =conf-mode=, =markdown-mode=, and =gfm-mode=, by
+default. Derived modes are caught automatically via =derived-mode-p=,
+so =prog-mode= alone covers =python-mode=, =emacs-lisp-mode=, and every
+other language mode derived from it.
+
+Any major mode NOT in this list falls through to whatever RET was
+originally bound to before Normal state's keymap took over -- e.g.
+=dired-find-file= in =dired-mode=, or =magit-status='s own RET binding.
+
+To also block Enter in an additional mode, or remove one so it falls
+through to its native binding, from your =config.el=:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (add-to-list 'donkey-editing-modes 'lisp-interaction-mode)
+    (setq donkey-editing-modes (delq 'conf-mode donkey-editing-modes)))
+
+#+end_src
+
 ** Built-in Default Rules
 
 The following rules are installed by default (controlled by
@@ -695,6 +719,7 @@ All DONKEY variables are under the =donkey= Customize group:
 | Variable                           | Type    | Default            | Description                            |
 |------------------------------------+---------+--------------------+----------------------------------------|
 | =donkey-excluded-modes=              | list    | (see above)        | Modes where Normal state is disabled   |
+| =donkey-editing-modes=               | list    | (see above)        | Modes where Enter/RET is blocked       |
 | =donkey-cursor-normal=               | symbol  | =box=              | Cursor shape in Normal state           |
 | =donkey-cursor-insert=               | cons    | =(bar . 2)=        | Cursor shape in Insert state           |
 | =donkey-default-enter-rules-enabled= | boolean | =t=                | Install default Enter DWIM rules       |

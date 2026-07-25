@@ -90,7 +90,23 @@ caught even when only its parent mode is listed."
   (donkey--major-mode-in-p donkey-excluded-modes))
 
 (defun donkey--handle-non-editing-buffer ()
-  "Enter insert mode in excluded major modes when `donkey-normal-mode' activates."
+  "Bounce straight back to Insert state if `donkey-normal-mode' just
+turned on in an excluded major mode.
+
+`donkey--ensure-default-state' (on `after-change-major-mode-hook')
+already keeps a FRESH buffer out of Normal state in an excluded mode,
+but that only covers the buffer's initial activation.  This hook
+catches the other way in: Normal state entered directly, e.g. via `M-x
+donkey-normal-mode' or a keybinding, in a buffer that's already
+excluded (comint/term/vterm/eshell) and currently, correctly, in
+Insert state.  Registered on `donkey-normal-mode-hook', so it runs
+immediately as part of that same toggle, before the user's next
+keypress ever reaches the buffer.
+
+See `donkey--check-post-command-non-editing' for the broader,
+one-command-delayed safety net this doesn't cover: anything that sets
+`donkey-normal-mode' to t WITHOUT going through the actual minor-mode
+toggle function (so this hook never fires at all)."
   (when (donkey--excluded-mode-p)
     (when (bound-and-true-p donkey-normal-mode)
       (donkey-enter-insert))))
@@ -98,7 +114,21 @@ caught even when only its parent mode is listed."
 (add-hook 'donkey-normal-mode-hook #'donkey--handle-non-editing-buffer)
 
 (defun donkey--check-post-command-non-editing ()
-  "Check after commands if we're in an excluded mode."
+  "Force Insert state if Normal state is somehow still active in an
+excluded major mode, after any command whatsoever.
+
+Registered on the global `post-command-hook' by `donkey-mode', so it
+runs after EVERY command in EVERY buffer, checking the raw
+`donkey-normal-mode' variable directly rather than relying on a hook.
+This is deliberately redundant with `donkey--handle-non-editing-buffer'
+and `donkey--ensure-default-state': those two only run when the actual
+toggle function/major-mode-change machinery runs, so anything that
+sets `donkey-normal-mode' to t some OTHER way (a raw `setq-local', a
+buggy or unusual third-party integration) would slip past both of them
+undetected -- this is the catch-all that guarantees Normal state can
+never survive more than one command's delay in a mode where
+`suppress-keymap' would otherwise break subprocess/terminal
+interaction entirely."
   (when (and (bound-and-true-p donkey-normal-mode)
              (donkey--excluded-mode-p))
     (donkey-enter-insert)))
@@ -310,11 +340,37 @@ nothing meaningful to deselect."
   "List of (ELEMENT-TYPE PROPERTY COMMAND1 COMMAND2 ...) for ENTER DWIM dispatch.")
 
 (defvar-local donkey--saved-ret-binding nil
-  "Saved RET binding from buffer's local map when entering DONKEY Normal.")
+  "Saved RET binding from buffer's local map when entering DONKEY Normal.
 
-(defvar donkey-editing-modes
+Captured once, in a `donkey-normal-mode-hook' function further down
+this section, for any buffer whose major mode is NOT in
+`donkey-editing-modes' -- e.g. `dired-mode', `magit-status-mode', an
+`org-agenda' buffer, or any other special-mode-derived listing/UI
+buffer where RET normally does something specific to that mode
+\(open a file, visit a commit, jump to an entry...\).  Read back by
+`donkey--non-editing-enter-handler', which calls it directly instead
+of blocking Enter the way `donkey-enter-dwim' does in editing modes --
+so Enter still does whatever that buffer's own major mode expects,
+even though `donkey-normal-mode' has taken over its keymap.")
+
+(defcustom donkey-editing-modes
   '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
-  "Major modes where Enter should be blocked to prevent accidental line breaks.")
+  "Major modes where RET/<enter> does nothing in DONKEY Normal state.
+
+Derived modes (e.g. `python-mode' from `prog-mode') are caught by
+`derived-mode-p' in `donkey--editing-mode-p', so listing a handful of
+broad parent modes here covers the vast majority of buffers actually
+being edited as code or plain text -- inserting a literal newline via
+Enter in Normal state is rarely what's wanted there.  See
+`donkey-enter-dwim' for what happens instead in modes NOT in this
+list: it falls through to Org/markdown-aware dispatch, or to
+whatever RET was originally bound to before Normal state's keymap
+took over (e.g. `dired-find-file' in `dired-mode').
+
+Add a major mode here if Enter should also be a no-op for it; remove
+one if you'd rather it fall through to its own original RET binding."
+  :type '(repeat symbol)
+  :group 'donkey)
 
 (defun donkey--editing-mode-p ()
   "Return non-nil if current major mode is in `donkey-editing-modes'."
@@ -470,7 +526,26 @@ dispatches `org-todo' accordingly.  No keyword string parsing needed."
   (donkey-add-enter-rule link nil org-open-at-point markdown-follow-thing-at-point browse-url-at-point))
 
 (defun donkey-enter-dwim ()
-  "Smart Return handler for DONKEY Normal State."
+  "Smart Return handler for DONKEY Normal state.
+
+Bound to both RET and <enter> in `donkey-normal-mode-map'.  Tries, in
+order, stopping at the first one that reports it handled the key:
+
+1. `donkey--org-agenda-enter-handler' -- delegates to whatever
+   `org-agenda-mode-map' itself binds RET to (open item, visit entry).
+2. `donkey--org-mode-enter-handler' -- for `org-mode'/`markdown-mode'/
+   `gfm-mode', dispatches via `donkey--find-enter-handler' against the
+   element at point (see `donkey-add-enter-rule' to register more
+   element-type/command rules, e.g. from `config.el').
+3. `donkey--non-editing-enter-handler' -- outside `donkey-editing-modes'
+   (`dired-mode', `magit-status-mode', etc.), falls through to
+   whatever RET was ORIGINALLY bound to before Normal state's keymap
+   took over, via `donkey--saved-ret-binding'.
+
+If none of these handle it -- ordinary `prog-mode'/`text-mode' buffers
+being edited as code or plain text -- RET does nothing at all, on
+purpose: inserting a literal newline in Normal state is rarely what
+was intended, which is the entire reason `donkey-editing-modes' exists."
   (interactive)
   (cond
    ((donkey--org-agenda-enter-handler))
@@ -1120,7 +1195,18 @@ session."
     (message "Visual line: j/k to extend, V to cancel")))
 
 (defun donkey-visual-next-line ()
-  "Move down.  Extend visual selection if active."
+  "Move down one line.  Extends the visual-line selection if one is
+active (see `donkey--visual-line-session-active-p'); otherwise a plain
+`forward-line'.
+
+The selection always spans whole lines from `donkey-visual-anchor' to
+point, on whichever side of the anchor point currently is: moving down
+while already below the anchor keeps growing downward (mark pinned to
+the anchor's line start, point at the new line's end); moving down
+while still above the anchor instead shrinks the selection from the
+top (mark moves to the anchor's line end, point to the new line's
+start) -- covering the case where `J' first moves point back up TO,
+and then past, the anchor line itself."
   (interactive)
   (if (donkey--visual-line-session-active-p)
       (progn
@@ -1138,7 +1224,14 @@ session."
     (forward-line 1)))
 
 (defun donkey-visual-previous-line ()
-  "Move up.  Extend visual selection if active."
+  "Move up one line.  Extends the visual-line selection if one is
+active (see `donkey--visual-line-session-active-p'); otherwise a plain
+`forward-line' with a negative count.
+
+Mirrors `donkey-visual-next-line': moving up while already above the
+anchor keeps growing upward; moving up while still below the anchor
+shrinks the selection back down toward it instead, covering the case
+where `K' moves point up past the anchor line."
   (interactive)
   (if (donkey--visual-line-session-active-p)
       (progn
@@ -1483,6 +1576,16 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
   (interactive)
   (donkey--mark-sexp-select nil))
 
+(defun donkey--point-on-word-or-symbol-char-p ()
+  "Return non-nil if the character after point has word or symbol syntax.
+
+Used by `donkey-mark-word'/`donkey-mark-symbol' to decide whether
+point already sits inside a word/symbol -- in which case there's
+nothing to skip back to -- or needs to first move onto the nearest
+one before marking it."
+  (and (char-after)
+       (member (char-syntax (char-after)) '(?\w ?_))))
+
 (defun donkey-mark-word ()
   "Select the entire word at or adjacent to point.
 
@@ -1490,8 +1593,7 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
   (interactive)
   (donkey--ensure-non-rectangle-selection)
-  (unless (and (char-after)
-               (member (char-syntax (char-after)) '(?\w ?_)))
+  (unless (donkey--point-on-word-or-symbol-char-p)
     (backward-word 1))
   (beginning-of-thing 'word)
   (mark-word)
@@ -1530,8 +1632,7 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
   (interactive)
   (donkey--ensure-non-rectangle-selection)
-  (unless (and (char-after)
-               (member (char-syntax (char-after)) '(?\w ?_)))
+  (unless (donkey--point-on-word-or-symbol-char-p)
     (backward-sexp 1))
   (beginning-of-thing 'symbol)
   (forward-sexp 1)
@@ -2284,21 +2385,46 @@ overlays."
   "Buffer-local saved input method name for restoration on Insert entry.")
 
 (defun donkey--on-normal-entry ()
-  "Deactivate input method when entering Normal state."
+  "Deactivate any active input method when entering Normal state, saving
+it in `donkey--saved-input-method' for `donkey--on-insert-entry' to
+restore later.
+
+Input methods (e.g. for CJK or accented-character entry) are for text
+entry; without this, Normal state's own keybindings (h/j/k/l and the
+rest) would be run through whatever conversion the active input method
+applies to raw keystrokes instead, breaking navigation entirely for
+anyone using one."
   (when donkey-normal-mode
     (when current-input-method
       (setq donkey--saved-input-method current-input-method)
       (deactivate-input-method))))
 
 (defun donkey--on-insert-entry ()
-  "Reactivate saved input method when entering Insert state."
+  "Reactivate the input method `donkey--on-normal-entry' saved, if any,
+when returning to Insert state.
+
+Only acts when no input method is ALREADY active -- e.g. the user
+manually turned a different one on while still in Normal state, via
+`donkey--on-input-method-activate' below -- so this never clobbers
+whichever one is genuinely current by the time Insert state resumes."
   (when donkey-insert-mode
     (when (and donkey--saved-input-method
                (not current-input-method))
       (activate-input-method donkey--saved-input-method))))
 
 (defun donkey--on-input-method-activate ()
-  "Prevent input method from staying active in Normal state."
+  "Immediately undo an input method activated directly while in Normal
+state, saving it the same way `donkey--on-normal-entry' does.
+
+Registered on the global `input-method-activate-hook' rather than a
+DONKEY mode-hook, since this needs to catch activation through ANY
+means -- `M-x set-input-method', `C-\\', a toggle command from some
+other package -- not just the Normal-state entry transition itself.
+Binds `input-method-activate-hook' to nil around the
+`deactivate-input-method' call as a defensive measure, in case
+deactivating one method ever indirectly triggers activating another
+\(e.g. a language-specific default\), which would otherwise re-enter
+this same function from within itself."
   (when (bound-and-true-p donkey-normal-mode)
     (when current-input-method
       (setq donkey--saved-input-method current-input-method)
