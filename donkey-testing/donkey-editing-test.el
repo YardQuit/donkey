@@ -1455,6 +1455,210 @@ surrounding block lines are untouched."
                              "  line_a\n  # line_b\n  line_c\n"
                              "#+end_src\n")))))
 
+
+;;; ---------------------------------------------------------------------------
+;;; Banked line selection (donkey-bank-selection)
+;;; ---------------------------------------------------------------------------
+
+(defun donkey--test-lines-buffer (n)
+  "Insert N lines named r0..rN-1 and return to `point-min'."
+  (dotimes (i n) (insert (format "r%d\n" i)))
+  (goto-char (point-min)))
+
+(ert-deftest donkey-bank-selection-single-line-no-region ()
+  "With no region, banks the current line only."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 4)
+    (forward-line 1)
+    (donkey-bank-selection)
+    (should (equal (donkey--banked-spans)
+                   (list (cons (save-excursion (forward-line 0) (point))
+                               (save-excursion (forward-line 1) (point))))))))
+
+(ert-deftest donkey-bank-selection-toggles-off-on-same-line ()
+  "Regression test: banking twice on one line unbanks just that line,
+leaving any adjacent banked line alone.
+
+Overlays are stored one per line for exactly this reason.  When
+adjacent lines were absorbed into a single overlay, unbanking any line
+of the run dropped the whole run -- confirmed live in `emacs -nw':
+banking two adjacent lines then pressing the bank key again on the
+second reported \"Unbanked this line (0 total)\"."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 4)
+    (donkey-bank-selection)                 ; r0
+    (forward-line 1)
+    (donkey-bank-selection)                 ; r1, adjacent to r0
+    (should (= 2 (donkey--banked-line-count)))
+    (donkey-bank-selection)                 ; toggle r1 back off
+    (should (= 1 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-bank-selection-banks-whole-lines-of-region ()
+  "A partial region banks every whole line it touches."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (donkey--test-lines-buffer 4)
+      (forward-char 1)                      ; mid-way into r0
+      (push-mark (point) t t)
+      (forward-line 1)
+      (forward-char 1)                      ; mid-way into r1
+      (donkey-bank-selection)
+      (should (= 2 (donkey--banked-line-count)))
+      ;; Banking releases the mark so navigation can continue.
+      (should-not (use-region-p)))))
+
+(ert-deftest donkey-copy-banked-lines-concatenates-in-buffer-order ()
+  "`donkey-copy' copies every banked line as one kill, in buffer order,
+skipping the lines between them."
+  (let ((kill-ring nil) (kill-ring-yank-pointer nil))
+    (with-temp-buffer
+      (donkey--test-lines-buffer 6)
+      (donkey-bank-selection)               ; r0
+      (forward-line 2)
+      (donkey-bank-selection)               ; r2
+      (forward-line 2)
+      (donkey-bank-selection)               ; r4
+      (donkey-copy)
+      (should (equal (car kill-ring) "r0\nr2\nr4\n"))
+      ;; Consumed once used.
+      (should-not (donkey--banked-selection-p)))))
+
+(ert-deftest donkey-copy-banked-includes-live-region ()
+  "The region active at the time counts too, without banking it first."
+  (let ((kill-ring nil) (kill-ring-yank-pointer nil)
+        (transient-mark-mode t))
+    (with-temp-buffer
+      (donkey--test-lines-buffer 5)
+      (donkey-bank-selection)               ; r0
+      (forward-line 3)                      ; r3
+      (push-mark (point) t t)
+      (goto-char (line-end-position))
+      (donkey-copy)
+      (should (equal (car kill-ring) "r0\nr3\n")))))
+
+(ert-deftest donkey-delete-banked-lines-removes-only-those-lines ()
+  "`donkey-delete' removes exactly the banked lines, leaving the rest."
+  (let ((kill-ring nil) (kill-ring-yank-pointer nil))
+    (with-temp-buffer
+      (donkey--test-lines-buffer 6)
+      (forward-line 1)
+      (donkey-bank-selection)               ; r1
+      (forward-line 2)
+      (donkey-bank-selection)               ; r3
+      (donkey-delete)
+      (should (equal (buffer-string) "r0\nr2\nr4\nr5\n"))
+      (should (equal (car kill-ring) "r1\nr3\n"))
+      (should-not (donkey--banked-selection-p)))))
+
+(ert-deftest donkey-banked-adjacent-lines-merge-as-one-piece ()
+  "Adjacent banked lines are copied as one contiguous run, not split.
+
+They are stored as separate per-line overlays, so this checks that
+`donkey--effective-line-spans' merges them back at use time."
+  (let ((kill-ring nil) (kill-ring-yank-pointer nil))
+    (with-temp-buffer
+      (donkey--test-lines-buffer 5)
+      (donkey-bank-selection)               ; r0
+      (forward-line 1)
+      (donkey-bank-selection)               ; r1 (adjacent)
+      (should (= 1 (length (donkey--effective-line-spans))))
+      (donkey-copy)
+      (should (equal (car kill-ring) "r0\nr1\n")))))
+
+(ert-deftest donkey-copy-without-banked-lines-is-unchanged ()
+  "With nothing banked, `donkey-copy' keeps its original character/region
+behavior -- the banked path must not hijack the ordinary case."
+  (let ((kill-ring nil) (kill-ring-yank-pointer nil))
+    (with-temp-buffer
+      (insert "hello")
+      (goto-char (point-min))
+      (donkey-copy)
+      (should (equal (car kill-ring) "h")))))
+
+(ert-deftest donkey-clear-banked-selection-discards-everything ()
+  "`donkey-clear-banked-selection' drops all banks without touching text."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 4)
+    (donkey-bank-selection)
+    (forward-line 2)
+    (donkey-bank-selection)
+    (should (= 2 (donkey--banked-line-count)))
+    (donkey-clear-banked-selection)
+    (should-not (donkey--banked-selection-p))
+    (should (equal (buffer-string) "r0\nr1\nr2\nr3\n"))))
+
+(ert-deftest donkey-bank-selection-last-line-without-newline ()
+  "A final line with no trailing newline banks and deletes cleanly."
+  (let ((kill-ring nil) (kill-ring-yank-pointer nil))
+    (with-temp-buffer
+      (insert "r0\nr1\nlast-no-newline")
+      (goto-char (point-max))
+      (donkey-bank-selection)
+      (donkey-delete)
+      (should (equal (buffer-string) "r0\nr1\n")))))
+
+(ert-deftest donkey-banked-copy-counts-blank-lines ()
+  "A banked blank line counts toward the reported line total.
+
+Regression: the count came from splitting the copied text on newlines
+with omit-nulls, so a blank line vanished from the tally -- banking
+three lines where the middle one was empty reported \"Copied 2 lines\"."
+  (let ((kill-ring nil) (kill-ring-yank-pointer nil) shown)
+    (with-temp-buffer
+      (insert "a\n\nb\n")
+      (goto-char (point-min))
+      (donkey-bank-selection)
+      (forward-line 1)
+      (donkey-bank-selection)
+      (forward-line 1)
+      (donkey-bank-selection)
+      (should (= 3 (donkey--banked-line-count)))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-copy))
+      (should (equal shown "Copied 3 lines"))
+      (should (equal (current-kill 0) "a\n\nb\n")))))
+
+(ert-deftest donkey-banked-delete-counts-blank-lines ()
+  "Deleting banked lines reports blank lines in the total too."
+  (let ((kill-ring nil) (kill-ring-yank-pointer nil) shown)
+    (with-temp-buffer
+      (insert "a\n\nb\n")
+      (goto-char (point-min))
+      (donkey-bank-selection)
+      (forward-line 1)
+      (donkey-bank-selection)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-delete))
+      (should (equal shown "Deleted 2 lines"))
+      (should (equal (buffer-string) "b\n")))))
+
+(ert-deftest donkey-clear-banked-selection-is-silent-when-non-interactive ()
+  "Programmatic clearing reports nothing; only the key press does."
+  (let (shown)
+    (with-temp-buffer
+      (donkey--test-lines-buffer 3)
+      (donkey-bank-selection)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-clear-banked-selection))
+      (should-not shown))))
+
+(ert-deftest donkey-clear-banked-selection-reports-when-called-interactively ()
+  "Pressing the clear key reports how many banked lines were discarded."
+  (let (shown)
+    (with-temp-buffer
+      (donkey--test-lines-buffer 4)
+      (donkey-bank-selection)
+      (forward-line 2)
+      (donkey-bank-selection)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (call-interactively #'donkey-clear-banked-selection))
+      (should (equal shown "Discarded 2 banked lines"))
+      (should-not (donkey--banked-selection-p)))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here

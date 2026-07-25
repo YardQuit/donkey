@@ -1037,6 +1037,9 @@ to paste the same rectangle again."
 (defun donkey-copy ()
   "Copy the active region, or the character at point if no region is active.
 
+With lines banked via `donkey-bank-selection', copies all of them
+\\(plus any active region's lines) as a single kill instead.
+
 With `rectangle-mark-mode' active, copies the rectangle instead of a
 linear region.
 
@@ -1058,6 +1061,8 @@ with \"IMPORTANT\" freshly copied, pressing \"y\" at `point-max' left
 the kill ring's newest entry as \"\"."
   (interactive)
   (cond
+   ((donkey--banked-selection-p)
+    (donkey--copy-banked-selection))
    ((use-region-p)
     (if (bound-and-true-p rectangle-mark-mode)
         (call-interactively #'copy-rectangle-as-kill)
@@ -1071,16 +1076,22 @@ the kill ring's newest entry as \"\"."
 (defun donkey-delete ()
   "Delete character or region.
 
+With lines banked via `donkey-bank-selection', kills all of them (plus
+any active region's lines) as a single kill instead.
+
 With `rectangle-mark-mode' active, kills the rectangle via
 `kill-rectangle' -- see `donkey--last-kill-rectangle-p' for how
 `donkey-yank' later knows to paste it back as a rectangle."
   (interactive)
-  (if (use-region-p)
-      (progn
-        (if (bound-and-true-p rectangle-mark-mode)
-            (call-interactively #'kill-rectangle)
-          (kill-region (mark) (point))))
-    (delete-char 1)))
+  (cond
+   ((donkey--banked-selection-p)
+    (donkey--delete-banked-selection))
+   ((use-region-p)
+    (if (bound-and-true-p rectangle-mark-mode)
+        (call-interactively #'kill-rectangle)
+      (kill-region (mark) (point))))
+   (t
+    (delete-char 1))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Wrap Region Commands
@@ -1748,6 +1759,221 @@ See `donkey--ensure-non-rectangle-selection' for why."
   (call-interactively #'set-mark-command))
 
 ;;; ---------------------------------------------------------------------------
+;;; Banked Line Selection
+;;; ---------------------------------------------------------------------------
+
+(defface donkey-banked-selection
+  '((t :inherit secondary-selection))
+  "Face marking lines banked with `donkey-bank-selection'.
+
+Inherits `secondary-selection' so banked lines stay visually distinct
+from the live region, which is the whole point: while banking you are
+looking at two different things at once -- what is already set aside,
+and what is selected right now."
+  :group 'donkey)
+
+(defvar-local donkey--banked-overlays nil
+  "Overlays covering the whole lines banked in this buffer.
+
+Overlays rather than plain positions: they move with the text as the
+buffer is edited, they die automatically with the buffer, and they
+double as the visual feedback -- one structure instead of a position
+list plus a parallel set of highlights that could drift apart.")
+
+(defun donkey--whole-line-span (beg end)
+  "Return (START . END) covering every whole line touched by BEG..END.
+
+END extends past the final line's newline when there is one, so a
+banked line carries its own line break and deleting it removes the
+line rather than leaving a blank."
+  (save-excursion
+    (let ((start (progn (goto-char (min beg end))
+                        (line-beginning-position)))
+          (finish (progn (goto-char (max beg end))
+                         ;; A region ending exactly at a line beginning
+                         ;; came from the line ABOVE -- do not swallow the
+                         ;; next line just because point sits at its start.
+                         (when (and (bolp) (> (point) (min beg end)))
+                           (forward-char -1))
+                         (min (point-max) (1+ (line-end-position))))))
+      (cons start finish))))
+
+(defun donkey--banked-spans ()
+  "Return live banked spans as a list of (START . END), in buffer order."
+  (sort (delq nil
+              (mapcar (lambda (ov)
+                        (when (overlay-buffer ov)
+                          (cons (overlay-start ov) (overlay-end ov))))
+                      donkey--banked-overlays))
+        (lambda (a b) (< (car a) (car b)))))
+
+(defun donkey--merge-spans (spans)
+  "Merge overlapping or touching SPANS, a list of (START . END) in order."
+  (let (merged)
+    (dolist (span spans (nreverse merged))
+      (if (and merged (<= (car span) (cdr (car merged))))
+          (setcdr (car merged) (max (cdr (car merged)) (cdr span)))
+        (push (cons (car span) (cdr span)) merged)))))
+
+(defun donkey--banked-selection-p ()
+  "Return non-nil if this buffer has any live banked lines."
+  (and donkey--banked-overlays (donkey--banked-spans)))
+
+(defun donkey-clear-banked-selection ()
+  "Discard every banked line in this buffer.
+
+Leaves the buffer text and the live region alone -- this only throws
+away what `donkey-bank-selection' set aside."
+  (interactive)
+  (let ((count (donkey--banked-line-count)))
+    (mapc #'delete-overlay donkey--banked-overlays)
+    (setq donkey--banked-overlays nil)
+    ;; `any' rather than `interactive': the point is to stay quiet when
+    ;; `donkey-copy'/`donkey-delete' clear the bank as part of consuming
+    ;; it, which are plain Lisp calls.  `interactive' would additionally
+    ;; report nothing under `noninteractive' or a keyboard macro, where
+    ;; the feedback is still wanted.
+    (when (called-interactively-p 'any)
+      (message (if (zerop count)
+                   "No banked lines"
+                 (format "Discarded %d banked line%s"
+                         count (if (= 1 count) "" "s")))))))
+
+(defun donkey--effective-line-spans ()
+  "Return the spans `y'/`d' should act on while lines are banked.
+
+The banked lines plus, when a region is also active, the whole lines
+it covers -- so the selection you are looking at right now counts
+without having to bank it first.  Overlapping and adjacent spans are
+merged, so banking the same line twice, or banking a line adjacent to
+the live region, never duplicates or splits text."
+  (donkey--merge-spans
+   (sort (append (donkey--banked-spans)
+                 (when (use-region-p)
+                   (list (donkey--whole-line-span (region-beginning)
+                                                  (region-end)))))
+         (lambda (a b) (< (car a) (car b))))))
+
+(defun donkey-bank-selection ()
+  "Set the current selection aside and release the mark to keep navigating.
+
+Banks every whole line the active region touches (or just the current
+line when no region is active), highlights them with
+`donkey-banked-selection', then deactivates the mark so ordinary
+navigation and a fresh selection can continue.  Repeat as often as
+needed: `donkey-copy' and `donkey-delete' then act on all banked lines
+at once, plus whatever region happens to be active at the time, so the
+final piece never has to be banked explicitly.
+
+With no region active, this toggles: point on an already-banked line
+unbanks that line, which is how to drop one you added by mistake
+without starting over.
+
+Banked lines are discarded automatically once `donkey-copy' or
+`donkey-delete' consumes them; `donkey-clear-banked-selection'
+discards them without doing anything else."
+  (interactive)
+  (if (use-region-p)
+      (let* ((span (donkey--whole-line-span (region-beginning) (region-end)))
+             (lines (count-lines (car span) (cdr span))))
+        (donkey--bank-span (car span) (cdr span))
+        (deactivate-mark)
+        (message "Banked %d line%s (%d total) -- navigate, then y/d"
+                 lines
+                 (if (= 1 lines) "" "s")
+                 (donkey--banked-line-count)))
+    (let ((existing (donkey--banked-overlay-at (point))))
+      (if existing
+          (progn
+            (delete-overlay existing)
+            (setq donkey--banked-overlays
+                  (delq existing donkey--banked-overlays))
+            (message "Unbanked this line (%d total)"
+                     (donkey--banked-line-count)))
+        (let ((span (donkey--whole-line-span (point) (point))))
+          (donkey--bank-span (car span) (cdr span))
+          (message "Banked this line (%d total) -- navigate, then y/d"
+                   (donkey--banked-line-count)))))))
+
+(defun donkey--banked-overlay-at (pos)
+  "Return the banked overlay covering POS, or nil."
+  (seq-find (lambda (ov)
+              (and (overlay-buffer ov)
+                   (<= (overlay-start ov) pos)
+                   (< pos (overlay-end ov))))
+            donkey--banked-overlays))
+
+(defun donkey--bank-span (beg end)
+  "Bank every whole line in BEG..END that is not already banked.
+
+Creates one overlay per LINE rather than one spanning the whole run.
+Adjacent lines would otherwise be absorbed into a single overlay, and
+unbanking any line of that run would then drop the entire run instead
+of just that one line -- confirmed live: banking two adjacent lines
+and pressing the bank key again on the second reported \"Unbanked this
+line (0 total)\" rather than leaving the first still banked.
+
+Nothing is lost by keeping them separate: `donkey--effective-line-spans'
+merges adjacent spans at use time, so a contiguous run is still copied
+and deleted as one piece, and identically-faced adjacent overlays are
+indistinguishable on screen."
+  (save-excursion
+    (goto-char beg)
+    (while (< (point) end)
+      (let ((line-span (donkey--whole-line-span (point) (point))))
+        (unless (donkey--banked-overlay-at (car line-span))
+          (let ((ov (make-overlay (car line-span) (cdr line-span) nil nil t)))
+            (overlay-put ov 'face 'donkey-banked-selection)
+            (overlay-put ov 'donkey-banked t)
+            (overlay-put ov 'priority -50)
+            (push ov donkey--banked-overlays)))
+        (goto-char (cdr line-span))))))
+
+(defun donkey--banked-line-count ()
+  "Return how many lines are currently banked.
+
+One overlay per line (see `donkey--bank-span'), so this is simply how
+many live spans there are."
+  (length (donkey--banked-spans)))
+
+(defun donkey--span-line-count (spans)
+  "Return how many buffer lines SPANS cover in total.
+
+Counts via `count-lines' rather than counting newlines in the extracted
+text, so a banked blank line still counts as a line."
+  (apply #'+ (mapcar (lambda (span) (count-lines (car span) (cdr span)))
+                     spans)))
+
+(defun donkey--copy-banked-selection ()
+  "Copy every banked line (plus any active region's lines) as one kill."
+  (let* ((spans (donkey--effective-line-spans))
+         (lines (donkey--span-line-count spans))
+         (text (mapconcat (lambda (span)
+                            (buffer-substring (car span) (cdr span)))
+                          spans "")))
+    (kill-new text)
+    (donkey-clear-banked-selection)
+    (deactivate-mark)
+    (message "Copied %d line%s" lines (if (= 1 lines) "" "s"))))
+
+(defun donkey--delete-banked-selection ()
+  "Kill every banked line (plus any active region's lines) as one kill.
+
+Deletes back to front so each span's positions stay valid while the
+earlier ones are still being removed."
+  (let* ((spans (donkey--effective-line-spans))
+         (lines (donkey--span-line-count spans))
+         (text (mapconcat (lambda (span)
+                            (buffer-substring (car span) (cdr span)))
+                          spans "")))
+    (kill-new text)
+    (dolist (span (reverse spans))
+      (delete-region (car span) (cdr span)))
+    (donkey-clear-banked-selection)
+    (deactivate-mark)
+    (message "Deleted %d line%s" lines (if (= 1 lines) "" "s"))))
+
+;;; ---------------------------------------------------------------------------
 ;;; Donkey Describe Bindings
 ;;; ---------------------------------------------------------------------------
 
@@ -1932,6 +2158,8 @@ documentation."
 (keymap-set donkey-normal-mode-map "m v" #'donkey-rectangle-mark-mode)
 (keymap-set donkey-normal-mode-map "m w" #'donkey-mark-word)
 (keymap-set donkey-normal-mode-map "m W" #'donkey-mark-symbol)
+(keymap-set donkey-normal-mode-map "m SPC" #'donkey-bank-selection)
+(keymap-set donkey-normal-mode-map "m DEL" #'donkey-clear-banked-selection)
 
 ;; Buffer navigation
 (keymap-set donkey-normal-mode-map "%" #'mark-whole-buffer)

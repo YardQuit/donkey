@@ -209,6 +209,8 @@ next navigation keypress self-insert.
 | =m I= | =donkey-mark-sexp-inner=     | Mark inside balanced expression      |
 | =m A= | =donkey-mark-sexp-outer=     | Mark including balanced expression   |
 | =m v= | =donkey-rectangle-mark-mode= | Toggle rectangle mark mode           |
+| =m SPC= | =donkey-bank-selection=      | Bank lines, keep navigating          |
+| =m DEL= | =donkey-clear-banked-selection= | Discard all banked lines          |
 
 =donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ’ “ ” = * ~ | \ / : + _ $=
 by default -- an alist of (OPEN . CLOSE) pairs in =donkey-mark-pair-delimiters=
@@ -244,6 +246,52 @@ need no delimiter list.
 With no matching pair either way, both commands signal an error and
 leave point exactly where it was, instead of landing somewhere else in
 the buffer as a side effect of the failed search.
+
+** Banking Lines (Non-Contiguous Selection)
+
+Emacs has a single region, so you normally can't select line 3, skip a
+few, and add line 9 to the same selection. =m SPC= works around that:
+it *banks* the lines you have selected right now, highlights them with
+the =donkey-banked-selection= face, and releases the mark so you can
+carry on navigating and selecting freely.
+
+Repeat as often as you like, then press =y= or =d= — both act on every
+banked line at once:
+
+#+begin_example
+
+  V J          select lines 0-1
+  m SPC        bank them, mark released
+  j j j        navigate past lines you want to skip
+  V J          select lines 4-5
+  m SPC        bank those too
+  j j j        navigate on
+  V            select line 8
+  y            copies lines 0,1,4,5,8 as one kill
+
+#+end_example
+
+The live region counts too, so the final piece never has to be banked
+explicitly — in the example above, line 8 is included by =y= without a
+third =m SPC=.
+
+With no region active, =m SPC= banks just the current line, and
+pressing it again on an already-banked line *unbanks* that line — the
+quickest way to drop one you added by mistake.
+
+Banked lines are consumed by =y= or =d=. To discard them without doing
+anything else, use =m DEL=.
+
+Notes:
+
+- Banking is whole-line only. Partial selections are rounded out to the
+  full lines they touch.
+- Adjacent banked lines are copied and deleted as one contiguous run,
+  so banking a block line-by-line gives the same result as selecting it
+  in one go.
+- =d= deletes back-to-front internally, so the lines you banked are the
+  lines that get removed regardless of how the earlier deletions shift
+  positions.
 
 ** Buffer Navigation (=g= prefix and standalone)
 
