@@ -1201,6 +1201,8 @@ to Normal, in that order."
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
+      ;; The delimiter comes from `last-command-event'; bound here because
+      ;; `donkey-wrap-region' now falls through for a non-character event.
       (cl-letf (((symbol-function 'use-region-p) (lambda () t))
                 ((symbol-function 'donkey-insert-mode)
                  (lambda (&rest _) (push 'insert-mode calls)))
@@ -1208,7 +1210,8 @@ to Normal, in that order."
                  (lambda (&rest _) (push 'self-insert calls)))
                 ((symbol-function 'donkey--exit-insert)
                  (lambda () (push 'exit-insert calls))))
-        (donkey-wrap-region))
+        (let ((last-command-event ?\())
+          (donkey-wrap-region)))
       (should (equal (nreverse calls) '(insert-mode self-insert exit-insert))))))
 
 (ert-deftest donkey-wrap-region-does-not-deactivate-mark-itself ()

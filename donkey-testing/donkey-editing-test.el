@@ -209,21 +209,34 @@ copy-rectangle-as-kill via call-interactively."
         (donkey-delete)))
     (should-not entered)))
 
-(ert-deftest donkey-delete-no-region-empty-buffer-errors ()
-  "Empty buffer, no region: delete-char signals end-of-buffer."
-  (with-temp-buffer
-    (cl-letf (((symbol-function 'use-region-p)
-               (lambda () nil)))
-      (should-error (donkey-delete) :type 'end-of-buffer))))
+(ert-deftest donkey-delete-no-region-empty-buffer-reports ()
+  "Empty buffer, no region: reports rather than signalling.
 
-(ert-deftest donkey-delete-no-region-at-end-of-buffer-errors ()
-  "Point at point-max, no region: delete-char signals end-of-buffer."
-  (with-temp-buffer
-    (insert "hello\n")
-    (goto-char (point-max))
-    (cl-letf (((symbol-function 'use-region-p)
-               (lambda () nil)))
-      (should-error (donkey-delete) :type 'end-of-buffer))))
+Previously asserted the raw `end-of-buffer' signal, which documented the
+bug as if it were intended."
+  (let (shown)
+    (with-temp-buffer
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-delete))
+      (should (equal shown "End of buffer -- nothing to delete")))))
+
+(ert-deftest donkey-delete-no-region-at-end-of-buffer-reports ()
+  "Point at `point-max', no region: reports and leaves the text alone.
+
+Previously asserted the raw `end-of-buffer' signal, which documented the
+bug as if it were intended."
+  (let (shown)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char (point-max))
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-delete))
+      (should (equal shown "End of buffer -- nothing to delete"))
+      (should (equal (buffer-string) "hello\n")))))
 
 (ert-deftest donkey-delete-region-kills-region ()
   "With an active region (not rectangle), kills from mark to point."
@@ -2035,6 +2048,104 @@ ends at `point-max', but its span is not empty."
         (donkey-bank-selection))
       (should (equal shown "Banked this line (1 total) -- navigate, then y/d"))
       (should (= 1 (donkey--banked-line-count))))))
+
+(ert-deftest donkey-banked-copy-ignores-spans-outside-narrowing ()
+  "Banked lines outside the accessible portion do not crash `y'.
+
+Regression: overlay positions are absolute and unaffected by narrowing,
+so a line banked before a `narrow-to-region' still reported its original
+positions, and `buffer-substring' signalled a bare `args-out-of-range'.
+Confirmed live: bank a line, narrow past it, press \"y\" -> \"Args out of
+range: #<buffer *live*>, 1, 6\"."
+  (let ((kill-ring nil) kill-ring-yank-pointer)
+    (with-temp-buffer
+      (insert "n0\nn1\nn2\nn3\nn4\n")
+      (goto-char (point-min))
+      (donkey-bank-selection)
+      (narrow-to-region 4 13)
+      (should-not (donkey--banked-selection-p))
+      (goto-char (point-min))
+      ;; Falls through to the character at point, as with no bank at all.
+      (donkey-copy)
+      (should (equal (current-kill 0) "n")))))
+
+(ert-deftest donkey-banked-delete-ignores-spans-outside-narrowing ()
+  "Banked lines outside the accessible portion do not crash `d'."
+  (let ((kill-ring nil) kill-ring-yank-pointer)
+    (with-temp-buffer
+      (insert "d0\nd1\nd2\nd3\nd4\n")
+      (goto-char (point-min))
+      (donkey-bank-selection)
+      (narrow-to-region 4 13)
+      (goto-char (point-min))
+      (donkey-delete)
+      ;; One character removed from the accessible text, nothing outside.
+      (should (equal (buffer-string) "1\nd2\nd3\n"))
+      (widen)
+      (should (equal (buffer-string) "d0\n1\nd2\nd3\nd4\n")))))
+
+(ert-deftest donkey-banked-spans-return-after-widening ()
+  "Narrowing hides banked spans; widening brings them back untouched.
+
+Filtered rather than pruned: narrowing is temporary, so the overlays
+must survive it."
+  (with-temp-buffer
+    (insert "w0\nw1\nw2\nw3\nw4\n")
+    (goto-char (point-min))
+    (donkey-bank-selection)
+    (goto-char (point-min))
+    (forward-line 4)
+    (donkey-bank-selection)
+    (should (= 2 (donkey--banked-line-count)))
+    (narrow-to-region 4 13)
+    (should (= 0 (donkey--banked-line-count)))
+    (widen)
+    (should (= 2 (donkey--banked-line-count)))
+    (should (equal (donkey--banked-spans) (list (cons 1 4) (cons 13 16))))))
+
+(ert-deftest donkey-delete-at-point-max-reports-instead-of-signalling ()
+  "`d'/`x' at `point-max' reports rather than signalling `end-of-buffer'.
+
+Regression: `delete-char' signals a bare `end-of-buffer' there, which
+pops the debugger for anyone running with `debug-on-error' on.
+`donkey-copy' and `donkey-change' both already guarded this exact
+position; `donkey-delete' was missed."
+  (let (shown)
+    (with-temp-buffer
+      (insert "abc\n")
+      (goto-char (point-max))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-delete))
+      (should (equal shown "End of buffer -- nothing to delete"))
+      (should (equal (buffer-string) "abc\n")))))
+
+(ert-deftest donkey-delete-before-point-max-still-deletes ()
+  "The `point-max' guard does not stop an ordinary delete."
+  (with-temp-buffer
+    (insert "abc\n")
+    (goto-char (point-min))
+    (donkey-delete)
+    (should (equal (buffer-string) "bc\n"))))
+
+(ert-deftest donkey-wrap-region-non-character-event-falls-through ()
+  "A non-character invoking event wraps nothing instead of signalling.
+
+The delimiter comes from `last-command-event', so the command only means
+anything when that is a character.  Reached from
+\\[execute-extended-command] or a function-key binding: the rectangle
+path handed a symbol to `string' and signalled `wrong-type-argument'."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "hello world\n")
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (goto-char 6)
+      (rectangle-mark-mode 1)
+      ;; `undefined' rings the bell and returns; it does not signal.
+      (let ((last-command-event 'f5))
+        (donkey-wrap-region))
+      (should (equal (buffer-string) "hello world\n")))))
 
 (provide 'donkey-editing-test)
 
