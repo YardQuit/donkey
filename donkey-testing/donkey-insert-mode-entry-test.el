@@ -819,25 +819,58 @@ afterward, unlike every sibling command in the same category."
     (should (= (buffer-size) 5))
     (should (= (point) 3))))
 
-(ert-deftest donkey-change-no-region-empty-buffer-errors ()
-  "Empty buffer with no region signals end-of-buffer (unguarded)."
-  (with-temp-buffer
-    (cl-letf (((symbol-function 'use-region-p)
-               (lambda () nil))
-              ((symbol-function 'donkey-enter-insert)
-               (lambda () nil)))
-      (should-error (donkey-change) :type 'end-of-buffer))))
+(ert-deftest donkey-change-no-region-empty-buffer-still-enters-insert ()
+  "Regression test: an empty buffer has nothing to delete, but `c' must
+still enter INSERT state rather than aborting in Normal state.
 
-(ert-deftest donkey-change-no-region-at-end-of-buffer-errors ()
-  "Point at point-max with no region signals end-of-buffer."
-  (with-temp-buffer
-    (insert "hello\n")
-    (goto-char (point-max))
-    (cl-letf (((symbol-function 'use-region-p)
-               (lambda () nil))
-              ((symbol-function 'donkey-enter-insert)
-               (lambda () nil)))
-      (should-error (donkey-change) :type 'end-of-buffer))))
+`delete-char' signals `end-of-buffer' here.  That used to propagate
+out of `donkey-change' before `donkey-enter-insert' ran, so pressing
+\"change\" left the user in Normal state with only an \"End of
+buffer\" message to explain it -- entering INSERT is this command's
+entire purpose.  Confirmed live in `emacs -nw': the modeline stayed
+on DONKEY[N]."
+  (let (entered)
+    (with-temp-buffer
+      (cl-letf (((symbol-function 'use-region-p)
+                 (lambda () nil))
+                ((symbol-function 'donkey-enter-insert)
+                 (lambda () (setq entered t))))
+        (donkey-change))
+      (should entered)
+      (should (string= (buffer-string) "")))))
+
+(ert-deftest donkey-change-no-region-at-end-of-buffer-still-enters-insert ()
+  "Point at `point-max' with no region: nothing is deleted, but INSERT
+state is still entered.  See
+`donkey-change-no-region-empty-buffer-still-enters-insert'."
+  (let (entered)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char (point-max))
+      (cl-letf (((symbol-function 'use-region-p)
+                 (lambda () nil))
+                ((symbol-function 'donkey-enter-insert)
+                 (lambda () (setq entered t))))
+        (donkey-change))
+      (should entered)
+      ;; Buffer untouched -- the guard swallows the error, it does not
+      ;; delete something else instead.
+      (should (string= (buffer-string) "hello\n")))))
+
+(ert-deftest donkey-change-no-region-mid-buffer-still-deletes ()
+  "The end-of-buffer guard must not suppress the ordinary delete: with a
+character actually present at point, `c' still removes exactly it."
+  (let (entered)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char (point-min))
+      (cl-letf (((symbol-function 'use-region-p)
+                 (lambda () nil))
+                ((symbol-function 'donkey-enter-insert)
+                 (lambda () (setq entered t))))
+        (donkey-change))
+      (should entered)
+      (should (string= (buffer-string) "ello\n")))))
 
 (ert-deftest donkey-change-region-deletes-region ()
   "With an active region (not rectangle), deletes from mark to point."

@@ -667,6 +667,26 @@ then returns to Normal state automatically. With no region active,
 the key does nothing, same as any other suppressed key in Normal
 state.
 
+Under =rectangle-mark-mode= (=m v=) the behavior is different, and does
+*not* depend on Smartparens: each line of the rectangle is wrapped at
+its own start and end column, with the matching close character
+inserted automatically. Selecting a 3-column rectangle across three
+lines of =alpha=/=bravo=/=charlie= and pressing =[= gives:
+
+#+begin_example
+
+  [alp]ha
+  [bra]vo
+  [cha]rlie
+
+#+end_example
+
+Bracket-type delimiters close with their real counterpart (=(= with
+=)=, =[= with =]=, looked up in =donkey-mark-pair-delimiters=);
+symmetric ones like ="= close with themselves. Lines shorter than the
+rectangle are padded with spaces first, the same way =string-rectangle=
+and other built-in rectangle commands handle them.
+
 The delimiter set is =donkey-wrap-delimiters= (a Customization Group
 variable); change it before =donkey.el= loads to add or remove
 characters.
