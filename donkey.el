@@ -1099,8 +1099,16 @@ With `rectangle-mark-mode' active, kills the rectangle via
     (if (bound-and-true-p rectangle-mark-mode)
         (call-interactively #'kill-rectangle)
       (kill-region (mark) (point))))
+   ((< (point) (point-max))
+    (delete-char 1))
    (t
-    (delete-char 1))))
+    ;; At `point-max' there is no character to delete and `delete-char'
+    ;; signals a bare `end-of-buffer', which pops the debugger for anyone
+    ;; running with `debug-on-error' on.  `donkey-copy' and `donkey-change'
+    ;; both already guard this exact position; this one was missed.
+    ;; Reached by pressing "x" or "d" once too often at the end of a
+    ;; buffer, which \\[end-of-buffer] lands on directly.
+    (message "End of buffer -- nothing to delete"))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Wrap Region Commands
@@ -1190,6 +1198,14 @@ the cleanup runs, so the user sees it and lands back in Normal."
   (interactive)
   (cond
    ((not (use-region-p))
+    (call-interactively #'undefined))
+   ;; The delimiter comes from `last-command-event', so this only means
+   ;; anything when the invoking event IS a character.  Reached via
+   ;; \\[execute-extended-command], or from a non-character binding such
+   ;; as a function key: the rectangle path then hands a symbol to
+   ;; `string' and signals `wrong-type-argument', and the linear path
+   ;; hands it to `self-insert-command', which cannot insert it either.
+   ((not (characterp last-command-event))
     (call-interactively #'undefined))
    ((bound-and-true-p rectangle-mark-mode)
     (donkey--wrap-rectangle-region last-command-event))
@@ -1843,14 +1859,33 @@ range."
                     donkey--banked-overlays)))
 
 (defun donkey--banked-spans ()
-  "Return live banked spans as a list of (START . END), in buffer order.
+  "Return usable banked spans as a list of (START . END), in buffer order.
 
 Prunes collapsed overlays first (see `donkey--prune-banked-overlays'),
-so every span returned covers real text."
+so every span returned covers real text.
+
+Spans reaching outside the buffer's accessible portion are then left
+out.  Overlay positions are absolute and unaffected by narrowing, so a
+line banked before a `narrow-to-region' still reports its original
+positions afterwards -- and `buffer-substring'/`delete-region' signal a
+bare `args-out-of-range' for those.  Confirmed live: banking a line,
+narrowing past it with \\[narrow-to-region], then pressing \"y\" reported
+\"Args out of range: #<buffer *live*>, 1, 6\".
+
+Filtered rather than pruned, because narrowing is temporary: the
+overlays survive untouched and count again once the buffer is widened.
+Everything reading spans therefore agrees on one definition -- what is
+banked AND reachable right now -- so the counts reported while narrowed
+describe exactly what \"y\" and \"d\" will act on."
   (donkey--prune-banked-overlays)
-  (sort (mapcar (lambda (ov)
-                  (cons (overlay-start ov) (overlay-end ov)))
-                donkey--banked-overlays)
+  (sort (delq nil
+              (mapcar (lambda (ov)
+                        (let ((start (overlay-start ov))
+                              (end (overlay-end ov)))
+                          (and (>= start (point-min))
+                               (<= end (point-max))
+                               (cons start end))))
+                      donkey--banked-overlays))
         (lambda (a b) (< (car a) (car b)))))
 
 (defun donkey--merge-spans (spans)

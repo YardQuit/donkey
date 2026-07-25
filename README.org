@@ -902,7 +902,19 @@ optional third-party symbols such as =smartparens-mode-map=.
 
 ** Emacs versions
 
-The suite runs against Emacs 29.1 — the version declared in
-=Package-Requires= — and 30.1. A =snapshot= build also runs as an early
-warning for changes landing in Emacs itself; it is allowed to fail
-without blocking the repository.
+The suite runs against three versions that must all pass:
+
+| Version             | What it is                                       |
+|---------------------+--------------------------------------------------|
+| =29.1=              | the minimum declared in =Package-Requires=       |
+| =30.1=              | the current stable series                        |
+| =release-snapshot=  | the =emacs-31= branch, i.e. the imminent release |
+
+A fourth, =snapshot=, builds Emacs master — a far-future canary, several
+versions ahead of anything being released. It is allowed to fail without
+blocking the repository, so churn upstream in a version nobody runs yet
+does not turn the build red.
+
+Note that =snapshot= is *not* Emacs 31: at time of writing it reports
+=32.0.50=, while =release-snapshot= reports =31.0.90=. Testing against a
+release candidate means the latter.
