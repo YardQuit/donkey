@@ -46,6 +46,22 @@ runs next."
          ,@body)
      (donkey-mode -1)))
 
+(ert-deftest donkey--with-test-buffer-turns-donkey-mode-back-off ()
+  "Regression test: `donkey--with-test-buffer' must leave `donkey-mode'
+off afterward, whether BODY completes normally or signals an error.
+
+Before this macro wrapped its body in `unwind-protect', `donkey-mode'
+\(a GLOBAL minor mode\) stayed on for the rest of the batch Emacs
+process once any of the 31+ tests using this macro ran -- confirmed
+via a full suite run where `donkey-mode' was still `t' after
+`ert-run-tests-batch' completed, regardless of file or test order."
+  (donkey-mode -1)
+  (donkey--with-test-buffer nil)
+  (should-not donkey-mode)
+  (should-error
+   (donkey--with-test-buffer (error "deliberate test failure")))
+  (should-not donkey-mode))
+
 (defun donkey--simulate-cg ()
   "Simulate pressing C-g. Mocks `this-single-command-keys' so
 pre-command-hook functions can see it."
