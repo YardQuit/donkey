@@ -201,7 +201,16 @@ since the last command.  Independent of the mark ring and region."
           (push m donkey--position-ring)
           (when (> (length donkey--position-ring) donkey-position-ring-max)
             (set-marker (car (last donkey--position-ring)) nil)
-            (nbutlast donkey--position-ring)))
+            ;; Assigned back, not just called for effect: `nbutlast'
+            ;; cannot destructively empty a ONE-element list -- it
+            ;; returns nil while leaving the variable pointing at the
+            ;; original cons.  With `donkey-position-ring-max' set to 0
+            ;; (a reasonable way to switch position tracking off) every
+            ;; trim hits exactly that case, so the ring kept the marker
+            ;; that was just pointed nowhere and `donkey-jump-back'
+            ;; failed with "Marker does not point anywhere".
+            (setq donkey--position-ring
+                  (nbutlast donkey--position-ring))))
         (setq donkey--position-index 0))
       (setq donkey--last-tracked-state (cons (current-buffer) now-pt)))))
 
@@ -1702,6 +1711,12 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
   (donkey--ensure-non-rectangle-selection)
   (unless (donkey--point-on-word-or-symbol-char-p)
     (backward-word 1))
+  ;; See `donkey-mark-symbol' for why this is a `user-error' rather than
+  ;; letting `beginning-of-thing' signal a bare `error': a buffer with
+  ;; no word before point at all (empty, or nothing but whitespace and
+  ;; punctuation) is a normal thing to press this on by accident.
+  (unless (thing-at-point 'word)
+    (user-error "No word at or before point"))
   (beginning-of-thing 'word)
   (mark-word)
   (message "Word marked"))
@@ -1740,7 +1755,17 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
   (interactive)
   (donkey--ensure-non-rectangle-selection)
   (unless (donkey--point-on-word-or-symbol-char-p)
-    (backward-sexp 1))
+    (condition-case nil
+        (backward-sexp 1)
+      (scan-error nil)))
+  ;; `beginning-of-thing' signals a bare `error' when there is no symbol
+  ;; to be found, which pops the debugger for anyone running with
+  ;; `debug-on-error' on.  Reaching it is ordinary, not exceptional:
+  ;; `backward-sexp' above lands on whatever sexp precedes point, which
+  ;; on a blank line in code is typically a bracket rather than a symbol
+  ;; -- confirmed with point on the trailing empty line of "(foo bar)".
+  (unless (thing-at-point 'symbol)
+    (user-error "No symbol at or before point"))
   (beginning-of-thing 'symbol)
   (forward-sexp 1)
   (while (memq (char-before) '(?, ?.))
@@ -1798,13 +1823,34 @@ line rather than leaving a blank."
                          (min (point-max) (1+ (line-end-position))))))
       (cons start finish))))
 
+(defun donkey--prune-banked-overlays ()
+  "Drop banked overlays that no longer cover any text.
+
+An overlay collapses to zero width when the line it banked is later
+removed by ordinary editing.  Such an overlay highlights nothing, so
+the bank is invisible, yet it would still count as live: `y'/`d' would
+act on the empty bank instead of on the character at point, pushing
+\"\" over whatever was last copied -- the same silent empty-kill this
+package already guards against at `point-max'.  It could not even be
+toggled off, since `donkey--banked-overlay-at' requires POS to be
+strictly inside the overlay and no position is ever inside an empty
+range."
+  (setq donkey--banked-overlays
+        (seq-filter (lambda (ov)
+                      (or (and (overlay-buffer ov)
+                               (< (overlay-start ov) (overlay-end ov)))
+                          (ignore (delete-overlay ov))))
+                    donkey--banked-overlays)))
+
 (defun donkey--banked-spans ()
-  "Return live banked spans as a list of (START . END), in buffer order."
-  (sort (delq nil
-              (mapcar (lambda (ov)
-                        (when (overlay-buffer ov)
-                          (cons (overlay-start ov) (overlay-end ov))))
-                      donkey--banked-overlays))
+  "Return live banked spans as a list of (START . END), in buffer order.
+
+Prunes collapsed overlays first (see `donkey--prune-banked-overlays'),
+so every span returned covers real text."
+  (donkey--prune-banked-overlays)
+  (sort (mapcar (lambda (ov)
+                  (cons (overlay-start ov) (overlay-end ov)))
+                donkey--banked-overlays)
         (lambda (a b) (< (car a) (car b)))))
 
 (defun donkey--merge-spans (spans)
@@ -2863,6 +2909,13 @@ donkey-mode' to toggle."
           (donkey-normal-mode -1))
         (when (bound-and-true-p donkey-insert-mode)
           (donkey-insert-mode -1))
+        ;; Banked lines are Donkey state drawn on the buffer, and this
+        ;; mode promises to clear all of it.  Left behind, the
+        ;; highlights would be permanent: the only command that removes
+        ;; them is `donkey-clear-banked-selection', reachable solely
+        ;; through a Normal-state key that no longer exists once the
+        ;; mode is off.
+        (donkey-clear-banked-selection)
         (donkey--apply-cursor-setting nil)))))
 
 ;;; ---------------------------------------------------------------------------

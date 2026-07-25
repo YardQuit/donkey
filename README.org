@@ -292,6 +292,11 @@ Notes:
 - =d= deletes back-to-front internally, so the lines you banked are the
   lines that get removed regardless of how the earlier deletions shift
   positions.
+- Banked lines follow the text as you edit around them. If a banked
+  line is deleted outright, its bank goes with it rather than lingering
+  as an invisible, empty selection.
+- Turning off =donkey-mode= discards any banked lines along with the
+  rest of DONKEY's state.
 
 ** Buffer Navigation (=g= prefix and standalone)
 

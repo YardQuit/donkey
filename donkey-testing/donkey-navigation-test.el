@@ -239,6 +239,46 @@ instead of just going to a line. Now rounded to the nearest whole line."
         (donkey-position-ring-max 10))
     (should-error (donkey-jump-back) :type 'user-error)))
 
+(ert-deftest donkey-position-ring-max-zero-leaves-no-dead-marker ()
+  "A ring max of 0 empties the ring instead of keeping a dead marker.
+
+Regression: the trim did `(nbutlast donkey--position-ring)' for effect
+only, and `nbutlast' cannot destructively empty a ONE-element list --
+it returns nil while the variable still points at the original cons.
+With the max at 0 every trim is exactly that case, so the ring kept the
+marker whose position had just been cleared."
+  (with-temp-buffer
+    (insert "a\nb\nc\n")
+    (goto-char (point-min))
+    (let ((donkey--position-ring nil)
+          (donkey--position-index 0)
+          (donkey--last-tracked-state nil)
+          (donkey-position-ring-max 0))
+      (donkey--track-position)
+      (goto-char 3)
+      (donkey--track-position)
+      (should-not donkey--position-ring)
+      (should-not (seq-find (lambda (m) (null (marker-position m)))
+                            donkey--position-ring)))))
+
+(ert-deftest donkey-jump-back-with-ring-max-zero-reports-no-positions ()
+  "With tracking switched off via a 0 ring max, jumping back is a clean error.
+
+Regression: the ring retained a marker pointing nowhere, so this
+signalled a bare `error' reading \"Marker does not point anywhere\"
+instead of the ordinary `user-error' for an empty ring."
+  (with-temp-buffer
+    (insert "a\nb\nc\n")
+    (goto-char (point-min))
+    (let ((donkey--position-ring nil)
+          (donkey--position-index 0)
+          (donkey--last-tracked-state nil)
+          (donkey-position-ring-max 0))
+      (donkey--track-position)
+      (goto-char 3)
+      (donkey--track-position)
+      (should-error (donkey-jump-back) :type 'user-error))))
+
 (ert-deftest donkey-jump-back-single-position-jumps ()
   "With one position, jumps to it and wraps the index."
   (with-temp-buffer

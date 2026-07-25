@@ -1659,6 +1659,84 @@ three lines where the middle one was empty reported \"Copied 2 lines\"."
       (should (equal shown "Discarded 2 banked lines"))
       (should-not (donkey--banked-selection-p)))))
 
+(ert-deftest donkey-banked-overlay-collapsed-by-editing-is-pruned ()
+  "Deleting a banked line's text drops the bank instead of leaving a ghost.
+
+Regression: the overlay collapsed to zero width, which highlights
+nothing, but still counted as a live bank."
+  (with-temp-buffer
+    (insert "one\ntwo\nthree\n")
+    (goto-char (point-min))
+    (forward-line 1)
+    (donkey-bank-selection)
+    (should (donkey--banked-selection-p))
+    (goto-char (point-min))
+    (forward-line 1)
+    (delete-region (line-beginning-position) (line-beginning-position 2))
+    (should-not (donkey--banked-selection-p))
+    (should (= 0 (donkey--banked-line-count)))
+    (should-not donkey--banked-overlays)))
+
+(ert-deftest donkey-copy-after-collapsed-bank-does-not-clobber-kill-ring ()
+  "A ghost bank must not turn `y' into a silent empty kill.
+
+Regression: `donkey--banked-selection-p' stayed true for a zero-width
+overlay, so `donkey-copy' took the banked branch, reported \"Copied 0
+lines\" and pushed \"\" over whatever was previously copied -- the same
+empty-kill failure already guarded against at `point-max'."
+  (let ((kill-ring (list "IMPORTANT")) kill-ring-yank-pointer)
+    (with-temp-buffer
+      (insert "one\ntwo\nthree\n")
+      (goto-char (point-min))
+      (forward-line 1)
+      (donkey-bank-selection)
+      (goto-char (point-min))
+      (forward-line 1)
+      (delete-region (line-beginning-position) (line-beginning-position 2))
+      (goto-char (point-min))
+      (donkey-copy)
+      ;; Falls through to the character at point, as with no bank at all.
+      (should (equal (current-kill 0) "o")))))
+
+(ert-deftest donkey-collapsed-bank-does-not-block-banking-that-line-again ()
+  "A ghost bank must not make its line permanently un-bankable.
+
+Regression: `donkey--banked-overlay-at' requires POS strictly inside
+the overlay, which no position ever is for an empty range -- so the
+ghost could neither be toggled off nor banked over."
+  (with-temp-buffer
+    (insert "one\ntwo\nthree\n")
+    (goto-char (point-min))
+    (forward-line 1)
+    (donkey-bank-selection)
+    (goto-char (point-min))
+    (forward-line 1)
+    (delete-region (line-beginning-position) (line-beginning-position 2))
+    (goto-char (point-min))
+    (donkey-bank-selection)
+    (should (= 1 (donkey--banked-line-count)))
+    (should (equal (donkey--banked-spans) (list (cons 1 5))))))
+
+(ert-deftest donkey-mode-disable-clears-banked-lines ()
+  "Turning off variable `donkey-mode' clears banked highlights.
+
+Regression: they survived, and the only command that removes them is
+reachable solely through a Normal-state key that no longer exists once
+the mode is off -- so the highlights were permanent."
+  (with-temp-buffer
+    (insert "a\nb\nc\n")
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (goto-char (point-min))
+          (donkey-bank-selection)
+          (should (= 1 (donkey--banked-line-count)))
+          (donkey-mode -1)
+          (should (= 0 (donkey--banked-line-count)))
+          (should-not donkey--banked-overlays))
+      (when (bound-and-true-p donkey-mode)
+        (donkey-mode -1)))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here
