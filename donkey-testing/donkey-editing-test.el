@@ -1328,6 +1328,100 @@ left open rather than being cleaned up by `org-edit-src-exit'."
     (should (memq 'org-edit call-order))
     (should (memq 'org-exit call-order))))
 
+;;; ---------------------------------------------------------------------------
+;;; donkey-comment-dwim: REAL org-src round trips (no mocking)
+;;; ---------------------------------------------------------------------------
+;;;
+;;; Every other org-src test above fully mocks `org-edit-special'/
+;;; `org-edit-src-exit'/`comment-or-uncomment-region', so none of them
+;;; exercise the actual org-buffer-line -> edit-buffer-line arithmetic that
+;;; `donkey-comment-dwim' performs between those calls.  These drive the real
+;;; Org machinery instead, which is how the region-clamping bug below was
+;;; found (live in `emacs -nw', then reproduced here).
+
+(ert-deftest donkey-comment-dwim-real-org-src-region-inside-block ()
+  "A region wholly inside a src block comments exactly its own lines."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (org-mode)
+      (insert "Intro.\n\n#+begin_src python\nline_a\nline_b\nline_c\n#+end_src\n")
+      (goto-char (point-min))
+      (search-forward "line_a")
+      (goto-char (line-beginning-position))
+      (push-mark (point) t t)
+      (search-forward "line_b")
+      (donkey-comment-dwim)
+      (should (string= (buffer-string)
+                       (concat "Intro.\n\n#+begin_src python\n"
+                               "  # line_a\n  # line_b\n  line_c\n"
+                               "#+end_src\n"))))))
+
+(ert-deftest donkey-comment-dwim-real-org-src-region-overflows-block-start ()
+  "Regression test: a region starting OUTSIDE the src block (in ordinary
+Org prose above it) and ending inside must comment only the in-block
+part of the selection.
+
+`donkey-comment-dwim' maps org-buffer line numbers into the temporary
+`org-edit-special' buffer by a fixed offset, but the region can extend
+past either end of the block, putting the mapped start line outside the
+edit buffer entirely.  `forward-line' silently clamps such
+out-of-range motions -- but only AFTER the range's width was already
+computed from the unclamped numbers, so the whole range slid downward
+and commented the wrong lines.  Confirmed live in `emacs -nw':
+selecting from \"Intro.\" down through `line_b' commented all THREE
+block lines, including `line_c' which was never in the selection, while
+leaving `line_a'..`line_b' correct only by coincidence of the shift."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (org-mode)
+      (insert "Intro.\n\n#+begin_src python\nline_a\nline_b\nline_c\n#+end_src\n")
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (search-forward "line_b")
+      (donkey-comment-dwim)
+      (should (string= (buffer-string)
+                       (concat "Intro.\n\n#+begin_src python\n"
+                               "  # line_a\n  # line_b\n  line_c\n"
+                               "#+end_src\n"))))))
+
+(ert-deftest donkey-comment-dwim-real-org-src-region-overflows-block-end ()
+  "Mirror of the previous test: a region running PAST the block's end
+clamps at its last line instead of commenting outside it.
+
+Point (not mark) must be the in-block end of the region here: the
+org-src path is chosen by `donkey--in-org-src-block-p', which tests
+point, so a region whose point end sits outside the block takes the
+ordinary non-org branch instead and is not this code path at all."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (org-mode)
+      (insert "#+begin_src python\nline_a\nline_b\nline_c\n#+end_src\n\nOutro.\n")
+      (let ((line-b-start (progn (goto-char (point-min))
+                                 (search-forward "line_b")
+                                 (line-beginning-position))))
+        (goto-char (point-max))
+        (push-mark (point) t t)
+        (goto-char line-b-start))
+      (donkey-comment-dwim)
+      (should (string= (buffer-string)
+                       (concat "#+begin_src python\n"
+                               "  line_a\n  # line_b\n  # line_c\n"
+                               "#+end_src\n\nOutro.\n"))))))
+
+(ert-deftest donkey-comment-dwim-real-org-src-no-region-single-line ()
+  "With no region, only the line point is on gets commented, and the
+surrounding block lines are untouched."
+  (with-temp-buffer
+    (org-mode)
+    (insert "#+begin_src python\nline_a\nline_b\nline_c\n#+end_src\n")
+    (goto-char (point-min))
+    (search-forward "line_b")
+    (donkey-comment-dwim)
+    (should (string= (buffer-string)
+                     (concat "#+begin_src python\n"
+                             "  line_a\n  # line_b\n  line_c\n"
+                             "#+end_src\n")))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here

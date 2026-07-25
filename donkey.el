@@ -600,8 +600,27 @@ then returns to the Org buffer."
                 (if has-region
                     (let* ((cur-line-in-edit (line-number-at-pos))
                            (diff (- cur-line-in-edit cur-line))
-                           (edit-beg-line (+ reg-beg-line diff))
-                           (edit-end-line (+ reg-end-line diff)))
+                           (last-line (line-number-at-pos (point-max)))
+                           ;; Clamp to the edit buffer's own line range: the
+                           ;; region may extend past either end of the src
+                           ;; block (e.g. selected from ordinary Org prose
+                           ;; above it down into the block), and only the
+                           ;; part actually inside the block exists here to
+                           ;; comment.  Without clamping, `forward-line'
+                           ;; silently clamps the out-of-range motions
+                           ;; itself, but does so AFTER the range's width
+                           ;; has already been computed from the unclamped
+                           ;; numbers -- shifting the whole range downward
+                           ;; and commenting the wrong lines.  Confirmed
+                           ;; live: selecting Org text above a block through
+                           ;; the block's second line commented all three of
+                           ;; its lines, including one entirely outside the
+                           ;; selection.  Point is always inside the block
+                           ;; here (`donkey--in-org-src-block-p' passed) and
+                           ;; is one end of the region, so the clamped range
+                           ;; is always non-empty.
+                           (edit-beg-line (max 1 (+ reg-beg-line diff)))
+                           (edit-end-line (min last-line (+ reg-end-line diff))))
                       (save-excursion
                         (goto-char (point-min))
                         (forward-line (1- edit-beg-line))
