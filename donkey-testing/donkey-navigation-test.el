@@ -509,6 +509,86 @@ instead of just going to a line. Now rounded to the nearest whole line."
       (should (= (mark) (donkey--bol 1)))
       (should (= (point) (donkey--eol 1))))))
 
+(ert-deftest donkey-visual-line-toggle-message-names-the-real-extend-keys ()
+  "Regression test: the start-of-session message must distinguish the
+whole-line extend keys from the character-wise ones.
+
+It used to say only \"j/k to extend\", but lowercase `j'/`k' are bound
+to plain `next-line'/`previous-line': they move point without
+re-anchoring, so the selection stops mid-line at whatever column point
+lands on rather than covering whole lines.  Confirmed live in `emacs
+-nw' on \"ab\\nlonger line here\": `V' then `j' selected \"ab\\nlo\",
+while `V' then `J' correctly selected \"ab\\nlonger line here\".  Both
+are legitimate -- the message just has to say which does which."
+  (let (shown)
+    (with-temp-buffer
+      (insert "hello world\n")
+      (goto-char 3)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (let ((donkey-visual-anchor nil))
+          (donkey-visual-line-toggle))))
+    ;; `case-fold-search' must be nil here: with the default t, "j/k"
+    ;; matches "J/K" and these assertions cannot tell them apart.
+    (let ((case-fold-search nil))
+      (should (string-match-p "J/K" shown))
+      (should (string-match-p "j/k" shown)))
+    ;; The named keys must really be what the message claims.
+    (should (eq (lookup-key donkey-normal-mode-map "J") #'donkey-visual-next-line))
+    (should (eq (lookup-key donkey-normal-mode-map "K") #'donkey-visual-previous-line))
+    (should (eq (lookup-key donkey-normal-mode-map "j") #'next-line))
+    (should (eq (lookup-key donkey-normal-mode-map "k") #'previous-line))))
+
+(ert-deftest donkey-visual-line-session-survives-character-wise-motion ()
+  "Regression test: `j'/`k' (plain `next-line'/`previous-line') must not
+end a visual-line session -- a following `J'/`K' has to still
+recognize it and re-anchor to whole lines.
+
+The session check used to key off `last-command' being one of the
+visual-line commands, so any intervening `j' broke the chain and the
+next `J' fell through to a plain `forward-line', silently losing the
+whole-line anchoring for the rest of the session.  It now checks that
+the mark still sits where a visual-line command left it (at the anchor,
+or at the anchor line's end), which `j'/`k' never disturb since they
+only move point."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "ab\nlonger line here\nxyz\n")
+      (goto-char (point-min))
+      (donkey-visual-line-toggle)
+      (should (donkey--visual-line-session-active-p))
+      ;; Character-wise motion: point moves, mark stays at the anchor.
+      (let ((last-command 'donkey-visual-line-toggle))
+        (next-line 1))
+      (setq last-command 'next-line)
+      (should (donkey--visual-line-session-active-p))
+      ;; A following J must extend to WHOLE lines from the same anchor.
+      (donkey-visual-next-line)
+      (should (string= (buffer-substring-no-properties
+                        (region-beginning) (region-end))
+                       "ab\nlonger line here\nxyz")))))
+
+(ert-deftest donkey-visual-line-session-still-rejects-stale-anchor ()
+  "The relaxed session check must still ignore an anchor left over from
+an earlier session once an unrelated command has moved the mark.
+
+This is the case `donkey--visual-line-session-active-p' exists for: a
+mark command run while a region is already active never triggers
+`deactivate-mark-hook', so the old anchor is never cleared.  Such
+commands do move the mark somewhere unrelated to the old anchor's
+line, which is exactly what the check keys off now."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "one\ntwo\nthree\nfour\n")
+      (goto-char (point-min))
+      (donkey-visual-line-toggle)
+      (should (donkey--visual-line-session-active-p))
+      ;; Simulate an unrelated mark command repositioning the region
+      ;; without ever deactivating it, leaving the anchor stale.
+      (goto-char (point-max))
+      (push-mark (- (point-max) 5) t t)
+      (should-not (donkey--visual-line-session-active-p)))))
+
 (ert-deftest donkey-visual-line-toggle-cancels-active-region ()
   "With a genuinely active visual-line session, deactivates the mark
 and clears the anchor."
