@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Tests (Emacs ${{ matrix.emacs_version }})
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs_version: ['29.1', '30.1']
+        experimental: [false]
+        include:
+          # Early warning for changes landing in Emacs itself.  Allowed to
+          # fail so a regression upstream does not block this repository.
+          - emacs_version: snapshot
+            experimental: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs_version }}
+
+      - name: Show Emacs version
+        run: emacs --version
+
+      # Deliberately kept in its own job, with nothing compiled first.
+      # `-L .` loads donkey.elc in preference to donkey.el when one exists,
+      # and byte-code open-codes `delete-region', `forward-char' and
+      # `forward-line', which defeats the `cl-letf' mocks several tests use
+      # to assert those were called.  Compiling in this job would make those
+      # tests fail for reasons that have nothing to do with the change under
+      # test.
+      - name: Run ERT suite
+        run: |
+          set -euo pipefail
+          test_args=""
+          for f in donkey-testing/*-test.el; do
+            test_args="$test_args -l $f"
+          done
+          # shellcheck disable=SC2086
+          emacs -Q --batch -L . -L donkey-testing $test_args \
+            -f ert-run-tests-batch-and-exit
+
+  lint:
+    name: Byte-compile, checkdoc, package-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+
+      # Warnings are errors for the package file.  The test files are not
+      # compiled: they carry deliberate unused lambda arguments (mock
+      # signatures that must match the real command) and references to
+      # optional third-party symbols such as `smartparens-mode-map', which
+      # are warnings by nature rather than defects.
+      - name: Byte-compile (warnings are errors)
+        run: |
+          set -euo pipefail
+          emacs -Q --batch \
+            --eval '(setq byte-compile-error-on-warn t)' \
+            -f batch-byte-compile donkey.el
+
+      # `checkdoc-file' reports by printing; it neither signals nor sets a
+      # non-zero exit status, so any output at all has to be treated as the
+      # failure signal.
+      - name: Checkdoc
+        run: |
+          set -euo pipefail
+          output=$(emacs -Q --batch \
+            --eval "(progn (require 'checkdoc) (checkdoc-file \"donkey.el\"))" 2>&1)
+          if [ -n "$output" ]; then
+            echo "$output"
+            echo "::error::checkdoc reported issues"
+            exit 1
+          fi
+          echo "checkdoc clean"
+
+      - name: Install package-lint
+        run: |
+          set -euo pipefail
+          emacs -Q --batch --eval "(progn \
+            (require 'package) \
+            (add-to-list 'package-archives \
+                         '(\"melpa\" . \"https://melpa.org/packages/\") t) \
+            (package-initialize) \
+            (package-refresh-contents) \
+            (package-install 'package-lint))"
+
+      - name: package-lint
+        run: |
+          set -euo pipefail
+          emacs -Q --batch \
+            --eval "(package-initialize)" \
+            -l package-lint \
+            -f package-lint-batch-and-exit donkey.el

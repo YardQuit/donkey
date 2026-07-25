@@ -18,6 +18,7 @@
 - [[*Org-Scratch Buffer][Org-Scratch Buffer]]
 - [[*Describe Bindings][Describe Bindings]]
 - [[*Customization Group][Customization Group]]
+- [[*Development][Development]]
 
 * Overview
 
@@ -859,3 +860,49 @@ All DONKEY variables are under the =donkey= Customize group:
 | =donkey-decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
 | =donkey-wrap-delimiters=             | list    | =( [ { " ' `=      | Delimiters that wrap an active region  |
 | =donkey-mark-pair-delimiters=        | alist   | =(see above)=      | Delimiter pairs for mark-inner/outer   |
+
+* Development
+
+** Running the checks locally
+
+CI runs on every push to =master= and on every pull request (see
+=.github/workflows/ci.yml=). The same four checks can be run by hand:
+
+#+begin_src sh
+
+  # Full ERT suite
+  emacs -Q --batch -L . -L donkey-testing \
+        $(for f in donkey-testing/*-test.el; do printf ' -l %s' "$f"; done) \
+        -f ert-run-tests-batch-and-exit
+
+  # Byte-compile the package, warnings treated as errors
+  emacs -Q --batch --eval '(setq byte-compile-error-on-warn t)' \
+        -f batch-byte-compile donkey.el
+
+  # Documentation conventions
+  emacs -Q --batch --eval "(progn (require 'checkdoc) (checkdoc-file \"donkey.el\"))"
+
+  # MELPA packaging conventions (requires package-lint from MELPA)
+  emacs -Q --batch --eval "(package-initialize)" \
+        -l package-lint -f package-lint-batch-and-exit donkey.el
+
+#+end_src
+
+*Delete =donkey.elc= before running the test suite.* With a compiled
+file present, =-L .= loads it in preference to the source, and byte-code
+open-codes =delete-region=, =forward-char= and =forward-line= — which
+defeats the =cl-letf= mocks several tests use to assert those were
+called. Seven tests fail for reasons unrelated to any real change. CI
+avoids this by keeping compilation in a separate job from the tests.
+
+The test files themselves are deliberately not byte-compiled under
+=byte-compile-error-on-warn=: they carry unused lambda arguments (mock
+signatures that have to match the real command) and references to
+optional third-party symbols such as =smartparens-mode-map=.
+
+** Emacs versions
+
+The suite runs against Emacs 29.1 — the version declared in
+=Package-Requires= — and 30.1. A =snapshot= build also runs as an early
+warning for changes landing in Emacs itself; it is allowed to fail
+without blocking the repository.
