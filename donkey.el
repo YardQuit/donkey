@@ -1121,7 +1121,17 @@ With an ordinary active region, enters Insert state without
 deactivating the mark, inserts the pressed character via
 `self-insert-command' -- letting packages that hook it, such as
 Smartparens' region-wrap, act on the still-active region -- then
-returns to Normal state."
+returns to Normal state.
+
+That return is in an `unwind-protect' because this is the one command
+that enters Insert state BEFORE doing its real work, rather than as
+the last step: if `self-insert-command' signals, the state transition
+back would otherwise be skipped and leave the buffer stuck in Insert.
+A read-only buffer does exactly that -- confirmed live: with a region
+active in a read-only buffer, pressing a wrap delimiter reported
+\"Buffer is read-only\" and silently left the modeline on DONKEY[I],
+from a key pressed in Normal state.  The error still propagates after
+the cleanup runs, so the user sees it and lands back in Normal."
   (interactive)
   (cond
    ((not (use-region-p))
@@ -1130,8 +1140,9 @@ returns to Normal state."
     (donkey--wrap-rectangle-region last-command-event))
    (t
     (donkey-insert-mode 1)
-    (self-insert-command 1)
-    (donkey--exit-insert))))
+    (unwind-protect
+        (self-insert-command 1)
+      (donkey--exit-insert)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mark and Text Object Selection Commands
