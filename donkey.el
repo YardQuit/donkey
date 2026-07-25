@@ -1911,9 +1911,13 @@ needed: `donkey-copy' and `donkey-delete' then act on all banked lines
 at once, plus whatever region happens to be active at the time, so the
 final piece never has to be banked explicitly.
 
-With no region active, this toggles: point on an already-banked line
-unbanks that line, which is how to drop one you added by mistake
-without starting over.
+This toggles, with or without a region.  With no region, point on an
+already-banked line unbanks that line.  With a region whose lines are
+ALL already banked, the whole block is unbanked in one press -- which
+is how to take back a multi-line bank without either walking it line
+by line or clearing every other bank too.  A region covering a only
+partly-banked block banks the rest instead, so a block only ever
+toggles off once it is uniformly on; press again to then clear it.
 
 Banked lines are discarded automatically once `donkey-copy' or
 `donkey-delete' consumes them; `donkey-clear-banked-selection'
@@ -1921,13 +1925,18 @@ discards them without doing anything else."
   (interactive)
   (if (use-region-p)
       (let* ((span (donkey--whole-line-span (region-beginning) (region-end)))
-             (lines (count-lines (car span) (cdr span))))
-        (donkey--bank-span (car span) (cdr span))
+             (lines (count-lines (car span) (cdr span)))
+             (unbanking (donkey--span-lines-banked-p (car span) (cdr span))))
+        (if unbanking
+            (donkey--unbank-span (car span) (cdr span))
+          (donkey--bank-span (car span) (cdr span)))
         (deactivate-mark)
-        (message "Banked %d line%s (%d total) -- navigate, then y/d"
+        (message "%s %d line%s (%d total)%s"
+                 (if unbanking "Unbanked" "Banked")
                  lines
                  (if (= 1 lines) "" "s")
-                 (donkey--banked-line-count)))
+                 (donkey--banked-line-count)
+                 (if unbanking "" " -- navigate, then y/d")))
     (let ((existing (donkey--banked-overlay-at (point))))
       (if existing
           (progn
@@ -1949,6 +1958,45 @@ discards them without doing anything else."
                    (< pos (overlay-end ov))))
             donkey--banked-overlays))
 
+(defun donkey--map-line-spans (beg end fn)
+  "Call FN once per whole line between BEG and END, with that line's span.
+
+FN receives a (START . END) cons.  Walking line by line, rather than
+treating BEG..END as one range, is what keeps banking per-line
+throughout -- see `donkey--bank-span' for why that matters."
+  (declare (indent 2))
+  (save-excursion
+    (goto-char beg)
+    (while (< (point) end)
+      (let ((line-span (donkey--whole-line-span (point) (point))))
+        (funcall fn line-span)
+        (goto-char (cdr line-span))))))
+
+(defun donkey--span-lines-banked-p (beg end)
+  "Return non-nil if EVERY whole line in BEG..END is already banked.
+
+Used by `donkey-bank-selection' to decide whether a region press banks
+or unbanks.  Requiring ALL of them, rather than any, is what makes a
+press over a partly-banked block complete it instead of clearing it:
+the block only toggles off once it is uniformly on, the same rule the
+single-line toggle follows."
+  (let ((all t))
+    (donkey--map-line-spans beg end
+      (lambda (span)
+        (unless (donkey--banked-overlay-at (car span))
+          (setq all nil))))
+    all))
+
+(defun donkey--unbank-span (beg end)
+  "Unbank every whole line in BEG..END that is currently banked."
+  (donkey--map-line-spans beg end
+    (lambda (span)
+      (let ((ov (donkey--banked-overlay-at (car span))))
+        (when ov
+          (delete-overlay ov)
+          (setq donkey--banked-overlays
+                (delq ov donkey--banked-overlays)))))))
+
 (defun donkey--bank-span (beg end)
   "Bank every whole line in BEG..END that is not already banked.
 
@@ -1963,17 +2011,14 @@ Nothing is lost by keeping them separate: `donkey--effective-line-spans'
 merges adjacent spans at use time, so a contiguous run is still copied
 and deleted as one piece, and identically-faced adjacent overlays are
 indistinguishable on screen."
-  (save-excursion
-    (goto-char beg)
-    (while (< (point) end)
-      (let ((line-span (donkey--whole-line-span (point) (point))))
-        (unless (donkey--banked-overlay-at (car line-span))
-          (let ((ov (make-overlay (car line-span) (cdr line-span) nil nil t)))
-            (overlay-put ov 'face 'donkey-banked-selection)
-            (overlay-put ov 'donkey-banked t)
-            (overlay-put ov 'priority -50)
-            (push ov donkey--banked-overlays)))
-        (goto-char (cdr line-span))))))
+  (donkey--map-line-spans beg end
+    (lambda (line-span)
+      (unless (donkey--banked-overlay-at (car line-span))
+        (let ((ov (make-overlay (car line-span) (cdr line-span) nil nil t)))
+          (overlay-put ov 'face 'donkey-banked-selection)
+          (overlay-put ov 'donkey-banked t)
+          (overlay-put ov 'priority -50)
+          (push ov donkey--banked-overlays))))))
 
 (defun donkey--banked-line-count ()
   "Return how many lines are currently banked.

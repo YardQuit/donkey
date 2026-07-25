@@ -275,9 +275,17 @@ The live region counts too, so the final piece never has to be banked
 explicitly — in the example above, line 8 is included by =y= without a
 third =m SPC=.
 
-With no region active, =m SPC= banks just the current line, and
-pressing it again on an already-banked line *unbanks* that line — the
-quickest way to drop one you added by mistake.
+=m SPC= toggles, with or without a region:
+
+- *No region* — banks the current line; pressing it again on an
+  already-banked line *unbanks* that line.
+- *Region over an already-banked block* — unbanks the whole block in
+  one press, leaving every other bank untouched. This is how to take
+  back a multi-line bank without walking it line by line or clearing
+  everything.
+- *Region over a partly-banked block* — banks the rest of it. A block
+  only toggles off once it is uniformly on, so press again to then
+  clear it.
 
 Banked lines are consumed by =y= or =d=. To discard them all without
 doing anything else, use =m DEL= — that is =m= followed by *Backspace*,

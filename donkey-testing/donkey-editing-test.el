@@ -1749,6 +1749,83 @@ in a terminal or `<delete>' on a graphical frame.  Regression: only
     (should (eq (keymap-lookup donkey-normal-mode-map key)
                 #'donkey-clear-banked-selection))))
 
+(ert-deftest donkey-bank-selection-region-over-banked-block-unbanks-it ()
+  "Re-selecting an already-banked block unbanks the whole block.
+
+Previously a region press could only ever ADD: `donkey--bank-span'
+skips lines that are already banked, so taking back a multi-line bank
+meant toggling each line individually or clearing every bank."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (donkey--test-lines-buffer 5)
+      (push-mark (point) t t)
+      (forward-line 3)
+      (donkey-bank-selection)
+      (should (= 3 (donkey--banked-line-count)))
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 3)
+      (donkey-bank-selection)
+      (should (= 0 (donkey--banked-line-count)))
+      (should-not donkey--banked-overlays))))
+
+(ert-deftest donkey-bank-selection-unbanking-a-block-keeps-other-banks ()
+  "Unbanking a block leaves banks outside it alone."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (donkey--test-lines-buffer 6)
+      (forward-line 5)
+      (donkey-bank-selection)
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 3)
+      (donkey-bank-selection)
+      (should (= 4 (donkey--banked-line-count)))
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 3)
+      (donkey-bank-selection)
+      (should (= 1 (donkey--banked-line-count)))
+      ;; The survivor is the last line, banked separately.
+      (should (equal (donkey--banked-spans)
+                     (list (cons (save-excursion (goto-char (point-min))
+                                                 (forward-line 5)
+                                                 (point))
+                                 (point-max))))))))
+
+(ert-deftest donkey-bank-selection-region-over-partial-block-completes-it ()
+  "A region over a partly-banked block banks the rest instead of clearing.
+
+A block only toggles off once it is uniformly on, matching the
+single-line toggle's rule."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (donkey--test-lines-buffer 4)
+      (forward-line 1)
+      (donkey-bank-selection)
+      (should (= 1 (donkey--banked-line-count)))
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 3)
+      (donkey-bank-selection)
+      (should (= 3 (donkey--banked-line-count))))))
+
+(ert-deftest donkey-bank-selection-region-unbank-reports-unbanked ()
+  "Unbanking a block says so, rather than reporting it as banked."
+  (let ((transient-mark-mode t) shown)
+    (with-temp-buffer
+      (donkey--test-lines-buffer 4)
+      (push-mark (point) t t)
+      (forward-line 2)
+      (donkey-bank-selection)
+      (goto-char (point-min))
+      (push-mark (point) t t)
+      (forward-line 2)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-bank-selection))
+      (should (equal shown "Unbanked 2 lines (0 total)")))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here
