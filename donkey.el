@@ -2364,7 +2364,7 @@ documentation."
 
 Minimal keymap: all keys fall through to the major mode and global map,
 providing unmodified Emacs behavior.  The `C-g' key runs the command
-`\donkey--exit-insert' to return to Normal state.")
+`donkey--exit-insert' to return to Normal state.")
 
 (when (null donkey-insert-mode-map)
   (setq donkey-insert-mode-map (make-sparse-keymap)))
