@@ -50,18 +50,51 @@ the cursor."
         (donkey-copy))
       (should (equal copied-bounds '(20 21))))))
 
-(ert-deftest donkey-copy-no-region-at-end-of-buffer-no-error ()
-  "At point-max with no region, there is nothing to copy but this must
-not error -- the range clamps to an empty span instead of extending
-past the end of the buffer."
-  (let (copied-bounds)
+(ert-deftest donkey-copy-no-region-at-end-of-buffer-copies-nothing ()
+  "Regression test: at `point-max' with no region there is no character
+to copy, so the `kill-ring' must be left alone entirely.
+
+Copying the empty range there instead (the original behavior) silently
+pushed an empty string, displacing whatever was previously copied as
+the entry a following \"p\" pastes -- so one stray \"y\" past the last
+character made the next paste insert nothing, with no error to explain
+it.  Confirmed live in `emacs -nw': with \"IMPORTANT\" freshly copied,
+pressing \"y\" at `point-max' left the newest kill-ring entry as \"\".
+
+Must still not signal: erroring on a stray copy would be its own
+annoyance, so this reports via `message' instead."
+  (let (kill-ring-save-called)
     (with-temp-buffer
       (insert "hello")
       (goto-char (point-max))
       (cl-letf (((symbol-function 'kill-ring-save)
-                 (lambda (beg end) (setq copied-bounds (list beg end)))))
+                 (lambda (&rest _) (setq kill-ring-save-called t))))
         (donkey-copy))
-      (should (equal copied-bounds (list (point-max) (point-max)))))))
+      (should-not kill-ring-save-called))))
+
+(ert-deftest donkey-copy-no-region-at-end-of-buffer-preserves-kill-ring ()
+  "End to end: a previously copied entry survives a stray `y' at
+`point-max', so a following paste still yields that entry."
+  (let ((kill-ring nil)
+        (kill-ring-yank-pointer nil))
+    (kill-new "IMPORTANT")
+    (with-temp-buffer
+      (insert "hello")
+      (goto-char (point-max))
+      (donkey-copy)
+      (should (equal (car kill-ring) "IMPORTANT"))
+      (should (= (length kill-ring) 1)))))
+
+(ert-deftest donkey-copy-no-region-before-end-still-copies-char ()
+  "The end-of-buffer guard must not suppress the ordinary case: with a
+character present at point, `y' still copies exactly that character."
+  (let ((kill-ring nil)
+        (kill-ring-yank-pointer nil))
+    (with-temp-buffer
+      (insert "hello")
+      (goto-char (point-min))
+      (donkey-copy)
+      (should (equal (car kill-ring) "h")))))
 
 (ert-deftest donkey-copy-region-copies-region ()
   "With an active region (not rectangle), copies from region-beginning
