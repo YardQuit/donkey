@@ -1917,6 +1917,44 @@ it off."
   (should (eq (keymap-lookup donkey-normal-mode-map "m U")
               #'donkey-unbank-section)))
 
+(ert-deftest donkey-bank-selection-bound-to-m-l ()
+  "Banking is reached with `m l', and `m SPC' no longer shadows it.
+
+`l' alone stays `forward-char'; `m l' is a separate sequence under the
+mark prefix."
+  (should (eq (keymap-lookup donkey-normal-mode-map "m l")
+              #'donkey-bank-selection))
+  (should-not (keymap-lookup donkey-normal-mode-map "m SPC"))
+  (should (eq (keymap-lookup donkey-normal-mode-map "l")
+              #'forward-char)))
+
+(ert-deftest donkey-docstrings-contain-no-control-characters ()
+  "No Donkey docstring contains a stray control character.
+
+Regression: `donkey-insert-mode-map' was written as
+\"`\\donkey--exit-insert'\", and `\\d' is the Emacs Lisp string escape
+for DEL -- so the backslash silently ate the \"d\" and the docstring
+rendered as \"`^?onkey--exit-insert'\", a symbol reference that could
+never resolve.
+
+Caught by the byte-compiler only on Emacs 30.1, which added the check;
+Emacs 29 compiles it without complaint, so this test is what keeps the
+package's declared minimum honest."
+  (let (offenders)
+    (mapatoms
+     (lambda (sym)
+       (when (string-prefix-p "donkey" (symbol-name sym))
+         (dolist (doc (list (and (fboundp sym) (documentation sym))
+                            (get sym 'variable-documentation)))
+           (when (stringp doc)
+             (dotimes (i (length doc))
+               (let ((c (aref doc i)))
+                 (when (or (= c 127)
+                           (and (< c 32) (/= c ?\n) (/= c ?\t)))
+                   (push (format "%s: #x%x at %d" (symbol-name sym) c i)
+                         offenders)))))))))
+    (should-not offenders)))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here

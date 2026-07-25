@@ -18,6 +18,7 @@
 - [[*Org-Scratch Buffer][Org-Scratch Buffer]]
 - [[*Describe Bindings][Describe Bindings]]
 - [[*Customization Group][Customization Group]]
+- [[*Development][Development]]
 
 * Overview
 
@@ -209,7 +210,7 @@ next navigation keypress self-insert.
 | =m I= | =donkey-mark-sexp-inner=     | Mark inside balanced expression      |
 | =m A= | =donkey-mark-sexp-outer=     | Mark including balanced expression   |
 | =m v= | =donkey-rectangle-mark-mode= | Toggle rectangle mark mode           |
-| =m SPC= | =donkey-bank-selection=      | Bank lines, keep navigating          |
+| =m l=   | =donkey-bank-selection=      | Bank lines, keep navigating          |
 | =m u=   | =donkey-unbank-line=         | Unbank the line at point             |
 | =m U=   | =donkey-unbank-section=      | Unbank the whole run at point        |
 | =m DEL= | =donkey-clear-banked-selection= | Discard all banked lines (Backspace or Delete) |
@@ -252,7 +253,7 @@ the buffer as a side effect of the failed search.
 ** Banking Lines (Non-Contiguous Selection)
 
 Emacs has a single region, so you normally can't select line 3, skip a
-few, and add line 9 to the same selection. =m SPC= works around that:
+few, and add line 9 to the same selection. =m l= works around that:
 it *banks* the lines you have selected right now, highlights them with
 the =donkey-banked-selection= face, and releases the mark so you can
 carry on navigating and selecting freely.
@@ -263,10 +264,10 @@ banked line at once:
 #+begin_example
 
   V J          select lines 0-1
-  m SPC        bank them, mark released
+  m l          bank them, mark released
   j j j        navigate past lines you want to skip
   V J          select lines 4-5
-  m SPC        bank those too
+  m l          bank those too
   j j j        navigate on
   V            select line 8
   y            copies lines 0,1,4,5,8 as one kill
@@ -275,9 +276,9 @@ banked line at once:
 
 The live region counts too, so the final piece never has to be banked
 explicitly — in the example above, line 8 is included by =y= without a
-third =m SPC=.
+third =m l=.
 
-=m SPC= toggles, with or without a region:
+=m l= toggles, with or without a region:
 
 - *No region* — banks the current line; pressing it again on an
   already-banked line *unbanks* that line.
@@ -859,3 +860,49 @@ All DONKEY variables are under the =donkey= Customize group:
 | =donkey-decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
 | =donkey-wrap-delimiters=             | list    | =( [ { " ' `=      | Delimiters that wrap an active region  |
 | =donkey-mark-pair-delimiters=        | alist   | =(see above)=      | Delimiter pairs for mark-inner/outer   |
+
+* Development
+
+** Running the checks locally
+
+CI runs on every push to =master= and on every pull request (see
+=.github/workflows/ci.yml=). The same four checks can be run by hand:
+
+#+begin_src sh
+
+  # Full ERT suite
+  emacs -Q --batch -L . -L donkey-testing \
+        $(for f in donkey-testing/*-test.el; do printf ' -l %s' "$f"; done) \
+        -f ert-run-tests-batch-and-exit
+
+  # Byte-compile the package, warnings treated as errors
+  emacs -Q --batch --eval '(setq byte-compile-error-on-warn t)' \
+        -f batch-byte-compile donkey.el
+
+  # Documentation conventions
+  emacs -Q --batch --eval "(progn (require 'checkdoc) (checkdoc-file \"donkey.el\"))"
+
+  # MELPA packaging conventions (requires package-lint from MELPA)
+  emacs -Q --batch --eval "(package-initialize)" \
+        -l package-lint -f package-lint-batch-and-exit donkey.el
+
+#+end_src
+
+*Delete =donkey.elc= before running the test suite.* With a compiled
+file present, =-L .= loads it in preference to the source, and byte-code
+open-codes =delete-region=, =forward-char= and =forward-line= — which
+defeats the =cl-letf= mocks several tests use to assert those were
+called. Seven tests fail for reasons unrelated to any real change. CI
+avoids this by keeping compilation in a separate job from the tests.
+
+The test files themselves are deliberately not byte-compiled under
+=byte-compile-error-on-warn=: they carry unused lambda arguments (mock
+signatures that have to match the real command) and references to
+optional third-party symbols such as =smartparens-mode-map=.
+
+** Emacs versions
+
+The suite runs against Emacs 29.1 — the version declared in
+=Package-Requires= — and 30.1. A =snapshot= build also runs as an early
+warning for changes landing in Emacs itself; it is allowed to fail
+without blocking the repository.
