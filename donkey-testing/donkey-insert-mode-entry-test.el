@@ -1219,6 +1219,34 @@ character lands in the buffer at point, same as ordinary self-insert."
       (should (bound-and-true-p donkey-normal-mode))
       (should-not (bound-and-true-p donkey-insert-mode)))))
 
+(ert-deftest donkey-wrap-region-returns-to-normal-when-insertion-errors ()
+  "Regression test: DONKEY must end up back in Normal state even when the
+insertion itself signals.
+
+`donkey-wrap-region' is the one command that enters Insert state
+BEFORE doing its real work rather than as the last step, so an error
+from `self-insert-command' used to skip the transition back and strand
+the buffer in Insert -- from a key the user pressed in Normal state.
+Confirmed live in `emacs -nw': with a region active in a read-only
+buffer, pressing a wrap delimiter reported \"Buffer is read-only\" and
+silently left the modeline on DONKEY[I].
+
+The error must still reach the user; only the state cleanup is
+guaranteed."
+  (with-temp-buffer
+    (donkey-normal-mode 1)
+    (let ((transient-mark-mode t)
+          (donkey-mode t))
+      (insert "hello")
+      (goto-char 1)
+      (push-mark (point) t t)
+      (goto-char 3)
+      (setq buffer-read-only t)
+      (let ((last-command-event ?\())
+        (should-error (donkey-wrap-region) :type 'buffer-read-only))
+      (should (bound-and-true-p donkey-normal-mode))
+      (should-not (bound-and-true-p donkey-insert-mode)))))
+
 (ert-deftest donkey-wrap-region-bound-for-each-default-delimiter ()
   "Each default `donkey-wrap-delimiters' character is bound in Normal
 state to `donkey-wrap-region'."
