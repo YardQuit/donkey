@@ -990,6 +990,44 @@ delete-region rather than string-rectangle."
       (should delete-called)
       (should-not ci-called))))
 
+(ert-deftest donkey-change-rectangle-mode-stays-in-normal-state ()
+  "Regression test: under `rectangle-mark-mode', `c' must end in NORMAL
+state, not INSERT.
+
+`string-rectangle' prompts for the replacement text itself and applies
+it to every covered line, so by the time it returns the edit is
+already finished and there is nothing left to type.  Entering INSERT
+there meant the next navigation keypress self-inserted instead of
+moving.  Confirmed live in `emacs -nw': after `m v', `c', a
+replacement string and RET, pressing `j' then `l' typed a literal
+\"jl\" into the buffer."
+  (with-temp-buffer
+    (donkey-normal-mode 1)
+    (insert "hello\n")
+    (goto-char 1)
+    (push-mark 3)
+    (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+              ((symbol-function 'call-interactively) (lambda (_cmd) nil)))
+      (let ((rectangle-mark-mode t))
+        (donkey-change)))
+    (should (bound-and-true-p donkey-normal-mode))
+    (should-not (bound-and-true-p donkey-insert-mode))))
+
+(ert-deftest donkey-change-plain-region-still-enters-insert-state ()
+  "The rectangle special case must not change the ordinary path: a plain
+\(non-rectangle) active region still deletes and enters INSERT, since
+there the user does still have to type the replacement."
+  (with-temp-buffer
+    (donkey-normal-mode 1)
+    (insert "hello\n")
+    (goto-char 1)
+    (push-mark 3)
+    (cl-letf (((symbol-function 'use-region-p) (lambda () t)))
+      (let ((rectangle-mark-mode nil))
+        (donkey-change)))
+    (should (bound-and-true-p donkey-insert-mode))
+    (should-not (bound-and-true-p donkey-normal-mode))))
+
 (ert-deftest donkey-change-no-region-preserves-surrounding-text ()
   "Deleting one char leaves the rest of the buffer intact."
   (with-temp-buffer

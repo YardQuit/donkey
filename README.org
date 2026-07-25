@@ -160,6 +160,13 @@ snaps the selection back to whole lines from the original anchor.
 | =O= | =donkey-open-above=               | Open new line above, enter Insert   |
 | =c= | =donkey-change=                   | Change char or region, enter Insert |
 
+Under =rectangle-mark-mode= (=m v=), =c= behaves differently: it runs
+=string-rectangle=, which prompts for the replacement text and applies
+it to every covered line itself. Since that finishes the whole edit,
+DONKEY stays in *Normal* state afterward rather than entering Insert —
+there is nothing left to type, and dropping into Insert would make the
+next navigation keypress self-insert.
+
 ** Editing
 
 | Key   | Command                      | Description                      |
