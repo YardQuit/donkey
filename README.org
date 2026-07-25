@@ -141,6 +141,13 @@ process interaction.
 | =v= | =donkey-set-mark=           | Toggle mark                           |
 | =(= =[= ={= ="= ='= =`= | =donkey-wrap-region= | Wrap active region with delimiter, see below |
 
+Within a visual-line session (started with =V=), =J= and =K= extend the
+selection by whole lines, always anchored to the line =V= was pressed
+on. Plain =j= and =k= still work too, extending character-wise from
+wherever point currently is -- so a selection can stop mid-line. The
+two can be mixed freely: after moving with =j=/=k=, pressing =J=/=K=
+snaps the selection back to whole lines from the original anchor.
+
 ** Insert Mode Entry
 
 | Key | Command                         | Description                         |

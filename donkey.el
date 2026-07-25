@@ -1166,28 +1166,41 @@ buffer."
 (defun donkey--visual-line-session-active-p ()
   "Return non-nil if point is continuing an active visual-line selection.
 
-Requires an active region, a recorded `donkey-visual-anchor', AND that
-the previous command was one of the visual-line commands themselves.
+Requires an active region, a recorded `donkey-visual-anchor', and that
+the mark still sits where a visual-line command would have left it --
+either exactly AT the anchor (a line beginning) or at that anchor
+line's end.  Those are the only two values `donkey-visual-line-toggle',
+`donkey-visual-next-line' and `donkey-visual-previous-line' ever set
+the mark to, depending on which side of the anchor point is on.
 
-That last check matters: setting a brand new region while one is
-already active (e.g. `donkey-mark-inner', `donkey-mark-outer', or any
-other mark command) never runs `deactivate-mark-hook' -- that hook
-only fires on the active -> inactive transition, not when the region
-is simply repositioned -- so `donkey--clear-visual-anchor' never gets
-a chance to clear a stale `donkey-visual-anchor' left over from an
-earlier `donkey-visual-line-toggle' session.  Without this check,
-`donkey-visual-next-line'/`donkey-visual-previous-line' would still
-treat that stale anchor as valid and try to extend from it instead of
-the region an unrelated command just set up.  Confirmed live: pressing
-`J' right after using `donkey-mark-inner' to select \"hello\" (with a
-leftover anchor from an earlier visual-line session) snapped the
-region all the way back to the visual-line session's original anchor
-line instead of extending \"hello\" by one line."
+Checking the mark rather than `last-command' is what lets whole-line
+and character-wise motion be mixed freely within one session: `j'/`k'
+\(plain `next-line'/`previous-line') move point without touching the
+mark, so a following `J'/`K' still recognizes the session and
+re-anchors to whole lines, instead of falling through to plain
+`forward-line' as a `last-command'-based check would.
+
+It also still rejects a STALE anchor, which is what this predicate
+exists for.  Setting a brand new region while one is already active
+\(e.g. `donkey-mark-inner', `donkey-mark-outer', or any other mark
+command) never runs `deactivate-mark-hook' -- that hook only fires on
+the active -> inactive transition, not when the region is simply
+repositioned -- so `donkey--clear-visual-anchor' never gets a chance
+to clear an anchor left over from an earlier session.  Those commands
+do move the mark, though, to a position unrelated to the old anchor's
+line, so the check below fails and the stale anchor is correctly
+ignored.  Confirmed live: pressing `J' right after using
+`donkey-mark-inner' to select \"hello\" (with a leftover anchor from an
+earlier visual-line session) snapped the region all the way back to
+the visual-line session's original anchor line instead of extending
+\"hello\" by one line."
   (and (region-active-p)
        donkey-visual-anchor
-       (memq last-command '(donkey-visual-line-toggle
-                             donkey-visual-next-line
-                             donkey-visual-previous-line))))
+       (mark)
+       (or (= (mark) donkey-visual-anchor)
+           (= (mark) (save-excursion
+                       (goto-char donkey-visual-anchor)
+                       (line-end-position))))))
 
 (defun donkey-visual-line-toggle ()
   "Start/cancel visual line selection.
@@ -1212,7 +1225,7 @@ session."
     (set-mark (line-beginning-position))
     (end-of-line)
     (activate-mark)
-    (message "Visual line: j/k to extend, V to cancel")))
+    (message "Visual line: J/K whole lines, j/k by char, V to cancel")))
 
 (defun donkey-visual-next-line ()
   "Move down one line, extending the visual-line selection if active.
