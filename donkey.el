@@ -1144,9 +1144,19 @@ meaningful.
 
 With an ordinary active region, enters Insert state without
 deactivating the mark, inserts the pressed character via
-`self-insert-command' -- letting packages that hook it, such as
-Smartparens' region-wrap, act on the still-active region -- then
-returns to Normal state.
+`self-insert-command' -- letting whatever pairing package is active
+see the still-active region and wrap it.  Emacs's built-in
+`electric-pair-mode' is enough (confirmed live: with it on, selecting
+\"hello\" and pressing `(' yields \"(hello)\"); Smartparens'
+region-wrap works too.  With neither enabled the character is simply
+inserted at point, since nothing is listening.  Then returns to
+Normal state.
+
+Note that `delete-selection-mode' does NOT eat the selection here,
+despite it being active across the insertion: that mode acts from
+`pre-command-hook' on `this-command's `delete-selection' property, and
+`this-command' is this command, not the `self-insert-command' invoked
+from inside it.
 
 That return is in an `unwind-protect' because this is the one command
 that enters Insert state BEFORE doing its real work, rather than as

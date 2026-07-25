@@ -660,22 +660,35 @@ at the same point as =with-eval-after-load=:
 
 Select a region (=v=/=V=), then press one of =(=, =[=, ={=, ="=, ='=,
 =`= while still in Normal state to wrap it — e.g. selecting =word=
-and pressing =(= yields =(word)= when Smartparens is loaded. This
-works without leaving Normal state stuck in Insert afterward.
+and pressing =(= yields =(word)=. This works without leaving Normal
+state stuck in Insert afterward.
+
+The actual wrapping is done by whichever pairing package you use, not
+by DONKEY itself. Emacs's built-in =electric-pair-mode= is enough —
+no third-party package required:
+
+#+begin_src emacs-lisp
+
+  (electric-pair-mode 1)
+
+#+end_src
+
+Smartparens' own region-wrap works too, if you already use it. With
+*neither* enabled, the delimiter is simply inserted at point rather
+than wrapping the selection.
 
 Under the hood, =donkey-normal-mode-map= normally suppresses every
 printable key so it can't accidentally self-insert. These delimiters
 are the one exception, and only while a region is active:
 `donkey-wrap-region` momentarily enters Insert state *without*
 clearing the selection first (unlike =i=/=a= and the other Insert
-Mode Entry commands), runs the ordinary character insertion so
-Smartparens' own region-wrap logic can see the still-active region,
-then returns to Normal state automatically. With no region active,
-the key does nothing, same as any other suppressed key in Normal
-state.
+Mode Entry commands), runs the ordinary character insertion so that
+region-wrap logic can see the still-active region, then returns to
+Normal state automatically. With no region active, the key does
+nothing, same as any other suppressed key in Normal state.
 
-Under =rectangle-mark-mode= (=m v=) the behavior is different, and does
-*not* depend on Smartparens: each line of the rectangle is wrapped at
+Under =rectangle-mark-mode= (=m v=) the behavior is different, and needs
+no pairing package at all: each line of the rectangle is wrapped at
 its own start and end column, with the matching close character
 inserted automatically. Selecting a 3-column rectangle across three
 lines of =alpha=/=bravo=/=charlie= and pressing =[= gives:

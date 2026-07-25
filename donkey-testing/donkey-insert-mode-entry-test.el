@@ -1242,6 +1242,56 @@ character lands in the buffer at point, same as ordinary self-insert."
         (donkey-wrap-region))
       (should (string= (buffer-string) "hello( world")))))
 
+(ert-deftest donkey-wrap-region-wraps-region-with-electric-pair-mode ()
+  "With Emacs's built-in `electric-pair-mode', the selection is really
+WRAPPED rather than the delimiter merely inserted at point.
+
+`donkey-wrap-region' deliberately keeps the region active across its
+`self-insert-command' call so a pairing package can act on it.  The
+README used to describe that as needing Smartparens; `electric-pair-mode'
+is enough and ships with Emacs.  Confirmed live in `emacs -nw':
+selecting \"hello\" and pressing `(' produced \"(hello) world\".
+
+Locks the capability in so it cannot regress silently -- e.g. if the
+region were ever deactivated before the insertion, this would fall
+back to the bare \"hello( world\" of the test above."
+  (with-temp-buffer
+    (let ((transient-mark-mode t)
+          (donkey-mode t))
+      (electric-pair-local-mode 1)
+      (unwind-protect
+          (progn
+            (insert "hello world")
+            (goto-char 1)
+            (push-mark (point) t t)
+            (goto-char 6)
+            (let ((last-command-event ?\())
+              (donkey-wrap-region))
+            (should (string= (buffer-string) "(hello) world")))
+        (electric-pair-local-mode -1)))))
+
+(ert-deftest donkey-wrap-region-delete-selection-mode-does-not-eat-region ()
+  "`delete-selection-mode' must not swallow the selection here.
+
+That mode acts from `pre-command-hook' on `this-command's
+`delete-selection' property, and `this-command' is `donkey-wrap-region'
+\(no such property), not the `self-insert-command' invoked from inside
+it -- so the region survives to be wrapped instead of being replaced
+by the delimiter.  Confirmed live in `emacs -nw' with
+`delete-selection-mode' enabled."
+  (with-temp-buffer
+    (let ((transient-mark-mode t)
+          (donkey-mode t))
+      (insert "hello world")
+      (goto-char 1)
+      (push-mark (point) t t)
+      (goto-char 6)
+      (let ((last-command-event ?\()
+            (delete-selection-mode t))
+        (donkey-wrap-region))
+      ;; "hello" still present -- not replaced by "(".
+      (should (string= (buffer-string) "hello( world")))))
+
 (ert-deftest donkey-wrap-region-returns-to-normal-state ()
   "After wrapping, DONKEY ends up back in Normal state, not stuck in Insert."
   (with-temp-buffer
