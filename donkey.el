@@ -132,7 +132,7 @@ caught even when only its parent mode is listed."
     (if org-scratch-buffer
         (progn
           (switch-to-buffer org-scratch-buffer)
-          (message "*org-scratch* buffer already exist, switching."))
+          (message "*org-scratch* buffer already exists, switching."))
       (donkey-create-org-scratch)
       (message "*org-scratch* buffer doesn't exist, creating."))))
 
@@ -193,9 +193,17 @@ recorded positions in this buffer."
                (1+ donkey--position-index) ring-len))))
 
 (defun donkey-goto-line ()
-  "Go to line number."
+  "Prompt for a line number and move point to the start of that line.
+
+Out-of-range input is simply clamped by `forward-line' itself (past
+the end of the buffer moves to the last line; zero, negative, or any
+undershoot stops at the first).  `read-number' accepts fractional
+input (e.g. \"3.5\", an easy typo for \"35\" or \"3\"), which is
+rounded to the nearest whole line here rather than passed straight to
+`forward-line' -- which requires an integer and would otherwise signal
+a raw `wrong-type-argument' error instead of just going to a line."
   (interactive)
-  (let ((target-line (read-number "Line: ")))
+  (let ((target-line (round (read-number "Line: "))))
     (goto-char (point-min))
     (forward-line (1- target-line))))
 

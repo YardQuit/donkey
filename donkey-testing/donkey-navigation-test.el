@@ -116,6 +116,19 @@ at point-min since forward-line -1 there has nowhere to go."
         (donkey-goto-line))
       (should (= (point) (point-max))))))
 
+(ert-deftest donkey-goto-line-fractional-input-rounds-instead-of-erroring ()
+  "Regression test: `read-number' happily returns a float (e.g. typing
+\"3.5\" at the prompt, an easy typo for \"35\" or \"3\"), which used to
+be passed straight to `forward-line' -- signalling a raw
+`wrong-type-argument' error, since `forward-line' requires an integer,
+instead of just going to a line. Now rounded to the nearest whole line."
+  (with-temp-buffer
+    (insert "line1\nline2\nline3\nline4\nline5\n")
+    (goto-char (point-min))
+    (cl-letf (((symbol-function 'read-number) (lambda (&rest _) 3.5)))
+      (donkey-goto-line))
+    (should (= (line-number-at-pos) 4))))
+
 (ert-deftest donkey-goto-line-preserves-buffer-text ()
   "After goto-line, buffer text is unchanged."
   (let ((original-text "original text\n"))

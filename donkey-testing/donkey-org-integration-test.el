@@ -116,7 +116,7 @@
                 (lambda (fmt &rest args)
                   (push (apply #'format fmt args) messages))))
        (donkey-org-scratch))
-     (should (member "*org-scratch* buffer already exist, switching." messages)))))
+     (should (member "*org-scratch* buffer already exists, switching." messages)))))
 
 (ert-deftest donkey-org-scratch-does-not-double-insert ()
   "Switching to an existing buffer should not re-insert the scratch message."
