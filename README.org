@@ -362,6 +362,7 @@ characters and =C-u 2 m s= marks two sentences:
 | =C-u 2 m s= | mark two sentences                      |
 | =C-u 2 m p= | mark two paragraphs                     |
 | =C-u 2 m A= | mark two levels out of the expression   |
+| =C-u 2 m i= | mark two levels out of the delimiter pair |
 
 A count larger than the text remaining does what it can and stops, rather
 than erroring — =C-u 99 x= at the end of a buffer clears the rest.
@@ -369,9 +370,15 @@ than erroring — =C-u 99 x= at the end of a buffer clears the rest.
 Bare digits are not counts: =3= is not bound, because =suppress-keymap=
 is called with digits left out so they cannot self-insert. Use =C-u=.
 
-The =m i= and =m a= delimiter marks do not take a count, since "two
-levels out" has no single meaning when the delimiters are matched by
-character rather than by syntax. Use =m A= for that.
+=m i= and =m a= take a count too, but only for a *nesting* pair such as
+=()=, =[]= or ={}=. A symmetric delimiter — a quote, =*=, =~= — opens
+and closes with the same character, so there is no way to tell one end
+from the other and "two levels out" has nothing to refer to; a count
+there reports rather than guessing.
+
+*In a terminal, =C-2= does not reach Emacs* — it is not transmitted as a
+distinct key. Use =M-2= or =C-u 2= instead. This catches people out,
+because =C-2= works in graphical Emacs.
 
 Some commands are reachable by more than one key on purpose, so that
 whichever editor you arrive from, the key you already know works:
