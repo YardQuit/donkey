@@ -335,14 +335,13 @@ Notes:
 
 | Key   | Command                  | Description                 |
 |-------+--------------------------+-----------------------------|
-| =g g= | =beginning-of-buffer=    | Go to beginning of buffer (Vim)    |
+| =g g= | =beginning-of-buffer=    | Go to beginning of buffer          |
 | =g e= | =end-of-buffer=          | Go to end of buffer               |
 | =G=   | =end-of-buffer=          | Go to end of buffer (Vim)         |
 | =g h= | =beginning-of-line=      | Go to beginning of line     |
 | =g l= | =move-end-of-line=       | Go to end of line           |
 | =g q= | =fill-region=            | Fill region                 |
 | =g Q= | =fill-paragraph=         | Fill paragraph              |
-| =g t= | =beginning-of-buffer=    | Go to beginning of buffer (Helix)  |
 | =:=   | =donkey-goto-line=         | Go to line number (prompts) |
 | =%=   | =donkey-mark-whole-buffer= | Select entire buffer      |
 | =.=   | =repeat=                 | Repeat last command         |
@@ -353,12 +352,13 @@ whichever editor you arrive from, the key you already know works:
 
 | Key   | Does                | Familiar from |
 |-------+---------------------+---------------|
-| =g g= | beginning of buffer | Vim           |
-| =g t= | beginning of buffer | Helix         |
 | =g e= | end of buffer       | Helix         |
 | =G=   | end of buffer       | Vim           |
 | =d=   | delete char/region  | Helix         |
 | =x=   | delete char/region  | Vim           |
+
+=g g= needs no twin: both editors already use it for the start of the
+buffer.
 
 The duplication is deliberate and worth keeping — it is not a leftover.
 

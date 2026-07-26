@@ -2412,19 +2412,16 @@ documentation."
 (keymap-set donkey-normal-mode-map "u" #'undo)
 (keymap-set donkey-normal-mode-map "z z" #'recenter-top-bottom)
 (keymap-set donkey-normal-mode-map "g e" #'end-of-buffer)
-;; Same command as "g e", for the same reason "g t" duplicates "g g"
-;; below: "G" is the Vim key for the end of the buffer, so it works for
-;; anyone arriving from Vim without their having to learn "g e".
+;; Deliberately the same command as "g e": "g e" is what Helix binds the
+;; end of the buffer to, "G" is Vim's, so whichever editor a user arrives
+;; from the key they already know works.  ("g g" needs no such twin --
+;; both editors already use it for the start of the buffer.)
 (keymap-set donkey-normal-mode-map "G" #'end-of-buffer)
 (keymap-set donkey-normal-mode-map "g g" #'beginning-of-buffer)
 (keymap-set donkey-normal-mode-map "g h" #'beginning-of-line)
 (keymap-set donkey-normal-mode-map "g l" #'move-end-of-line)
 (keymap-set donkey-normal-mode-map "g Q" #'fill-paragraph)
 (keymap-set donkey-normal-mode-map "g q" #'fill-region)
-;; Deliberately the same command as "g g" above, not a leftover: "g g" is
-;; the Vim binding for going to the top and "g t" is the Helix one, so
-;; whichever editor a user arrives from, the key they already know works.
-(keymap-set donkey-normal-mode-map "g t" #'beginning-of-buffer)
 
 ;; Search/Replace (Multi-key)
 (keymap-set donkey-normal-mode-map "r r" #'replace-regexp)

@@ -2247,13 +2247,16 @@ inserted that emptiness."
 (ert-deftest donkey-top-and-bottom-keys-cover-vim-and-helix ()
   "Both editors' keys reach the top and bottom of the buffer.
 
-`g g'/`G' are the Vim pair and `g t'/`g e' the Helix pair.  The
+`g g' is the start of the buffer in Vim and Helix alike, so it needs no
+twin.  The end does: `g e' is Helix's and `G' is Vim's.  That
 duplication is deliberate -- pinned here so it is not mistaken for a
 leftover and removed."
   (should (eq (keymap-lookup donkey-normal-mode-map "g g") #'beginning-of-buffer))
-  (should (eq (keymap-lookup donkey-normal-mode-map "g t") #'beginning-of-buffer))
   (should (eq (keymap-lookup donkey-normal-mode-map "g e") #'end-of-buffer))
-  (should (eq (keymap-lookup donkey-normal-mode-map "G") #'end-of-buffer)))
+  (should (eq (keymap-lookup donkey-normal-mode-map "G") #'end-of-buffer))
+  ;; Removed: Helix's own "g t" is goto_window_top, not the file start,
+  ;; so the binding matched neither editor.
+  (should-not (keymap-lookup donkey-normal-mode-map "g t")))
 
 (ert-deftest donkey-delete-keys-cover-vim-and-helix ()
   "`d' and `x' both delete: Helix's key and Vim's key for the same command.
