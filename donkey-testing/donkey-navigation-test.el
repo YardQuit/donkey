@@ -1233,6 +1233,54 @@ visible character while still reporting a jump to a recorded position."
                          (progn (donkey-jump-back) (point)))
                    '(2 4 2)))))
 
+(ert-deftest donkey-visual-session-ignores-an-anchor-hidden-by-narrowing ()
+  "An anchor outside the accessible portion is not a continuable session.
+
+Regression: buffer positions are absolute and narrowing does not move
+them, so `V' followed by \\[narrow-to-region] left the anchor pointing at
+text the buffer no longer shows.  `goto-char' and `set-mark' both clamp
+there rather than signalling, so `J' quietly re-anchored the selection on
+the narrowing edge while still presenting itself as the session started
+higher up."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (let ((transient-mark-mode t))
+      (insert "L1\nL2\nL3\nL4\nL5\nL6\n")
+      (goto-char (point-min))
+      (forward-line 1)
+      (donkey-visual-line-toggle)
+      (narrow-to-region 10 19)
+      (should-not (donkey--visual-line-session-active-p)))))
+
+(ert-deftest donkey-visual-anchor-survives-widening ()
+  "The hidden anchor is ignored, not destroyed -- widening restores it."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (let ((transient-mark-mode t))
+      (insert "L1\nL2\nL3\nL4\nL5\nL6\n")
+      (goto-char (point-min))
+      (forward-line 1)
+      (donkey-visual-line-toggle)
+      (narrow-to-region 10 19)
+      (should-not (donkey--visual-line-session-active-p))
+      (widen)
+      (should (donkey--visual-line-session-active-p)))))
+
+(ert-deftest donkey-visual-session-started-inside-narrowing-still-extends ()
+  "A session whose anchor IS visible keeps working under narrowing."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (let ((transient-mark-mode t))
+      (insert "L1\nL2\nL3\nL4\nL5\nL6\n")
+      (narrow-to-region 4 16)
+      (goto-char (point-min))
+      (donkey-visual-line-toggle)
+      (should (donkey--visual-line-session-active-p))
+      (donkey-visual-next-line 1)
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "L2\nL3")))))
+
 (provide 'donkey-navigation-test)
 
 ;;; donkey-navigation-test.el ends here

@@ -1342,6 +1342,18 @@ the visual-line session's original anchor line instead of extending
 \"hello\" by one line."
   (and (region-active-p)
        donkey-visual-anchor
+       ;; An anchor outside the accessible portion is not a session this
+       ;; can continue.  Buffer positions are absolute and narrowing does
+       ;; not move them, so `V' followed by \\[narrow-to-region] (or
+       ;; `org-narrow-to-subtree') leaves the anchor pointing at text the
+       ;; buffer is no longer showing.  Both `goto-char' below and the
+       ;; `set-mark' the J/K commands do afterwards silently CLAMP there
+       ;; rather than signalling, so the selection quietly re-anchored on
+       ;; the narrowing edge while still presenting itself as the session
+       ;; started higher up.  Rejecting it here makes `J'/`K' fall back to
+       ;; the plain `forward-line' their docstrings describe.
+       (<= (point-min) donkey-visual-anchor)
+       (<= donkey-visual-anchor (point-max))
        (mark)
        (or (= (mark) donkey-visual-anchor)
            (= (mark) (save-excursion
