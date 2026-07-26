@@ -2147,6 +2147,38 @@ path handed a symbol to `string' and signalled `wrong-type-argument'."
         (donkey-wrap-region))
       (should (equal (buffer-string) "hello world\n")))))
 
+(ert-deftest donkey-banking-a-large-region-is-not-quadratic ()
+  "Banking scales with the number of lines, not their square.
+
+Regression: `donkey--banked-overlay-at' scanned `donkey--banked-overlays'
+linearly and `donkey--bank-span' calls it once per line, so banking cost
+quadratic time -- 0.01s for 200 lines, 0.22s for 1000 and 1.81s for 3000,
+a visible freeze for selecting a whole file and banking it.  Candidates
+now come from `overlays-in', which Emacs answers from its position index.
+
+Asserts the shape of the growth rather than any absolute timing, so it
+does not turn into a flaky benchmark on a loaded machine: 4x the lines
+must cost well under the ~16x a quadratic implementation needs."
+  (let ((transient-mark-mode t))
+    (cl-flet ((bank-n (n)
+                (with-temp-buffer
+                  (dotimes (i n) (insert (format "line %d\n" i)))
+                  (goto-char (point-min))
+                  (push-mark (point) t t)
+                  (goto-char (point-max))
+                  (let ((start (float-time)))
+                    (donkey-bank-selection)
+                    (should (= n (donkey--banked-line-count)))
+                    (- (float-time) start)))))
+      ;; Warm up, so the first call's overheads do not land in the ratio.
+      (bank-n 200)
+      (let* ((small (max (bank-n 500) 0.001))
+             (large (bank-n 2000))
+             (ratio (/ large small)))
+        ;; Linear would be ~4; quadratic ~16.  8 leaves generous headroom
+        ;; either side of the boundary.
+        (should (< ratio 8))))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here
