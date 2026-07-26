@@ -1478,6 +1478,58 @@ surrounding block lines are untouched."
   (dotimes (i n) (insert (format "r%d\n" i)))
   (goto-char (point-min)))
 
+(ert-deftest donkey-banked-spans-is-the-public-name-for-the-same-spans ()
+  "`donkey-banked-spans' reports what `donkey--banked-spans' does.
+It exists so other packages have a name that is not free to change: csvdt
+reads banked lines through it. Nil rather than an empty list when nothing
+is banked, since callers test it for truth."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 4)
+    (should (null (donkey-banked-spans)))
+    (forward-line 1)
+    (donkey-bank-selection)
+    (should (equal (donkey-banked-spans) (donkey--banked-spans)))
+    (should (= (length (donkey-banked-spans)) 1))))
+
+(ert-deftest donkey-banked-spans-covers-whole-lines ()
+  "Every span runs from a line beginning to the beginning of the line after.
+The docstring promises this to callers, and it holds because banking goes
+through `donkey--whole-line-span' -- so a partial selection still banks the
+whole line, and a caller can use a span without widening it first."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 4)
+    ;; A region covering the middle of line 1 and the middle of line 2.
+    (forward-line 1)
+    (let ((start (1+ (point))))
+      (forward-line 1)
+      (push-mark start t t)
+      (goto-char (1+ (point)))
+      (donkey-bank-selection))
+    (dolist (span (donkey-banked-spans))
+      (should (equal (car span)
+                     (save-excursion (goto-char (car span))
+                                     (line-beginning-position))))
+      (should (equal (cdr span)
+                     (save-excursion (goto-char (cdr span))
+                                     (line-beginning-position)))))))
+
+(ert-deftest donkey-banked-spans-does-not-merge-touching-banks ()
+  "Two banked blocks that touch arrive as two spans, not one.
+The docstring says so, and a caller merging them itself depends on it:
+`donkey--effective-line-spans' is the one that merges."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 4)
+    (forward-line 1)
+    (donkey-bank-selection)
+    (forward-line 1)
+    (donkey-bank-selection)
+    (let ((spans (donkey-banked-spans)))
+      (should (= (length spans) 2))
+      ;; Touching: the first ends exactly where the second starts.
+      (should (equal (cdr (nth 0 spans)) (car (nth 1 spans))))
+      ;; And merging them would give one, which is the caller's business.
+      (should (= (length (donkey--merge-spans spans)) 1)))))
+
 (ert-deftest donkey-bank-selection-single-line-no-region ()
   "With no region, banks the current line only."
   (with-temp-buffer

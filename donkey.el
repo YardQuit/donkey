@@ -1908,6 +1908,28 @@ describe exactly what \"y\" and \"d\" will act on."
                       donkey--banked-overlays))
         (lambda (a b) (< (car a) (car b)))))
 
+(defun donkey-banked-spans ()
+  "Return this buffer\'s banked lines as a list of (START . END), in buffer
+order, or nil when nothing is banked.
+
+The public name for reading what donkey has banked, for other packages to
+build on.  `donkey-bank-selection' banks whole lines, so every span runs
+from the beginning of a line to the beginning of the line after the last
+one it covers.
+
+Spans are safe to hand to `buffer-substring' or `delete-region': ones
+whose text has gone are pruned, and ones outside the buffer\'s accessible
+portion are left out, since overlay positions ignore narrowing while
+those functions do not.
+
+Spans are not merged, so two banked blocks that happen to touch arrive as
+two conses rather than one.  Merge them yourself if you need the ranges
+disjoint.
+
+Prefer this over the internal it wraps: the double-dashed name is
+donkey\'s own and free to change shape, this one is not."
+  (donkey--banked-spans))
+
 (defun donkey--merge-spans (spans)
   "Merge overlapping or touching SPANS, a list of (START . END) in order."
   (let (merged)
