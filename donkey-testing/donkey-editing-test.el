@@ -167,21 +167,18 @@ copy-rectangle-as-kill via call-interactively."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-delete-no-region-deletes-single-char ()
-  "Without an active region, deletes the character at point."
-  (let (deleted-arg)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (let ((orig-delete-char (symbol-function 'delete-char)))
-        (cl-letf (((symbol-function 'use-region-p)
-                   (lambda () nil))
-                  ((symbol-function 'delete-char)
-                   (lambda (n)
-                     (setq deleted-arg n)
-                     (funcall orig-delete-char n))))
-          (donkey-delete)))
-      (should (eq deleted-arg 1))
-      (should (= (buffer-size) 5)))))
+  "Without an active region, deletes the character at point.
+
+Asserts the effect rather than which primitive does it: deletion goes
+through `delete-region' so a count can clamp at `point-max' instead of
+signalling, and pinning `delete-char' here only tied the test to the
+implementation."
+  (with-temp-buffer
+    (insert "hello\n")
+    (goto-char 1)
+    (cl-letf (((symbol-function 'use-region-p) (lambda () nil)))
+      (donkey-delete))
+    (should (equal (buffer-string) "ello\n"))))
 
 (ert-deftest donkey-delete-no-region-from-middle ()
   "Deletes the character at point in the middle of a line."
@@ -2271,6 +2268,46 @@ are free to wrap."
                          offenders))))))))
      )
     (should-not offenders)))
+
+(ert-deftest donkey-editing-commands-honour-a-count ()
+  "`d'/`x', `y' and `c' act on COUNT characters.
+
+Before this, a count was accepted and silently discarded: the stock keys
+bound alongside them honoured it -- `C-u 3 D' killed three lines, `C-u 3
+j' moved three -- while `C-u 3 x' deleted a single character with nothing
+to explain the difference."
+  (with-temp-buffer
+    (insert "abcdefgh\n")
+    (goto-char 1)
+    (donkey-delete 3)
+    (should (equal (buffer-string) "defgh\n")))
+  (let ((kill-ring nil) kill-ring-yank-pointer)
+    (with-temp-buffer
+      (insert "abcdefgh\n")
+      (goto-char 1)
+      (donkey-copy 4)
+      (should (equal (current-kill 0) "abcd"))))
+  (with-temp-buffer
+    (insert "abcdefgh\n")
+    (goto-char 1)
+    (donkey-change 3)
+    (should (equal (buffer-string) "defgh\n"))))
+
+(ert-deftest donkey-count-clamps-at-point-max-instead-of-signalling ()
+  "A count larger than the text left deletes what there is, quietly."
+  (with-temp-buffer
+    (insert "abc\n")
+    (goto-char 1)
+    (donkey-delete 99)
+    (should (equal (buffer-string) ""))))
+
+(ert-deftest donkey-editing-commands-without-a-count-are-unchanged ()
+  "No count still means one character."
+  (with-temp-buffer
+    (insert "abcdefgh\n")
+    (goto-char 1)
+    (donkey-delete)
+    (should (equal (buffer-string) "bcdefgh\n"))))
 
 (provide 'donkey-editing-test)
 
