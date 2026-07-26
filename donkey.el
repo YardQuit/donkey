@@ -1799,6 +1799,26 @@ See `donkey--ensure-non-rectangle-selection' for why."
   (donkey--ensure-non-rectangle-selection)
   (call-interactively #'set-mark-command))
 
+(defun donkey-mark-whole-buffer ()
+  "Select the whole buffer, clearing a stale rectangle selection first.
+
+See `donkey--ensure-non-rectangle-selection' for why every command that
+establishes a selection has to do this.  \"%\" was the one such key bound
+straight to a stock command, so it was the one that did not: a rectangle
+left active from an earlier `donkey-rectangle-mark-mode' session survived
+underneath the new whole-buffer selection, and `donkey-delete' then killed
+a zero-width rectangle -- one empty string per line -- leaving the buffer
+completely untouched, with no error to explain it.  It also set
+`donkey--last-kill-rectangle-p', so the next \"p\" would have pasted that
+emptiness instead of the clipboard.
+
+Invoked via `call-interactively', as `donkey-set-mark' does for
+`set-mark-command': `mark-whole-buffer' is declared `interactive-only',
+so calling it directly is a byte-compiler error here."
+  (interactive)
+  (donkey--ensure-non-rectangle-selection)
+  (call-interactively #'mark-whole-buffer))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Banked Line Selection
 ;;; ---------------------------------------------------------------------------
@@ -2328,6 +2348,13 @@ documentation."
 ;; Editing operations
 (keymap-set donkey-normal-mode-map "D" #'kill-line)
 (keymap-set donkey-normal-mode-map "c" #'donkey-change)
+;; Two keys, one command, deliberately.  Both match what their editor's
+;; users already press: "d" is Helix's delete-the-selection, and "x" is
+;; Vim's -- which deletes the character under the cursor in normal state
+;; and the selection in visual state, exactly the char-or-region split
+;; `donkey-delete' implements.  Note "d" is NOT operator-pending as it is
+;; in Vim -- there is no "d w"/"d d"; select first, or use "D" for the
+;; rest of the line.
 (keymap-set donkey-normal-mode-map "d" #'donkey-delete)
 (keymap-set donkey-normal-mode-map "x" #'donkey-delete)
 (keymap-set donkey-normal-mode-map "C" #'donkey-comment-dwim)
@@ -2376,7 +2403,7 @@ documentation."
 (keymap-set donkey-normal-mode-map "m <delete>" #'donkey-clear-banked-selection)
 
 ;; Buffer navigation
-(keymap-set donkey-normal-mode-map "%" #'mark-whole-buffer)
+(keymap-set donkey-normal-mode-map "%" #'donkey-mark-whole-buffer)
 (keymap-set donkey-normal-mode-map "." #'repeat)
 (keymap-set donkey-normal-mode-map ":" #'donkey-goto-line)
 (keymap-set donkey-normal-mode-map ">" #'donkey-indent-region-or-line)
@@ -2385,12 +2412,16 @@ documentation."
 (keymap-set donkey-normal-mode-map "u" #'undo)
 (keymap-set donkey-normal-mode-map "z z" #'recenter-top-bottom)
 (keymap-set donkey-normal-mode-map "g e" #'end-of-buffer)
+;; Deliberately the same command as "g e": "g e" is what Helix binds the
+;; end of the buffer to, "G" is Vim's, so whichever editor a user arrives
+;; from the key they already know works.  ("g g" needs no such twin --
+;; both editors already use it for the start of the buffer.)
+(keymap-set donkey-normal-mode-map "G" #'end-of-buffer)
 (keymap-set donkey-normal-mode-map "g g" #'beginning-of-buffer)
 (keymap-set donkey-normal-mode-map "g h" #'beginning-of-line)
 (keymap-set donkey-normal-mode-map "g l" #'move-end-of-line)
 (keymap-set donkey-normal-mode-map "g Q" #'fill-paragraph)
 (keymap-set donkey-normal-mode-map "g q" #'fill-region)
-(keymap-set donkey-normal-mode-map "g t" #'beginning-of-buffer)
 
 ;; Search/Replace (Multi-key)
 (keymap-set donkey-normal-mode-map "r r" #'replace-regexp)

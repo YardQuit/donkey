@@ -2206,6 +2206,70 @@ prompt; answering with OPEN correctly finds the enclosing pair."
           (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                          "quoted")))))))
 
+(ert-deftest donkey-mark-whole-buffer-clears-stale-rectangle ()
+  "`%' clears a stale rectangle before selecting the buffer.
+
+Regression: `%' was the one selection-establishing key bound straight to
+a stock command, so it never ran
+`donkey--ensure-non-rectangle-selection'.  A rectangle left active from
+an earlier session survived underneath the whole-buffer selection."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "abcd\nefgh\nijkl\n")
+      (goto-char (point-min))
+      (donkey-rectangle-mark-mode)
+      (should (bound-and-true-p rectangle-mark-mode))
+      (donkey-mark-whole-buffer)
+      (should-not (bound-and-true-p rectangle-mark-mode))
+      (should (use-region-p)))))
+
+(ert-deftest donkey-mark-whole-buffer-then-delete-empties-buffer ()
+  "After `%', `d' deletes the buffer rather than a zero-width rectangle.
+
+Regression: the stale rectangle made `donkey-delete' kill one empty
+string per line, leaving the text completely untouched with no error,
+and setting `donkey--last-kill-rectangle-p' so the next paste would have
+inserted that emptiness."
+  (let ((transient-mark-mode t) (kill-ring nil) kill-ring-yank-pointer)
+    (with-temp-buffer
+      (insert "abcd\nefgh\nijkl\n")
+      (goto-char (point-min))
+      (donkey-rectangle-mark-mode)
+      (donkey-mark-whole-buffer)
+      (donkey-delete)
+      (should (equal (buffer-string) "")))))
+
+(ert-deftest donkey-mark-whole-buffer-is-bound-to-percent ()
+  "`%' reaches the wrapper, not the stock command."
+  (should (eq (keymap-lookup donkey-normal-mode-map "%")
+              #'donkey-mark-whole-buffer)))
+
+(ert-deftest donkey-top-and-bottom-keys-cover-vim-and-helix ()
+  "Both editors' keys reach the top and bottom of the buffer.
+
+`g g' is the start of the buffer in Vim and Helix alike, so it needs no
+twin.  The end does: `g e' is Helix's and `G' is Vim's.  That
+duplication is deliberate -- pinned here so it is not mistaken for a
+leftover and removed."
+  (should (eq (keymap-lookup donkey-normal-mode-map "g g") #'beginning-of-buffer))
+  (should (eq (keymap-lookup donkey-normal-mode-map "g e") #'end-of-buffer))
+  (should (eq (keymap-lookup donkey-normal-mode-map "G") #'end-of-buffer))
+  ;; Removed: Helix's own "g t" is goto_window_top, not the file start,
+  ;; so the binding matched neither editor.
+  (should-not (keymap-lookup donkey-normal-mode-map "g t")))
+
+(ert-deftest donkey-delete-keys-cover-vim-and-helix ()
+  "`d' and `x' both delete: Helix's key and Vim's key for the same command.
+
+Both editors' keys already cover char-or-selection -- Vim's `x' deletes
+the character in normal state and the selection in visual state -- which
+is exactly what `donkey-delete' does.  Deliberate duplication, pinned so
+it is not mistaken for a leftover.  `D' stays `kill-line', Vim's
+delete-to-end-of-line."
+  (should (eq (keymap-lookup donkey-normal-mode-map "d") #'donkey-delete))
+  (should (eq (keymap-lookup donkey-normal-mode-map "x") #'donkey-delete))
+  (should (eq (keymap-lookup donkey-normal-mode-map "D") #'kill-line)))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here
