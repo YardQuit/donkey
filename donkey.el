@@ -1760,9 +1760,30 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
   (donkey--ensure-non-rectangle-selection)
   (condition-case nil
       (progn
+        ;; Forward first, then back.  `backward-sentence' alone lands on
+        ;; the PREVIOUS sentence whenever point is already sitting at a
+        ;; sentence start, so pressing this with the cursor on the first
+        ;; letter -- the most natural place to press it -- marked the
+        ;; sentence before the one under the cursor.  Reported live on
+        ;; the scratch message, with point on the \"T\" of \"To create a
+        ;; file\": it selected \"This buffer is for text that is not
+        ;; saved, and for Lisp evaluation.\" instead.  Going forward to
+        ;; the end of the sentence containing point first makes the
+        ;; backward step land on that same sentence's start from every
+        ;; position within it.
+        (forward-sentence 1)
         (backward-sentence 1)
         (mark-end-of-sentence 1))
     (error (user-error "No sentence at or before point")))
+  ;; Going forward first means the motions no longer signal in a buffer
+  ;; holding nothing but whitespace -- they simply walk to its end and
+  ;; back, "marking" the blank.  Reject that here so such a buffer still
+  ;; reports rather than selecting nothing of substance.
+  (when (string-match-p "\\`[[:space:]\n]*\\'"
+                        (buffer-substring-no-properties (region-beginning)
+                                                        (region-end)))
+    (deactivate-mark)
+    (user-error "No sentence at or before point"))
   (message "Sentence marked"))
 
 (defun donkey-mark-paragraph ()

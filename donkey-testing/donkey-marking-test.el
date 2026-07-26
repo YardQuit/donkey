@@ -2316,6 +2316,45 @@ handles correctly."
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "Hello there."))))
 
+(ert-deftest donkey-mark-sentence-from-sentence-start-marks-that-sentence ()
+  "Point on the first letter marks THAT sentence, not the one before.
+
+Regression, reported live on the scratch message: with the cursor on the
+\"T\" of \"To create a file\", this selected \"This buffer is for text
+that is not saved, and for Lisp evaluation.\" -- the sentence before it.
+`backward-sentence' lands on the PREVIOUS sentence whenever point already
+sits at a sentence start, which is the most natural place to press the
+key."
+  (with-temp-buffer
+    (insert "This buffer is for text that is not saved, and for Lisp evaluation.\n"
+            "To create a file, visit it with 'C-x C-f' and enter text in its buffer.\n")
+    (goto-char (point-min))
+    (search-forward "To create")
+    (goto-char (match-beginning 0))
+    (donkey-mark-sentence)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "To create a file, visit it with 'C-x C-f' and enter text in its buffer."))))
+
+(ert-deftest donkey-mark-sentence-marks-the-same-sentence-from-any-position ()
+  "Every position inside a sentence marks that one sentence.
+
+Start, middle and end all have to agree; only the middle did before."
+  (let ((text "One two three.  Four five six.  Seven eight nine.\n"))
+    (dolist (probe '(("One two"     . "One two three.")
+                     ("two three"   . "One two three.")
+                     ("Four five"   . "Four five six.")
+                     ("five six"    . "Four five six.")
+                     ("Seven eight" . "Seven eight nine.")
+                     ("eight nine"  . "Seven eight nine.")))
+      (with-temp-buffer
+        (insert text)
+        (goto-char (point-min))
+        (search-forward (car probe))
+        (goto-char (match-beginning 0))
+        (donkey-mark-sentence)
+        (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                       (cdr probe)))))))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here
