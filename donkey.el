@@ -1758,12 +1758,44 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
   (interactive)
   (donkey--ensure-non-rectangle-selection)
-  (condition-case nil
+  (let ((origin (point)))
+   (condition-case nil
       (progn
+        ;; Forward first, then back.  `backward-sentence' alone lands on
+        ;; the PREVIOUS sentence whenever point is already sitting at a
+        ;; sentence start, so pressing this with the cursor on the first
+        ;; letter -- the most natural place to press it -- marked the
+        ;; sentence before the one under the cursor.  Reported live on
+        ;; the scratch message, with point on the \"T\" of \"To create a
+        ;; file\": it selected \"This buffer is for text that is not
+        ;; saved, and for Lisp evaluation.\" instead.  Going forward to
+        ;; the end of the sentence containing point first makes the
+        ;; backward step land on that same sentence's start from every
+        ;; position within it.
+        (forward-sentence 1)
         (backward-sentence 1)
         (mark-end-of-sentence 1))
     (error (user-error "No sentence at or before point")))
-  (message "Sentence marked"))
+  ;; Going forward first means the motions no longer signal in a buffer
+  ;; holding nothing but whitespace -- they simply walk to its end and
+  ;; back, "marking" the blank.  Reject that here so such a buffer still
+  ;; reports rather than selecting nothing of substance.
+  (when (string-match-p "\\`[[:space:]\n]*\\'"
+                        (buffer-substring-no-properties (region-beginning)
+                                                        (region-end)))
+    (deactivate-mark)
+    (user-error "No sentence at or before point"))
+  ;; Standing in the gap after a sentence means the one being asked for is
+  ;; the one COMING, not the one just left behind -- which is what the
+  ;; motions above already give for a gap in the middle of the text.  In
+  ;; the trailing gap there is no next sentence to give, and marking the
+  ;; previous one instead would answer a question that was not asked, so
+  ;; say so.  A cursor inside a sentence always leaves that sentence's end
+  ;; ahead of it, so this only ever fires from a gap.
+  (when (<= (region-end) origin)
+    (deactivate-mark)
+    (user-error "No sentence after point"))
+  (message "Sentence marked")))
 
 (defun donkey-mark-paragraph ()
   "Select the paragraph at or adjacent to point.
