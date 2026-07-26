@@ -2228,6 +2228,17 @@ PREFIX is the accumulated key sequence string for the current path."
      map)
     (nreverse acc)))
 
+(defun donkey--desc-bindings-group (full-key)
+  "Return the prefix group FULL-KEY belongs to, or \"single\".
+
+The group is everything before the first space, so \"m DEL\" and
+\"m <deletechar>\" both land in \"m\".  A key description containing no
+space at all -- a bare letter, a modified key, or a named function key
+such as \"<backspace>\" -- is a single key."
+  (if (string-match "\\(.+?\\) " full-key)
+      (match-string 1 full-key)
+    "single"))
+
 (defun donkey--binding-group-name (prefix)
   "Return a human-readable group name for PREFIX."
   (cond
@@ -2249,7 +2260,23 @@ documentation."
     (user-error "Variable `donkey-normal-mode-map' is not defined yet"))
   (let* ((buf (get-buffer-create "*DONKEY Bindings*"))
          (raw (donkey--desc-bindings-collect-leaves donkey-normal-mode-map ""))
-         (sorted-raw (sort raw (lambda (a b) (string< (car a) (car b))))))
+         ;; Sorted by GROUP first, then by key within the group.  Sorting
+         ;; by key alone interleaves single keys with the prefix groups
+         ;; alphabetically ("h" between "g t" and "m a"), and since a
+         ;; header is emitted on every group transition, "Single Keys"
+         ;; then appeared four separate times -- not the grouping the
+         ;; docstring promises.  Single keys lead, prefixes follow in
+         ;; alphabetical order.
+         (sorted-raw
+          (sort raw
+                (lambda (a b)
+                  (let ((ga (donkey--desc-bindings-group (car a)))
+                        (gb (donkey--desc-bindings-group (car b))))
+                    (cond
+                     ((string= ga gb) (string< (car a) (car b)))
+                     ((string= ga "single") t)
+                     ((string= gb "single") nil)
+                     (t (string< ga gb))))))))
     (with-current-buffer buf
       (setq buffer-read-only nil)
       (erase-buffer)
@@ -2269,14 +2296,14 @@ documentation."
         (dolist (entry sorted-raw)
           (let* ((full-key (car entry))
                  (def      (cdr entry))
-                 (group    (if (string-match "\\(.+?\\) " full-key)
-                               (match-string 1 full-key)
-                             "single"))
-                 (new-block-p (and (> lines-added 0)
-                                   (not (equal prev-group group)))))
-            ;; Separator + header on group transition
+                 (group    (donkey--desc-bindings-group full-key))
+                 (new-block-p (not (equal prev-group group))))
+            ;; Header for every group, including the first -- otherwise
+            ;; the leading block (single keys) is the one group left
+            ;; unlabelled.  The blank separator is only wanted between
+            ;; blocks, so it is skipped for the first.
             (when new-block-p
-              (insert "\n")
+              (when (> lines-added 0) (insert "\n"))
               (insert (propertize (format "  %s" (donkey--binding-group-name group))
                                   'face '(bold font-lock-comment-delimiter-face)))
               (insert "\n")
