@@ -410,11 +410,26 @@ Emacs' own =mark-end-of-sentence=, and it is worth knowing because the
 other mark commands do *not* work that way — =m w= twice marks the same
 word twice. So =m s m s m s= is another way to say =C-u 3 m s=.
 
-=m i= and =m a= take a count too, but only for a *nesting* pair such as
-=()=, =[]= or ={}=. A symmetric delimiter — a quote, =*=, =~= — opens
-and closes with the same character, so there is no way to tell one end
-from the other and "two levels out" has nothing to refer to; a count
-there reports rather than guessing.
+=m i= and =m a= take a count for *every* pair in
+=donkey-mark-pair-delimiters=, but the two kinds count different things.
+A nesting pair — =()=, =[]=, ={}=, =<>= — counts *levels*, resolving the
+correctly balanced match at each one. A symmetric delimiter — a quote,
+=*=, =~=, =/=, =_= — opens and closes with the same character, so there
+are no levels to count and it counts *occurrences* outward instead:
+
+#+begin_example
+  "No use "writing on paper." That"
+                ^ cursor here
+#+end_example
+
+- =m i "= → =writing on paper.=
+- =C-u 2 m i "= → =No use "writing on paper." That=
+
+That is a nearest-occurrence-each-way rule, not real nesting, and it can
+be fooled — with the cursor between two *separate* quoted strings, =m i "=
+already selects the gap between them rather than a quoted string, because
+nothing in the text says which quote opens. A count inherits that; it
+does not add a new way to go wrong.
 
 *Give the count as =C-u 2= or =M-2=, not =C-2=.* Whether =C-<digit>=
 reaches Emacs at all depends on the terminal — many do not transmit it
