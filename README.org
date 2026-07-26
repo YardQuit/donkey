@@ -347,6 +347,32 @@ Notes:
 | =.=   | =repeat=                 | Repeat last command         |
 | =?=   | =donkey-describe-bindings= | Show all DONKEY keybindings   |
 
+*** Counts
+
+Most commands take a numeric count via =C-u=, so =C-u 3 x= deletes three
+characters and =C-u 2 m s= marks two sentences:
+
+| Keys        | Effect                                  |
+|-------------+-----------------------------------------|
+| =C-u 3 x=   | delete three characters                 |
+| =C-u 3 y=   | copy three characters                   |
+| =C-u 3 c=   | change three characters                 |
+| =C-u 3 m w= | mark three words                        |
+| =C-u 2 m W= | mark two symbols                        |
+| =C-u 2 m s= | mark two sentences                      |
+| =C-u 2 m p= | mark two paragraphs                     |
+| =C-u 2 m A= | mark two levels out of the expression   |
+
+A count larger than the text remaining does what it can and stops, rather
+than erroring — =C-u 99 x= at the end of a buffer clears the rest.
+
+Bare digits are not counts: =3= is not bound, because =suppress-keymap=
+is called with digits left out so they cannot self-insert. Use =C-u=.
+
+The =m i= and =m a= delimiter marks do not take a count, since "two
+levels out" has no single meaning when the delimiters are matched by
+character rather than by syntax. Use =m A= for that.
+
 Some commands are reachable by more than one key on purpose, so that
 whichever editor you arrive from, the key you already know works:
 

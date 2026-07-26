@@ -2383,6 +2383,60 @@ Start, middle and end all have to agree; only the middle did before."
         (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                        (cdr probe)))))))
 
+(ert-deftest donkey-mark-commands-honour-a-count ()
+  "The mark commands select COUNT things."
+  (with-temp-buffer
+    (insert "alpha beta gamma delta\n")
+    (goto-char 1)
+    (donkey-mark-word 3)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "alpha beta gamma")))
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (insert "foo-a bar-b baz-c\n")
+    (goto-char 1)
+    (donkey-mark-symbol 2)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "foo-a bar-b")))
+  (with-temp-buffer
+    (insert "One two.  Three four.  Five six.\n")
+    (goto-char 1)
+    (donkey-mark-sentence 2)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "One two.  Three four.")))
+  (with-temp-buffer
+    (insert "P1 line.\n\nP2 line.\n\nP3 line.\n")
+    (goto-char 1)
+    (donkey-mark-paragraph 2)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "P1 line.\n\nP2 line.\n"))))
+
+(ert-deftest donkey-mark-symbol-count-covers-the-whole-run ()
+  "A counted symbol selection starts at the first symbol, not the last.
+
+Caught while adding counts: the closing `backward-sexp' moved back one
+regardless of the count, so a count of 2 over \"foo-a bar-b\" marked only
+\"bar-b\"."
+  (dolist (probe '((1 . "foo-a") (2 . "foo-a bar-b") (3 . "foo-a bar-b baz-c")))
+    (with-temp-buffer
+      (emacs-lisp-mode)
+      (insert "foo-a bar-b baz-c\n")
+      (goto-char 1)
+      (donkey-mark-symbol (car probe))
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     (cdr probe))))))
+
+(ert-deftest donkey-mark-sexp-count-goes-that-many-levels-out ()
+  "A count on the sexp marks selects that many levels outward."
+  (dolist (probe '((1 . "(c d)") (2 . "(b (c d) e)") (3 . "(a (b (c d) e) f)")))
+    (with-temp-buffer
+      (emacs-lisp-mode)
+      (insert "(a (b (c d) e) f)\n")
+      (goto-char 8)                     ; inside (c d)
+      (donkey-mark-sexp-outer (car probe))
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     (cdr probe))))))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here

@@ -787,24 +787,20 @@ afterward, unlike every sibling command in the same category."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-change-no-region-deletes-single-char ()
-  "Without an active region, deletes the character at point."
-  (let (entered deleted-arg)
+  "Without an active region, deletes the character at point and inserts.
+
+Asserts the effect rather than which primitive does it -- see the
+matching `donkey-delete' test."
+  (let (entered)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
-      (let ((orig-delete-char (symbol-function 'delete-char)))
-        (cl-letf (((symbol-function 'use-region-p)
-                   (lambda () nil))
-                  ((symbol-function 'delete-char)
-                   (lambda (n)
-                     (setq deleted-arg n)
-                     (funcall orig-delete-char n)))
-                  ((symbol-function 'donkey-enter-insert)
-                   (lambda () (setq entered t))))
-          (donkey-change)))
-      (should entered)
-      (should (eq deleted-arg 1))
-      (should (= (buffer-size) 5)))))
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'donkey-enter-insert)
+                 (lambda () (setq entered t))))
+        (donkey-change))
+      (should (equal (buffer-string) "ello\n"))
+      (should entered))))
 
 (ert-deftest donkey-change-no-region-from-middle ()
   "Deletes the character at point in the middle of a line."

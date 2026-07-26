@@ -329,7 +329,7 @@ nothing meaningful to deselect."
   (indent-according-to-mode)
   (donkey-enter-insert))
 
-(defun donkey-change ()
+(defun donkey-change (&optional count)
   "Delete the active region (or the character at point) and enter INSERT state.
 
 Under `rectangle-mark-mode' the region is replaced via
@@ -348,8 +348,10 @@ very end of the buffer `delete-char' signals `end-of-buffer', which
 would otherwise abort before the state transition and leave Normal
 state active -- pressing \"change\" and silently staying in Normal,
 with only an \"End of buffer\" message to explain it.  Caught here the
-same way `donkey-insert-after' catches it for its own `forward-char'."
-  (interactive)
+same way `donkey-insert-after' catches it for its own `forward-char'.
+
+COUNT changes that many characters when no region is active."
+  (interactive "p")
   (if (use-region-p)
       (if (bound-and-true-p rectangle-mark-mode)
           (progn
@@ -362,9 +364,8 @@ same way `donkey-insert-after' catches it for its own `forward-char'."
             (donkey-enter-normal))
         (delete-region (mark) (point))
         (donkey-enter-insert))
-    (condition-case nil
-        (delete-char 1)
-      (end-of-buffer nil))
+    (delete-region (point)
+                   (min (point-max) (+ (point) (max 1 (or count 1)))))
     (donkey-enter-insert)))
 
 ;;; ---------------------------------------------------------------------------
@@ -1043,7 +1044,7 @@ to paste the same rectangle again."
     (donkey--delete-active-region-safe)
     (yank-pop))))
 
-(defun donkey-copy ()
+(defun donkey-copy (&optional count)
   "Copy the active region, or the character at point if no region is active.
 
 With lines banked via `donkey-bank-selection', copies all of them
@@ -1067,22 +1068,25 @@ whatever was previously copied as the entry a following \"p\" pastes
 -- so one stray \"y\" past the last character would make the next
 paste insert nothing, with no error to explain it.  Confirmed live:
 with \"IMPORTANT\" freshly copied, pressing \"y\" at `point-max' left
-the kill ring's newest entry as \"\"."
-  (interactive)
-  (cond
-   ((donkey--banked-selection-p)
-    (donkey--copy-banked-selection))
-   ((use-region-p)
-    (if (bound-and-true-p rectangle-mark-mode)
-        (call-interactively #'copy-rectangle-as-kill)
-      (kill-ring-save (region-beginning) (region-end))))
-   ((< (point) (point-max))
-    (kill-ring-save (point) (1+ (point))))
-   (t
-    (message "End of buffer -- nothing to copy")))
+the kill ring's newest entry as \"\".
+
+COUNT copies that many characters when no region is active."
+  (interactive "p")
+  (let ((n (max 1 (or count 1))))
+   (cond
+    ((donkey--banked-selection-p)
+     (donkey--copy-banked-selection))
+    ((use-region-p)
+     (if (bound-and-true-p rectangle-mark-mode)
+         (call-interactively #'copy-rectangle-as-kill)
+       (kill-ring-save (region-beginning) (region-end))))
+    ((< (point) (point-max))
+     (kill-ring-save (point) (min (point-max) (+ (point) n))))
+    (t
+     (message "End of buffer -- nothing to copy"))))
   (deactivate-mark))
 
-(defun donkey-delete ()
+(defun donkey-delete (&optional count)
   "Delete character or region.
 
 With lines banked via `donkey-bank-selection', kills all of them (plus
@@ -1090,17 +1094,22 @@ any active region's lines) as a single kill instead.
 
 With `rectangle-mark-mode' active, kills the rectangle via
 `kill-rectangle' -- see `donkey--last-kill-rectangle-p' for how
-`donkey-yank' later knows to paste it back as a rectangle."
-  (interactive)
-  (cond
-   ((donkey--banked-selection-p)
-    (donkey--delete-banked-selection))
-   ((use-region-p)
-    (if (bound-and-true-p rectangle-mark-mode)
-        (call-interactively #'kill-rectangle)
-      (kill-region (mark) (point))))
-   ((< (point) (point-max))
-    (delete-char 1))
+`donkey-yank' later knows to paste it back as a rectangle.
+
+COUNT deletes that many characters when no region is active.
+A count larger than the text remaining stops at the end rather than
+signalling."
+  (interactive "p")
+  (let ((n (max 1 (or count 1))))
+   (cond
+    ((donkey--banked-selection-p)
+     (donkey--delete-banked-selection))
+    ((use-region-p)
+     (if (bound-and-true-p rectangle-mark-mode)
+         (call-interactively #'kill-rectangle)
+       (kill-region (mark) (point))))
+    ((< (point) (point-max))
+     (delete-region (point) (min (point-max) (+ (point) n))))
    (t
     ;; At `point-max' there is no character to delete and `delete-char'
     ;; signals a bare `end-of-buffer', which pops the debugger for anyone
@@ -1108,7 +1117,7 @@ With `rectangle-mark-mode' active, kills the rectangle via
     ;; both already guard this exact position; this one was missed.
     ;; Reached by pressing "x" or "d" once too often at the end of a
     ;; buffer, which \\[end-of-buffer] lands on directly.
-    (message "End of buffer -- nothing to delete"))))
+    (message "End of buffer -- nothing to delete")))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Wrap Region Commands
@@ -1652,20 +1661,25 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
   (interactive)
   (donkey--mark-pair-select nil))
 
-(defun donkey--mark-sexp-select (inner-p)
+(defun donkey--mark-sexp-select (inner-p &optional count)
   "Shared implementation for `donkey-mark-sexp-inner'/`donkey-mark-sexp-outer'.
 
 Uses the syntax table to identify delimiters (parentheses, brackets,
 braces).  If point is on an opening or closing delimiter, uses that
 pair; if point is inside a pair, finds the enclosing delimiters.
 
+COUNT selects how many levels out to go, so a count of 2 marks the pair
+enclosing the one that would be marked without it.  Point already on an
+opening delimiter counts as being at that pair, so a count of 1 there
+uses it rather than its parent.
+
 With INNER-P non-nil, selects the expression's content, excluding its
 delimiters, and errors if that content is empty (e.g. \"()\");
 otherwise selects the delimiters too."
   (donkey--ensure-non-rectangle-selection)
-  (unless (looking-at "\\s(")
+  (let ((levels (max 1 (or count 1))))
     (condition-case nil
-        (backward-up-list)
+        (backward-up-list (if (looking-at "\\s(") (1- levels) levels))
       (scan-error
        (user-error "Not inside a balanced expression"))))
   (let ((start (if inner-p (1+ (point)) (point))) end)
@@ -1681,7 +1695,7 @@ otherwise selects the delimiters too."
     (activate-mark)
     (message (if inner-p "Marked inner expression" "Marked outer expression"))))
 
-(defun donkey-mark-sexp-inner ()
+(defun donkey-mark-sexp-inner (&optional count)
   "Mark content inside the balanced expression at point.
 
 Uses the syntax table to identify delimiters (parentheses,
@@ -1691,11 +1705,13 @@ a pair, finds the enclosing delimiters and marks everything
 within, excluding the delimiters themselves.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first."
-  (interactive)
-  (donkey--mark-sexp-select t))
+`rectangle-mark-mode' selection is disabled first.
 
-(defun donkey-mark-sexp-outer ()
+COUNT selects how many levels out to go."
+  (interactive "p")
+  (donkey--mark-sexp-select t count))
+
+(defun donkey-mark-sexp-outer (&optional count)
   "Mark the balanced expression at point, including delimiters.
 
 Uses the syntax table to identify delimiters (parentheses,
@@ -1704,9 +1720,11 @@ pair.  If point is inside a pair, finds the enclosing pair
 and marks it including delimiters.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first."
-  (interactive)
-  (donkey--mark-sexp-select nil))
+`rectangle-mark-mode' selection is disabled first.
+
+COUNT selects how many levels out to go."
+  (interactive "p")
+  (donkey--mark-sexp-select nil count))
 
 (defun donkey--point-on-word-or-symbol-char-p ()
   "Return non-nil if the character after point has word or symbol syntax.
@@ -1718,12 +1736,14 @@ one before marking it."
   (and (char-after)
        (member (char-syntax (char-after)) '(?\w ?_))))
 
-(defun donkey-mark-word ()
+(defun donkey-mark-word (&optional count)
   "Select the entire word at or adjacent to point.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first."
-  (interactive)
+`rectangle-mark-mode' selection is disabled first.
+
+COUNT marks that many words."
+  (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (unless (donkey--point-on-word-or-symbol-char-p)
     (backward-word 1))
@@ -1734,10 +1754,10 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
   (unless (thing-at-point 'word)
     (user-error "No word at or before point"))
   (beginning-of-thing 'word)
-  (mark-word)
+  (mark-word (max 1 (or count 1)))
   (message "Word marked"))
 
-(defun donkey-mark-sentence ()
+(defun donkey-mark-sentence (&optional count)
   "Select sentence at point.
 
 With no sentence to be found -- an empty buffer, or one holding only
@@ -1755,8 +1775,10 @@ line below real prose -- a case this command handles correctly today --
 so gating on it would reject work it can actually do.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first."
-  (interactive)
+`rectangle-mark-mode' selection is disabled first.
+
+COUNT marks that many sentences."
+  (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (let ((origin (point)))
    (condition-case nil
@@ -1774,7 +1796,7 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
         ;; position within it.
         (forward-sentence 1)
         (backward-sentence 1)
-        (mark-end-of-sentence 1))
+        (mark-end-of-sentence (max 1 (or count 1))))
     (error (user-error "No sentence at or before point")))
   ;; Going forward first means the motions no longer signal in a buffer
   ;; holding nothing but whitespace -- they simply walk to its end and
@@ -1797,27 +1819,31 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
     (user-error "No sentence after point"))
   (message "Sentence marked")))
 
-(defun donkey-mark-paragraph ()
+(defun donkey-mark-paragraph (&optional count)
   "Select the paragraph at or adjacent to point.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first."
-  (interactive)
+`rectangle-mark-mode' selection is disabled first.
+
+COUNT marks that many paragraphs."
+  (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (backward-paragraph 1)
   (push-mark (point) nil t)
-  (forward-paragraph 1)
+  (forward-paragraph (max 1 (or count 1)))
   (activate-mark)
   (message "Paragraph marked"))
 
-(defun donkey-mark-symbol ()
+(defun donkey-mark-symbol (&optional count)
   "Select the entire symbol at or adjacent to point.
 
 Trailing commas or periods are omitted from the selection.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first."
-  (interactive)
+`rectangle-mark-mode' selection is disabled first.
+
+COUNT marks that many symbols."
+  (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (unless (donkey--point-on-word-or-symbol-char-p)
     (condition-case nil
@@ -1832,11 +1858,15 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
   (unless (thing-at-point 'symbol)
     (user-error "No symbol at or before point"))
   (beginning-of-thing 'symbol)
-  (forward-sexp 1)
+  (forward-sexp (max 1 (or count 1)))
   (while (memq (char-before) '(?, ?.))
     (backward-char 1))
   (push-mark (point) t)
-  (backward-sexp 1)
+  ;; Back over the same number of symbols the forward step covered.
+  ;; Going back one regardless left the region holding only the LAST
+  ;; symbol of a counted run -- a count of 2 over "foo-a bar-b" marked
+  ;; just "bar-b".
+  (backward-sexp (max 1 (or count 1)))
   (activate-mark)
   (message "Symbol marked"))
 
