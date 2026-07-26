@@ -1758,7 +1758,8 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
   (interactive)
   (donkey--ensure-non-rectangle-selection)
-  (condition-case nil
+  (let ((origin (point)))
+   (condition-case nil
       (progn
         ;; Forward first, then back.  `backward-sentence' alone lands on
         ;; the PREVIOUS sentence whenever point is already sitting at a
@@ -1784,7 +1785,17 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
                                                         (region-end)))
     (deactivate-mark)
     (user-error "No sentence at or before point"))
-  (message "Sentence marked"))
+  ;; Standing in the gap after a sentence means the one being asked for is
+  ;; the one COMING, not the one just left behind -- which is what the
+  ;; motions above already give for a gap in the middle of the text.  In
+  ;; the trailing gap there is no next sentence to give, and marking the
+  ;; previous one instead would answer a question that was not asked, so
+  ;; say so.  A cursor inside a sentence always leaves that sentence's end
+  ;; ahead of it, so this only ever fires from a gap.
+  (when (<= (region-end) origin)
+    (deactivate-mark)
+    (user-error "No sentence after point"))
+  (message "Sentence marked")))
 
 (defun donkey-mark-paragraph ()
   "Select the paragraph at or adjacent to point.

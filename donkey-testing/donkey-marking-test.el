@@ -2303,18 +2303,46 @@ key nothing at all."
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "Hello there."))))
 
-(ert-deftest donkey-mark-sentence-marks-from-a-blank-line-below-prose ()
-  "Point on a blank line under prose still marks the sentence above.
+(ert-deftest donkey-mark-sentence-below-prose-reports-no-next-sentence ()
+  "Point on a blank line under prose reports rather than marking upwards.
 
-Guards the fix against over-reaching: `(thing-at-point \='sentence)'
-returns nil here, so gating on it would have rejected a case the command
-handles correctly."
+Deliberately reverses what this test asserted when it was added: it used
+to expect the sentence above to be marked.  Standing in the gap after a
+sentence asks for the one COMING -- which is what a gap in the middle of
+the text gives -- and in the trailing gap there is none, so marking the
+previous sentence would answer a question that was not asked."
   (with-temp-buffer
     (insert "Hello there.\n\n\n")
     (goto-char (point-max))
+    (should-error (donkey-mark-sentence) :type 'user-error)))
+
+(ert-deftest donkey-mark-sentence-gap-selects-the-coming-sentence ()
+  "In the gap after a sentence, the sentence that follows is marked."
+  (with-temp-buffer
+    (insert "One two three.  Four five six.  Seven eight nine.\n")
+    ;; the spaces between the first and second sentences
+    (dolist (pos '(15 16))
+      (goto-char pos)
+      (donkey-mark-sentence)
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     "Four five six.")))))
+
+(ert-deftest donkey-mark-sentence-on-a-period-marks-the-sentence-it-ends ()
+  "A period belongs to the sentence before it, and that one is marked."
+  (with-temp-buffer
+    (insert "One two three.  Four five six.\n")
+    (goto-char 14)                      ; the "." of the first sentence
+    (should (equal (char-after) ?.))
     (donkey-mark-sentence)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
-                   "Hello there."))))
+                   "One two three."))))
+
+(ert-deftest donkey-mark-sentence-past-the-last-sentence-reports ()
+  "With no sentence ahead, the command reports instead of marking behind."
+  (with-temp-buffer
+    (insert "One two three.  Four five six.\n")
+    (goto-char (point-max))
+    (should-error (donkey-mark-sentence) :type 'user-error)))
 
 (ert-deftest donkey-mark-sentence-from-sentence-start-marks-that-sentence ()
   "Point on the first letter marks THAT sentence, not the one before.
