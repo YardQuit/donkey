@@ -2255,6 +2255,15 @@ leftover and removed."
   (should (eq (keymap-lookup donkey-normal-mode-map "g e") #'end-of-buffer))
   (should (eq (keymap-lookup donkey-normal-mode-map "G") #'end-of-buffer)))
 
+(ert-deftest donkey-delete-keys-cover-vim-and-helix ()
+  "`d' and `x' both delete: Helix's key and Vim's key for the same command.
+
+Deliberate duplication, pinned so it is not mistaken for a leftover.
+`D' stays `kill-line', which is Vim's delete-to-end-of-line."
+  (should (eq (keymap-lookup donkey-normal-mode-map "d") #'donkey-delete))
+  (should (eq (keymap-lookup donkey-normal-mode-map "x") #'donkey-delete))
+  (should (eq (keymap-lookup donkey-normal-mode-map "D") #'kill-line)))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here

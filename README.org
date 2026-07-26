@@ -172,8 +172,8 @@ next navigation keypress self-insert.
 
 | Key   | Command                      | Description                      |
 |-------+------------------------------+----------------------------------|
-| =d=   | =donkey-delete=                | Delete char or region            |
-| =x=   | =donkey-delete=                | Delete char (same as =d=)        |
+| =d=   | =donkey-delete=                | Delete char or region (Helix)    |
+| =x=   | =donkey-delete=                | Delete char or region (Vim)      |
 | =D=   | =kill-line=                  | Kill to end of line              |
 | =C=   | =donkey-comment-dwim=          | Comment/uncomment line or region |
 | =C-j= | =join-line=                  | Join line with next              |
@@ -351,14 +351,24 @@ Notes:
 Some commands are reachable by more than one key on purpose, so that
 whichever editor you arrive from, the key you already know works:
 
-| Key   | Goes to             | Familiar from |
+| Key   | Does                | Familiar from |
 |-------+---------------------+---------------|
 | =g g= | beginning of buffer | Vim           |
 | =g t= | beginning of buffer | Helix         |
 | =g e= | end of buffer       | Helix         |
 | =G=   | end of buffer       | Vim           |
+| =d=   | delete char/region  | Helix         |
+| =x=   | delete char/region  | Vim           |
 
 The duplication is deliberate and worth keeping — it is not a leftover.
+
+One difference from Vim worth knowing: =d= here is *not* an
+operator-pending key. It acts immediately on the selection, or on the
+character at point when there is none, the way Helix's =d= does — so
+=d d= deletes two characters rather than a line, and =d w= deletes a
+character and then moves a word. To delete to the end of a line, use
+=D=; to delete whole lines, select them first (=V=, =J=/=K=) and press
+=d=.
 
 ** Search and Replace (=r= prefix)
 
