@@ -157,6 +157,14 @@ If the buffer is narrowed so that the anchor line is no longer visible,
 honestly continue from an anchor the buffer is not showing. Widening
 brings it back.
 
+=y= and =d= act on *whole lines* during a visual-line session, including
+the newline that ends the last one. So =V d= removes the line outright
+rather than emptying it and leaving a blank behind, and =V J y= gives a
+kill that =p= inserts as complete lines instead of splicing onto whatever
+line it lands in. This matches what banking (=m l=) has always done. A
+character-wise region made with =v= is unaffected — it still means
+exactly the characters it covers.
+
 ** Insert Mode Entry
 
 | Key | Command                         | Description                         |
