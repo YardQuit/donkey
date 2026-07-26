@@ -1740,12 +1740,29 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
 (defun donkey-mark-sentence ()
   "Select sentence at point.
 
+With no sentence to be found -- an empty buffer, or one holding only
+blank lines or whitespace -- reports a `user-error' rather than letting
+the sentence motions signal.  They raise a bare `end-of-buffer' there,
+and in a buffer of only newlines a bare `error' reading \"Invalid search
+bound (wrong side of point)\", an internal that says nothing to whoever
+pressed the key and pops the debugger for anyone running with
+`debug-on-error' on.  `donkey-mark-word' and `donkey-mark-symbol' guard
+the same way.
+
+Converted after the fact rather than gated beforehand: the obvious gate,
+`(thing-at-point \\='sentence)', also returns nil with point on the blank
+line below real prose -- a case this command handles correctly today --
+so gating on it would reject work it can actually do.
+
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first."
   (interactive)
   (donkey--ensure-non-rectangle-selection)
-  (backward-sentence 1)
-  (mark-end-of-sentence 1)
+  (condition-case nil
+      (progn
+        (backward-sentence 1)
+        (mark-end-of-sentence 1))
+    (error (user-error "No sentence at or before point")))
   (message "Sentence marked"))
 
 (defun donkey-mark-paragraph ()

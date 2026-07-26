@@ -635,9 +635,15 @@ mark-sexp should treat them as one unit."
     (should (< (region-beginning) (region-end)))))
 
 (ert-deftest donkey-mark-sentence-empty-buffer ()
-  "Empty buffer raises error."
+  "Empty buffer reports a `user-error' rather than signalling.
+
+Regression: the sentence motions raised a bare `end-of-buffer' here,
+which pops the debugger for anyone running with `debug-on-error' on.
+`donkey-mark-word' and `donkey-mark-symbol' already guarded this.  The
+assertion was previously an untyped `should-error', which a bare `error'
+satisfied just as well as the clean report does."
   (with-temp-buffer
-    (should-error (donkey-mark-sentence))))
+    (should-error (donkey-mark-sentence) :type 'user-error)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-mark-paragraph
@@ -2269,6 +2275,46 @@ delete-to-end-of-line."
   (should (eq (keymap-lookup donkey-normal-mode-map "d") #'donkey-delete))
   (should (eq (keymap-lookup donkey-normal-mode-map "x") #'donkey-delete))
   (should (eq (keymap-lookup donkey-normal-mode-map "D") #'kill-line)))
+
+(ert-deftest donkey-mark-sentence-newlines-only-signals-user-error ()
+  "A buffer of only blank lines reports cleanly.
+
+Regression: this raised a bare `error' reading \"Invalid search bound
+\(wrong side of point)\" -- an internal that tells whoever pressed the
+key nothing at all."
+  (with-temp-buffer
+    (insert "\n\n\n")
+    (goto-char (point-min))
+    (should-error (donkey-mark-sentence) :type 'user-error)))
+
+(ert-deftest donkey-mark-sentence-whitespace-only-signals-user-error ()
+  "A buffer of only whitespace reports cleanly."
+  (with-temp-buffer
+    (insert "   ")
+    (goto-char (point-min))
+    (should-error (donkey-mark-sentence) :type 'user-error)))
+
+(ert-deftest donkey-mark-sentence-still-marks-ordinary-prose ()
+  "The guard does not stop the command doing its job."
+  (with-temp-buffer
+    (insert "Hello there.  Second one.\n")
+    (goto-char (point-min))
+    (donkey-mark-sentence)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "Hello there."))))
+
+(ert-deftest donkey-mark-sentence-marks-from-a-blank-line-below-prose ()
+  "Point on a blank line under prose still marks the sentence above.
+
+Guards the fix against over-reaching: `(thing-at-point \='sentence)'
+returns nil here, so gating on it would have rejected a case the command
+handles correctly."
+  (with-temp-buffer
+    (insert "Hello there.\n\n\n")
+    (goto-char (point-max))
+    (donkey-mark-sentence)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "Hello there."))))
 
 (provide 'donkey-marking-test)
 
