@@ -191,9 +191,28 @@ next navigation keypress self-insert.
 
 | Key | Command          | Description                                 |
 |-----+------------------+---------------------------------------------|
-| =p= | =donkey-yank=      | Yank from clipboard, replacing region       |
+| =p= | =donkey-yank=      | Yank from clipboard, replacing region or banked lines |
 | =P= | =donkey-yank-pop=  | Replace last yank with next kill-ring entry |
 | =y= | =donkey-copy=      | Copy region (or char at point) to kill ring |
+
+=p= replaces whatever is selected — an active region, banked lines, or
+both together — exactly as =y= and =d= act on them, and spends the bank
+the same way. Pasting over banked lines drops the paste where the first
+banked line was:
+
+#+begin_example
+  AAA one     <- banked          ZZZ
+  BBB two                 =p=    BBB two
+  CCC three   <- banked   ==>    DDD four
+  DDD four                       EEE five
+  EEE five
+#+end_example
+
+With *nothing to paste* — an empty kill ring and no clipboard content —
+=p= does nothing at all and says =Nothing to paste=. It does not remove
+the selection first: the replaced text is deleted rather than killed, so
+losing it to a paste that then had nothing to insert would have put it
+out of reach of everything but =undo=.
 
 ** Motions
 
@@ -285,6 +304,9 @@ banked line at once:
 The live region counts too, so the final piece never has to be banked
 explicitly — in the example above, line 8 is included by =y= without a
 third =m l=.
+
+=y=, =d= and =p= all act on the banked lines plus the live region, and
+all three spend the bank once they have.
 
 =m l= toggles, with or without a region:
 

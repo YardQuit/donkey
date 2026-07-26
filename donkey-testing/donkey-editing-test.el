@@ -2416,6 +2416,116 @@ governed by the count."
     (donkey-change -2)
     (should (equal (buffer-string) "adef"))))
 
+;;; ---------------------------------------------------------------------------
+;;; Paste: banked lines, and nothing to paste
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-test--paste-buffer (&rest body)
+  "Run BODY in a five-row DONKEY buffer with an isolated kill ring."
+  `(with-temp-buffer
+     (donkey-mode 1)
+     (let ((transient-mark-mode t)
+           (kill-ring nil)
+           (kill-ring-yank-pointer nil))
+       (insert "AAA one\nBBB two\nCCC three\nDDD four\nEEE five\n")
+       ,@body)))
+
+(defun donkey-test--row (n)
+  "Move to the start of row N."
+  (goto-char (point-min))
+  (forward-line (1- n)))
+
+(ert-deftest donkey-yank-replaces-banked-lines ()
+  "Banked lines are a selection, so a paste replaces them.
+
+Regression: `donkey-yank' was the one command that could not see the
+bank.  It pasted at point and left the highlighted rows sitting there
+untouched and still banked, while `donkey-copy' and `donkey-delete' both
+acted on them and consumed them."
+  (donkey-test--paste-buffer
+   (kill-new "ZZZ\n")
+   (donkey-test--row 1) (donkey-bank-selection)
+   (donkey-test--row 3) (donkey-bank-selection)
+   (donkey-test--row 5)
+   (donkey-yank)
+   (should (equal (buffer-string) "ZZZ\nBBB two\nDDD four\nEEE five\n"))))
+
+(ert-deftest donkey-yank-over-banked-lines-consumes-the-bank ()
+  "The bank is spent by the paste, the way `y' and `d' spend it."
+  (donkey-test--paste-buffer
+   (kill-new "ZZZ\n")
+   (donkey-test--row 1) (donkey-bank-selection)
+   (donkey-test--row 3) (donkey-bank-selection)
+   (donkey-yank)
+   (should (= 0 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-yank-replaces-banked-lines-and-the-live-region ()
+  "The region counts too, exactly as it does for `y' and `d'."
+  (donkey-test--paste-buffer
+   (kill-new "ZZZ\n")
+   (donkey-test--row 1) (donkey-bank-selection)
+   (donkey-test--row 4) (push-mark (point-max) t t)
+   (donkey-yank)
+   (should (equal (buffer-string) "ZZZ\nBBB two\nCCC three\n"))))
+
+(ert-deftest donkey-yank-over-banked-lines-does-not-clobber-the-paste ()
+  "The replaced lines are deleted, not killed.
+
+Killing them would push them onto the kill ring, and the paste that
+follows would then pull those back instead of what was being pasted."
+  (donkey-test--paste-buffer
+   (kill-new "ZZZ\n")
+   (donkey-test--row 1) (donkey-bank-selection)
+   (donkey-test--row 3) (donkey-bank-selection)
+   (donkey-yank)
+   (should (equal (car kill-ring) "ZZZ\n"))))
+
+(ert-deftest donkey-yank-with-nothing-to-paste-leaves-the-region-alone ()
+  "With nothing to paste, `p' does nothing at all.
+
+Regression: the region was deleted and only THEN did the yank discover
+it had nothing to insert, leaving the selected text gone, nothing
+pasted, and a bare \"Kill ring is empty\" on screen -- gone for real,
+since the region is deleted rather than killed.  Confirmed live: two
+selected rows vanished with the kill ring still empty afterwards."
+  (donkey-test--paste-buffer
+   (donkey-test--row 1)
+   (push-mark (save-excursion (donkey-test--row 3) (point)) t t)
+   (donkey-yank)
+   (should (equal (buffer-string)
+                  "AAA one\nBBB two\nCCC three\nDDD four\nEEE five\n"))
+   (should (region-active-p))))
+
+(ert-deftest donkey-yank-with-nothing-to-paste-leaves-the-bank-alone ()
+  "The same guard protects banked lines."
+  (donkey-test--paste-buffer
+   (donkey-test--row 1) (donkey-bank-selection)
+   (donkey-test--row 3) (donkey-bank-selection)
+   (donkey-yank)
+   (should (equal (buffer-string)
+                  "AAA one\nBBB two\nCCC three\nDDD four\nEEE five\n"))
+   (should (= 2 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-yank-with-nothing-to-paste-reports ()
+  "It says so rather than failing silently or signalling."
+  (let (shown)
+    (donkey-test--paste-buffer
+     (donkey-test--row 1)
+     (cl-letf (((symbol-function 'message)
+                (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+       (donkey-yank))
+     (should (equal shown "Nothing to paste")))))
+
+(ert-deftest donkey-yank-pop-with-nothing-to-paste-leaves-the-region-alone ()
+  "`P' has the same delete-then-fail shape, and the same guard."
+  (donkey-test--paste-buffer
+   (donkey-test--row 1)
+   (push-mark (save-excursion (donkey-test--row 3) (point)) t t)
+   (donkey-yank-pop)
+   (should (equal (buffer-string)
+                  "AAA one\nBBB two\nCCC three\nDDD four\nEEE five\n"))
+   (should (region-active-p))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here
