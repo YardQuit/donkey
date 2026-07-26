@@ -335,17 +335,22 @@ Notes:
 
 | Key   | Command                  | Description                 |
 |-------+--------------------------+-----------------------------|
-| =g g= | =beginning-of-buffer=    | Go to beginning of buffer   |
+| =g g= | =beginning-of-buffer=    | Go to beginning of buffer (Vim)    |
 | =g e= | =end-of-buffer=          | Go to end of buffer         |
 | =g h= | =beginning-of-line=      | Go to beginning of line     |
 | =g l= | =move-end-of-line=       | Go to end of line           |
 | =g q= | =fill-region=            | Fill region                 |
 | =g Q= | =fill-paragraph=         | Fill paragraph              |
-| =g t= | =beginning-of-buffer=    | Go to beginning of buffer   |
+| =g t= | =beginning-of-buffer=    | Go to beginning of buffer (Helix)  |
 | =:=   | =donkey-goto-line=         | Go to line number (prompts) |
 | =%=   | =donkey-mark-whole-buffer= | Select entire buffer      |
 | =.=   | =repeat=                 | Repeat last command         |
 | =?=   | =donkey-describe-bindings= | Show all DONKEY keybindings   |
+
+=g g= and =g t= are both bound to =beginning-of-buffer= on purpose, and
+the duplication is worth keeping: =g g= is what Vim users reach for,
+=g t= is the Helix binding. Whichever editor you came from, going to the
+top works without having to learn the other one's key.
 
 ** Search and Replace (=r= prefix)
 

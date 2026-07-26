@@ -2410,6 +2410,9 @@ documentation."
 (keymap-set donkey-normal-mode-map "g l" #'move-end-of-line)
 (keymap-set donkey-normal-mode-map "g Q" #'fill-paragraph)
 (keymap-set donkey-normal-mode-map "g q" #'fill-region)
+;; Deliberately the same command as "g g" above, not a leftover: "g g" is
+;; the Vim binding for going to the top and "g t" is the Helix one, so
+;; whichever editor a user arrives from, the key they already know works.
 (keymap-set donkey-normal-mode-map "g t" #'beginning-of-buffer)
 
 ;; Search/Replace (Multi-key)
