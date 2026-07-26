@@ -2626,6 +2626,79 @@ what popping IS, in vi and in Emacs alike."
    (donkey-yank-pop 2)
    (should (equal (buffer-substring-no-properties (point-min) 4) "one"))))
 
+(ert-deftest donkey-yank-rectangle-count-widens-rather-than-stacking ()
+  "A count on a blockwise paste repeats each row, giving a wider block.
+
+Regression: routing the rectangle path through `donkey--paste-times'
+called `yank-rectangle' N times, and each call pastes wherever the last
+one left point -- partway down and across the previous block -- so two
+copies of a three-row block came out as a staircase.  A rectangle is a
+block of columns; repeating it means a wider block, which is also what a
+count on a blockwise paste does in vi."
+  (with-temp-buffer
+    (donkey-mode 1)
+    ;; `donkey--last-kill-rectangle-p' is deliberately global, not
+    ;; buffer-local, so a rectangle copied here would otherwise be seen by
+    ;; every later test in the run -- which is exactly what happened: three
+    ;; `donkey-yank-region-*' tests started taking the rectangle branch.
+    (let ((transient-mark-mode t) (kill-ring nil) (killed-rectangle nil)
+          (donkey--last-kill-rectangle-p nil))
+      (insert "AAA one\nBBB two\nCCC three\nDDD four\n")
+      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+        (goto-char (point-min))
+        (push-mark 20 t t)
+        (rectangle-mark-mode 1)
+        (donkey-copy)
+        (deactivate-mark)
+        (goto-char (point-max))
+        (donkey-yank 2))
+      (should (equal (buffer-string)
+                     "AAA one\nBBB two\nCCC three\nDDD four\nAAAAAA\nBBBBBB\nCCCCCC")))))
+
+(ert-deftest donkey-yank-rectangle-count-of-one-is-a-plain-paste ()
+  "Without a count the block is pasted once, exactly as before."
+  (with-temp-buffer
+    (donkey-mode 1)
+    ;; `donkey--last-kill-rectangle-p' is deliberately global, not
+    ;; buffer-local, so a rectangle copied here would otherwise be seen by
+    ;; every later test in the run -- which is exactly what happened: three
+    ;; `donkey-yank-region-*' tests started taking the rectangle branch.
+    (let ((transient-mark-mode t) (kill-ring nil) (killed-rectangle nil)
+          (donkey--last-kill-rectangle-p nil))
+      (insert "AAA one\nBBB two\nCCC three\nDDD four\n")
+      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+        (goto-char (point-min))
+        (push-mark 20 t t)
+        (rectangle-mark-mode 1)
+        (donkey-copy)
+        (deactivate-mark)
+        (goto-char (point-max))
+        (donkey-yank))
+      (should (equal (buffer-string)
+                     "AAA one\nBBB two\nCCC three\nDDD four\nAAA\nBBB\nCCC")))))
+
+(ert-deftest donkey-yank-rectangle-count-of-zero-pastes-nothing ()
+  "A count below 1 pastes nothing here too."
+  (with-temp-buffer
+    (donkey-mode 1)
+    ;; `donkey--last-kill-rectangle-p' is deliberately global, not
+    ;; buffer-local, so a rectangle copied here would otherwise be seen by
+    ;; every later test in the run -- which is exactly what happened: three
+    ;; `donkey-yank-region-*' tests started taking the rectangle branch.
+    (let ((transient-mark-mode t) (kill-ring nil) (killed-rectangle nil)
+          (donkey--last-kill-rectangle-p nil))
+      (insert "AAA one\nBBB two\nCCC three\nDDD four\n")
+      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+        (goto-char (point-min))
+        (push-mark 20 t t)
+        (rectangle-mark-mode 1)
+        (donkey-copy)
+        (deactivate-mark)
+        (goto-char (point-max))
+        (donkey-yank 0))
+      (should (equal (buffer-string)
+                     "AAA one\nBBB two\nCCC three\nDDD four\n")))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here

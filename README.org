@@ -210,6 +210,12 @@ in Insert state, so that meaning is still available on the key it belongs
 to. A count below 1 pastes nothing, matching zero and negative counts
 elsewhere.
 
+On a *rectangle*, a count widens the block rather than stacking copies:
+=C-u 2 p= repeats each row's text, so a three-row block comes back twice
+as wide. That is what a count on a blockwise paste does in vi, and it is
+the only reading that makes sense — pasting the block twice in sequence
+would drop the second copy partway down and across the first.
+
 =C-u 3 P= is different, and deliberately so: =P= hands its count straight
 to =yank-pop=, where it already means how many entries to reach back. So
 =C-u 3 P= takes the third one down. Reaching back through the ring is

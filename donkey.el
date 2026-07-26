@@ -1024,6 +1024,24 @@ needing any adjustment."
       (goto-char top-left)
       (insert-rectangle source))))
 
+(defun donkey--yank-rectangle-times (n)
+  "Paste `killed-rectangle' with each of its rows repeated N times.
+
+Sideways, not stacked.  A rectangle is a block of columns, so repeating
+it means a wider block -- which is what a count on a blockwise paste
+does in vi, and what `donkey--paste-times' cannot express: calling
+`yank-rectangle' N times pastes the second block wherever the first one
+left point, which is partway down and across the first, so two copies of
+a three-row block came out as a staircase rather than as anything a user
+asked for.
+
+N below 1 pastes nothing, matching `donkey--paste-times'."
+  (when (> n 0)
+    (let ((killed-rectangle
+           (mapcar (lambda (row) (mapconcat #'identity (make-list n row) ""))
+                   killed-rectangle)))
+      (yank-rectangle))))
+
 (defun donkey--paste-times (n inserter)
   "Call INSERTER N times, or not at all when N is below 1.
 
@@ -1093,7 +1111,7 @@ what asking to replace it with nothing means."
         (call-interactively #'undefined)))
      (donkey--last-kill-rectangle-p
       (donkey--delete-active-region-safe)
-      (donkey--paste-times n #'yank-rectangle))
+      (donkey--yank-rectangle-times n))
      ;; Checked after the rectangle branches, which paste from
      ;; `killed-rectangle' and so have something to insert regardless of
      ;; what the kill ring holds.
