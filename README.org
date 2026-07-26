@@ -203,6 +203,19 @@ next navigation keypress self-insert.
 | =P= | =donkey-yank-pop=  | Replace last yank with next kill-ring entry |
 | =y= | =donkey-copy=      | Copy region (or char at point) to kill ring |
 
+=C-u 3 p= pastes three copies — the vi reading of a count on a paste,
+not the Emacs one. Emacs takes a prefix argument on =C-y= to mean *which*
+kill-ring entry to pull, but nothing is given up here: =C-y= is untouched
+in Insert state, so that meaning is still available on the key it belongs
+to. A count below 1 pastes nothing, matching zero and negative counts
+elsewhere.
+
+=C-u 3 P= is different, and deliberately so: =P= hands its count straight
+to =yank-pop=, where it already means how many entries to reach back. So
+=C-u 3 P= takes the third one down. Reaching back through the ring is
+what popping *is*, in vi and in Emacs alike, so it needs no
+reinterpretation.
+
 =p= replaces whatever is selected — an active region, banked lines, or
 both together — exactly as =y= and =d= act on them, and spends the bank
 the same way. Pasting over banked lines drops the paste where the first
@@ -392,6 +405,8 @@ characters and =C-u 2 m s= marks two sentences:
 
 | Keys        | Effect                                  |
 |-------------+-----------------------------------------|
+| =C-u 3 p=   | paste three copies                      |
+| =C-u 3 P=   | pop back to the third kill-ring entry   |
 | =C-u 3 J=   | down three lines, extending a visual selection |
 | =C-u 3 K=   | up three lines, extending a visual selection |
 | =C-u 3 x=   | delete three characters                 |
