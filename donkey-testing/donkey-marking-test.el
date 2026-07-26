@@ -2437,6 +2437,45 @@ regardless of the count, so a count of 2 over \"foo-a bar-b\" marked only
       (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                      (cdr probe))))))
 
+(ert-deftest donkey-mark-pair-count-goes-that-many-levels-out ()
+  "A count on `m i'/`m a' selects that many levels of nesting outward."
+  (let ((text "ratory (up at (the hospital. He was) bemoaning) him-\n"))
+    (dolist (probe '((nil . "the hospital. He was")
+                     (1   . "the hospital. He was")
+                     (2   . "up at (the hospital. He was) bemoaning")))
+      (with-temp-buffer
+        (insert text)
+        (goto-char (point-min))
+        (search-forward "hospital")
+        (goto-char (match-beginning 0))
+        (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
+          (donkey-mark-inner (car probe)))
+        (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                       (cdr probe)))))
+    (with-temp-buffer
+      (insert text)
+      (goto-char (point-min))
+      (search-forward "hospital")
+      (goto-char (match-beginning 0))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
+        (donkey-mark-outer 2))
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     "(up at (the hospital. He was) bemoaning)")))))
+
+(ert-deftest donkey-mark-pair-count-refuses-a-symmetric-delimiter ()
+  "A character that opens and closes alike has no nesting to count.
+
+Rejected outright rather than doing something arbitrary: with `\"' there
+is no way to tell an opening quote from a closing one, so \"two levels
+out\" has nothing to refer to."
+  (with-temp-buffer
+    (insert "say \"hello there\" now\n")
+    (goto-char (point-min))
+    (search-forward "hello")
+    (goto-char (match-beginning 0))
+    (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\")))
+      (should-error (donkey-mark-inner 2) :type 'user-error))))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here

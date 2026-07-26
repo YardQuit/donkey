@@ -1601,16 +1601,47 @@ user invoked the command from."
            (error "No matching '%c' found after cursor" close-char))))
       (cons start-pos end-pos))))
 
-(defun donkey--mark-pair-select (inner-p)
+(defun donkey--mark-pair-positions-nth (open-char close-char on-opener levels)
+  "Return (START . END) for the LEVELS-th enclosing OPEN-CHAR/CLOSE-CHAR pair.
+
+ON-OPENER is passed through to `donkey--mark-pair-positions' for the
+first level; see there for what it means.  LEVELS of 1 is the pair that
+function finds on its own.
+Each level beyond that steps just outside the pair already found and
+searches again, so from inside the inner parentheses of
+\"(up at (the hospital) bemoaning)\" a LEVELS of 2 gives the outer pair.
+The forward and backward scans count depth, so the pair already stepped
+out of is skipped rather than re-matched.
+
+Signals a `user-error' when there is no enclosing pair left, and when
+LEVELS is greater than 1 for a symmetric delimiter: a character that both
+opens and closes has no nesting for a level to refer to."
+  (let ((span (donkey--mark-pair-positions open-char close-char on-opener)))
+    (when (and (> levels 1) (= open-char close-char))
+      (user-error "A count needs a nesting pair; `%c' opens and closes alike"
+                  open-char))
+    (dotimes (_ (1- levels))
+      (when (<= (car span) (point-min))
+        (user-error "No enclosing `%c' beyond that level" open-char))
+      (setq span (save-excursion
+                   (goto-char (1- (car span)))
+                   (donkey--mark-pair-positions open-char close-char nil))))
+    span))
+
+(defun donkey--mark-pair-select (inner-p &optional count)
   "Shared implementation for `donkey-mark-inner'/`donkey-mark-outer'.
 
 With INNER-P non-nil, selects the content between the delimiters,
-excluding them; otherwise selects the delimiters too."
+excluding them; otherwise selects the delimiters too.
+
+COUNT selects how many levels out to go -- see
+`donkey--mark-pair-positions-nth'."
   (donkey--ensure-non-rectangle-selection)
   (pcase-let*
       ((`(,open-char ,close-char ,on-opener) (donkey--mark-pair-read-delimiter))
        (`(,start-pos . ,end-pos)
-        (donkey--mark-pair-positions open-char close-char on-opener)))
+        (donkey--mark-pair-positions-nth open-char close-char on-opener
+                                         (max 1 (or count 1)))))
     (push-mark (if inner-p (1+ start-pos) start-pos))
     (goto-char (if inner-p (1- end-pos) end-pos))
     (activate-mark)
@@ -1622,7 +1653,7 @@ excluding them; otherwise selects the delimiters too."
                "Selected OUTER content including '%c'")
              open-char)))
 
-(defun donkey-mark-inner ()
+(defun donkey-mark-inner (&optional count)
   "Mark text INSIDE CHAR pairs (excluding delimiters).
 
 Auto-detects the delimiter when point is on a recognized OPEN or CLOSE
@@ -1644,11 +1675,14 @@ exactly where it was -- it never lands somewhere else in the buffer as
 a side effect of the failed search.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first."
-  (interactive)
-  (donkey--mark-pair-select t))
+`rectangle-mark-mode' selection is disabled first.
 
-(defun donkey-mark-outer ()
+COUNT selects how many levels out to go, so a count of 2 from inside a
+nested pair marks the pair enclosing it."
+  (interactive "p")
+  (donkey--mark-pair-select t count))
+
+(defun donkey-mark-outer (&optional count)
   "Mark text INCLUDING CHAR pairs (delimiters included).
 
 See `donkey-mark-inner' for delimiter auto-detection, nested-pair
@@ -1657,9 +1691,12 @@ matching, and its syntax-awareness caveat versus `donkey-mark-sexp-outer'
 themselves included in the selection.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first."
-  (interactive)
-  (donkey--mark-pair-select nil))
+`rectangle-mark-mode' selection is disabled first.
+
+COUNT selects how many levels out to go, so a count of 2 from inside a
+nested pair marks the pair enclosing it."
+  (interactive "p")
+  (donkey--mark-pair-select nil count))
 
 (defun donkey--mark-sexp-select (inner-p &optional count)
   "Shared implementation for `donkey-mark-sexp-inner'/`donkey-mark-sexp-outer'.
