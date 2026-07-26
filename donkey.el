@@ -1678,6 +1678,44 @@ all guard their own \"nothing there\" cases the same way."
            (user-error "No matching '%c' found after cursor" close-char))))
       (cons start-pos end-pos))))
 
+(defun donkey--mark-pair-widen-symmetric (char span levels)
+  "Widen SPAN outward by LEVELS-1 more occurrences of CHAR each way.
+
+How a count works for a delimiter that opens and closes alike.  There is
+no nesting to step out of -- CHAR gives no way to tell an opener from a
+closer -- so a level counts OCCURRENCES instead: level 2 is the second
+CHAR back and the second CHAR forward, and so on.
+
+Once refused outright, on the reasoning that a character serving as both
+ends has no nesting for a level to refer to.  That argument proves too
+much: it rules out level 1 as well, which ships and is useful.  Marking a
+symmetric pair is already a nearest-one-each-way heuristic -- in
+\"say `alpha' beta `gamma' done\" with point in \"beta\", level 1 selects
+the GAP between two quoted strings rather than a quoted string, because
+nothing there says which quote opens.  A count inherits that heuristic
+rather than introducing a new one, and the case it makes possible is
+ordinary prose: with point in \"writing\" in
+
+    \"No use \"writing on paper.\" That\"
+
+level 1 gives \"writing on paper.\" and level 2 gives the whole of the
+outer quotation, which is what asking for two levels plainly means.
+
+Signals a `user-error' when the text runs out of delimiters before the
+count does, the same one the nesting-aware path signals."
+  (let ((extra (1- levels)))
+    (if (<= extra 0)
+        span
+      (save-excursion
+        (condition-case nil
+            (let ((start (progn (goto-char (car span))
+                                (search-backward (string char) nil nil extra)))
+                  (end (progn (goto-char (cdr span))
+                              (search-forward (string char) nil nil extra))))
+              (cons start end))
+          (search-failed
+           (user-error "No enclosing `%c' beyond that level" char)))))))
+
 (defun donkey--mark-pair-positions-nth (open-char close-char on-opener levels)
   "Return (START . END) for the LEVELS-th enclosing OPEN-CHAR/CLOSE-CHAR pair.
 
@@ -1690,13 +1728,19 @@ searches again, so from inside the inner parentheses of
 The forward and backward scans count depth, so the pair already stepped
 out of is skipped rather than re-matched.
 
-Signals a `user-error' when there is no enclosing pair left, and when
-LEVELS is greater than 1 for a symmetric delimiter: a character that both
-opens and closes has no nesting for a level to refer to."
+A symmetric delimiter has no depth to count, so it goes through
+`donkey--mark-pair-widen-symmetric' instead, which counts occurrences
+outward.  Every delimiter in `donkey-mark-pair-delimiters' therefore
+takes a count, by one route or the other.
+
+Signals a `user-error' when there is no enclosing pair left."
   (let ((span (donkey--mark-pair-positions open-char close-char on-opener)))
-    (when (and (> levels 1) (= open-char close-char))
-      (user-error "A count needs a nesting pair; `%c' opens and closes alike"
-                  open-char))
+    (when (= open-char close-char)
+      ;; Widen FIRST, with the real count, then flatten LEVELS so the
+      ;; depth-counting loop below is a no-op -- `setq' assigns left to
+      ;; right, so the other order would hand the widener a count of 1.
+      (setq span (donkey--mark-pair-widen-symmetric open-char span levels)
+            levels 1))
     (dotimes (_ (1- levels))
       (when (<= (car span) (point-min))
         (user-error "No enclosing `%c' beyond that level" open-char))
@@ -1777,7 +1821,16 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
 COUNT selects how many levels out to go, so a count of 2 from inside a
-nested pair marks the pair enclosing it."
+nested pair marks the pair enclosing it.  Every pair in
+`donkey-mark-pair-delimiters' takes one.  For a symmetric delimiter --
+one that opens and closes alike, such as a quote -- there is no depth to
+count, so a level counts OCCURRENCES outward instead: with point in
+\"writing\" in
+
+    \"No use \"writing on paper.\" That\"
+
+a COUNT of 1 marks \"writing on paper.\" and a COUNT of 2 marks the whole
+of the outer quotation.  See `donkey--mark-pair-widen-symmetric'."
   (interactive "p")
   (donkey--mark-pair-select t count))
 
@@ -1793,7 +1846,9 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
 COUNT selects how many levels out to go, so a count of 2 from inside a
-nested pair marks the pair enclosing it."
+nested pair marks the pair enclosing it -- including for symmetric
+delimiters, where a level counts occurrences outward.  See
+`donkey-mark-inner'."
   (interactive "p")
   (donkey--mark-pair-select nil count))
 

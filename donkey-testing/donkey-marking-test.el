@@ -2512,19 +2512,91 @@ regardless of the count, so a count of 2 over \"foo-a bar-b\" marked only
       (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                      "(up at (the hospital. He was) bemoaning)")))))
 
-(ert-deftest donkey-mark-pair-count-refuses-a-symmetric-delimiter ()
-  "A character that opens and closes alike has no nesting to count.
+(ert-deftest donkey-mark-pair-count-on-a-symmetric-delimiter-counts-outward ()
+  "A count on a symmetric delimiter counts OCCURRENCES outward.
 
-Rejected outright rather than doing something arbitrary: with `\"' there
-is no way to tell an opening quote from a closing one, so \"two levels
-out\" has nothing to refer to."
+Once refused outright, on the reasoning that a character serving as both
+ends has no nesting for a level to refer to.  That argument proves too
+much -- it rules out level 1 as well, which ships and is useful -- and it
+cost the ordinary prose case this asserts: nested quoted speech, where
+\"two levels out\" plainly means the outer quotation."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "you died.  \"No use \"writing on paper.\" That\" would be\n")
+      (goto-char (point-min))
+      (search-forward "writ")
+      (goto-char (- (point) 2))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\")))
+        (donkey-mark-inner 2))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "No use \"writing on paper.\" That")))))
+
+(ert-deftest donkey-mark-pair-count-of-one-on-a-symmetric-delimiter-unchanged ()
+  "Level 1 still finds the nearest occurrence each way, as it always did."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "you died.  \"No use \"writing on paper.\" That\" would be\n")
+      (goto-char (point-min))
+      (search-forward "writ")
+      (goto-char (- (point) 2))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\")))
+        (donkey-mark-inner 1))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "writing on paper.")))))
+
+(ert-deftest donkey-mark-pair-count-past-the-last-symmetric-delimiter ()
+  "Running out of occurrences reports the same error the nesting path does."
   (with-temp-buffer
     (insert "say \"hello there\" now\n")
     (goto-char (point-min))
     (search-forward "hello")
     (goto-char (match-beginning 0))
-    (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\")))
-      (should-error (donkey-mark-inner 2) :type 'user-error))))
+    (let ((text-quoting-style 'grave))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\")))
+        (let ((err (should-error (donkey-mark-inner 2) :type 'user-error)))
+          (should (equal (cadr err)
+                         "No enclosing `\"' beyond that level")))))))
+
+(ert-deftest donkey-mark-outer-count-on-a-symmetric-delimiter-counts-outward ()
+  "`m a' counts outward the same way, delimiters included."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "you died.  \"No use \"writing on paper.\" That\" would be\n")
+      (goto-char (point-min))
+      (search-forward "writ")
+      (goto-char (- (point) 2))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\")))
+        (donkey-mark-outer 2))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "\"No use \"writing on paper.\" That\"")))))
+
+(ert-deftest donkey-mark-pair-count-works-for-every-configured-delimiter ()
+  "Every pair in `donkey-mark-pair-delimiters' takes a count.
+
+Symmetric ones by counting occurrences outward, asymmetric ones by the
+depth-counting scan.  Asserted over the whole configured set rather than
+a sample, so adding a delimiter that a count cannot reach fails here."
+  (let ((transient-mark-mode t))
+    (dolist (pair donkey-mark-pair-delimiters)
+      (let* ((open (car pair))
+             (close (cdr pair))
+             (text (format "x%cone%cTARGET%ctwo%cy"
+                           open open close close))
+             (expected (format "one%cTARGET%ctwo" open close)))
+        (with-temp-buffer
+          (insert text)
+          (goto-char (point-min))
+          (search-forward "TARG")
+          (goto-char (- (point) 2))
+          (cl-letf (((symbol-function 'read-char) (lambda (&rest _) open)))
+            (donkey-mark-inner 2))
+          (should (equal (cons open
+                               (buffer-substring-no-properties
+                                (region-beginning) (region-end)))
+                         (cons open expected))))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Zero and negative counts on the mark commands
