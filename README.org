@@ -376,9 +376,19 @@ and closes with the same character, so there is no way to tell one end
 from the other and "two levels out" has nothing to refer to; a count
 there reports rather than guessing.
 
-*In a terminal, =C-2= does not reach Emacs* — it is not transmitted as a
-distinct key. Use =M-2= or =C-u 2= instead. This catches people out,
-because =C-2= works in graphical Emacs.
+*Give the count as =C-u 2= or =M-2=, not =C-2=.* Whether =C-<digit>=
+reaches Emacs at all depends on the terminal — many do not transmit it
+as a distinct key, and it is not worth relying on. =C-u 2= is a plain
+control character followed by a digit and always gets through.
+
+Watch out for bare =C-u=: on its own it means *four*, not one. =C-u m i=
+asks for four levels of nesting, so on text only two deep it reports
+=No '(' found near cursor= — which reads like a broken count rather than
+a count that was simply too large.
+
+If a count seems to be ignored, =C-h k= followed by the keys you press
+names the command Emacs actually received, which settles where it is
+being lost.
 
 Some commands are reachable by more than one key on purpose, so that
 whichever editor you arrive from, the key you already know works:
