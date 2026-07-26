@@ -2811,26 +2811,24 @@ one, both outside the default set."
          (append donkey-mark-pair-delimiters
                  ;; "#" symmetric; guillemets asymmetric and non-ASCII.
                  (list (cons ?# ?#) (cons ?\« ?\»)))))
-    (with-temp-buffer
-      (insert "a#one#TARGET#two#b")
-      (goto-char (point-min))
-      (search-forward "TARG")
-      (goto-char (- (point) 2))
-      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?#)))
-        (donkey-mark-inner 2))
-      (should (equal (buffer-substring-no-properties (region-beginning)
-                                                     (region-end))
-                     "one#TARGET#two")))
-    (with-temp-buffer
-      (insert "a«one«TARGET»two»b")
-      (goto-char (point-min))
-      (search-forward "TARG")
-      (goto-char (- (point) 2))
-      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\«)))
-        (donkey-mark-inner 2))
-      (should (equal (buffer-substring-no-properties (region-beginning)
-                                                     (region-end))
-                     "one«TARGET»two")))))
+    (dolist (case '((?# "a#one#TARGET#two#b" "TARGET" "one#TARGET#two")
+                    (?\« "a«one«TARGET»two»b" "TARGET" "one«TARGET»two")))
+      ;; Both routes: no count at all, and a count of 2.  A configured
+      ;; delimiter that only worked on one of them would be half-supported.
+      (dolist (count (list nil 2))
+        (with-temp-buffer
+          (insert (nth 1 case))
+          (goto-char (point-min))
+          (search-forward "TARG")
+          (goto-char (- (point) 2))
+          (cl-letf (((symbol-function 'read-char)
+                     (lambda (&rest _) (nth 0 case))))
+            (if count (donkey-mark-inner count) (donkey-mark-inner)))
+          (should (equal (list (nth 0 case) count
+                               (buffer-substring-no-properties
+                                (region-beginning) (region-end)))
+                         (list (nth 0 case) count
+                               (if count (nth 3 case) (nth 2 case))))))))))
 
 (ert-deftest donkey-mark-pair-symmetric-count-is-case-sensitive ()
   "A count of a LETTER delimiter does not fold case.
@@ -2856,19 +2854,25 @@ stopped at the lowercase x and marked \" mid X TARGET X two \"."
                       ;; and it would collapse into a symmetric delimiter.
                       (?q "z q one q TARGET Q two Q Z"
                           " one q TARGET Q two ")))
-        (with-temp-buffer
-          (insert (nth 1 case))
-          (goto-char (point-min))
-          (search-forward "TARG")
-          (goto-char (- (point) 2))
-          (let ((case-fold-search fold))
-            (cl-letf (((symbol-function 'read-char)
-                       (lambda (&rest _) (nth 0 case))))
-              (donkey-mark-inner 2)))
-          (should (equal (list fold (nth 0 case)
-                               (buffer-substring-no-properties
-                                (region-beginning) (region-end)))
-                         (list fold (nth 0 case) (nth 2 case)))))))))
+        ;; Both routes.  Level 1 goes through `donkey--mark-pair-positions',
+        ;; which has bound `case-fold-search' all along; the count goes
+        ;; through the outward walk, which is what did not.  Asserting only
+        ;; the count would leave the two free to drift apart again.
+        (dolist (count (list nil 2))
+          (with-temp-buffer
+            (insert (nth 1 case))
+            (goto-char (point-min))
+            (search-forward "TARG")
+            (goto-char (- (point) 2))
+            (let ((case-fold-search fold))
+              (cl-letf (((symbol-function 'read-char)
+                         (lambda (&rest _) (nth 0 case))))
+                (if count (donkey-mark-inner count) (donkey-mark-inner))))
+            (should (equal (list fold (nth 0 case) count
+                                 (buffer-substring-no-properties
+                                  (region-beginning) (region-end)))
+                           (list fold (nth 0 case) count
+                                 (if count (nth 2 case) " TARGET "))))))))))
 
 (provide 'donkey-marking-test)
 
