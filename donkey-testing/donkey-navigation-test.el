@@ -1155,6 +1155,84 @@ side of the anchor the selection grows from."
                        (donkey-visual-next-line 3)))
                  4)))
 
+;;; ---------------------------------------------------------------------------
+;;; donkey-jump-back and narrowing
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-jump-back-skips-positions-outside-narrowing ()
+  "A narrowed buffer cycles only through positions it is showing.
+
+Regression: marker positions are absolute and narrowing does not move
+them, so a ring recorded before narrowing mostly holds positions the
+buffer no longer shows.  `goto-char' silently clamps to the narrowing
+edge rather than signalling, so those entries landed point on the first
+visible character while still reporting a jump to a recorded position."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (insert "aaaa\nbbbb\ncccc\ndddd\n")
+    (dolist (p '(2 8 14 19))
+      (goto-char p)
+      (donkey--track-position))
+    (narrow-to-region 11 15)
+    (goto-char 12)
+    (donkey-jump-back)
+    (should (= (point) 14))
+    (should (<= (point-min) (point)))
+    (should (<= (point) (point-max)))))
+
+(ert-deftest donkey-jump-back-reports-when-nothing-is-visible ()
+  "With every recorded position hidden, it says so instead of clamping."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (insert "aaaa\nbbbb\ncccc\ndddd\n")
+    (dolist (p '(2 3 4))
+      (goto-char p)
+      (donkey--track-position))
+    (narrow-to-region 11 15)
+    (goto-char 12)
+    (let ((err (should-error (donkey-jump-back) :type 'user-error)))
+      (should (equal (cadr err)
+                     "No recorded position in the visible portion")))
+    ;; and point did not move to the narrowing edge on the way out
+    (should (= (point) 12))))
+
+(ert-deftest donkey-jump-back-counts-only-visible-positions ()
+  "The reported total matches what pressing again will cycle through."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (insert "aaaa\nbbbb\ncccc\ndddd\n")
+    (dolist (p '(2 8 14 19))
+      (goto-char p)
+      (donkey--track-position))
+    ;; The ring holds the PREVIOUS point at each move, so it is (14 8 2);
+    ;; narrowing to 6..20 leaves 14 and 8 visible and hides 2.
+    (narrow-to-region 6 20)
+    (goto-char 12)
+    (let (shown)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-jump-back))
+      ;; The TOTAL is what changed here: 2 visible, not the ring's 3.
+      ;; The index is pre-existing rotation behaviour -- the counter is
+      ;; incremented before use, so the first press lands on the second
+      ;; entry and reaches the first on the way round.
+      (should (equal shown "Position 2/2"))
+      (should (<= (point-min) (point)))
+      (should (<= (point) (point-max))))))
+
+(ert-deftest donkey-jump-back-unaffected-without-narrowing ()
+  "Widened buffers cycle through the whole ring, as before."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (insert "abcdefghij")
+    (dolist (p '(2 4 6))
+      (goto-char p)
+      (donkey--track-position))
+    (should (equal (list (progn (donkey-jump-back) (point))
+                         (progn (donkey-jump-back) (point))
+                         (progn (donkey-jump-back) (point)))
+                   '(2 4 2)))))
+
 (provide 'donkey-navigation-test)
 
 ;;; donkey-navigation-test.el ends here

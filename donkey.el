@@ -218,18 +218,40 @@ since the last command.  Independent of the mark ring and region."
   "Rotate to the next stored position in the ring and jump there.
 
 Press repeatedly to cycle through the last `donkey-position-ring-max'
-recorded positions in this buffer."
+recorded positions in this buffer.
+
+Positions outside the accessible portion are skipped rather than jumped
+to.  Marker positions are absolute and narrowing does not move them, so
+a ring recorded before \\[narrow-to-region] (or `org-narrow-to-subtree',
+which Org users press constantly) mostly holds positions the buffer is
+no longer showing.  `goto-char' silently CLAMPS to the narrowing edge
+rather than signalling, so those entries used to land point on the first
+or last visible character while still reporting \"Position 2/3\" -- a
+claimed jump to a recorded position that was really just a jump to the
+boundary.  `donkey--banked-spans' filters the same way and for the same
+reason.  The count in the message is of the visible entries too, so it
+matches what pressing again will actually cycle through."
   (interactive)
-  (if (null donkey--position-ring)
-      (user-error "No positions recorded yet")
-    (let ((ring-len (length donkey--position-ring)))
-      (setq donkey--position-index (1+ donkey--position-index))
-      (when (>= donkey--position-index ring-len)
-        (setq donkey--position-index 0))
-      (goto-char (nth donkey--position-index donkey--position-ring))
-      (setq donkey--last-tracked-state (cons (current-buffer) (point)))
-      (message "Position %d/%d"
-               (1+ donkey--position-index) ring-len))))
+  (let ((visible (seq-filter (lambda (m)
+                               (let ((pos (marker-position m)))
+                                 (and pos
+                                      (<= (point-min) pos)
+                                      (<= pos (point-max)))))
+                             donkey--position-ring)))
+    (cond
+     ((null donkey--position-ring)
+      (user-error "No positions recorded yet"))
+     ((null visible)
+      (user-error "No recorded position in the visible portion"))
+     (t
+      (let ((ring-len (length visible)))
+        (setq donkey--position-index (1+ donkey--position-index))
+        (when (>= donkey--position-index ring-len)
+          (setq donkey--position-index 0))
+        (goto-char (nth donkey--position-index visible))
+        (setq donkey--last-tracked-state (cons (current-buffer) (point)))
+        (message "Position %d/%d"
+                 (1+ donkey--position-index) ring-len))))))
 
 (defun donkey-goto-line ()
   "Prompt for a line number and move point to the start of that line.

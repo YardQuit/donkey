@@ -908,6 +908,9 @@ moves.
 - Ring size controlled by =donkey-position-ring-max= (default: 10)
 - Ring is buffer-local — each buffer keeps its own history
 - Independent of the mark ring and region
+- In a narrowed buffer, only positions inside the visible portion are
+  offered; if none of them are, =S= says so rather than jumping to the
+  narrowing edge
 
 To keep more (or fewer) positions, set =donkey-position-ring-max= in
 your =init.el= or =config.el=, e.g. after the =load= call from
