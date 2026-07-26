@@ -1469,9 +1469,15 @@ string, which lists the OPEN characters in this order."
   (format "Char (%s): " (donkey--mark-pair-open-chars-string "")))
 
 (defun donkey--mark-pair-unsupported-error (char)
-  "Signal an error for CHAR not found in `donkey-mark-pair-delimiters'."
-  (error "Unsupported delimiter '%c'.  Use: %s" char
-         (donkey--mark-pair-open-chars-string " ")))
+  "Signal a `user-error' for CHAR not in `donkey-mark-pair-delimiters'.
+
+A `user-error' rather than a bare `error': this is reached by answering
+the `m i'/`m a' prompt with a character that is not a delimiter, which is
+an ordinary typo on a prompt that lists nineteen accepted characters --
+not a malfunction.  A bare `error' pops the debugger for anyone running
+with `debug-on-error' on."
+  (user-error "Unsupported delimiter '%c'.  Use: %s" char
+              (donkey--mark-pair-open-chars-string " ")))
 
 (defun donkey--mark-pair-read-delimiter ()
   "Return (OPEN-CHAR CLOSE-CHAR ON-OPENER) for the char pair to mark.
@@ -1689,7 +1695,12 @@ COUNT selects how many levels out to go -- see
     (activate-mark)
     (when (>= (region-beginning) (region-end))
       (deactivate-mark)
-      (error "Empty selection between %c and %c" open-char close-char))
+      ;; A `user-error': an empty pair is ordinary in code -- `()' for a
+      ;; no-argument call, `""' for an empty string -- so pressing `m i'
+      ;; on one is a miss, not a malfunction, and a bare `error' popped
+      ;; the debugger under `debug-on-error'.  `m a' on the same pair
+      ;; still works, since there the delimiters themselves are content.
+      (user-error "Empty selection between %c and %c" open-char close-char))
     (message (if inner-p
                  "Selected content for '%c'"
                "Selected OUTER content including '%c'")

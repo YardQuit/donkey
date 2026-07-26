@@ -2649,9 +2649,18 @@ with `debug-on-error' on.  Bare \\[universal-argument] means FOUR, so
   (with-temp-buffer
     (insert "a (b (c d) e) f")
     (goto-char 8)
-    (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
-      (let ((err (should-error (donkey-mark-inner 3) :type 'user-error)))
-        (should (equal (cadr err) "No enclosing `(' beyond that level"))))))
+    ;; `error'/`user-error' run their format string through
+    ;; `format-message', which rewrites ` and ' as curved quotes whenever
+    ;; `text-quoting-style' resolves to `curve' -- the default on any
+    ;; terminal that can display them.  Comparing against a literal only
+    ;; holds if the style is pinned: without this the assertion passed in
+    ;; a sandbox with no locale set and failed on CI, where the UTF-8
+    ;; locale selected `curve' and the message read "No ‘(’ beyond...".
+    (let ((text-quoting-style 'grave))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
+        (let ((err (should-error (donkey-mark-inner 3) :type 'user-error)))
+          (should (equal (cadr err)
+                         "No enclosing `(' beyond that level")))))))
 
 (ert-deftest donkey-mark-inner-count-within-nesting-still-works ()
   "The level guard did not cost the levels that do exist."
@@ -2674,9 +2683,49 @@ The message itself is unchanged -- there really is no delimiter here."
   (with-temp-buffer
     (insert "no parens here")
     (goto-char 5)
+    ;; `text-quoting-style' pinned -- see
+    ;; `donkey-mark-inner-count-past-outermost-pair-reports-the-level'.
+    (let ((text-quoting-style 'grave))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
+        (let ((err (should-error (donkey-mark-inner) :type 'user-error)))
+          (should (equal (cadr err) "No '(' found near cursor")))))))
+
+(ert-deftest donkey-mark-inner-on-an-empty-pair-is-a-user-error ()
+  "`m i' on an empty pair reports without popping the debugger.
+
+An empty pair is ordinary in code -- `()' for a no-argument call, `\"\"'
+for an empty string -- so pressing this on one is a miss, not a
+malfunction.  A bare `error' popped the debugger under `debug-on-error'."
+  (with-temp-buffer
+    (insert "a () b")
+    (goto-char 4)
     (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
+      (should-error (donkey-mark-inner) :type 'user-error))))
+
+(ert-deftest donkey-mark-outer-on-an-empty-pair-still-selects-it ()
+  "`m a' on an empty pair selects the delimiters, which are the content."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "a () b")
+      (goto-char 4)
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
+        (donkey-mark-outer))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "()")))))
+
+(ert-deftest donkey-mark-inner-unsupported-delimiter-is-a-user-error ()
+  "Answering the prompt with a non-delimiter reports, and lists the set.
+
+An ordinary typo on a prompt that accepts nineteen characters -- a bare
+`error' popped the debugger under `debug-on-error'."
+  (with-temp-buffer
+    (insert "a (b) c")
+    (goto-char 2)
+    (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?z)))
       (let ((err (should-error (donkey-mark-inner) :type 'user-error)))
-        (should (equal (cadr err) "No '(' found near cursor"))))))
+        (should (string-match-p "Unsupported delimiter"
+                                (error-message-string err)))))))
 
 (provide 'donkey-marking-test)
 
