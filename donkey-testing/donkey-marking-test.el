@@ -2874,6 +2874,64 @@ stopped at the lowercase x and marked \" mid X TARGET X two \"."
                            (list fold (nth 0 case) count
                                  (if count (nth 2 case) " TARGET "))))))))))
 
+(ert-deftest donkey-mark-pair-lopsided-symmetric-count-refuses-half-a-widen ()
+  "Enough delimiters one way but not the other is refused, not half-done.
+
+The outward walk searches backward and forward separately, so a text with
+three occurrences behind point and two ahead can satisfy one and not the
+other.  Both are inside one `condition-case', so a successful backward
+walk is discarded rather than combined with an unwidened forward end --
+a span widened on one side only would silently mark something nobody
+asked for."
+  (with-temp-buffer
+    (insert "\"x \"y \"TARGET\" z\"")
+    (goto-char (point-min))
+    (search-forward "TARG")
+    (goto-char (- (point) 2))
+    (let ((text-quoting-style 'grave))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\")))
+        (let ((err (should-error (donkey-mark-inner 3) :type 'user-error)))
+          (should (equal (cadr err)
+                         "No enclosing `\"' beyond that level")))))))
+
+(ert-deftest donkey-mark-pair-lopsided-symmetric-count-of-two-still-works ()
+  "The level that IS available on both sides is still given."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "\"x \"y \"TARGET\" z\"")
+      (goto-char (point-min))
+      (search-forward "TARG")
+      (goto-char (- (point) 2))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\")))
+        (donkey-mark-inner 2))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "y \"TARGET\" z")))))
+
+(ert-deftest donkey-mark-pair-overshoot-leaves-point-and-region-alone ()
+  "Overshooting a count moves nothing and activates nothing.
+
+Both delimiter kinds, and several sizes of overshoot.  The searches walk
+point across the buffer as a means of computing the span, so without
+`save-excursion' a refusal would strand point on some unrelated delimiter
+-- and a half-set region would look like a selection that was asked for."
+  (let ((transient-mark-mode t))
+    (dolist (case '((?\" "you died. \"No use \"writing on paper.\" That\" would be")
+                    (?\( "a (b (c d) e) f")))
+      (dolist (count '(3 4 9))
+        (with-temp-buffer
+          (insert (nth 1 case))
+          (goto-char (point-min))
+          (search-forward "writ" nil t)
+          (search-forward "c d" nil t)
+          (goto-char (- (point) 2))
+          (let ((origin (point)))
+            (cl-letf (((symbol-function 'read-char)
+                       (lambda (&rest _) (nth 0 case))))
+              (should-error (donkey-mark-inner count) :type 'user-error))
+            (should (equal (list (nth 0 case) count (point) (region-active-p))
+                           (list (nth 0 case) count origin nil)))))))))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here
