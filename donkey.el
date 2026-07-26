@@ -2022,13 +2022,23 @@ at POS itself.  A strict interior test on POS misses point sitting at
 `point-max' on a banked FINAL line with no trailing newline, where the
 overlay ends exactly at point -- confirmed: pressing the bank key there
 re-banked the line instead of toggling it off, since the lookup found
-nothing to remove."
-  (let ((line-start (car (donkey--whole-line-span pos pos))))
+nothing to remove.
+
+Candidates come from `overlays-in', which Emacs answers from its own
+position index, rather than from a scan of `donkey--banked-overlays'.
+Scanning made this linear in the number of banked lines, and
+`donkey--bank-span' calls it once per line, so banking a region cost
+quadratic time: 0.01s for 200 lines, 0.22s for 1000, and 1.81s for 3000
+-- a visible freeze for something as ordinary as selecting a whole file
+and banking it.  The `donkey-banked' property is what distinguishes our
+overlays from any other package's at the same position."
+  (let* ((line-start (car (donkey--whole-line-span pos pos)))
+         (probe-end (min (point-max) (1+ line-start))))
     (seq-find (lambda (ov)
-                (and (overlay-buffer ov)
+                (and (overlay-get ov 'donkey-banked)
                      (<= (overlay-start ov) line-start)
                      (< line-start (overlay-end ov))))
-              donkey--banked-overlays)))
+              (overlays-in line-start probe-end))))
 
 (defun donkey--banked-run-at (pos)
   "Return the contiguous banked run covering POS as (START . END), or nil.
