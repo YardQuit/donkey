@@ -2699,6 +2699,54 @@ count on a blockwise paste does in vi."
       (should (equal (buffer-string)
                      "AAA one\nBBB two\nCCC three\nDDD four\n")))))
 
+(ert-deftest donkey-banked-line-count-follows-a-split-banked-line ()
+  "Typing a newline inside a banked line makes it count as two.
+
+Regression: the count was the number of OVERLAYS, on the invariant that
+`donkey--bank-span' makes one per line.  An overlay advances with text
+inserted at its end, so a newline typed inside a banked line grows it
+over both -- and the count then reported one while `y' and `d' acted on
+two.  `donkey--bank-span' documents the same divergence for the emptied
+-buffer case that `evaporate' handles; evaporating cannot help here,
+because the text was never deleted."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (let ((transient-mark-mode t) (kill-ring nil))
+      (insert "r1 aaa\nr2 bbb\nr3 ccc\n")
+      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+        (goto-char (point-min))
+        (forward-line 1)
+        (donkey-bank-selection)
+        (should (= 1 (donkey--banked-line-count)))
+        (goto-char (point-min))
+        (forward-line 1)
+        (end-of-line)
+        (insert "\nSPLIT")
+        (should (= 2 (donkey--banked-line-count)))))))
+
+(ert-deftest donkey-banked-line-count-agrees-with-what-copy-reports ()
+  "Every message about the bank counts the same way.
+
+`donkey-copy' and `donkey-delete' report via `donkey--span-line-count';
+so does the total in `donkey-bank-selection's own message now, so the two
+cannot drift apart."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (let ((transient-mark-mode t) (kill-ring nil) shown)
+      (insert "r1 aaa\nr2 bbb\nr3 ccc\n")
+      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+        (goto-char (point-min))
+        (forward-line 1)
+        (donkey-bank-selection)
+        (goto-char (point-min))
+        (forward-line 1)
+        (end-of-line)
+        (insert "\nSPLIT"))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-copy))
+      (should (equal shown "Copied 2 lines")))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here

@@ -2630,9 +2630,19 @@ indistinguishable on screen."
 (defun donkey--banked-line-count ()
   "Return how many lines are currently banked.
 
-One overlay per line (see `donkey--bank-span'), so this is simply how
-many live spans there are."
-  (length (donkey--banked-spans)))
+Counts LINES, not overlays.  `donkey--bank-span' makes one overlay per
+line, so the two agree right up until an edit grows one past the line it
+was created for -- and an overlay that advances with text inserted at its
+end does exactly that the moment a newline is typed inside a banked line.
+Reporting the number of overlays then reported one line while `y' and `d'
+acted on two, the same divergence `donkey--bank-span' documents for the
+emptied-buffer case that `evaporate' handles: evaporating cannot help
+here, because the text was never deleted.
+
+`donkey--span-line-count' is what `donkey-copy' and `donkey-delete'
+already use for the totals they report, so counting the same way is also
+what keeps every message about the bank agreeing with every other."
+  (donkey--span-line-count (donkey--banked-spans)))
 
 (defun donkey--span-line-count (spans)
   "Return how many buffer lines SPANS cover in total.
