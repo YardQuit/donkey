@@ -370,6 +370,36 @@ than erroring — =C-u 99 x= at the end of a buffer clears the rest.
 Bare digits are not counts: =3= is not bound, because =suppress-keymap=
 is called with digits left out so they cannot self-insert. Use =C-u=.
 
+**** Zero and negative counts
+
+A *negative* count works backwards from point, the same way it does for
+stock =C-d=: =C-u -2 x= deletes the two characters *before* point, and
+=C-u -2 m w= marks the two words before the one the cursor is on. As
+with a positive count, running out of buffer stops at the edge and
+reports instead of erroring.
+
+A count of *zero* does nothing at all — =C-u 0 x= deletes no characters,
+=C-u 0 y= leaves the kill ring untouched rather than pushing an empty
+string over whatever =p= was about to paste. =C-u 0 c= is the one
+exception worth naming: it changes no text but still drops into INSERT
+state, because entering INSERT is what the command is for and only the
+deletion is governed by the count.
+
+=m s= is the exception: a count below 1 is treated as 1. That command is
+defined in terms of the sentence *ahead* of the cursor — it normalises
+forward and reports =No sentence after point= for anything ending behind
+where it started — so zero and negative counts have nothing they could
+mean but that error.
+
+**** Repeating =m s= extends the selection
+
+Pressing =m s= a second time straight away *grows* the selection by
+another sentence instead of re-marking the same one, and keeps growing
+on each further press until the buffer runs out. It is inherited from
+Emacs' own =mark-end-of-sentence=, and it is worth knowing because the
+other mark commands do *not* work that way — =m w= twice marks the same
+word twice. So =m s m s m s= is another way to say =C-u 3 m s=.
+
 =m i= and =m a= take a count too, but only for a *nesting* pair such as
 =()=, =[]= or ={}=. A symmetric delimiter — a quote, =*=, =~= — opens
 and closes with the same character, so there is no way to tell one end
@@ -383,8 +413,8 @@ control character followed by a digit and always gets through.
 
 Watch out for bare =C-u=: on its own it means *four*, not one. =C-u m i=
 asks for four levels of nesting, so on text only two deep it reports
-=No '(' found near cursor= — which reads like a broken count rather than
-a count that was simply too large.
+=No enclosing '(' beyond that level= — the count overshot, the delimiter
+is fine.
 
 If a count seems to be ignored, =C-h k= followed by the keys you press
 names the command Emacs actually received, which settles where it is

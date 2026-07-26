@@ -350,7 +350,10 @@ state active -- pressing \"change\" and silently staying in Normal,
 with only an \"End of buffer\" message to explain it.  Caught here the
 same way `donkey-insert-after' catches it for its own `forward-char'.
 
-COUNT changes that many characters when no region is active."
+COUNT changes that many characters when no region is active.  A negative
+COUNT changes that many characters before point and a COUNT of zero
+changes none, matching `delete-char'; either way INSERT state is still
+entered, which is what was actually asked for."
   (interactive "p")
   (if (use-region-p)
       (if (bound-and-true-p rectangle-mark-mode)
@@ -365,7 +368,8 @@ COUNT changes that many characters when no region is active."
         (delete-region (mark) (point))
         (donkey-enter-insert))
     (delete-region (point)
-                   (min (point-max) (+ (point) (max 1 (or count 1)))))
+                   (max (point-min)
+                        (min (point-max) (+ (point) (or count 1)))))
     (donkey-enter-insert)))
 
 ;;; ---------------------------------------------------------------------------
@@ -1070,9 +1074,14 @@ paste insert nothing, with no error to explain it.  Confirmed live:
 with \"IMPORTANT\" freshly copied, pressing \"y\" at `point-max' left
 the kill ring's newest entry as \"\".
 
-COUNT copies that many characters when no region is active."
+COUNT copies that many characters when no region is active.  A negative
+COUNT copies that many characters before point, matching how
+`delete-char' and friends read a negative argument.  A COUNT of zero
+copies nothing at all -- pushing the empty range would displace the
+kill ring's newest entry for the same reason spelled out above."
   (interactive "p")
-  (let ((n (max 1 (or count 1))))
+  (let* ((n (or count 1))
+         (target (max (point-min) (min (point-max) (+ (point) n)))))
    (cond
     ((donkey--banked-selection-p)
      (donkey--copy-banked-selection))
@@ -1080,8 +1089,11 @@ COUNT copies that many characters when no region is active."
      (if (bound-and-true-p rectangle-mark-mode)
          (call-interactively #'copy-rectangle-as-kill)
        (kill-ring-save (region-beginning) (region-end))))
-    ((< (point) (point-max))
-     (kill-ring-save (point) (min (point-max) (+ (point) n))))
+    ((zerop n) nil)
+    ((/= target (point))
+     (kill-ring-save (point) target))
+    ((< n 0)
+     (message "Beginning of buffer -- nothing to copy"))
     (t
      (message "End of buffer -- nothing to copy"))))
   (deactivate-mark))
@@ -1098,9 +1110,13 @@ With `rectangle-mark-mode' active, kills the rectangle via
 
 COUNT deletes that many characters when no region is active.
 A count larger than the text remaining stops at the end rather than
-signalling."
+signalling.  A negative COUNT deletes that many characters before point
+and a COUNT of zero deletes none, matching `delete-char' -- clamping
+those up to 1 instead meant \"delete zero characters\" removed one, and
+\"delete two backwards\" removed one forwards."
   (interactive "p")
-  (let ((n (max 1 (or count 1))))
+  (let* ((n (or count 1))
+         (target (max (point-min) (min (point-max) (+ (point) n)))))
    (cond
     ((donkey--banked-selection-p)
      (donkey--delete-banked-selection))
@@ -1108,8 +1124,11 @@ signalling."
      (if (bound-and-true-p rectangle-mark-mode)
          (call-interactively #'kill-rectangle)
        (kill-region (mark) (point))))
-    ((< (point) (point-max))
-     (delete-region (point) (min (point-max) (+ (point) n))))
+    ((zerop n) nil)
+    ((/= target (point))
+     (delete-region (point) target))
+   ((< n 0)
+    (message "Beginning of buffer -- nothing to delete"))
    (t
     ;; At `point-max' there is no character to delete and `delete-char'
     ;; signals a bare `end-of-buffer', which pops the debugger for anyone
@@ -1563,7 +1582,13 @@ error below -- but each of those intermediate matches really did move
 point, so without `save-excursion' the error would still leave point
 sitting at the last successfully-found delimiter (confusingly, on some
 unrelated `(' elsewhere in the buffer) instead of exactly where the
-user invoked the command from."
+user invoked the command from.
+
+Those conversions are to `user-error', not `error'.  Pressing this on a
+line with no bracket on it is an ordinary miss, not a malfunction, and a
+bare `error' pops the debugger for anyone running with `debug-on-error'
+on.  `donkey-mark-word', `donkey-mark-symbol' and `donkey-mark-sentence'
+all guard their own \"nothing there\" cases the same way."
   (let ((symmetric (= open-char close-char))
         start-pos end-pos (case-fold-search nil))
     (save-excursion
@@ -1577,13 +1602,13 @@ user invoked the command from."
                                  (donkey--mark-pair-scan-forward open-char close-char)))
               (search-failed
                (unless symmetric
-                 (error "No matching '%c' found after cursor" close-char))
+                 (user-error "No matching '%c' found after cursor" close-char))
                (goto-char start-pos)
                (setq end-pos (1+ start-pos))
                (condition-case nil
                    (setq start-pos (search-backward (string open-char) nil nil))
                  (search-failed
-                  (error "No matching '%c' found before cursor" open-char))))))
+                  (user-error "No matching '%c' found before cursor" open-char))))))
         (if (and (char-after) (= (char-after) open-char))
             (setq start-pos (point))
           (condition-case nil
@@ -1591,14 +1616,14 @@ user invoked the command from."
                                    (search-backward (string open-char) nil nil)
                                  (donkey--mark-pair-scan-backward open-char close-char)))
             (search-failed
-             (error "No '%c' found near cursor" open-char))))
+             (user-error "No '%c' found near cursor" open-char))))
         (goto-char (1+ start-pos))
         (condition-case nil
             (setq end-pos (if symmetric
                                (search-forward (string close-char) nil nil)
                              (donkey--mark-pair-scan-forward open-char close-char)))
           (search-failed
-           (error "No matching '%c' found after cursor" close-char))))
+           (user-error "No matching '%c' found after cursor" close-char))))
       (cons start-pos end-pos))))
 
 (defun donkey--mark-pair-positions-nth (open-char close-char on-opener levels)
@@ -1625,7 +1650,24 @@ opens and closes has no nesting for a level to refer to."
         (user-error "No enclosing `%c' beyond that level" open-char))
       (setq span (save-excursion
                    (goto-char (1- (car span)))
-                   (donkey--mark-pair-positions open-char close-char nil))))
+                   ;; Running out of enclosing pairs is what a count too
+                   ;; large FOR THIS TEXT looks like, and it is ordinary
+                   ;; rather than exceptional: bare
+                   ;; \\[universal-argument] means FOUR, so `C-u m i' asks
+                   ;; for four levels on text that is usually one or two
+                   ;; deep.  Left to itself the scan reports "No `(' found
+                   ;; near cursor" -- which contradicts a screen plainly
+                   ;; showing one, reads like the delimiter was mistyped
+                   ;; rather than the count overshot, and being a bare
+                   ;; `error' pops the debugger for anyone running with
+                   ;; `debug-on-error' on.  The `point-min' check above
+                   ;; only catches the case where the pair found last
+                   ;; started at the very first position.
+                   (condition-case nil
+                       (donkey--mark-pair-positions open-char close-char nil)
+                     (error
+                      (user-error "No enclosing `%c' beyond that level"
+                                  open-char))))))
     span))
 
 (defun donkey--mark-pair-select (inner-p &optional count)
@@ -1779,7 +1821,9 @@ one before marking it."
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
-COUNT marks that many words."
+COUNT marks that many words.  A negative COUNT marks that many words
+before the one point normalises onto, and a COUNT of zero marks nothing,
+matching how `mark-word' itself reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (unless (donkey--point-on-word-or-symbol-char-p)
@@ -1791,7 +1835,7 @@ COUNT marks that many words."
   (unless (thing-at-point 'word)
     (user-error "No word at or before point"))
   (beginning-of-thing 'word)
-  (mark-word (max 1 (or count 1)))
+  (mark-word (or count 1))
   (message "Word marked"))
 
 (defun donkey-mark-sentence (&optional count)
@@ -1814,7 +1858,20 @@ so gating on it would reject work it can actually do.
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
-COUNT marks that many sentences."
+COUNT marks that many sentences.  Unlike the other mark commands a COUNT
+below 1 is treated as 1 here: this command is defined in terms of the
+sentence AHEAD of point -- it normalises forward and then reports \"No
+sentence after point\" for a selection that ends behind where it started
+-- so a zero or negative count has nothing it could mean but that error.
+A COUNT reaching past the last sentence marks what there is and stops,
+the way every other counted command does.
+
+Pressing the key again immediately EXTENDS the selection by another
+sentence rather than re-marking the same one, and keeps extending until
+the buffer runs out.  That comes from `mark-end-of-sentence', which
+grows the region whenever `last-command' is this command again; the
+other mark commands do not, since `mark-word' and friends gate it behind
+an ALLOW-EXTEND argument that is nil when called from Lisp."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (let ((origin (point)))
@@ -1832,8 +1889,19 @@ COUNT marks that many sentences."
         ;; backward step land on that same sentence's start from every
         ;; position within it.
         (forward-sentence 1)
-        (backward-sentence 1)
-        (mark-end-of-sentence (max 1 (or count 1))))
+        (backward-sentence 1))
+    (error (user-error "No sentence at or before point")))
+  (condition-case nil
+      (mark-end-of-sentence (max 1 (or count 1)))
+    ;; A count running past the last sentence marks what there is and
+    ;; stops, like the counted deletes and every other mark command --
+    ;; `forward-sentence' inside `mark-end-of-sentence' signals a bare
+    ;; `end-of-buffer' there instead, which the guard below then reported
+    ;; as "No sentence at or before point": a flat contradiction of the
+    ;; screen, which is showing one.  Bare \\[universal-argument] means
+    ;; FOUR, so `C-u m s' hit this on any buffer of three sentences or
+    ;; fewer -- confirmed on "One thing.  Two thing.  Three thing.".
+    (end-of-buffer (push-mark (point-max) nil t))
     (error (user-error "No sentence at or before point")))
   ;; Going forward first means the motions no longer signal in a buffer
   ;; holding nothing but whitespace -- they simply walk to its end and
@@ -1862,12 +1930,14 @@ COUNT marks that many sentences."
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
-COUNT marks that many paragraphs."
+COUNT marks that many paragraphs.  A negative COUNT marks that many
+paragraphs before the one point normalises onto, and a COUNT of zero
+marks nothing, matching how `forward-paragraph' reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (backward-paragraph 1)
   (push-mark (point) nil t)
-  (forward-paragraph (max 1 (or count 1)))
+  (forward-paragraph (or count 1))
   (activate-mark)
   (message "Paragraph marked"))
 
@@ -1879,7 +1949,9 @@ Trailing commas or periods are omitted from the selection.
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
-COUNT marks that many symbols."
+COUNT marks that many symbols.  A negative COUNT marks that many symbols
+before the one point normalises onto, and a COUNT of zero marks nothing,
+matching how `forward-sexp' reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (unless (donkey--point-on-word-or-symbol-char-p)
@@ -1895,15 +1967,21 @@ COUNT marks that many symbols."
   (unless (thing-at-point 'symbol)
     (user-error "No symbol at or before point"))
   (beginning-of-thing 'symbol)
-  (forward-sexp (max 1 (or count 1)))
-  (while (memq (char-before) '(?, ?.))
-    (backward-char 1))
-  (push-mark (point) t)
-  ;; Back over the same number of symbols the forward step covered.
-  ;; Going back one regardless left the region holding only the LAST
-  ;; symbol of a counted run -- a count of 2 over "foo-a bar-b" marked
-  ;; just "bar-b".
-  (backward-sexp (max 1 (or count 1)))
+  (let ((n (or count 1)))
+    (forward-sexp n)
+    ;; Only a forward run leaves point at the far END of the selection,
+    ;; where a trailing "," or "." is the thing to drop.  A negative
+    ;; count leaves point at the region's START instead, and backing up
+    ;; over punctuation there would reach into the symbol before it.
+    (when (> n 0)
+      (while (memq (char-before) '(?, ?.))
+        (backward-char 1)))
+    (push-mark (point) t)
+    ;; Back over the same number of symbols the first step covered.
+    ;; Going back one regardless left the region holding only the LAST
+    ;; symbol of a counted run -- a count of 2 over "foo-a bar-b" marked
+    ;; just "bar-b".
+    (backward-sexp n))
   (activate-mark)
   (message "Symbol marked"))
 
