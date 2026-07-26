@@ -2231,6 +2231,47 @@ must cost well under the ~16x a quadratic implementation needs."
         ;; either side of the boundary.
         (should (< ratio 8))))))
 
+(ert-deftest donkey-docstring-first-lines-are-complete-sentences ()
+  "Every docstring in donkey.el opens with a one-line sentence.
+
+Checkdoc enforces this, but it lives in the lint job alone.  A wrapped
+first line reached master once already -- `donkey-banked-spans' opened
+with \"...as a list of (START . END), in buffer\" and carried the rest
+onto a second line -- merged because the four test jobs were green and
+the single red job was the easy one to overlook.  Asserting it here puts
+the same rule in front of whoever reads the test results.
+
+Scoped by `symbol-file' to symbols defined in donkey.el, matching what
+checkdoc is actually run against: the test helpers are not linted and
+are free to wrap."
+  (let ((package (expand-file-name "donkey.el"
+                                   (file-name-directory
+                                    (or (symbol-file 'donkey-copy 'defun)
+                                        default-directory))))
+        offenders)
+    (mapatoms
+     (lambda (sym)
+       (when (string-prefix-p "donkey" (symbol-name sym))
+         (dolist (entry (list (cons (and (fboundp sym) (documentation sym))
+                                    (symbol-file sym 'defun))
+                              (cons (get sym 'variable-documentation)
+                                    (symbol-file sym 'defvar))))
+           (let ((doc (car entry))
+                 (file (cdr entry)))
+             (when (and (stringp doc)
+                        (not (string-empty-p doc))
+                        file
+                        (equal (expand-file-name file) package))
+               (let ((first (car (split-string doc "\n"))))
+                 ;; A complete sentence ends in punctuation, and all of it
+                 ;; has to fit on the first line -- an opening sentence
+                 ;; that wraps is exactly what checkdoc rejects.
+                 (unless (string-match-p "[.!?]\"?\\'" first)
+                   (push (format "%s: %s" (symbol-name sym) first)
+                         offenders))))))))
+     )
+    (should-not offenders)))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here
