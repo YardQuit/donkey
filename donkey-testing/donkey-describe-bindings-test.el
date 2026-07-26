@@ -468,4 +468,37 @@ Expected: after the second call, only keys from the second map remain."
         (should     (search-forward "forward-char" nil t))))
     (kill-buffer "*DONKEY Bindings*")))
 
+(ert-deftest donkey-describe-bindings-each-group-appears-once ()
+  "Every prefix group gets exactly one labelled section.
+
+Regression: entries were sorted by key alone, so single keys interleaved
+with the prefix groups alphabetically -- \"h\" landing between \"g t\"
+and \"m a\".  A header is emitted on each group transition, so \"Single
+Keys\" appeared four separate times, which is not the grouping the
+docstring promises."
+  (donkey-describe-bindings)
+  (unwind-protect
+      (with-current-buffer "*DONKEY Bindings*"
+        (goto-char (point-min))
+        (let (heads)
+          (while (re-search-forward "^  \\([A-Za-z/ ]+\\)$" nil t)
+            (push (substring-no-properties (match-string 1)) heads))
+          (setq heads (nreverse heads))
+          (should heads)
+          (should (equal heads (delete-dups (copy-sequence heads))))
+          ;; The leading block is labelled too, rather than being the one
+          ;; group left without a header.
+          (should (equal (car heads) "Single Keys"))))
+    (when (get-buffer "*DONKEY Bindings*")
+      (kill-buffer "*DONKEY Bindings*"))))
+
+(ert-deftest donkey-desc-bindings-group-splits-on-first-space ()
+  "Prefix grouping keys off everything before the first space."
+  (should (equal (donkey--desc-bindings-group "m DEL") "m"))
+  (should (equal (donkey--desc-bindings-group "m <deletechar>") "m"))
+  (should (equal (donkey--desc-bindings-group "g g") "g"))
+  (should (equal (donkey--desc-bindings-group "G") "single"))
+  (should (equal (donkey--desc-bindings-group "C-j") "single"))
+  (should (equal (donkey--desc-bindings-group "<backspace>") "single")))
+
 ;;; donkey-describe-bindings-test.el ends here
