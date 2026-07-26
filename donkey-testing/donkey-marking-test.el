@@ -2244,6 +2244,17 @@ inserted that emptiness."
   (should (eq (keymap-lookup donkey-normal-mode-map "%")
               #'donkey-mark-whole-buffer)))
 
+(ert-deftest donkey-top-and-bottom-keys-cover-vim-and-helix ()
+  "Both editors' keys reach the top and bottom of the buffer.
+
+`g g'/`G' are the Vim pair and `g t'/`g e' the Helix pair.  The
+duplication is deliberate -- pinned here so it is not mistaken for a
+leftover and removed."
+  (should (eq (keymap-lookup donkey-normal-mode-map "g g") #'beginning-of-buffer))
+  (should (eq (keymap-lookup donkey-normal-mode-map "g t") #'beginning-of-buffer))
+  (should (eq (keymap-lookup donkey-normal-mode-map "g e") #'end-of-buffer))
+  (should (eq (keymap-lookup donkey-normal-mode-map "G") #'end-of-buffer)))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here

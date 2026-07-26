@@ -336,7 +336,8 @@ Notes:
 | Key   | Command                  | Description                 |
 |-------+--------------------------+-----------------------------|
 | =g g= | =beginning-of-buffer=    | Go to beginning of buffer (Vim)    |
-| =g e= | =end-of-buffer=          | Go to end of buffer         |
+| =g e= | =end-of-buffer=          | Go to end of buffer               |
+| =G=   | =end-of-buffer=          | Go to end of buffer (Vim)         |
 | =g h= | =beginning-of-line=      | Go to beginning of line     |
 | =g l= | =move-end-of-line=       | Go to end of line           |
 | =g q= | =fill-region=            | Fill region                 |
@@ -347,10 +348,17 @@ Notes:
 | =.=   | =repeat=                 | Repeat last command         |
 | =?=   | =donkey-describe-bindings= | Show all DONKEY keybindings   |
 
-=g g= and =g t= are both bound to =beginning-of-buffer= on purpose, and
-the duplication is worth keeping: =g g= is what Vim users reach for,
-=g t= is the Helix binding. Whichever editor you came from, going to the
-top works without having to learn the other one's key.
+Some commands are reachable by more than one key on purpose, so that
+whichever editor you arrive from, the key you already know works:
+
+| Key   | Goes to             | Familiar from |
+|-------+---------------------+---------------|
+| =g g= | beginning of buffer | Vim           |
+| =g t= | beginning of buffer | Helix         |
+| =g e= | end of buffer       | Helix         |
+| =G=   | end of buffer       | Vim           |
+
+The duplication is deliberate and worth keeping — it is not a leftover.
 
 ** Search and Replace (=r= prefix)
 

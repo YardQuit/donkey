@@ -2405,6 +2405,10 @@ documentation."
 (keymap-set donkey-normal-mode-map "u" #'undo)
 (keymap-set donkey-normal-mode-map "z z" #'recenter-top-bottom)
 (keymap-set donkey-normal-mode-map "g e" #'end-of-buffer)
+;; Same command as "g e", for the same reason "g t" duplicates "g g"
+;; below: "G" is the Vim key for the end of the buffer, so it works for
+;; anyone arriving from Vim without their having to learn "g e".
+(keymap-set donkey-normal-mode-map "G" #'end-of-buffer)
 (keymap-set donkey-normal-mode-map "g g" #'beginning-of-buffer)
 (keymap-set donkey-normal-mode-map "g h" #'beginning-of-line)
 (keymap-set donkey-normal-mode-map "g l" #'move-end-of-line)
