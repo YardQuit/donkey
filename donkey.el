@@ -880,14 +880,44 @@ Shows platform-appropriate installation tips only once per session."
     (message "Tip: Install wl-clipboard (Wayland) or xclip/xsel (X11) for system clipboard.")))
 
 (defun donkey--delete-active-region-safe ()
-  "Delete active region if one exists.
+  "Delete the active region, if there is one, to make room for a paste.
 
-Uses the function `kill-active-region' if available (Emacs 29+), falling back to
-the function `delete-active-region'.  Handles both cases gracefully."
+DELETED rather than killed, deliberately.  The function
+`delete-active-region' takes
+a KILLP argument that would push the replaced text onto the kill ring,
+and every caller here is about to paste: killing first would make the
+`yank' that follows pull back the text just removed instead of what the
+user asked to paste.  The replaced text stays recoverable through
+\\[undo], which is where a paste-over normally leaves it.
+
+Previously this called `kill-active-region' as \"available (Emacs 29+)\",
+falling back to the function `delete-active-region'.  There is no such
+function --
+not in Emacs 29, 30, 31 or 32, and not anywhere in the Emacs Lisp tree --
+so the fallback was the only branch that ever ran.  Removed rather than
+fixed, since killing is the wrong thing here for the reason above."
   (when (use-region-p)
-    (if (fboundp 'kill-active-region)
-        (kill-active-region)
-      (delete-active-region))))
+    (delete-active-region)))
+
+(defun donkey--nothing-to-paste-p ()
+  "Return non-nil when there is nothing for a paste to insert.
+
+`current-kill' is the same source `yank' reads, so this also picks up
+the system clipboard through `interprogram-paste-function' rather than
+looking at `kill-ring' alone -- a clipboard with content in it is
+something to paste even when the kill ring is empty.  DO-NOT-MOVE keeps
+the probe from rotating `kill-ring-yank-pointer' underneath the paste
+that follows.
+
+Checked BEFORE anything is removed.  `donkey-yank' used to delete the
+selection and only then discover it had nothing to insert, which left
+the selected text gone, nothing pasted, and a bare \"Kill ring is empty\"
+on screen -- and gone for real, since the region is deleted rather than
+killed.  Confirmed live: two selected lines vanished with the kill ring
+still empty afterwards."
+  (condition-case nil
+      (progn (current-kill 0 t) nil)
+    (error t)))
 
 (defvar donkey--last-kill-rectangle-p nil
   "Non-nil if the most recent kill/copy was rectangle content.
@@ -1035,6 +1065,13 @@ anywhere outside of `rectangle-mark-mode' itself."
    (donkey--last-kill-rectangle-p
     (donkey--delete-active-region-safe)
     (yank-rectangle))
+   ;; Checked after the rectangle branches, which paste from
+   ;; `killed-rectangle' and so have something to insert regardless of
+   ;; what the kill ring holds.
+   ((donkey--nothing-to-paste-p)
+    (message "Nothing to paste"))
+   ((donkey--banked-selection-p)
+    (donkey--replace-banked-selection-with-paste))
    (t
     (donkey--delete-active-region-safe)
     (donkey--clipboard-yank))))
@@ -1066,6 +1103,10 @@ to paste the same rectangle again."
     (call-interactively #'undefined))
    ((and donkey--last-kill-rectangle-p (eq last-command 'donkey-yank))
     (user-error "No further rectangle kills to cycle through; press `p' again to re-paste it"))
+   ;; Same guard as `donkey-yank', for the same shape of bug: the
+   ;; deletion below happens before `yank-pop' gets a chance to fail.
+   ((donkey--nothing-to-paste-p)
+    (message "Nothing to paste"))
    (t
     (donkey--delete-active-region-safe)
     (yank-pop))))
@@ -2529,6 +2570,36 @@ text, so a banked blank line still counts as a line."
     (donkey-clear-banked-selection)
     (deactivate-mark)
     (message "Copied %d line%s" lines (if (= 1 lines) "" "s"))))
+
+(defun donkey--replace-banked-selection-with-paste ()
+  "Replace every banked line (plus any active region's lines) with a paste.
+
+Banked lines are a selection, so a paste replaces them exactly as it
+replaces an active region -- previously `donkey-yank' was the one command
+that could not see the bank at all, pasting at point and leaving the
+highlighted lines sitting there untouched and still banked, while
+`donkey-copy' and `donkey-delete' both acted on them and consumed them.
+
+The paste lands where the FIRST span started, which is still a valid
+position after the deletions: they run back to front, so nothing before
+that span has moved by the time it is reached.
+
+Deleted rather than killed, unlike `donkey--delete-banked-selection'.
+That one is a kill because kill is the point of it; here `kill-new'
+would push the replaced lines onto the kill ring and the paste below
+would pull those back instead of what was being pasted.
+
+Consumes the bank, the way `donkey-copy' and `donkey-delete' do."
+  (let* ((spans (donkey--effective-line-spans))
+         (lines (donkey--span-line-count spans))
+         (target (car (car spans))))
+    (dolist (span (reverse spans))
+      (delete-region (car span) (cdr span)))
+    (donkey-clear-banked-selection)
+    (deactivate-mark)
+    (goto-char target)
+    (donkey--clipboard-yank)
+    (message "Replaced %d line%s" lines (if (= 1 lines) "" "s"))))
 
 (defun donkey--delete-banked-selection ()
   "Kill every banked line (plus any active region's lines) as one kill.

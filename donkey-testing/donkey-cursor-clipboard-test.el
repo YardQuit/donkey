@@ -422,45 +422,62 @@ real platform instead of the intended one."
   (cl-letf (((symbol-function 'use-region-p) (lambda () nil)))
     (should-not (donkey--delete-active-region-safe))))
 
-(ert-deftest donkey-delete-active-region-safe-calls-kill-active-region-when-available ()
-  "Prefers kill-active-region on Emacs 29+."
-  (let ((kill-called nil)
-        (delete-called nil))
-    (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-              ((symbol-function 'kill-active-region)
-               (lambda () (setq kill-called t)))
-              ((symbol-function 'delete-active-region)
-               (lambda () (setq delete-called t))))
-      (donkey--delete-active-region-safe)
-      (should kill-called)
-      (should-not delete-called))))
+(ert-deftest donkey-kill-active-region-does-not-exist ()
+  "There is no `kill-active-region' to prefer.
 
-(ert-deftest donkey-delete-active-region-safe-falls-back-to-delete-active-region ()
-  "Falls back to delete-active-region when kill-active-region is not fboundp."
-  (let ((kill-called nil)
-        (delete-called nil))
+This replaces a test that asserted the opposite.  It mocked
+`kill-active-region' with `cl-letf', which CREATES the binding -- so
+`fboundp' answered yes inside the test and the branch under test ran,
+while in production it never did.  A test validating a function that
+does not exist: not in Emacs 29, 30, 31 or 32, nor anywhere in the Emacs
+Lisp tree.  Asserted here so the fiction cannot come back."
+  (should-not (fboundp 'kill-active-region)))
+
+(ert-deftest donkey-delete-active-region-safe-deletes-rather-than-kills ()
+  "The region is deleted, not pushed onto the kill ring.
+
+Deliberate: every caller is about to paste, and killing first would make
+the `yank' that follows pull back the text just removed instead of what
+the user asked to paste.  `delete-active-region' takes a KILLP argument
+that would do exactly that; it is not passed."
+  (let ((delete-called nil)
+        (killp-passed 'unset))
     (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-              ((symbol-function 'kill-active-region) nil)
               ((symbol-function 'delete-active-region)
-               (lambda () (setq delete-called t)))
-              ((symbol-function 'fboundp)
-               (lambda (sym)
-                 (not (eq sym 'kill-active-region)))))
+               (lambda (&optional killp)
+                 (setq delete-called t killp-passed killp))))
       (donkey--delete-active-region-safe)
       (should delete-called)
-      (should-not kill-called))))
+      (should-not killp-passed))))
+
+(ert-deftest donkey-delete-active-region-safe-really-does-not-kill ()
+  "End to end: the replaced text does not land on the kill ring."
+  (let ((kill-ring (list "KEEP"))
+        (transient-mark-mode t))
+    (with-temp-buffer
+      (insert "alpha beta")
+      (goto-char (point-min))
+      (push-mark (point-max) t t)
+      (donkey--delete-active-region-safe)
+      (should (equal (buffer-string) ""))
+      (should (equal (car kill-ring) "KEEP")))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-yank / donkey-yank-pop (clipboard-layer coverage)
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-yank-deletes-region-then-yanks ()
-  "Deletes active region before yanking."
+  "Deletes active region before yanking.
+
+The kill ring is stocked because `donkey-yank' now checks there is
+something to paste BEFORE removing anything -- with it empty the command
+correctly does nothing at all, which is a different test below."
   (let ((delete-called nil)
-        (yank-called nil))
+        (yank-called nil)
+        (kill-ring (list "something")))
     (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-              ((symbol-function 'kill-active-region)
-               (lambda () (setq delete-called t)))
+              ((symbol-function 'delete-active-region)
+               (lambda (&optional _killp) (setq delete-called t)))
               ((symbol-function 'clipboard-yank)
                (lambda () (setq yank-called t))))
       (donkey-yank)
@@ -472,11 +489,12 @@ real platform instead of the intended one."
   (let ((delete-called nil)
         (pop-called nil))
     (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-              ((symbol-function 'kill-active-region)
-               (lambda () (setq delete-called t)))
+              ((symbol-function 'delete-active-region)
+               (lambda (&optional _killp) (setq delete-called t)))
               ((symbol-function 'yank-pop)
                (lambda () (setq pop-called t))))
-      (donkey-yank-pop)
+      (let ((kill-ring (list "something")))
+        (donkey-yank-pop))
       (should delete-called)
       (should pop-called))))
 
