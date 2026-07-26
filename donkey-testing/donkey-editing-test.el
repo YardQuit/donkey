@@ -2309,6 +2309,113 @@ to explain the difference."
     (donkey-delete)
     (should (equal (buffer-string) "bcdefgh\n"))))
 
+;;; ---------------------------------------------------------------------------
+;;; Zero and negative counts
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-delete-with-zero-count-deletes-nothing ()
+  "A count of zero deletes nothing, exactly as `delete-char' would.
+
+Regression: the count was clamped with `(max 1 count)', so asking to
+delete zero characters removed one -- data loss from a request that
+explicitly asked for none."
+  (with-temp-buffer
+    (insert "abcdef")
+    (goto-char 4)
+    (donkey-delete 0)
+    (should (equal (buffer-string) "abcdef"))
+    (should (= (point) 4))))
+
+(ert-deftest donkey-delete-with-negative-count-deletes-backward ()
+  "A negative count deletes that many characters BEFORE point.
+
+Regression: the `(max 1 count)' clamp turned every negative count into
+1, so \\[universal-argument] -2 then \"d\" deleted one character
+forwards -- the opposite end of the buffer from the one asked for.
+Matches `delete-char', which on the same input leaves \"adef\"."
+  (with-temp-buffer
+    (insert "abcdef")
+    (goto-char 4)
+    (donkey-delete -2)
+    (should (equal (buffer-string) "adef"))
+    (should (= (point) 2))))
+
+(ert-deftest donkey-delete-negative-count-clamps-at-point-min ()
+  "A negative count larger than the text before point stops at the start."
+  (with-temp-buffer
+    (insert "abcdef")
+    (goto-char 4)
+    (donkey-delete -99)
+    (should (equal (buffer-string) "def"))))
+
+(ert-deftest donkey-delete-negative-count-at-point-min-reports ()
+  "With nothing before point a negative count reports rather than signals."
+  (let (msg)
+    (with-temp-buffer
+      (insert "abcdef")
+      (goto-char (point-min))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq msg (apply #'format fmt args)))))
+        (donkey-delete -1))
+      (should (equal (buffer-string) "abcdef"))
+      (should (equal msg "Beginning of buffer -- nothing to delete")))))
+
+(ert-deftest donkey-copy-with-zero-count-leaves-kill-ring-alone ()
+  "A count of zero copies nothing rather than pushing an empty string.
+
+Same reasoning as copying at `point-max': an empty entry would displace
+whatever a following \"p\" was about to paste."
+  (let ((kill-ring (list "KEEP")))
+    (with-temp-buffer
+      (insert "abcdef")
+      (goto-char 4)
+      (donkey-copy 0)
+      (should (equal (car kill-ring) "KEEP")))))
+
+(ert-deftest donkey-copy-with-negative-count-copies-backward ()
+  "A negative count copies that many characters before point."
+  (let ((kill-ring nil))
+    (with-temp-buffer
+      (insert "abcdef")
+      (goto-char 4)
+      (donkey-copy -2)
+      (should (equal (car kill-ring) "bc")))))
+
+(ert-deftest donkey-copy-negative-count-at-point-min-reports ()
+  "With nothing before point a negative count reports rather than copies."
+  (let ((kill-ring (list "KEEP"))
+        msg)
+    (with-temp-buffer
+      (insert "abcdef")
+      (goto-char (point-min))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq msg (apply #'format fmt args)))))
+        (donkey-copy -1))
+      (should (equal (car kill-ring) "KEEP"))
+      (should (equal msg "Beginning of buffer -- nothing to copy")))))
+
+(ert-deftest donkey-change-with-zero-count-still-enters-insert ()
+  "A count of zero changes no text but still enters INSERT state.
+
+Entering INSERT is the whole point of the command; only the deletion is
+governed by the count."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (insert "abcdef")
+    (goto-char 4)
+    (donkey-change 0)
+    (should (equal (buffer-string) "abcdef"))
+    (should donkey-insert-mode)))
+
+(ert-deftest donkey-change-with-negative-count-changes-backward ()
+  "A negative count deletes that many characters before point."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (insert "abcdef")
+    (goto-char 4)
+    (donkey-change -2)
+    (should (equal (buffer-string) "adef"))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here

@@ -1064,6 +1064,223 @@ original anchor line instead of extending \"hello\" by one line."
       (donkey-visual-previous-line)
       (should (= donkey-visual-anchor anchor)))))
 
+;;; ---------------------------------------------------------------------------
+;;; Counts on J/K
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-test--visual-buffer (&rest body)
+  "Run BODY in a six-line DONKEY buffer, returning (LINE . REGION)."
+  `(with-temp-buffer
+     (donkey-mode 1)
+     (let ((transient-mark-mode t))
+       (insert "L1\nL2\nL3\nL4\nL5\nL6\n")
+       ,@body
+       (cons (line-number-at-pos)
+             (and (region-active-p)
+                  (buffer-substring-no-properties (region-beginning)
+                                                  (region-end)))))))
+
+(ert-deftest donkey-visual-next-line-count-matches-repeated-presses ()
+  "`C-u 3 J' lands exactly where three separate `J' presses would.
+
+Regression: `J' and `K' took no count at all while `j' and `k' -- bound
+straight to `next-line' and `previous-line' -- have always taken one, so
+\\[universal-argument] 5 J moved a single line."
+  (should (equal (donkey-test--visual-buffer
+                  (goto-char (point-min))
+                  (forward-line 1)
+                  (donkey-visual-line-toggle)
+                  (donkey-visual-next-line 3))
+                 (donkey-test--visual-buffer
+                  (goto-char (point-min))
+                  (forward-line 1)
+                  (donkey-visual-line-toggle)
+                  (donkey-visual-next-line 1)
+                  (donkey-visual-next-line 1)
+                  (donkey-visual-next-line 1)))))
+
+(ert-deftest donkey-visual-previous-line-count-matches-repeated-presses ()
+  "`C-u 3 K' lands exactly where three separate `K' presses would."
+  (should (equal (donkey-test--visual-buffer
+                  (goto-char (point-min))
+                  (forward-line 4)
+                  (donkey-visual-line-toggle)
+                  (donkey-visual-previous-line 3))
+                 (donkey-test--visual-buffer
+                  (goto-char (point-min))
+                  (forward-line 4)
+                  (donkey-visual-line-toggle)
+                  (donkey-visual-previous-line 1)
+                  (donkey-visual-previous-line 1)
+                  (donkey-visual-previous-line 1)))))
+
+(ert-deftest donkey-visual-count-crossing-the-anchor-matches-single-presses ()
+  "A count that carries point past the anchor re-anchors the same way.
+
+The selection is re-derived from the anchor and wherever point lands
+rather than accumulated, so the branch a count ends on is the branch a
+run of single presses would end on -- including the one that flips which
+side of the anchor the selection grows from."
+  (should (equal (donkey-test--visual-buffer
+                  (goto-char (point-min))
+                  (forward-line 3)
+                  (donkey-visual-line-toggle)
+                  (donkey-visual-previous-line 2))
+                 (donkey-test--visual-buffer
+                  (goto-char (point-min))
+                  (forward-line 3)
+                  (donkey-visual-line-toggle)
+                  (donkey-visual-previous-line 1)
+                  (donkey-visual-previous-line 1)))))
+
+(ert-deftest donkey-visual-next-line-negative-count-moves-up ()
+  "A negative count moves the other way, as it does for `forward-line'."
+  (should (equal (car (donkey-test--visual-buffer
+                       (goto-char (point-min))
+                       (forward-line 4)
+                       (donkey-visual-next-line -2)))
+                 3)))
+
+(ert-deftest donkey-visual-previous-line-negative-count-moves-down ()
+  "A negative count moves the other way, as it does for `forward-line'."
+  (should (equal (car (donkey-test--visual-buffer
+                       (goto-char (point-min))
+                       (donkey-visual-previous-line -3)))
+                 4)))
+
+(ert-deftest donkey-visual-line-counts-work-without-a-session ()
+  "Outside a visual-line session the count still reaches `forward-line'."
+  (should (equal (car (donkey-test--visual-buffer
+                       (goto-char (point-min))
+                       (donkey-visual-next-line 3)))
+                 4)))
+
+;;; ---------------------------------------------------------------------------
+;;; donkey-jump-back and narrowing
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-jump-back-skips-positions-outside-narrowing ()
+  "A narrowed buffer cycles only through positions it is showing.
+
+Regression: marker positions are absolute and narrowing does not move
+them, so a ring recorded before narrowing mostly holds positions the
+buffer no longer shows.  `goto-char' silently clamps to the narrowing
+edge rather than signalling, so those entries landed point on the first
+visible character while still reporting a jump to a recorded position."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (insert "aaaa\nbbbb\ncccc\ndddd\n")
+    (dolist (p '(2 8 14 19))
+      (goto-char p)
+      (donkey--track-position))
+    (narrow-to-region 11 15)
+    (goto-char 12)
+    (donkey-jump-back)
+    (should (= (point) 14))
+    (should (<= (point-min) (point)))
+    (should (<= (point) (point-max)))))
+
+(ert-deftest donkey-jump-back-reports-when-nothing-is-visible ()
+  "With every recorded position hidden, it says so instead of clamping."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (insert "aaaa\nbbbb\ncccc\ndddd\n")
+    (dolist (p '(2 3 4))
+      (goto-char p)
+      (donkey--track-position))
+    (narrow-to-region 11 15)
+    (goto-char 12)
+    (let ((err (should-error (donkey-jump-back) :type 'user-error)))
+      (should (equal (cadr err)
+                     "No recorded position in the visible portion")))
+    ;; and point did not move to the narrowing edge on the way out
+    (should (= (point) 12))))
+
+(ert-deftest donkey-jump-back-counts-only-visible-positions ()
+  "The reported total matches what pressing again will cycle through."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (insert "aaaa\nbbbb\ncccc\ndddd\n")
+    (dolist (p '(2 8 14 19))
+      (goto-char p)
+      (donkey--track-position))
+    ;; The ring holds the PREVIOUS point at each move, so it is (14 8 2);
+    ;; narrowing to 6..20 leaves 14 and 8 visible and hides 2.
+    (narrow-to-region 6 20)
+    (goto-char 12)
+    (let (shown)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-jump-back))
+      ;; The TOTAL is what changed here: 2 visible, not the ring's 3.
+      ;; The index is pre-existing rotation behaviour -- the counter is
+      ;; incremented before use, so the first press lands on the second
+      ;; entry and reaches the first on the way round.
+      (should (equal shown "Position 2/2"))
+      (should (<= (point-min) (point)))
+      (should (<= (point) (point-max))))))
+
+(ert-deftest donkey-jump-back-unaffected-without-narrowing ()
+  "Widened buffers cycle through the whole ring, as before."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (insert "abcdefghij")
+    (dolist (p '(2 4 6))
+      (goto-char p)
+      (donkey--track-position))
+    (should (equal (list (progn (donkey-jump-back) (point))
+                         (progn (donkey-jump-back) (point))
+                         (progn (donkey-jump-back) (point)))
+                   '(2 4 2)))))
+
+(ert-deftest donkey-visual-session-ignores-an-anchor-hidden-by-narrowing ()
+  "An anchor outside the accessible portion is not a continuable session.
+
+Regression: buffer positions are absolute and narrowing does not move
+them, so `V' followed by \\[narrow-to-region] left the anchor pointing at
+text the buffer no longer shows.  `goto-char' and `set-mark' both clamp
+there rather than signalling, so `J' quietly re-anchored the selection on
+the narrowing edge while still presenting itself as the session started
+higher up."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (let ((transient-mark-mode t))
+      (insert "L1\nL2\nL3\nL4\nL5\nL6\n")
+      (goto-char (point-min))
+      (forward-line 1)
+      (donkey-visual-line-toggle)
+      (narrow-to-region 10 19)
+      (should-not (donkey--visual-line-session-active-p)))))
+
+(ert-deftest donkey-visual-anchor-survives-widening ()
+  "The hidden anchor is ignored, not destroyed -- widening restores it."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (let ((transient-mark-mode t))
+      (insert "L1\nL2\nL3\nL4\nL5\nL6\n")
+      (goto-char (point-min))
+      (forward-line 1)
+      (donkey-visual-line-toggle)
+      (narrow-to-region 10 19)
+      (should-not (donkey--visual-line-session-active-p))
+      (widen)
+      (should (donkey--visual-line-session-active-p)))))
+
+(ert-deftest donkey-visual-session-started-inside-narrowing-still-extends ()
+  "A session whose anchor IS visible keeps working under narrowing."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (let ((transient-mark-mode t))
+      (insert "L1\nL2\nL3\nL4\nL5\nL6\n")
+      (narrow-to-region 4 16)
+      (goto-char (point-min))
+      (donkey-visual-line-toggle)
+      (should (donkey--visual-line-session-active-p))
+      (donkey-visual-next-line 1)
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "L2\nL3")))))
+
 (provide 'donkey-navigation-test)
 
 ;;; donkey-navigation-test.el ends here

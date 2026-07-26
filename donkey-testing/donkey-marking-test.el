@@ -2317,15 +2317,65 @@ previous sentence would answer a question that was not asked."
     (should-error (donkey-mark-sentence) :type 'user-error)))
 
 (ert-deftest donkey-mark-sentence-gap-selects-the-coming-sentence ()
-  "In the gap after a sentence, the sentence that follows is marked."
-  (with-temp-buffer
-    (insert "One two three.  Four five six.  Seven eight nine.\n")
-    ;; the spaces between the first and second sentences
-    (dolist (pos '(15 16))
+  "In the gap after a sentence, the sentence that follows is marked.
+
+A buffer and a pinned `last-command' per position, not one shared
+between them: `mark-end-of-sentence' extends the existing selection when
+`(eq last-command this-command)', and in batch BOTH are nil, so the
+second position looked like a repeat of the first and marked two
+sentences.  It passed only because some earlier test in the full run
+happened to leave `last-command' set -- run alone, or under a selector,
+it failed.  Interactively the moves between the two positions set
+`last-command' themselves, which is what the binding here stands in for."
+  ;; the spaces between the first and second sentences
+  (dolist (pos '(15 16))
+    (with-temp-buffer
+      (insert "One two three.  Four five six.  Seven eight nine.\n")
       (goto-char pos)
-      (donkey-mark-sentence)
+      (let ((last-command 'forward-char)
+            (this-command 'donkey-mark-sentence))
+        (donkey-mark-sentence))
       (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                      "Four five six.")))))
+
+(ert-deftest donkey-mark-sentence-repeated-extends-by-one-sentence ()
+  "Pressing the key again grows the selection by one more sentence.
+
+Inherited from `mark-end-of-sentence', which extends rather than
+re-marks when `(eq last-command this-command)'.  The other mark commands
+do not do this -- `mark-word' gates the same behaviour behind an
+ALLOW-EXTEND argument that is nil when called from Lisp."
+  (with-temp-buffer
+    (insert "One two three.  Four five six.  Seven eight nine.")
+    (goto-char (point-min))
+    (let ((this-command 'donkey-mark-sentence))
+      (let ((last-command 'self-insert-command))
+        (donkey-mark-sentence))
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     "One two three."))
+      (let ((last-command 'donkey-mark-sentence))
+        (donkey-mark-sentence))
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     "One two three.  Four five six.")))))
+
+(ert-deftest donkey-mark-sentence-repeated-past-the-last-sentence-stops ()
+  "Repeating past the last sentence keeps the whole selection, quietly.
+
+Regression: the extension eventually walked `forward-sentence' off the
+end, which signalled `end-of-buffer' and got reported as \"No sentence
+at or before point\" -- so one press too many on the last sentence threw
+away a selection that was already correct."
+  (with-temp-buffer
+    (insert "One two three.  Four five six.")
+    (goto-char (point-min))
+    (let ((this-command 'donkey-mark-sentence))
+      (let ((last-command 'self-insert-command))
+        (donkey-mark-sentence))
+      (let ((last-command 'donkey-mark-sentence))
+        (donkey-mark-sentence)
+        (donkey-mark-sentence))
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     "One two three.  Four five six.")))))
 
 (ert-deftest donkey-mark-sentence-on-a-period-marks-the-sentence-it-ends ()
   "A period belongs to the sentence before it, and that one is marked."
@@ -2475,6 +2525,207 @@ out\" has nothing to refer to."
     (goto-char (match-beginning 0))
     (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\")))
       (should-error (donkey-mark-inner 2) :type 'user-error))))
+
+;;; ---------------------------------------------------------------------------
+;;; Zero and negative counts on the mark commands
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-mark-word-negative-count-marks-backward ()
+  "A negative count marks that many words before the one point is on.
+
+Regression: the count was clamped with `(max 1 count)', so a negative
+count marked one word FORWARD -- the opposite direction from the one
+asked for.  `mark-word' reads the sign natively."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "alpha beta gamma")
+      (goto-char 13)
+      (donkey-mark-word -2)
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "alpha beta ")))))
+
+(ert-deftest donkey-mark-word-zero-count-marks-nothing ()
+  "A count of zero marks an empty region, as `mark-word' does."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "alpha beta gamma")
+      (goto-char 13)
+      (donkey-mark-word 0)
+      (should (= (region-beginning) (region-end))))))
+
+(ert-deftest donkey-mark-symbol-negative-count-marks-backward ()
+  "A negative count marks that many symbols before the one point is on."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (emacs-lisp-mode)
+      (insert "foo-a bar-b baz-c")
+      (goto-char 14)
+      (donkey-mark-symbol -2)
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "foo-a bar-b")))))
+
+(ert-deftest donkey-mark-symbol-still-trims-trailing-punctuation ()
+  "A forward count still drops a trailing comma or period.
+
+The trim only applies going forwards: a negative count leaves point at
+the region's START, where backing over punctuation would reach into the
+symbol before it."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (emacs-lisp-mode)
+      (insert "foo-a. bar-b")
+      (goto-char 2)
+      (donkey-mark-symbol 1)
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "foo-a")))))
+
+(ert-deftest donkey-mark-paragraph-negative-count-marks-backward ()
+  "A negative count marks the paragraph before the one point is on."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "one one.\n\ntwo two.\n\nthree.\n")
+      (goto-char 20)
+      (donkey-mark-paragraph -1)
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "one one.\n")))))
+
+(ert-deftest donkey-mark-sentence-treats-counts-below-one-as-one ()
+  "Unlike the other mark commands, this one clamps a count below 1.
+
+It is defined in terms of the sentence AHEAD of point -- it normalises
+forward and rejects a selection ending behind where it started -- so a
+zero or negative count has nothing it could mean but that error."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "One thing.  Two thing.  Three thing.")
+      (goto-char (point-min))
+      (donkey-mark-sentence 0)
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "One thing.")))))
+
+(ert-deftest donkey-mark-sentence-count-past-last-sentence-marks-what-there-is ()
+  "A count reaching past the last sentence stops at the end quietly.
+
+Regression: `mark-end-of-sentence' signals a bare `end-of-buffer' when
+its count runs off the end, which the guard turned into \"No sentence at
+or before point\" -- a flat contradiction of a screen that is showing
+three of them.  Bare \\[universal-argument] means FOUR, so plain
+`C-u m s' hit this on any buffer of three sentences or fewer."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "One thing.  Two thing.  Three thing.")
+      (goto-char (point-min))
+      (donkey-mark-sentence 4)
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "One thing.  Two thing.  Three thing.")))))
+
+(ert-deftest donkey-mark-sentence-still-reports-on-empty-buffer ()
+  "Splitting the guard in two left the empty-buffer report intact."
+  (with-temp-buffer
+    (should-error (donkey-mark-sentence 1) :type 'user-error)))
+
+(ert-deftest donkey-mark-sentence-still-reports-on-whitespace-only-buffer ()
+  "Splitting the guard in two left the whitespace-only report intact."
+  (with-temp-buffer
+    (insert "   \n\n  \n")
+    (goto-char (point-min))
+    (should-error (donkey-mark-sentence 1) :type 'user-error)))
+
+(ert-deftest donkey-mark-inner-count-past-outermost-pair-reports-the-level ()
+  "A count past the outermost pair blames the count, not the delimiter.
+
+Regression: the scan ran out of enclosing pairs and signalled a bare
+`error' reading \"No \='(\=' found near cursor\" -- which contradicts a
+screen plainly showing several, reads like the delimiter was mistyped
+rather than the count overshot, and pops the debugger for anyone running
+with `debug-on-error' on.  Bare \\[universal-argument] means FOUR, so
+`C-u m i' hit this on text only one or two levels deep."
+  (with-temp-buffer
+    (insert "a (b (c d) e) f")
+    (goto-char 8)
+    ;; `error'/`user-error' run their format string through
+    ;; `format-message', which rewrites ` and ' as curved quotes whenever
+    ;; `text-quoting-style' resolves to `curve' -- the default on any
+    ;; terminal that can display them.  Comparing against a literal only
+    ;; holds if the style is pinned: without this the assertion passed in
+    ;; a sandbox with no locale set and failed on CI, where the UTF-8
+    ;; locale selected `curve' and the message read "No ‘(’ beyond...".
+    (let ((text-quoting-style 'grave))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
+        (let ((err (should-error (donkey-mark-inner 3) :type 'user-error)))
+          (should (equal (cadr err)
+                         "No enclosing `(' beyond that level")))))))
+
+(ert-deftest donkey-mark-inner-count-within-nesting-still-works ()
+  "The level guard did not cost the levels that do exist."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "a (b (c d) e) f")
+      (goto-char 8)
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
+        (donkey-mark-inner 2))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "b (c d) e")))))
+
+(ert-deftest donkey-mark-inner-missing-delimiter-is-a-user-error ()
+  "With no bracket anywhere, the report is a `user-error'.
+
+Pressing this on a line with no bracket on it is an ordinary miss, not a
+malfunction; a bare `error' popped the debugger under `debug-on-error'.
+The message itself is unchanged -- there really is no delimiter here."
+  (with-temp-buffer
+    (insert "no parens here")
+    (goto-char 5)
+    ;; `text-quoting-style' pinned -- see
+    ;; `donkey-mark-inner-count-past-outermost-pair-reports-the-level'.
+    (let ((text-quoting-style 'grave))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
+        (let ((err (should-error (donkey-mark-inner) :type 'user-error)))
+          (should (equal (cadr err) "No '(' found near cursor")))))))
+
+(ert-deftest donkey-mark-inner-on-an-empty-pair-is-a-user-error ()
+  "`m i' on an empty pair reports without popping the debugger.
+
+An empty pair is ordinary in code -- `()' for a no-argument call, `\"\"'
+for an empty string -- so pressing this on one is a miss, not a
+malfunction.  A bare `error' popped the debugger under `debug-on-error'."
+  (with-temp-buffer
+    (insert "a () b")
+    (goto-char 4)
+    (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
+      (should-error (donkey-mark-inner) :type 'user-error))))
+
+(ert-deftest donkey-mark-outer-on-an-empty-pair-still-selects-it ()
+  "`m a' on an empty pair selects the delimiters, which are the content."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "a () b")
+      (goto-char 4)
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\()))
+        (donkey-mark-outer))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "()")))))
+
+(ert-deftest donkey-mark-inner-unsupported-delimiter-is-a-user-error ()
+  "Answering the prompt with a non-delimiter reports, and lists the set.
+
+An ordinary typo on a prompt that accepts nineteen characters -- a bare
+`error' popped the debugger under `debug-on-error'."
+  (with-temp-buffer
+    (insert "a (b) c")
+    (goto-char 2)
+    (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?z)))
+      (let ((err (should-error (donkey-mark-inner) :type 'user-error)))
+        (should (string-match-p "Unsupported delimiter"
+                                (error-message-string err)))))))
 
 (provide 'donkey-marking-test)
 
