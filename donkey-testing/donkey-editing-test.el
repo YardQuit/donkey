@@ -256,7 +256,13 @@ bug as if it were intended."
       (should (= (cadr killed-bounds) 6)))))
 
 (ert-deftest donkey-delete-region-point-before-mark ()
-  "Region with point before mark: kill-region receives (mark, point)."
+  "Region with point before mark kills exactly the region.
+
+Asserts the span rather than the argument ORDER it arrives in.  The
+bounds now come from `donkey--visual-line-region-bounds', which reports
+them low-to-high, and `kill-region' reads them either way round -- so
+pinning the order tied the test to the call shape rather than to what
+gets killed."
   (let (killed-bounds)
     (with-temp-buffer
       (insert "hello world\n")
@@ -268,8 +274,7 @@ bug as if it were intended."
                  (lambda (beg end) (setq killed-bounds (list beg end)))))
         (let ((rectangle-mark-mode nil))
           (donkey-delete)))
-      (should (= (car killed-bounds) 6))
-      (should (= (cadr killed-bounds) 1)))))
+      (should (equal (sort (copy-sequence killed-bounds) #'<) '(1 6))))))
 
 (ert-deftest donkey-delete-region-skips-delete-char ()
   "With an active region, delete-char is not called."

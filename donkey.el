@@ -1111,6 +1111,35 @@ to paste the same rectangle again."
     (donkey--delete-active-region-safe)
     (yank-pop))))
 
+(defun donkey--visual-line-region-bounds ()
+  "Return the active region as (BEG . END), whole-lined for a `V' session.
+
+`donkey-visual-line-toggle' and its `J'/`K' motions leave point at the
+END of the last selected line, so the newline that ends it falls outside
+the region.  That geometry is deliberate -- the highlight stops where the
+text does, and the motion logic counts lines from where point sits -- but
+it means a selection presented as whole lines is one character short of
+being them.
+
+The consequences landed on `y' and `d' rather than on the selection: `d'
+removed the text and left an empty line behind, so `V d' had to be
+followed by another `d' to clear up after it, and `y' produced a kill
+with no final newline, which the next `p' spliced onto whatever line it
+landed in.  `donkey-bank-selection' has always spanned whole lines, via
+`donkey--whole-line-span'; routing a visual-line session through the same
+helper makes donkey's two line selections finally agree.
+
+Widened here rather than in the motions: moving point past the line
+instead would make `forward-line' count from one line further along than
+the user is on, so a single `J' grew the selection by two lines.  Tried
+and rejected -- the geometry the motions rely on is load-bearing.
+
+Only for a live visual-line session.  A character-wise region made with
+`v' means the characters it covers, and is returned untouched."
+  (if (donkey--visual-line-session-active-p)
+      (donkey--whole-line-span (region-beginning) (region-end))
+    (cons (region-beginning) (region-end))))
+
 (defun donkey-copy (&optional count)
   "Copy the active region, or the character at point if no region is active.
 
@@ -1151,7 +1180,8 @@ kill ring's newest entry for the same reason spelled out above."
     ((use-region-p)
      (if (bound-and-true-p rectangle-mark-mode)
          (call-interactively #'copy-rectangle-as-kill)
-       (kill-ring-save (region-beginning) (region-end))))
+       (let ((bounds (donkey--visual-line-region-bounds)))
+         (kill-ring-save (car bounds) (cdr bounds)))))
     ((zerop n) nil)
     ((/= target (point))
      (kill-ring-save (point) target))
@@ -1186,7 +1216,8 @@ those up to 1 instead meant \"delete zero characters\" removed one, and
     ((use-region-p)
      (if (bound-and-true-p rectangle-mark-mode)
          (call-interactively #'kill-rectangle)
-       (kill-region (mark) (point))))
+       (let ((bounds (donkey--visual-line-region-bounds)))
+         (kill-region (car bounds) (cdr bounds)))))
     ((zerop n) nil)
     ((/= target (point))
      (delete-region (point) target))
