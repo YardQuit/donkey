@@ -1799,6 +1799,26 @@ See `donkey--ensure-non-rectangle-selection' for why."
   (donkey--ensure-non-rectangle-selection)
   (call-interactively #'set-mark-command))
 
+(defun donkey-mark-whole-buffer ()
+  "Select the whole buffer, clearing a stale rectangle selection first.
+
+See `donkey--ensure-non-rectangle-selection' for why every command that
+establishes a selection has to do this.  \"%\" was the one such key bound
+straight to a stock command, so it was the one that did not: a rectangle
+left active from an earlier `donkey-rectangle-mark-mode' session survived
+underneath the new whole-buffer selection, and `donkey-delete' then killed
+a zero-width rectangle -- one empty string per line -- leaving the buffer
+completely untouched, with no error to explain it.  It also set
+`donkey--last-kill-rectangle-p', so the next \"p\" would have pasted that
+emptiness instead of the clipboard.
+
+Invoked via `call-interactively', as `donkey-set-mark' does for
+`set-mark-command': `mark-whole-buffer' is declared `interactive-only',
+so calling it directly is a byte-compiler error here."
+  (interactive)
+  (donkey--ensure-non-rectangle-selection)
+  (call-interactively #'mark-whole-buffer))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Banked Line Selection
 ;;; ---------------------------------------------------------------------------
@@ -2376,7 +2396,7 @@ documentation."
 (keymap-set donkey-normal-mode-map "m <delete>" #'donkey-clear-banked-selection)
 
 ;; Buffer navigation
-(keymap-set donkey-normal-mode-map "%" #'mark-whole-buffer)
+(keymap-set donkey-normal-mode-map "%" #'donkey-mark-whole-buffer)
 (keymap-set donkey-normal-mode-map "." #'repeat)
 (keymap-set donkey-normal-mode-map ":" #'donkey-goto-line)
 (keymap-set donkey-normal-mode-map ">" #'donkey-indent-region-or-line)

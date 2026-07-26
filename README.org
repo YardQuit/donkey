@@ -343,7 +343,7 @@ Notes:
 | =g Q= | =fill-paragraph=         | Fill paragraph              |
 | =g t= | =beginning-of-buffer=    | Go to beginning of buffer   |
 | =:=   | =donkey-goto-line=         | Go to line number (prompts) |
-| =%=   | =mark-whole-buffer=      | Select entire buffer        |
+| =%=   | =donkey-mark-whole-buffer= | Select entire buffer      |
 | =.=   | =repeat=                 | Repeat last command         |
 | =?=   | =donkey-describe-bindings= | Show all DONKEY keybindings   |
 

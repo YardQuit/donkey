@@ -2206,6 +2206,44 @@ prompt; answering with OPEN correctly finds the enclosing pair."
           (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                          "quoted")))))))
 
+(ert-deftest donkey-mark-whole-buffer-clears-stale-rectangle ()
+  "`%' clears a stale rectangle before selecting the buffer.
+
+Regression: `%' was the one selection-establishing key bound straight to
+a stock command, so it never ran
+`donkey--ensure-non-rectangle-selection'.  A rectangle left active from
+an earlier session survived underneath the whole-buffer selection."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (insert "abcd\nefgh\nijkl\n")
+      (goto-char (point-min))
+      (donkey-rectangle-mark-mode)
+      (should (bound-and-true-p rectangle-mark-mode))
+      (donkey-mark-whole-buffer)
+      (should-not (bound-and-true-p rectangle-mark-mode))
+      (should (use-region-p)))))
+
+(ert-deftest donkey-mark-whole-buffer-then-delete-empties-buffer ()
+  "After `%', `d' deletes the buffer rather than a zero-width rectangle.
+
+Regression: the stale rectangle made `donkey-delete' kill one empty
+string per line, leaving the text completely untouched with no error,
+and setting `donkey--last-kill-rectangle-p' so the next paste would have
+inserted that emptiness."
+  (let ((transient-mark-mode t) (kill-ring nil) kill-ring-yank-pointer)
+    (with-temp-buffer
+      (insert "abcd\nefgh\nijkl\n")
+      (goto-char (point-min))
+      (donkey-rectangle-mark-mode)
+      (donkey-mark-whole-buffer)
+      (donkey-delete)
+      (should (equal (buffer-string) "")))))
+
+(ert-deftest donkey-mark-whole-buffer-is-bound-to-percent ()
+  "`%' reaches the wrapper, not the stock command."
+  (should (eq (keymap-lookup donkey-normal-mode-map "%")
+              #'donkey-mark-whole-buffer)))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here
