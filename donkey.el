@@ -1351,8 +1351,8 @@ session."
     (activate-mark)
     (message "Visual line: J/K whole lines, j/k by char, V to cancel")))
 
-(defun donkey-visual-next-line ()
-  "Move down one line, extending the visual-line selection if active.
+(defun donkey-visual-next-line (&optional count)
+  "Move down COUNT lines, extending the visual-line selection if active.
 
 See `donkey--visual-line-session-active-p' for what \"active\" means
 here; otherwise this is a plain `forward-line'.
@@ -1364,11 +1364,20 @@ the anchor's line start, point at the new line's end); moving down
 while still above the anchor instead shrinks the selection from the
 top (mark moves to the anchor's line end, point to the new line's
 start) -- covering the case where `J' first moves point back up TO,
-and then past, the anchor line itself."
-  (interactive)
+and then past, the anchor line itself.
+
+COUNT defaults to 1, and a negative COUNT moves up instead.  The
+selection is re-derived from the anchor and wherever point lands, not
+accumulated as it goes, so a count needs no special handling: the
+branch below is the same one a run of single presses would end on.
+Counts are what `j' and `k' already do -- they are bound straight to
+`next-line' and `previous-line' -- so leaving them off here made
+\[universal-argument] 5 J move a single line while
+\[universal-argument] 5 j moved five."
+  (interactive "p")
   (if (donkey--visual-line-session-active-p)
       (progn
-        (forward-line 1)
+        (forward-line (or count 1))
         (if (> (line-beginning-position) donkey-visual-anchor)
             (progn
               (set-mark donkey-visual-anchor)
@@ -1379,10 +1388,10 @@ and then past, the anchor line itself."
                         (line-end-position)))
             (beginning-of-line)))
         (activate-mark))
-    (forward-line 1)))
+    (forward-line (or count 1))))
 
-(defun donkey-visual-previous-line ()
-  "Move up one line, extending the visual-line selection if active.
+(defun donkey-visual-previous-line (&optional count)
+  "Move up COUNT lines, extending the visual-line selection if active.
 
 See `donkey--visual-line-session-active-p' for what \"active\" means
 here; otherwise this is a plain `forward-line' with a negative count.
@@ -1390,11 +1399,14 @@ here; otherwise this is a plain `forward-line' with a negative count.
 Mirrors `donkey-visual-next-line': moving up while already above the
 anchor keeps growing upward; moving up while still below the anchor
 shrinks the selection back down toward it instead, covering the case
-where `K' moves point up past the anchor line."
-  (interactive)
+where `K' moves point up past the anchor line.
+
+COUNT defaults to 1, and a negative COUNT moves down instead; see
+`donkey-visual-next-line' for why no accumulation is needed."
+  (interactive "p")
   (if (donkey--visual-line-session-active-p)
       (progn
-        (forward-line -1)
+        (forward-line (- (or count 1)))
         (if (< (line-beginning-position) donkey-visual-anchor)
             (progn
               (set-mark (save-excursion
@@ -1405,7 +1417,7 @@ where `K' moves point up past the anchor line."
             (set-mark donkey-visual-anchor)
             (end-of-line)))
         (activate-mark))
-    (forward-line -1)))
+    (forward-line (- (or count 1)))))
 
 (defun donkey-rectangle-mark-mode ()
   "Toggle rectangle mark mode.

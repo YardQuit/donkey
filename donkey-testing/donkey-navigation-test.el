@@ -1064,6 +1064,97 @@ original anchor line instead of extending \"hello\" by one line."
       (donkey-visual-previous-line)
       (should (= donkey-visual-anchor anchor)))))
 
+;;; ---------------------------------------------------------------------------
+;;; Counts on J/K
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-test--visual-buffer (&rest body)
+  "Run BODY in a six-line DONKEY buffer, returning (LINE . REGION)."
+  `(with-temp-buffer
+     (donkey-mode 1)
+     (let ((transient-mark-mode t))
+       (insert "L1\nL2\nL3\nL4\nL5\nL6\n")
+       ,@body
+       (cons (line-number-at-pos)
+             (and (region-active-p)
+                  (buffer-substring-no-properties (region-beginning)
+                                                  (region-end)))))))
+
+(ert-deftest donkey-visual-next-line-count-matches-repeated-presses ()
+  "`C-u 3 J' lands exactly where three separate `J' presses would.
+
+Regression: `J' and `K' took no count at all while `j' and `k' -- bound
+straight to `next-line' and `previous-line' -- have always taken one, so
+\\[universal-argument] 5 J moved a single line."
+  (should (equal (donkey-test--visual-buffer
+                  (goto-char (point-min))
+                  (forward-line 1)
+                  (donkey-visual-line-toggle)
+                  (donkey-visual-next-line 3))
+                 (donkey-test--visual-buffer
+                  (goto-char (point-min))
+                  (forward-line 1)
+                  (donkey-visual-line-toggle)
+                  (donkey-visual-next-line 1)
+                  (donkey-visual-next-line 1)
+                  (donkey-visual-next-line 1)))))
+
+(ert-deftest donkey-visual-previous-line-count-matches-repeated-presses ()
+  "`C-u 3 K' lands exactly where three separate `K' presses would."
+  (should (equal (donkey-test--visual-buffer
+                  (goto-char (point-min))
+                  (forward-line 4)
+                  (donkey-visual-line-toggle)
+                  (donkey-visual-previous-line 3))
+                 (donkey-test--visual-buffer
+                  (goto-char (point-min))
+                  (forward-line 4)
+                  (donkey-visual-line-toggle)
+                  (donkey-visual-previous-line 1)
+                  (donkey-visual-previous-line 1)
+                  (donkey-visual-previous-line 1)))))
+
+(ert-deftest donkey-visual-count-crossing-the-anchor-matches-single-presses ()
+  "A count that carries point past the anchor re-anchors the same way.
+
+The selection is re-derived from the anchor and wherever point lands
+rather than accumulated, so the branch a count ends on is the branch a
+run of single presses would end on -- including the one that flips which
+side of the anchor the selection grows from."
+  (should (equal (donkey-test--visual-buffer
+                  (goto-char (point-min))
+                  (forward-line 3)
+                  (donkey-visual-line-toggle)
+                  (donkey-visual-previous-line 2))
+                 (donkey-test--visual-buffer
+                  (goto-char (point-min))
+                  (forward-line 3)
+                  (donkey-visual-line-toggle)
+                  (donkey-visual-previous-line 1)
+                  (donkey-visual-previous-line 1)))))
+
+(ert-deftest donkey-visual-next-line-negative-count-moves-up ()
+  "A negative count moves the other way, as it does for `forward-line'."
+  (should (equal (car (donkey-test--visual-buffer
+                       (goto-char (point-min))
+                       (forward-line 4)
+                       (donkey-visual-next-line -2)))
+                 3)))
+
+(ert-deftest donkey-visual-previous-line-negative-count-moves-down ()
+  "A negative count moves the other way, as it does for `forward-line'."
+  (should (equal (car (donkey-test--visual-buffer
+                       (goto-char (point-min))
+                       (donkey-visual-previous-line -3)))
+                 4)))
+
+(ert-deftest donkey-visual-line-counts-work-without-a-session ()
+  "Outside a visual-line session the count still reaches `forward-line'."
+  (should (equal (car (donkey-test--visual-buffer
+                       (goto-char (point-min))
+                       (donkey-visual-next-line 3)))
+                 4)))
+
 (provide 'donkey-navigation-test)
 
 ;;; donkey-navigation-test.el ends here

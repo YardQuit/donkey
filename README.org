@@ -149,6 +149,9 @@ wherever point currently is -- so a selection can stop mid-line. The
 two can be mixed freely: after moving with =j=/=k=, pressing =J=/=K=
 snaps the selection back to whole lines from the original anchor.
 
+=J= and =K= take a count like =j= and =k= do, so =C-u 3 J= is the same
+as pressing =J= three times, and a negative count moves the other way.
+
 ** Insert Mode Entry
 
 | Key | Command                         | Description                         |
@@ -354,6 +357,8 @@ characters and =C-u 2 m s= marks two sentences:
 
 | Keys        | Effect                                  |
 |-------------+-----------------------------------------|
+| =C-u 3 J=   | down three lines, extending a visual selection |
+| =C-u 3 K=   | up three lines, extending a visual selection |
 | =C-u 3 x=   | delete three characters                 |
 | =C-u 3 y=   | copy three characters                   |
 | =C-u 3 c=   | change three characters                 |
