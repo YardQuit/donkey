@@ -2258,8 +2258,11 @@ leftover and removed."
 (ert-deftest donkey-delete-keys-cover-vim-and-helix ()
   "`d' and `x' both delete: Helix's key and Vim's key for the same command.
 
-Deliberate duplication, pinned so it is not mistaken for a leftover.
-`D' stays `kill-line', which is Vim's delete-to-end-of-line."
+Both editors' keys already cover char-or-selection -- Vim's `x' deletes
+the character in normal state and the selection in visual state -- which
+is exactly what `donkey-delete' does.  Deliberate duplication, pinned so
+it is not mistaken for a leftover.  `D' stays `kill-line', Vim's
+delete-to-end-of-line."
   (should (eq (keymap-lookup donkey-normal-mode-map "d") #'donkey-delete))
   (should (eq (keymap-lookup donkey-normal-mode-map "x") #'donkey-delete))
   (should (eq (keymap-lookup donkey-normal-mode-map "D") #'kill-line)))

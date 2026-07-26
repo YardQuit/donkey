@@ -2348,11 +2348,13 @@ documentation."
 ;; Editing operations
 (keymap-set donkey-normal-mode-map "D" #'kill-line)
 (keymap-set donkey-normal-mode-map "c" #'donkey-change)
-;; Two keys, one command, deliberately: "d" is Helix's delete-the-selection
-;; and "x" is Vim's delete-the-character, and `donkey-delete' does both
-;; depending on whether a region is active.  Note "d" is NOT
-;; operator-pending as it is in Vim -- there is no "d w"/"d d"; select
-;; first, or use "D" for the rest of the line.
+;; Two keys, one command, deliberately.  Both match what their editor's
+;; users already press: "d" is Helix's delete-the-selection, and "x" is
+;; Vim's -- which deletes the character under the cursor in normal state
+;; and the selection in visual state, exactly the char-or-region split
+;; `donkey-delete' implements.  Note "d" is NOT operator-pending as it is
+;; in Vim -- there is no "d w"/"d d"; select first, or use "D" for the
+;; rest of the line.
 (keymap-set donkey-normal-mode-map "d" #'donkey-delete)
 (keymap-set donkey-normal-mode-map "x" #'donkey-delete)
 (keymap-set donkey-normal-mode-map "C" #'donkey-comment-dwim)
