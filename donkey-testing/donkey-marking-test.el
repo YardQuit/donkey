@@ -2799,6 +2799,77 @@ An ordinary typo on a prompt that accepts nineteen characters -- a bare
         (should (string-match-p "Unsupported delimiter"
                                 (error-message-string err)))))))
 
+(ert-deftest donkey-mark-pair-count-works-for-user-configured-delimiters ()
+  "A count reaches pairs added to `donkey-mark-pair-delimiters' too.
+
+The branch is on whether the pair's two characters are equal, not on any
+list of known delimiters, so a configured pair goes down the same route
+as a shipped one.  Asserted with a symmetric addition and an asymmetric
+one, both outside the default set."
+  (let ((transient-mark-mode t)
+        (donkey-mark-pair-delimiters
+         (append donkey-mark-pair-delimiters
+                 ;; "#" symmetric; guillemets asymmetric and non-ASCII.
+                 (list (cons ?# ?#) (cons ?\« ?\»)))))
+    (with-temp-buffer
+      (insert "a#one#TARGET#two#b")
+      (goto-char (point-min))
+      (search-forward "TARG")
+      (goto-char (- (point) 2))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?#)))
+        (donkey-mark-inner 2))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "one#TARGET#two")))
+    (with-temp-buffer
+      (insert "a«one«TARGET»two»b")
+      (goto-char (point-min))
+      (search-forward "TARG")
+      (goto-char (- (point) 2))
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?\«)))
+        (donkey-mark-inner 2))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "one«TARGET»two")))))
+
+(ert-deftest donkey-mark-pair-symmetric-count-is-case-sensitive ()
+  "A count of a LETTER delimiter does not fold case.
+
+`donkey-mark-pair-delimiters' is a defcustom, so a letter can be
+configured as a delimiter, and buffers default to `case-fold-search' t.
+Regression: level 1 binds `case-fold-search' to nil and the outward walk
+did not, so the two disagreed about what a delimiter is -- a count of 2
+stopped at the lowercase x and marked \" mid X TARGET X two \"."
+  (let ((transient-mark-mode t)
+        (donkey-mark-pair-delimiters
+         (append donkey-mark-pair-delimiters
+                 (list (cons ?X ?X) (cons ?x ?x) (cons ?q ?Q)))))
+    (dolist (fold '(t nil))
+      (dolist (case '((?X "A X one x mid X TARGET X two X B"
+                          " one x mid X TARGET X two ")
+                      ;; The mirror image: a lowercase delimiter must not
+                      ;; count the uppercase letter either.
+                      (?x "A x one X mid x TARGET x two x B"
+                          " one X mid x TARGET x two ")
+                      ;; And a pair that differs only in case has to stay a
+                      ;; PAIR -- folded, `q' and `Q' are indistinguishable
+                      ;; and it would collapse into a symmetric delimiter.
+                      (?q "z q one q TARGET Q two Q Z"
+                          " one q TARGET Q two ")))
+        (with-temp-buffer
+          (insert (nth 1 case))
+          (goto-char (point-min))
+          (search-forward "TARG")
+          (goto-char (- (point) 2))
+          (let ((case-fold-search fold))
+            (cl-letf (((symbol-function 'read-char)
+                       (lambda (&rest _) (nth 0 case))))
+              (donkey-mark-inner 2)))
+          (should (equal (list fold (nth 0 case)
+                               (buffer-substring-no-properties
+                                (region-beginning) (region-end)))
+                         (list fold (nth 0 case) (nth 2 case)))))))))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here

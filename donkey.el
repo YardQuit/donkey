@@ -1703,7 +1703,17 @@ outer quotation, which is what asking for two levels plainly means.
 
 Signals a `user-error' when the text runs out of delimiters before the
 count does, the same one the nesting-aware path signals."
-  (let ((extra (1- levels)))
+  (let ((extra (1- levels))
+        ;; Case-sensitive, like `donkey--mark-pair-positions' and for the
+        ;; same reason: `donkey-mark-pair-delimiters' is a defcustom, so a
+        ;; LETTER can be configured as a delimiter, and a case-folded
+        ;; search would count a lowercase `x' toward a count of uppercase
+        ;; `X'.  Buffers default to `case-fold-search' t, so leaving it
+        ;; alone here meant level 1 (which binds it) and level 2 (which
+        ;; did not) disagreed about what a delimiter even is: on
+        ;; "A X one x mid X TARGET X two X B" a count of 2 stopped at the
+        ;; lowercase x and marked " mid X TARGET X two ".
+        (case-fold-search nil))
     (if (<= extra 0)
         span
       (save-excursion
