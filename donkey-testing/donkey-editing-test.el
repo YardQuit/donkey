@@ -2876,6 +2876,116 @@ worse failure than a span walked one line short, so the loop stops."
       (donkey--map-line-spans 1 500 (lambda (_span) (cl-incf calls)))
       (should (< calls 100)))))
 
+;;; ---------------------------------------------------------------------------
+;;; A rectangle copy stays out of the clipboard, on purpose
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-test--with-clipboard-spy (var &rest body)
+  "Run BODY with the system clipboard captured into VAR.
+
+`interprogram-cut-function' is what Emacs hands text to on its way to the
+window system, so binding it records exactly what would have left Emacs."
+  (declare (indent 1))
+  `(let ((,var nil))
+     (unwind-protect
+         (with-temp-buffer
+           (donkey-mode 1)
+           (let ((transient-mark-mode t)
+                 (kill-ring nil)
+                 (kill-ring-yank-pointer nil)
+                 (killed-rectangle nil)
+                 (donkey--last-kill-rectangle-p nil)
+                 (donkey--clipboard-warning-shown nil)
+                 (this-command nil)
+                 (last-command nil)
+                 (interprogram-cut-function
+                  (lambda (text) (push text ,var))))
+             (insert "AAA one\nBBB two\nCCC three\n")
+             (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+               ,@body)))
+       (donkey-mode -1))))
+
+(ert-deftest donkey-rectangle-copy-does-not-reach-the-clipboard ()
+  "A rectangle copy fills `killed-rectangle' and nothing else.
+
+DELIBERATE, and pinned here because it reads like an oversight every
+time someone looks -- it has been raised, investigated and set aside
+more than once.  A rectangle has no meaning outside a buffer that would
+survive the trip through a flat clipboard, and stock
+`copy-rectangle-as-kill' behaves the same way.
+
+If this test ever fails because someone made the copy reach the
+clipboard, that is a decision to take on purpose, not a bug to fix in
+passing -- and note that `kill-new' is advised to clear
+`donkey--last-kill-rectangle-p', so pushing the text onto the kill ring
+breaks the rectangle round trip unless the flag is restored."
+  (donkey-test--with-clipboard-spy sent
+    (goto-char (point-min))
+    (push-mark 20 t t)
+    (rectangle-mark-mode 1)
+    (donkey-copy)
+    (should (equal killed-rectangle '("AAA" "BBB" "CCC")))
+    (should (null kill-ring))
+    (should (null sent))))
+
+(ert-deftest donkey-rectangle-cut-does-not-reach-the-clipboard ()
+  "`d' on a rectangle behaves the same way as `y' does."
+  (donkey-test--with-clipboard-spy sent
+    (goto-char (point-min))
+    (push-mark 20 t t)
+    (rectangle-mark-mode 1)
+    (donkey-delete)
+    (should (equal killed-rectangle '("AAA" "BBB" "CCC")))
+    (should (null kill-ring))
+    (should (null sent))))
+
+(ert-deftest donkey-rectangle-copy-still-round-trips-inside-emacs ()
+  "What a rectangle copy IS for: pasting it back with `p'.
+
+The clipboard is not involved, so this is the whole of what the copy
+buys -- if it ever stops working, the copy is doing nothing at all.
+
+Pasted into the MIDDLE of existing lines, deliberately.  At `point-max' a
+rectangular paste and a linear one produce identical text, so a test
+there passes either way: this test originally sat at the end of the
+buffer and could not have caught the flag being cleared.  Here the two
+differ visibly -- rectangular gives AAAXX/BBBYY/CCCZZ, linear gives
+AAA/BBB/CCCXX -- which is what makes it a real check on
+`donkey--last-kill-rectangle-p' surviving the copy."
+  (donkey-test--with-clipboard-spy _sent
+    (goto-char (point-max))
+    (insert "XX\nYY\nZZ\n")
+    (goto-char (point-min))
+    (push-mark 20 t t)
+    (rectangle-mark-mode 1)
+    (donkey-copy)
+    (deactivate-mark)
+    (goto-char (point-min))
+    (search-forward "XX")
+    (beginning-of-line)
+    (donkey-yank)
+    (should (equal (buffer-string)
+                   "AAA one\nBBB two\nCCC three\nAAAXX\nBBBYY\nCCCZZ\n"))))
+
+(ert-deftest donkey-ordinary-and-banked-copies-do-reach-the-clipboard ()
+  "The contrast that makes the rectangle case a deliberate exception.
+
+Asserted alongside it so the difference is visible as a choice rather
+than looking like the rectangle path was simply forgotten."
+  (donkey-test--with-clipboard-spy sent
+    (goto-char (point-min))
+    (push-mark 8 t t)
+    (donkey-copy)
+    (should (equal sent '("AAA one"))))
+  (donkey-test--with-clipboard-spy sent
+    (goto-char (point-min))
+    (donkey-bank-selection)
+    (goto-char (point-min))
+    (forward-line 2)
+    (donkey-bank-selection)
+    (donkey-copy)
+    (should (equal sent '("AAA one\nCCC three\n")))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here
