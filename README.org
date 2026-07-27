@@ -16,6 +16,7 @@
 - [[*Smartparens Integration][Smartparens Integration]]
 - [[*Position Tracking][Position Tracking]]
 - [[*Org-Scratch Buffer][Org-Scratch Buffer]]
+- [[*Tutor][Tutor]]
 - [[*Describe Bindings][Describe Bindings]]
 - [[*Customization Group][Customization Group]]
 - [[*Development][Development]]
@@ -120,6 +121,7 @@ process interaction.
   Press =C-g= to return to Normal.
 - The modeline shows the current state: =DONKEY[N]= (Normal) or
   =DONKEY[I]= (Insert).
+- New to DONKEY? Run =M-x donkey-tutor= — see Tutor below.
 
 * Default Keybindings
 
@@ -1001,6 +1003,32 @@ changed at any time, not just before =donkey.el= loads.
 
 =M-x donkey-org-scratch= creates or switches to a scratch buffer in
 =org-mode=. Useful for quick note-taking without creating a file.
+
+* Tutor
+
+=M-x donkey-tutor= opens a learn-by-doing buffer, the way =C-h t= and
+vimtutor do: the text holding the instructions is the text you practise
+on, and changing it is the point. Lines beginning with =>>= are things to
+do; everything else is explanation.
+
+Eight lessons, ending with the two things that are DONKEY's own —
+banking, and counts that mean the same thing everywhere:
+
+1. Moving around
+2. Counts
+3. Typing
+4. Deleting and changing
+5. Selecting things (words, sentences, delimiters, levels)
+6. Whole lines
+7. Banking
+8. Copy and paste
+
+The keys it names are *your* keys: the lessons are written with
+=substitute-command-keys= escapes, so anyone who has rebound something is
+taught the binding they actually have rather than the default.
+
+Running =M-x donkey-tutor= again returns you to the buffer as you left
+it. Kill the buffer to start over — nothing is written to disk.
 
 * Describe Bindings
 

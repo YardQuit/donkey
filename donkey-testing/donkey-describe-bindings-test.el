@@ -501,4 +501,77 @@ docstring promises."
   (should (equal (donkey--desc-bindings-group "C-j") "single"))
   (should (equal (donkey--desc-bindings-group "<backspace>") "single")))
 
+;;; ---------------------------------------------------------------------------
+;;; donkey-tutor
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-tutor-opens-in-normal-state ()
+  "The tutor buffer must be in NORMAL state to be usable.
+
+DONKEY is a MINOR mode, which no other editor's tutor has to contend
+with: a tutor buffer left in INSERT would make every instruction in it
+inert, since the keys it names would type rather than act."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should donkey-mode)
+          (should-not (bound-and-true-p donkey-insert-mode))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-substitutes-every-key-it-names ()
+  "Bindings render as keys, not as M-x invocations.
+
+Regression: `substitute-command-keys' resolves against the CURRENT
+buffer's active keymaps, so running it before `donkey-mode' was enabled
+rendered every binding as an M-x invocation -- silently, and worst for
+exactly the commands a new reader most needs named.
+
+`donkey-tutor' itself is the one command deliberately shown that way: it
+has no key binding, so M-x is genuinely how it is run."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-min))
+          (let ((unresolved '()))
+            (while (re-search-forward "M-x \\(donkey-[a-z-]+\\)" nil t)
+              (push (match-string 1) unresolved))
+            (should (equal unresolved '("donkey-tutor"))))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-returns-to-an-existing-buffer ()
+  "Running it again resumes rather than discarding the lesson."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-max))
+          (insert "PROGRESS MARKER"))
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should (string-match-p "PROGRESS MARKER" (buffer-string)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-is-editable ()
+  "It is practised in, so it must not be read-only."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should-not buffer-read-only)))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-every-command-it-names-exists ()
+  "No lesson may teach a command that is not there.
+
+The content is a string, so a renamed or removed command would otherwise
+go unnoticed until a reader reached the lesson naming it."
+  (let ((pos 0) (missing '()))
+    (while (string-match "\\\\\\[\\([a-z-]+\\)\\]" donkey--tutor-content pos)
+      (setq pos (match-end 0))
+      (let ((sym (intern (match-string 1 donkey--tutor-content))))
+        (unless (commandp sym) (push sym missing))))
+    (should (equal missing '()))))
+
 ;;; donkey-describe-bindings-test.el ends here

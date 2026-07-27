@@ -2860,6 +2860,242 @@ documentation."
     (display-buffer buf)))
 
 ;;; ---------------------------------------------------------------------------
+;;; Donkey Tutor
+;;; ---------------------------------------------------------------------------
+
+(defconst donkey--tutor-content
+  "DONKEY tutor
+=============
+
+This is an ordinary, editable buffer, and the text you are reading is the
+text you will practise on.  Changing it is the point -- nothing here is
+precious, and \\[donkey-tutor] gives you a fresh copy whenever you want one.
+
+Lines beginning with \">>\" are things to DO.  Everything else is
+explanation.
+
+DONKEY has two states.  In NORMAL state the letter keys are commands; in
+INSERT state they type.  The modeline shows which: DONKEY[N] or DONKEY[I].
+If a key ever does something you did not expect, you are probably in the
+other state -- press C-g to get back to NORMAL.
+
+To stop, kill this buffer.
+
+
+Lesson 1 -- moving around
+-------------------------
+
+Movement sits on the home row:
+
+    \\[backward-char] left    \\[next-line] down    \\[previous-line] up    \\[forward-char] right
+
+>> Walk the cursor down to the ---> line, along it, and back, using only
+   those four keys.
+
+   ---> Move along this line and back again before going on.
+
+Bigger jumps:
+
+    \\[forward-word] next word     \\[backward-word] previous word
+    g g  buffer start   \\[end-of-buffer] buffer end
+
+>> Press g g to jump to the top of this buffer, then come back here.
+
+
+Lesson 2 -- counts
+------------------
+
+Nearly every DONKEY command takes a count, and it always means the same
+thing: how many.  Give it as C-u N before the key.
+
+>> Press C-u 3 j and watch the cursor move three lines in one go.
+
+>> Press C-u 5 \\[forward-word] to skip five words along the ---> line.
+
+   ---> one two three four five six seven eight nine ten
+
+Counts work the same way on the editing commands you are about to meet,
+so C-u 3 \\[donkey-delete] deletes three characters and C-u 2 \\[donkey-mark-word] selects two words.
+
+
+Lesson 3 -- typing
+------------------
+
+To type, enter INSERT state.  DONKEY then gets out of the way completely
+and Emacs behaves exactly as it always does.
+
+    \\[donkey-insert-here] before the cursor      \\[donkey-insert-after] after the cursor
+    \\[donkey-insert-beginning-of-line] at the start of the line   \\[donkey-insert-end-of-line] at the end of the line
+    \\[donkey-open-below] open a line below       \\[donkey-open-above] open a line above
+
+>> Put the cursor on the ---> line, press \\[donkey-insert-here], type the missing word, then
+   press C-g to return to NORMAL.
+
+   ---> The quick brown fox jumps over the lazy .
+
+
+Lesson 4 -- deleting and changing
+---------------------------------
+
+    \\[donkey-delete] delete the character under the cursor, or the selection
+    \\[donkey-change] change it -- deletes, then drops you into INSERT
+
+>> Fix the doubled letters on the ---> line using \\[donkey-delete].
+
+   ---> Thiis liine haas extraa letterss in itt.
+
+>> Put the cursor on the word \"wrong\" below, press C-u 5 \\[donkey-change], type
+   \"right\", and press C-g.
+
+   ---> This word is wrong and needs replacing.
+
+
+Lesson 5 -- selecting things
+----------------------------
+
+Rather than counting characters, select the thing you mean:
+
+    \\[donkey-mark-word] a word        \\[donkey-mark-symbol] a symbol
+    \\[donkey-mark-sentence] a sentence    \\[donkey-mark-paragraph] a paragraph
+    \\[donkey-mark-whole-buffer] the whole buffer
+
+>> Put the cursor anywhere in the ---> sentence and press \\[donkey-mark-sentence], then \\[donkey-copy]
+   to copy it.
+
+   ---> Selecting by meaning beats counting characters.  It also reads better.
+
+You can also select by delimiter.  \\[donkey-mark-inner] asks for a character and selects
+what is INSIDE the nearest pair; \\[donkey-mark-outer] includes the delimiters too.
+
+>> Put the cursor between the parentheses below and press \\[donkey-mark-inner] then ( --
+   the text inside is selected.  Try \\[donkey-mark-outer] then ( to include the brackets.
+
+   ---> call(this argument here)
+
+A count means levels out, so C-u 2 \\[donkey-mark-inner] ( from the inner pair selects the
+outer one.
+
+>> Put the cursor on \"deep\" below and press C-u 2 \\[donkey-mark-inner] then (.
+
+   ---> outer (middle (deep) middle) outer
+
+
+Lesson 6 -- whole lines
+-----------------------
+
+\\[donkey-visual-line-toggle] starts a line selection anchored on the current line.  \\[donkey-visual-next-line] and
+\\[donkey-visual-previous-line] then grow it a whole line at a time, and they take counts too.
+
+>> Put the cursor on the first ---> line, press \\[donkey-visual-line-toggle], then \\[donkey-visual-next-line] twice, then \\[donkey-delete].
+   All three lines go, leaving no blank behind.
+
+   ---> first line to remove
+   ---> second line to remove
+   ---> third line to remove
+
+
+Lesson 7 -- banking, which is DONKEY's own idea
+-----------------------------------------------
+
+Most editors make you copy one stretch at a time.  DONKEY lets you set
+aside lines from anywhere in the buffer and act on all of them at once.
+
+    \\[donkey-bank-selection] bank this line, or every line a selection touches
+        (press it again on a banked line to take it back)
+    \\[donkey-unbank-line] unbank this line     \\[donkey-unbank-section] unbank the whole run
+    \\[donkey-clear-banked-selection] discard every bank
+
+Banked lines stay highlighted while you carry on moving around.  When you
+press \\[donkey-copy] or \\[donkey-delete], every banked line is taken at once, as a single
+piece, in the order they appear in the buffer.
+
+>> Bank the first and third shopping lines below with \\[donkey-bank-selection], then press \\[donkey-copy].
+   The message reads \"Copied 2 lines\".  Move to the (paste here) line and
+   press \\[donkey-yank] -- both arrive together.
+
+   ---> milk
+   ---> nails
+   ---> bread
+
+   (paste here)
+
+Whatever is selected right now counts as well, so the last piece never has
+to be banked explicitly.
+
+>> Bank the \"milk\" line again, then select the \"bread\" line with \\[donkey-set-mark] and
+   press \\[donkey-copy].  Both are copied, though only one was banked.
+
+
+Lesson 8 -- copy and paste
+--------------------------
+
+    \\[donkey-copy] copy      \\[donkey-delete] cut      \\[donkey-yank] paste      \\[donkey-yank-pop] paste the entry before
+
+A count on \\[donkey-yank] pastes that many copies.
+
+>> Copy the word \"echo\" below with \\[donkey-mark-word] then \\[donkey-copy], then press C-u 3 \\[donkey-yank] at the
+   end of the line.
+
+   ---> echo
+
+Pasting over a selection replaces it -- and that includes banked lines, so
+\\[donkey-yank] with lines banked swaps all of them for what you copied.
+
+
+That is the working set
+-----------------------
+
+\\[donkey-describe-bindings] lists every binding, grouped by prefix, whenever you want the
+full picture.  Everything above takes a count, and counts always mean the
+same thing.
+
+Kill this buffer when you are done."
+  "Text of the DONKEY tutor, before key substitution.
+
+A string constant rather than a file shipped beside `donkey.el': DONKEY
+installs by dropping a single file onto `load-path' -- the first method
+the README documents -- so a sibling data file would simply be missing
+for most installations, and missing at the moment a new user is least
+equipped to work out why.
+
+Written with `substitute-command-keys' escapes rather than literal keys,
+so a reader who has rebound anything is taught the keys they actually
+have rather than the ones this file was written with.")
+
+(defun donkey-tutor ()
+  "Open the DONKEY tutor: a buffer to learn DONKEY by editing it.
+
+The tutor is an ordinary editable buffer holding its own instructions,
+the way \\[help-with-tutorial] and vimtutor both work -- reading about a
+modal editor teaches very little, and the text being practised on may as
+well be the text doing the teaching.
+
+Returns to an existing tutor buffer rather than rebuilding it, so the
+lesson survives being buried behind other windows; killing the buffer is
+what starts over.  Deliberately lighter than saving progress to disk, as
+Emacs' own tutorial does: there is nothing here worth keeping once it has
+been read, and a stray file in the user's home directory is a worse
+outcome than retyping a lesson."
+  (interactive)
+  (let ((existing (get-buffer "*DONKEY Tutor*")))
+    (if existing
+        (pop-to-buffer existing)
+      (let ((buf (get-buffer-create "*DONKEY Tutor*")))
+        (with-current-buffer buf
+          (text-mode)
+          ;; DONKEY's keymap has to be live BEFORE the text is substituted.
+          ;; `substitute-command-keys' resolves against the current buffer's
+          ;; active maps, so substituting first renders every binding as
+          ;; "M-x donkey-unbank-line" instead of "m u" -- silently, and
+          ;; worst for exactly the commands a new reader most needs named.
+          (donkey-mode 1)
+          (donkey-enter-normal)
+          (insert (substitute-command-keys donkey--tutor-content))
+          (goto-char (point-min))
+          (set-buffer-modified-p nil))
+        (pop-to-buffer buf)))))
+
+;;; ---------------------------------------------------------------------------
 ;;; Donkey Normal Mode Keymap Definition
 ;;; ---------------------------------------------------------------------------
 
