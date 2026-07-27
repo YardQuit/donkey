@@ -1829,7 +1829,20 @@ whether a region was genuinely active."
       ;; signals `end-of-buffer' -- harmless to skip, since
       ;; rectangle-mark-mode is already correctly enabled with a (valid,
       ;; if zero-width) selection at that point.
-      (unless had-active-region
+      ;;
+      ;; End of LINE is skipped for a different reason: `right-char' there
+      ;; steps over the newline onto the next line at column 0, which does
+      ;; not widen the rectangle -- it MOVES it, to a column at the far
+      ;; side of the buffer from the one being looked at.  Confirmed live:
+      ;; point at the end of "alpha" (column 5), then "m v", left a
+      ;; rectangle whose columns were (0 . 0).  Anything done to it landed
+      ;; against the left margin, and appending to a block of lines --
+      ;; which is what standing at end of line and pressing "m v" means --
+      ;; was unreachable.  A zero-width rectangle at the column point is
+      ;; actually on is both correct and the useful thing there, since
+      ;; `string-rectangle' inserts rather than replaces when the width is
+      ;; zero.
+      (unless (or had-active-region (eolp))
         (condition-case nil
             (right-char 1)
           (end-of-buffer nil))))))
