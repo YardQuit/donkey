@@ -294,10 +294,18 @@ instead of the ordinary `user-error' for an empty ring."
       (should (= (length donkey--position-ring) 1))
       (donkey-jump-back)
       (should (= (point) 1))
-      (should (= donkey--position-index 0)))))
+      ;; The counter is advanced past the entry just used; with one entry
+      ;; it wraps at the next use rather than eagerly here.
+      (should (= donkey--position-index 1))
+      (donkey-jump-back)
+      (should (= (point) 1)))))
 
 (ert-deftest donkey-jump-back-multiple-positions-rotate ()
-  "Multiple positions rotate through correctly: visits 3 -> 1 -> 5."
+  "Positions are visited most-recent first: 5 -> 3 -> 1.
+
+Was 3 -> 1 -> 5.  Point had just come from 5, so the first press skipped
+the position it was meant to return to and landed on the one before --
+the whole reason `S' exists is to take back the jump just made."
   (with-temp-buffer
     (insert "hello world\n")
     (goto-char 1)
@@ -314,14 +322,14 @@ instead of the ordinary `user-error' for an empty ring."
       (donkey--track-position)
       (should (= (length donkey--position-ring) 3))
       (donkey-jump-back)
+      (should (= (point) 5))
+      (donkey-jump-back)
       (should (= (point) 3))
       (donkey-jump-back)
-      (should (= (point) 1))
-      (donkey-jump-back)
-      (should (= (point) 5)))))
+      (should (= (point) 1)))))
 
 (ert-deftest donkey-jump-back-wraps-around-ring ()
-  "After exhausting ring, wraps back to start."
+  "After exhausting the ring, wraps back to the most recent entry."
   (with-temp-buffer
     (insert "hello\n")
     (goto-char 1)
@@ -335,12 +343,13 @@ instead of the ordinary `user-error' for an empty ring."
       (goto-char 5)
       (donkey--track-position)
       (should (= (length donkey--position-ring) 2))
-      (donkey-jump-back)
-      (should (= (point) 1))
+      ;; Most recent first, then wrapping back round to it.
       (donkey-jump-back)
       (should (= (point) 3))
       (donkey-jump-back)
-      (should (= (point) 1)))))
+      (should (= (point) 1))
+      (donkey-jump-back)
+      (should (= (point) 3)))))
 
 (ert-deftest donkey-jump-back-updates-tracking-state ()
   "After jumping, tracking state is updated to new position."
@@ -1212,11 +1221,11 @@ visible character while still reporting a jump to a recorded position."
       (cl-letf (((symbol-function 'message)
                  (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
         (donkey-jump-back))
-      ;; The TOTAL is what changed here: 2 visible, not the ring's 3.
-      ;; The index is pre-existing rotation behaviour -- the counter is
-      ;; incremented before use, so the first press lands on the second
-      ;; entry and reaches the first on the way round.
-      (should (equal shown "Position 2/2"))
+      ;; Two things asserted: the TOTAL is the visible count, not the
+      ;; ring's 3, and the INDEX is 1 -- the first press goes to the most
+      ;; recent visible entry.  It used to report 2/2, because the counter
+      ;; was advanced before use and the first press skipped an entry.
+      (should (equal shown "Position 1/2"))
       (should (<= (point-min) (point)))
       (should (<= (point) (point-max))))))
 
@@ -1231,7 +1240,8 @@ visible character while still reporting a jump to a recorded position."
     (should (equal (list (progn (donkey-jump-back) (point))
                          (progn (donkey-jump-back) (point))
                          (progn (donkey-jump-back) (point)))
-                   '(2 4 2)))))
+                   ;; Most recent first: 4 was the position just left.
+                   '(4 2 4)))))
 
 (ert-deftest donkey-visual-session-ignores-an-anchor-hidden-by-narrowing ()
   "An anchor outside the accessible portion is not a continuable session.
@@ -1280,6 +1290,61 @@ higher up."
       (should (equal (buffer-substring-no-properties (region-beginning)
                                                      (region-end))
                      "L2\nL3")))))
+
+(ert-deftest donkey-jump-back-returns-to-the-position-just-left ()
+  "The first press returns to where point was, not one entry further back.
+
+Regression, reported as \"S is one line off\".  The counter was advanced
+BEFORE it was used, so the first press skipped the most recent entry --
+and since a position is recorded on every movement, the entry before it
+is one line away after `j'/`k' and one character away after `h'/`l'.
+That made a key whose whole purpose is taking back the jump just made
+land consistently just short of it."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (dotimes (i 20) (insert (format "line %02d\n" (1+ i))))
+    (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+      ;; walk down to line 5 the way j does, recording each step
+      (goto-char (point-min))
+      (donkey--track-position)
+      (dotimes (_ 4) (forward-line 1) (donkey--track-position))
+      (should (= (line-number-at-pos) 5))
+      ;; a big jump, then take it back
+      (goto-char (point-max))
+      (donkey--track-position)
+      (donkey-jump-back)
+      (should (= (line-number-at-pos) 5)))))
+
+(ert-deftest donkey-jump-back-is-not-one-character-off ()
+  "The same off-by-one, as it appears after character-wise motion."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (insert "abcdefghij\n")
+    (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+      (goto-char (point-min))
+      (donkey--track-position)
+      (dotimes (_ 4) (forward-char 1) (donkey--track-position))
+      (should (= (point) 5))
+      (goto-char (point-max))
+      (donkey--track-position)
+      (donkey-jump-back)
+      (should (= (point) 5)))))
+
+(ert-deftest donkey-jump-back-walks-further-back-on-repeat ()
+  "Repeats keep walking back rather than sticking or skipping."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (dotimes (i 20) (insert (format "line %02d\n" (1+ i))))
+    (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+      (goto-char (point-min))
+      (donkey--track-position)
+      (dotimes (_ 4) (forward-line 1) (donkey--track-position))
+      (goto-char (point-max))
+      (donkey--track-position)
+      (should (equal (list (progn (donkey-jump-back) (line-number-at-pos))
+                           (progn (donkey-jump-back) (line-number-at-pos))
+                           (progn (donkey-jump-back) (line-number-at-pos)))
+                     '(5 4 3))))))
 
 (provide 'donkey-navigation-test)
 
