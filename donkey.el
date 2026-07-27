@@ -3257,13 +3257,29 @@ obeyed.  \\`C-u 3' \\[next-line] is how it is said.
 
 >> Press \\`C-u 3' \\[next-line] and watch the cursor move three lines in one go.
 
->> Press \\`C-u 5' \\[forward-word] to skip five words along the ---> line.
+>> Put the cursor on \"one\" below and press \\`C-u 5' \\[forward-word] -- five words in
+   one go, leaving the cursor just after \"five\".  \\[forward-word] lands at the END
+   of each word, so counting stops there rather than on the next one.
 
    ---> one two three four five six seven eight nine ten
 
-Counts work the same way on the editing commands you are about to meet,
-so \\`C-u 3' DONKEY-DELETE-KEYS deletes three characters and \\`C-u 2' \\[donkey-mark-word]
-selects two words.
+Counts work the same way on the editing commands you are about to meet.
+Lessons 4 and 5 each end with a line to try one on, once the command
+itself has been introduced -- a count is easier to see when you already
+know what it is counting.
+
+Where the cursor sits matters more for some commands than others, and it
+is worth knowing which is which before you start counting:
+
+  - Counting CHARACTERS counts from the cursor.  Put it on the first
+    character you mean to affect; one place off and you act on the wrong
+    five.
+  - Counting or selecting THINGS -- a word, a sentence, a paragraph --
+    does not care where inside the thing you are.  Anywhere in the word
+    is anywhere in the word.
+
+The second kind is why the exercises for it say \"anywhere\", and the
+first kind is why the others name an exact character.
 
 
 Lesson 3 -- typing
@@ -3276,8 +3292,8 @@ and Emacs behaves exactly as it always does.
     \\[donkey-insert-beginning-of-line] at the start of the line   \\[donkey-insert-end-of-line] at the end of the line
     \\[donkey-open-below] open a line below       \\[donkey-open-above] open a line above
 
->> Put the cursor on the ---> line, press \\[donkey-insert-here], type the missing word, then
-   press \\`C-g' to return to NORMAL.
+>> Put the cursor on the full stop below, press \\[donkey-insert-here], type the missing
+   word -- it is \"dog\" -- then press \\`C-g' to return to NORMAL.
 
    ---> The quick brown fox jumps over the lazy .
 
@@ -3292,10 +3308,21 @@ Lesson 4 -- deleting and changing
 
    ---> Thiis liine haas extraa letterss in itt.
 
->> Put the cursor on the word \"wrong\" below, press \\`C-u 5' \\[donkey-change], type
-   \"right\", and press \\`C-g'.
+>> Put the cursor on the \"w\" of \"wrong\" below -- the FIRST character, not
+   just somewhere in the word -- then press \\`C-u 5' \\[donkey-change], type \"right\",
+   and press \\`C-g'.
 
    ---> This word is wrong and needs replacing.
+
+   One character off and you replace the wrong five: starting on the
+   \"r\" gives \"wrightand\".  Lesson 5 shows the way round that.
+
+Both take a count, the same one Lesson 2 described.
+
+>> Put the cursor on the first \"x\" below and press \\`C-u 3' DONKEY-DELETE-KEYS.
+   All three go at once.
+
+   ---> xxxand the rest of the line stays
 
 
 Lesson 5 -- selecting things
@@ -3321,6 +3348,23 @@ mean:
    whole sentence is selected, however long it is.
 
    ---> Selecting by meaning beats counting characters.  It also reads better.
+
+A selection is something to act ON, so the editing keys from Lesson 4
+follow straight on from it: \\[donkey-change] changes what is selected rather than the
+character under the cursor.
+
+>> Put the cursor on \"replace\" below, press \\[donkey-mark-word] then \\[donkey-change], type
+   \"change\", and press \\`C-g'.  Selecting first means you never count
+   the characters.
+
+   ---> Words to replace without counting anything.
+
+These take a count too -- the same one Lesson 2 described.
+
+>> Put the cursor on \"alpha\" below and press \\`C-u 2' \\[donkey-mark-word].  Two words
+   are selected instead of one.
+
+   ---> alpha beta gamma delta
 
 You can also select by delimiter.  \\[donkey-mark-inner] asks for a character and selects
 what is INSIDE the nearest pair; \\[donkey-mark-outer] includes the delimiters too.

@@ -1052,6 +1052,143 @@ rather than a visibly absent one."
           (should-not (string-match-p "moves nowhere" (buffer-string)))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
+(ert-deftest donkey-tutor-lesson-2-count-exercise-lands-where-it-says ()
+  "`C-u 5 w' leaves the cursor just after \"five\", not on \"six\".
+
+`forward-word' lands at the END of each word, so counting five of them
+stops after the fifth.  The lesson first claimed it landed ON the sixth,
+which running it disproved."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> one two three")
+   (search-forward "---> ")
+   (donkey-tutor-test--keys "C-u 5 w")
+   (should (string-suffix-p "five"
+                            (buffer-substring-no-properties
+                             (line-beginning-position) (point))))
+   (should (string-prefix-p " six"
+                            (buffer-substring-no-properties
+                             (point) (line-end-position))))))
+
+(ert-deftest donkey-tutor-lesson-4-change-exercise-names-the-exact-character ()
+  "The counted `c' exercise says WHICH character to start on, and why.
+
+\"On the word wrong\" is not enough for a command that counts characters
+from the cursor: one place off replaces the wrong five.  The lesson now
+names the \"w\", and the failure it warns about is the real one."
+  ;; the exercise as written
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> This word is wrong")
+   (search-forward "wrong")
+   (backward-char 5)                    ; on the "w", as instructed
+   (donkey-tutor-test--keys "c")        ; C-u 5 c
+   (should t))
+  ;; and the warning it gives is accurate
+  (with-temp-buffer
+    (insert "This word is wrong and needs replacing.")
+    (goto-char (point-min))
+    (search-forward "wrong")
+    (backward-char 4)                   ; one character off, on the "r"
+    (donkey-change 5)
+    (insert "right")
+    (should (string-match-p "wrightand" (buffer-string))))
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((text (buffer-string)))
+            (should (string-match-p "the \"w\" of \"wrong\"" text))
+            (should (string-match-p "\"wrightand\"" text)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-lesson-2-says-when-cursor-position-matters ()
+  "Lesson 2 distinguishes counting characters from selecting things.
+
+Both halves are checked against the commands, not just asserted: a
+counted character command really does depend on where the cursor is, and
+a text object really does not."
+  ;; characters: position-critical
+  (let (results)
+    (dolist (off '(0 1 2))
+      (with-temp-buffer
+        (insert "This word is wrong and needs replacing.")
+        (goto-char (point-min))
+        (search-forward "wrong")
+        (backward-char (- 5 off))
+        (donkey-change 5)
+        (insert "right")
+        (push (buffer-string) results)))
+    (should (= 3 (length (delete-dups results)))))
+  ;; things: position-tolerant
+  (let (results)
+    (dolist (off '(0 3 6))
+      (with-temp-buffer
+        (let ((transient-mark-mode t))
+          (insert "Words to replace without counting.")
+          (goto-char (point-min))
+          (search-forward "replace")
+          (backward-char (- 7 off))
+          (donkey-mark-word 1)
+          (push (buffer-substring-no-properties (region-beginning) (region-end))
+                results))))
+    (should (equal (delete-dups results) '("replace"))))
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((text (buffer-string)))
+            (should (string-match-p "Counting CHARACTERS counts from the cursor" text))
+            (should (string-match-p "does not care where inside the thing you are" text)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-lesson-3-names-the-word-to-type ()
+  "The pangram exercise says which word is missing.
+
+\"Type the missing word\" assumes the reader knows the phrase.  Anyone who
+does not is stuck on the third lesson with no way forward."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should (string-match-p "it is \"dog\"" (buffer-string)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-lesson-4-count-row-really-deletes-three ()
+  "Lesson 4's count row works on both delete keys."
+  (dolist (key '("C-u 3 d" "C-u 3 x"))
+    (donkey-tutor-test--live
+     (donkey-tutor-test--goline "---> xxxand the rest")
+     (search-forward "---> ")
+     (donkey-tutor-test--keys key)
+     (should (equal (donkey-tutor-test--line)
+                    "   ---> and the rest of the line stays")))))
+
+(ert-deftest donkey-tutor-lesson-5-select-then-change-really-works ()
+  "`m w' then `c' replaces the whole selection, not one character.
+
+The point of the exercise: selecting first means never counting
+characters, which is what the counted `c' in Lesson 4 required."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> Words to replace")
+   (search-forward "replace")
+   (backward-char 4)
+   (donkey-tutor-test--keys "m w")
+   (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                  "replace"))
+   (donkey-tutor-test--keys "c")
+   (insert "change")
+   (donkey-tutor-test--keys "C-g")
+   (should (equal (donkey-tutor-test--line)
+                  "   ---> Words to change without counting anything."))))
+
+(ert-deftest donkey-tutor-lesson-5-count-row-selects-two-words ()
+  "Lesson 5's count row selects two words rather than one."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> alpha beta gamma")
+   (search-forward "---> ")
+   (donkey-tutor-test--keys "C-u 2 m w")
+   (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                  "alpha beta"))))
+
 (ert-deftest donkey-tutor-lesson-5-teaches-v-before-it-is-used ()
   "`v\=' has its own explanation and exercise, not just a passing mention."
   (donkey-tutor-test--live
