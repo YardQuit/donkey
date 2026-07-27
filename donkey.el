@@ -3578,6 +3578,31 @@ The selection is released by the cut, so you can put the cursor back on
 the first line and press \\[donkey-yank] straight away -- the block goes back where it
 came from.
 
+\\[donkey-change] on a rectangle replaces the block on EVERY line it spans, in one
+go.  It asks for the replacement in the minibuffer -- \"String rectangle:\"
+-- rather than dropping you into INSERT state, so type the text there and
+press RET.  You stay in NORMAL state throughout; nothing appears in the
+buffer until you confirm.
+
+>> Put the cursor on the first \"7\" below, press \\[donkey-rectangle-mark-mode], then \\[next-line] twice
+   and \\[forward-char] twice.  Press \\[donkey-change], type \"##\" and press RET.  All three
+   rows lose their digits together.
+
+   ---> 777 red
+   ---> 888 green
+   ---> 999 blue
+
+\\[donkey-rectangle-mark-mode] on its own selects one column on one line, so pressing \\[donkey-change] right
+after it changes a single character -- correct, but rarely what you
+wanted.  \\[next-line] gives the block its rows and \\[forward-char] its width, and both
+have to happen before \\[donkey-change].
+
+>> Put the cursor on the first \"5\" below, press \\[donkey-rectangle-mark-mode], and press \\[donkey-change]
+   immediately -- no \\[next-line], no \\[forward-char].  One character goes.  That is
+   the whole difference between the two exercises.
+
+   ---> 555 solo
+
 Two things worth knowing before you rely on it:
 
   - A rectangle lives in DONKEY's own store, NOT the system clipboard.

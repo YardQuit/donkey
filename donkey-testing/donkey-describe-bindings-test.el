@@ -1642,4 +1642,75 @@ on -- pinned so a later edit does not turn the prose into a \">>\" step."
               (should (or (null lesson-6) (< caveat lesson-6)))))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
+
+(ert-deftest donkey-tutor-lesson-9-rectangle-change-exercise-really-works ()
+  "The `m v'/`c' exercise changes all three rows at once, as the lesson says.
+
+`string-rectangle' reads its replacement with `read-string', so the keys
+alone cannot drive it in batch -- there is no minibuffer to type into.
+The prompt is answered by mocking `read-string', which is also how the
+lesson's claim about WHERE the text is typed gets checked: if `c' ever
+stopped prompting and entered INSERT state instead, the mock would go
+uncalled and this test would fail rather than quietly still passing."
+  (let ((prompt nil))
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (p &rest _) (setq prompt p) "##")))
+      (donkey-tutor-test--live
+       (donkey-tutor-test--goline "---> 777 red")
+       (search-forward "777")
+       (goto-char (match-beginning 0))
+       (donkey-tutor-test--keys "m v")
+       (donkey-tutor-test--keys "j j")
+       (donkey-tutor-test--keys "l l")
+       (donkey-tutor-test--keys "c")
+       ;; "It asks for the replacement in the minibuffer -- String rectangle:"
+       (should (equal prompt "String rectangle: "))
+       ;; "You stay in NORMAL state throughout."
+       (should donkey-normal-mode)
+       (should-not donkey-insert-mode)
+       ;; "All three rows lose their digits together."
+       (donkey-tutor-test--goline "## red")
+       (dolist (expected '("   ---> ## red" "   ---> ## green" "   ---> ## blue"))
+         (should (equal (donkey-tutor-test--line) expected))
+         (forward-line 1))))))
+
+(ert-deftest donkey-tutor-lesson-9-bare-rectangle-change-takes-one-character ()
+  "The second exercise changes exactly one character, which is its point.
+
+The lesson contrasts the two: `m v' alone is one column on one line, so
+`c' straight after it is a single-character change.  Pinned separately
+from the three-row case because the contrast is the lesson -- if the
+initial widening ever changed, this exercise would teach the opposite of
+what it says while the three-row one still passed."
+  (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "##")))
+    (donkey-tutor-test--live
+     (donkey-tutor-test--goline "---> 555 solo")
+     (search-forward "555")
+     (goto-char (match-beginning 0))
+     (donkey-tutor-test--keys "m v")
+     (donkey-tutor-test--keys "c")
+     (should donkey-normal-mode)
+     (donkey-tutor-test--goline "solo")
+     (should (equal (donkey-tutor-test--line) "   ---> ##55 solo")))))
+
+(ert-deftest donkey-tutor-lesson-9-rectangle-change-differs-from-plain-change ()
+  "Without a rectangle, `c' deletes a character and enters INSERT state.
+
+The lesson tells the reader they stay in NORMAL state and type into the
+minibuffer, which is only remarkable because the same key does the
+opposite when no rectangle is live.  Checked so the claim is anchored to
+a real contrast rather than to `c' happening to behave that way for
+every selection."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> 555 solo")
+   (search-forward "555")
+   (goto-char (match-beginning 0))
+   (donkey-tutor-test--keys "m v")
+   (donkey-tutor-test--keys "C-g")
+   (should-not (bound-and-true-p rectangle-mark-mode))
+   (donkey-tutor-test--keys "c")
+   (should donkey-insert-mode)
+   (donkey-tutor-test--goline "solo")
+   (should (equal (donkey-tutor-test--line) "   ---> 55 solo"))))
+
 ;;; donkey-describe-bindings-test.el ends here
