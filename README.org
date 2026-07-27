@@ -391,7 +391,7 @@ out of reach of everything but =undo=.
 | Key   | Command                    | Description                          |
 |-------+----------------------------+--------------------------------------|
 | =m w= | =donkey-mark-word=           | Mark word at point                   |
-| =m W= | =donkey-mark-symbol=         | Mark symbol (includes hyphens)       |
+| =m W= | =donkey-mark-symbol=         | Mark symbol (hyphens, underscores)   |
 | =m s= | =donkey-mark-sentence=       | Mark sentence                        |
 | =m p= | =donkey-mark-paragraph=      | Mark paragraph                       |
 | =m i= | =donkey-mark-inner=          | Mark inside delimiter pair           |
@@ -403,6 +403,18 @@ out of reach of everything but =undo=.
 | =m u=   | =donkey-unbank-line=         | Unbank the line at point             |
 | =m U=   | =donkey-unbank-section=      | Unbank the whole run at point        |
 | =m DEL= | =donkey-clear-banked-selection= | Discard all banked lines (Backspace or Delete) |
+
+=m w= marks a word; =m W= marks a symbol, which is the same thing plus
+whatever the major mode counts as holding a name together. Hyphens and
+underscores usually do, so =m W= anywhere in =send-mail_to= takes all of
+it while =m w= takes only =send=, =mail= or =to=.
+
+Periods and commas are the mode's call too, and modes disagree: in
+=emacs-lisp-mode= =m W= on =foo.bar= takes the whole of it, while in
+=python-mode= and =text-mode= it stops at =foo=. One part is DONKEY's
+own rather than the mode's — a trailing =.= or =,= is always dropped, so
+=m W= on the last name of a sentence gives you the name without its full
+stop even where the mode would have included it.
 
 =m w=, =m W=, =m s= and =m p= all report =No ... at or before point=
 rather than marking nothing when there is nothing of substance to mark —

@@ -1504,4 +1504,142 @@ large -- stating it only in Lesson 5 would be stating it too late."
               (should (< hit lesson-1))))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
+
+(ert-deftest donkey-tutor-lesson-5-word-versus-symbol-exercise-really-works ()
+  "The `m w'/`m W' exercise selects what the lesson says, from the named spot.
+
+Run in the real tutor buffer rather than a constructed one: `m W' reads
+the syntax table, and the tutor is `text-mode', so a check in any other
+mode would prove nothing about what a reader sees.
+
+The lesson names the \\=`m\\=' of \"mail\" specifically.  An earlier lesson had
+to be corrected for saying \"anywhere in the word\" when the starting
+column changed the answer, so the spot the prose names is the spot tested."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> Call send-mail_to")
+   ;; Captured BEFORE any command runs.  Reading `match-beginning' after
+   ;; the first keypress gave "DONKEY" -- `m w' searches internally and
+   ;; leaves its own match data behind.
+   (let ((spot (progn (search-forward "mail") (match-beginning 0))))
+     (goto-char spot)
+     (donkey-tutor-test--keys "m w")
+     (should (equal (buffer-substring-no-properties
+                     (region-beginning) (region-end))
+                    "mail"))
+     ;; "Press C-g, then press m W from the same spot" -- the same spot
+     ;; has to survive the quit, or the second half of the exercise is a
+     ;; different exercise.
+     (donkey-tutor-test--keys "C-g")
+     (should-not (region-active-p))
+     (goto-char spot)
+     (donkey-tutor-test--keys "m W")
+     (should (equal (buffer-substring-no-properties
+                     (region-beginning) (region-end))
+                    "send-mail_to")))))
+
+(ert-deftest donkey-tutor-lesson-5-word-versus-symbol-line-has-a-real-difference ()
+  "The demo line is one where `m w' and `m W' genuinely disagree.
+
+The point of the exercise is the contrast, so a line whose word and
+symbol happen to coincide would read as if the two keys were the same.
+Pinned because the marker line is prose and prose gets reworded: swapping
+in a plain word would leave both halves passing individually while the
+lesson taught nothing."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> Call send-mail_to")
+   (let ((spot (progn (search-forward "mail") (match-beginning 0)))
+         word symbol)
+     (goto-char spot)
+     (donkey-tutor-test--keys "m w")
+     (setq word (buffer-substring-no-properties
+                 (region-beginning) (region-end)))
+     (donkey-tutor-test--keys "C-g")
+     (goto-char spot)
+     (donkey-tutor-test--keys "m W")
+     (setq symbol (buffer-substring-no-properties
+                   (region-beginning) (region-end)))
+     (should-not (equal word symbol))
+     (should (string-match-p (regexp-quote word) symbol))
+     (should (> (length symbol) (length word))))))
+
+
+(ert-deftest donkey-tutor-lesson-5-punctuation-claim-is-true-in-both-directions ()
+  "The lesson's claim about periods and commas holds in Emacs Lisp and in text.
+
+Two separate rules, and the lesson separates them:
+
+The MODE decides whether a period or comma holds a name together.  In
+`emacs-lisp-mode' both do, so \\=`m W\\=' on \"foo.bar\" takes all of it; in
+`text-mode' -- which is what the tutor buffer is -- neither does, and the
+same keypress stops at \"foo\".
+
+DONKEY decides the trailing one.  `donkey-mark-symbol' walks back over a
+final \",\" or \".\" explicitly, so the last name of a sentence comes without
+its full stop even where the mode would have included it.
+
+The `text-mode' half is why the lesson says there is nothing here to try
+it on: a reader who took the Emacs Lisp example into the tutor buffer
+would get \"foo\" and conclude the editor was broken."
+  (dolist (case '((emacs-lisp-mode "run foo.bar now"   "foo.bar")
+                  (emacs-lisp-mode "run foo,bar now"   "foo,bar")
+                  ;; Trailing punctuation dropped even though the mode
+                  ;; counts it as part of the symbol.
+                  (emacs-lisp-mode "end with foo.bar." "foo.bar")
+                  (emacs-lisp-mode "end with foo.bar," "foo.bar")
+                  ;; The tutor's own mode joins neither.
+                  (text-mode       "run foo.bar now"   "foo")
+                  (text-mode       "run foo,bar now"   "foo")
+                  (text-mode       "end with foo.bar." "foo")))
+    (cl-destructuring-bind (mode text expected) case
+      (with-temp-buffer
+        (funcall mode)
+        (let ((transient-mark-mode t))
+          (insert text)
+          (goto-char (point-min))
+          (search-forward "foo")
+          (goto-char (match-beginning 0))
+          (donkey-mark-symbol 1)
+          (should (equal (buffer-substring-no-properties
+                          (region-beginning) (region-end))
+                         expected))))))
+  ;; And the hyphen/underscore claim, in the mode the lesson is read in.
+  (with-temp-buffer
+    (text-mode)
+    (let ((transient-mark-mode t))
+      (insert "Call send-mail_to when the queue drains.")
+      (goto-char (point-min))
+      (search-forward "mail")
+      (goto-char (match-beginning 0))
+      (donkey-mark-symbol 1)
+      (should (equal (buffer-substring-no-properties
+                      (region-beginning) (region-end))
+                     "send-mail_to")))))
+
+(ert-deftest donkey-tutor-lesson-5-says-punctuation-is-the-modes-call ()
+  "The lesson does not promise behaviour the tutor buffer cannot show.
+
+`text-mode' joins neither period nor comma, so an exercise built on the
+Emacs Lisp behaviour would fail in front of the reader.  The lesson
+states the rule and says outright that there is nothing here to try it
+on -- pinned so a later edit does not turn the prose into a \">>\" step."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-min))
+          (should (search-forward "Lesson 5 -- selecting things" nil t))
+          (let ((lesson-5 (point))
+                ;; Rendered prose is hard-wrapped, so the phrase spans a
+                ;; newline.  A literal `search-forward\' found nothing and
+                ;; reported the caveat missing when it was plainly there.
+                (caveat-re "nothing[ \n]+here to try"))
+            (should (re-search-forward caveat-re nil t))
+            ;; The caveat must sit inside Lesson 5, not drift to the end.
+            (goto-char lesson-5)
+            (let ((caveat (save-excursion (re-search-forward caveat-re)))
+                  (lesson-6 (save-excursion
+                              (search-forward "Lesson 6" nil t))))
+              (should (or (null lesson-6) (< caveat lesson-6)))))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
 ;;; donkey-describe-bindings-test.el ends here

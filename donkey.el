@@ -3370,6 +3370,28 @@ mean:
 
    ---> Selecting by meaning beats counting characters.  It also reads better.
 
+A word stops at a hyphen or underscore; a symbol runs straight through
+one.  On a name held together by them the two select very different
+things, which is why both keys exist.
+
+>> Put the cursor on the \"m\" of \"mail\" in the ---> line and press \\[donkey-mark-word]:
+   only that one word is selected.  Press \\`C-g', then press \\[donkey-mark-symbol]
+   from the same spot: the whole name is selected, hyphen, underscore
+   and all.
+
+   ---> Call send-mail_to when the queue drains.
+
+Which characters hold a name together is the major mode's decision, not
+DONKEY's.  Hyphen and underscore usually do.  Period and comma do in
+some code modes -- in Emacs Lisp, \\[donkey-mark-symbol] on \"foo.bar\" takes the whole
+of it -- and not in others.  One part is DONKEY's own: a period or comma
+at the END is always left out, so \\[donkey-mark-symbol] on the last name in a
+sentence gives you the name without the full stop.
+
+This buffer is plain text, where neither counts, so there is nothing
+here to try that on.  It is worth knowing before the first time you
+press \\[donkey-mark-symbol] in code and wonder why the answer differs.
+
 A selection is something to act ON, so the editing keys from Lesson 4
 follow straight on from it: \\[donkey-change] changes what is selected rather than the
 character under the cursor.
