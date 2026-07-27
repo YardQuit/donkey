@@ -190,14 +190,20 @@ or a shell/terminal buffer — stay in ordinary Insert passthrough
 instead, since suppressing keys there would break the underlying
 process interaction.
 
-- Press =C-g= to enter Normal state from anywhere.
+- Press =C-g= to enter Normal state from any ordinary buffer. Excluded
+  Modes are the exception, and the only one: there =C-g= does what it
+  does in stock Emacs, and Normal state cannot be reached at all.
 - In Normal state: =h=/=j=/=k=/=l= navigate; =i=/=I=/=a=/=A=/=o=/=O=/=c=
   enter Insert state at various positions (see Default Keybindings
   below for the full reference).
 - In Insert state: standard Emacs behavior — nothing is remapped.
   Press =C-g= to return to Normal.
-- The modeline shows the current state: =DONKEY[N]= (Normal) or
-  =DONKEY[I]= (Insert).
+- The modeline shows the current state: =DONKEY[N]= (Normal),
+  =DONKEY[I]= (Insert), or =DONKEY[E]= in an *excluded* mode. =E= is
+  still Insert state — keys really do pass straight through — but it is
+  reported separately because Normal state is unreachable there, so
+  pressing =C-g= and seeing nothing change is the design rather than a
+  stuck key.
 - New to DONKEY? Press =g ?= (or =M-x donkey-tutor=) — see Tutor below.
 
 * Default Keybindings
@@ -717,6 +723,14 @@ DONKEY Normal state is permanently disabled in certain major modes where
 key suppression would break core functionality. In these modes, DONKEY
 stays in Insert state (passthrough), keeping DONKEY active but
 non-interfering.
+
+*Permanently* is meant literally: there is no key that reaches Normal
+state from one of these buffers. =C-g= behaves as it does in stock
+Emacs — interrupting the subprocess, aborting a recursive edit — rather
+than switching state, and anything that manages to turn Normal state on
+by another route is bounced straight back. The modeline says
+=DONKEY[E]= rather than =DONKEY[I]= there, so the difference is visible
+without having to press a key to find out.
 
 ** Built-in Defaults
 
