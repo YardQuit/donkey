@@ -801,12 +801,35 @@ reason this is computed rather than written into the tutor text."
               (should-not (string-match-p "Use d or x\\." (buffer-string)))))
         (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))))
 
+(ert-deftest donkey-tutor-delete-keys-render-as-keys-not-prose ()
+  "Both keys carry `help-key-binding', like every other key in the tutor.
+
+Computing the keys made them raw text, so they were the only keys in the
+whole buffer rendering as plain prose -- which reads as an oversight in
+a document whose entire job is showing you keys.  Every existing test
+passed in that state, because they all compared strings and the string
+was right; only the face was wrong."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-min))
+          (should (search-forward "from NORMAL state.  Use " nil t))
+          (should (eq (get-text-property (point) 'face) 'help-key-binding))
+          (should (search-forward "or " nil t))
+          (should (eq (get-text-property (point) 'face) 'help-key-binding))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
 (ert-deftest donkey-tutor-delete-keys-are-sorted-not-keymap-ordered ()
   "The order is deterministic, not whichever `keymap-set' call came first.
 
 `where-is-internal' returns keymap order, which put the vi key ahead of
 the Helix one by accident of layout and would have reordered the
-sentence if the two `keymap-set' calls were ever swapped."
-  (should (equal (donkey--tutor-delete-keys) "d or x")))
+sentence if the two `keymap-set' calls were ever swapped.
+
+The keys come back wrapped in the key-quote escape, unresolved: this
+runs BEFORE `substitute-command-keys', which is what lets them pick up
+the `help-key-binding' face."
+  (should (equal (donkey--tutor-delete-keys) "\\`d' or \\`x'")))
 
 ;;; donkey-describe-bindings-test.el ends here

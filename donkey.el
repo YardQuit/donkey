@@ -3410,6 +3410,14 @@ who has rebound either key is still taught the keys they actually have
 `\\\\[donkey-delete]' cannot keep here because it names one binding and
 this command has two.
 
+Each key is wrapped in the \\=\\=` KEY \\=' escape rather than returned bare,
+so `substitute-command-keys' gives it the `help-key-binding' face -- the
+same treatment every other key in the tutor gets.  Returned as raw text
+first, the two keys were the only ones in the whole buffer rendering as
+plain prose, which reads as an oversight in a document whose entire job
+is showing you keys.  The escapes are processed because this runs BEFORE
+`substitute-command-keys', not after.
+
 Sorted, because `where-is-internal' returns keymap order: that put the
 vi key ahead of the Helix one purely by where the two `keymap-set'
 calls happen to sit, and would silently reorder the sentence if they
@@ -3418,10 +3426,10 @@ were ever swapped.
 Falls back to naming the command when it has no keys at all, which is
 what `substitute-command-keys' does for an unbound command and is
 better than a sentence ending in nothing."
-  (let ((keys (sort (mapcar #'key-description
-                            (where-is-internal #'donkey-delete
-                                               donkey-normal-mode-map))
-                    #'string<)))
+  (let ((keys (mapcar (lambda (k) (format "\\`%s'" (key-description k)))
+                      (where-is-internal #'donkey-delete
+                                         donkey-normal-mode-map))))
+    (setq keys (sort keys #'string<))
     (cond
      ((null keys) "\\[donkey-delete]")
      ((null (cdr keys)) (car keys))
