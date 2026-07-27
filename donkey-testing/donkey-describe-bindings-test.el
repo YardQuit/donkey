@@ -857,60 +857,153 @@ rectangle behaviour a reader would meet by accident."
           (should (string-match-p "RECTANGLE" (buffer-string)))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
-(ert-deftest donkey-tutor-lesson-9-cut-and-restore-really-works ()
-  "The Lesson 9 exercise does what it says: cut a block, C-g, paste it back.
+(defmacro donkey-tutor-test--live (&rest body)
+  "Open a fresh tutor in the selected window and run BODY with real keys.
 
-The `C-g' step is in the lesson because the rectangle is STILL selected
-after the cut -- without it the paste hits the row-mismatch guard and
-the reader gets an error where the lesson promised a restored block.
-Found by running the sequence before writing it down."
-  (donkey-tutor-test--buffer "111 alpha\n222 beta\n333 gamma\n"
-    (donkey-tutor-test--row 1)
-    (rectangle-mark-mode 1)
-    (donkey-tutor-test--row 3)
-    (forward-char 3)
-    (donkey-delete 1)
-    (should (equal (buffer-string) " alpha\n beta\n gamma\n"))
-    ;; Still selected -- the reason the lesson says to press C-g.
-    (should (bound-and-true-p rectangle-mark-mode))
-    (ignore-error quit (keyboard-quit))
-    (should-not (bound-and-true-p rectangle-mark-mode))
-    (donkey-tutor-test--row 1)
-    (donkey-yank 1)
-    (should (equal (buffer-string) "111 alpha\n222 beta\n333 gamma\n"))))
+`execute-kbd-macro' resolves against the live keymaps and runs the real
+command loop, which is the only way these checks mean anything: an
+earlier version of these tests called the commands directly, and the
+missing post-command cleanup made a rectangle look like it stayed
+selected after a cut.  A whole paragraph of the lesson was written
+around that false reading before running the keys showed otherwise."
+  `(unwind-protect
+       (progn
+         (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))
+         (donkey-mode 1)
+         ;; BOUND, not assigned.  These are globals, and the exercises set
+         ;; them: an earlier version used `setq' and left
+         ;; `donkey--last-kill-rectangle-p' non-nil for the rest of the
+         ;; run, which sent twenty later `donkey-yank' tests down the
+         ;; rectangle branch.  Every file still passed in isolation, so
+         ;; only the combined run showed it.
+         (let ((transient-mark-mode t)
+               (kill-ring nil)
+               (kill-ring-yank-pointer nil)
+               (killed-rectangle nil)
+               (donkey--last-kill-rectangle-p nil)
+               (donkey--clipboard-warning-shown nil)
+               (this-command nil)
+               (last-command nil))
+           (donkey-tutor)
+           (switch-to-buffer "*DONKEY Tutor*")
+           (donkey-enter-normal)
+           ,@body))
+     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))
+     (donkey-mode -1)))
 
-(ert-deftest donkey-tutor-lesson-10-first-exercise-really-works ()
-  "Bank a line, draw a rectangle, copy: rectangle wins and the bank stays."
-  (donkey-tutor-test--buffer "keep this banked\ncol one\ncol two\n"
-    (donkey-tutor-test--row 1)
-    (donkey-bank-selection)
-    (donkey-tutor-test--row 2)
-    (rectangle-mark-mode 1)
-    (donkey-tutor-test--row 3)
-    (forward-char 3)
-    (donkey-copy 1)
-    (should (equal killed-rectangle '("col" "col")))
-    ;; "the keep line is STILL highlighted.  Nothing was spent."
-    (should (= (length (donkey--banked-spans)) 1))
-    (should (equal (buffer-string) "keep this banked\ncol one\ncol two\n"))))
+(defun donkey-tutor-test--keys (s)
+  "Run S as real key input.
 
-(ert-deftest donkey-tutor-lesson-10-second-exercise-really-works ()
-  "With the bank still live, paste takes the bank and leaves the rectangle."
-  (donkey-tutor-test--buffer "keep this banked\ncol one\ncol two\n"
-    (kill-new "REPLACED\n")
-    (donkey-tutor-test--row 1)
-    (donkey-bank-selection)
-    (donkey-tutor-test--row 2)
-    (rectangle-mark-mode 1)
-    (donkey-tutor-test--row 3)
-    (forward-char 3)
-    (donkey-copy 1)
-    (ignore-error quit (keyboard-quit))
-    (donkey-yank 1)
-    (should (equal (buffer-string) "REPLACED\ncol one\ncol two\n"))
-    (should (= (length (donkey--banked-spans)) 0))
-    ;; The rectangle was left alone, ready for the third exercise.
-    (should (equal killed-rectangle '("col" "col")))))
+Quit is caught: `C-g' in NORMAL state runs the real `keyboard-quit',
+which signals, and batch has no command loop to absorb it."
+  (condition-case nil (execute-kbd-macro (kbd s)) (quit nil)))
+
+(defun donkey-tutor-test--goline (needle &optional occurrence)
+  "Put point at the start of the line holding OCCURRENCE of NEEDLE."
+  (goto-char (point-min))
+  (dotimes (_ (or occurrence 1)) (search-forward needle))
+  (beginning-of-line))
+
+(defun donkey-tutor-test--line ()
+  "Return the current line as a string."
+  (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
+
+(ert-deftest donkey-tutor-lesson-9-exercise-works-with-real-keys ()
+  "The Lesson 9 exercise does what it says, driven by actual keys.
+
+Two corrections came out of running it.  The lesson said to press the
+forward key THREE times, which takes the trailing space as well --
+`forward-char' is remapped to `rectangle-forward-char' inside
+`rectangle-mark-mode', so the anchor column counts and the naive
+arithmetic is off by one.  And it claimed the rectangle stayed selected
+after the cut, so a `C-g' was needed before pasting; with real keys the
+cut releases the selection and no `C-g' is wanted."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> 111 alpha")
+   (search-forward "---> ")
+   (donkey-tutor-test--keys "m v j j l l x")
+   (should (equal killed-rectangle '("111" "222" "333")))
+   ;; Released by the cut -- the lesson must NOT tell the reader to press C-g.
+   (should-not (bound-and-true-p rectangle-mark-mode))
+   (should-not (use-region-p))
+   (donkey-tutor-test--goline "--->  alpha")
+   (search-forward "---> ")
+   (donkey-tutor-test--keys "p")
+   (donkey-tutor-test--goline "---> 111 alpha")
+   (should (equal (donkey-tutor-test--line) "   ---> 111 alpha"))))
+
+(ert-deftest donkey-tutor-lesson-10-exercises-work-with-real-keys ()
+  "All four Lesson 10 steps, in order, driven by actual keys.
+
+The third step needs the first: a rectangle copy never reaches the kill
+ring, so without an ordinary copy beforehand a paste over a bank reports
+\"Nothing to paste\" and the banked line is left alone -- which is what
+the lesson used to instruct the reader to do."
+  (donkey-tutor-test--live
+   ;; 1. an ordinary whole-line copy, so there is something to paste
+   (donkey-tutor-test--goline "---> col two")
+   (donkey-tutor-test--keys "V y")
+   (should (equal (car kill-ring) "   ---> col two\n"))
+   ;; 2. bank a line, draw a rectangle, copy: rectangle wins, bank survives
+   (donkey-tutor-test--goline "---> keep this banked")
+   (donkey-tutor-test--keys "m l")
+   (donkey-tutor-test--goline "---> col one")
+   (search-forward "---> ")
+   (donkey-tutor-test--keys "m v j l l y")
+   (should (equal killed-rectangle '("col" "col")))
+   (should (= (length (donkey--banked-spans)) 1))
+   ;; 3. C-g then paste: the bank wins and the rectangle is untouched
+   (donkey-tutor-test--keys "C-g")
+   (donkey-tutor-test--keys "p")
+   (should (= (length (donkey--banked-spans)) 0))
+   (should (equal killed-rectangle '("col" "col")))
+   (should-not (save-excursion (goto-char (point-min))
+                               (search-forward "keep this banked" nil t)))
+   ;; 4. paste again with nothing banked: now the rectangle lands
+   (donkey-tutor-test--goline "---> col one")
+   (search-forward "---> ")
+   (donkey-tutor-test--keys "p")
+   (donkey-tutor-test--goline "---> colcol one")
+   (should (equal (donkey-tutor-test--line) "   ---> colcol one"))))
+
+(ert-deftest donkey-tutor-lesson-9-prose-matches-the-verified-keys ()
+  "The words of Lesson 9 agree with the key sequence that was verified.
+
+The behavioural tests drive keys directly, so they pass whatever the
+lesson happens to SAY -- both of this lesson's defects lived in the
+prose.  These two assertions are the ones that would have caught them:
+the reader is told to press the forward key twice, not three times, and
+is NOT told the rectangle survives the cut."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((text (buffer-string)))
+            ;; Three presses takes the trailing space too.
+            (should (string-match-p "twice and\n   l twice" text))
+            (should-not (string-match-p "l three times" text))
+            ;; The cut releases the selection; no C-g is wanted.
+            (should-not (string-match-p "still selected after the cut" text)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-lesson-10-prose-establishes-a-paste-source ()
+  "Lesson 10 tells the reader to make an ordinary copy before pasting.
+
+Without it the paste has nothing to insert -- a rectangle copy never
+reaches the kill ring -- and the lesson's claim that the banked line is
+replaced is simply false.  The step is load-bearing, so its absence
+should fail rather than be discovered by a reader."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((text (buffer-string)))
+            (should (string-match-p "A rectangle never reaches the kill" text))
+            (should (string-match-p "ordinary whole-line copy" text))
+            ;; the ordinary copy must come BEFORE the bank is drawn
+            (should (< (string-match "ordinary whole-line copy" text)
+                       (string-match "Now bank the" text))))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 (ert-deftest donkey-tutor-lesson-5-teaches-the-sexp-marks ()
   "Lesson 5 covers `m I' and `m A', not just `m i' and `m a'."

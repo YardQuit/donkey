@@ -3364,16 +3364,20 @@ a table, or the leading characters of a block of lines.
     \\[donkey-rectangle-mark-mode] start a rectangle selection (press it again to cancel)
 
 >> Put the cursor on the first \"1\" below, press \\[donkey-rectangle-mark-mode], then \\[next-line] twice and
-   \\[forward-char] three times.  Only the block of digits is highlighted, not the
+   \\[forward-char] twice.  Only the block of digits is highlighted, not the
    words.  Press \\[donkey-delete] to cut it out.
+
+   Count the presses off the highlight rather than off the characters:
+   the anchor column counts as one, so reaching the third digit takes two
+   presses and not three.
 
    ---> 111 alpha
    ---> 222 beta
    ---> 333 gamma
 
-The rectangle is still selected after the cut, so press \\`C-g' first, put
-the cursor back on the first line, and press \\[donkey-yank] -- the block goes back
-where it came from.
+The selection is released by the cut, so you can put the cursor back on
+the first line and press \\[donkey-yank] straight away -- the block goes back where it
+came from.
 
 Two things worth knowing before you rely on it:
 
@@ -3404,21 +3408,28 @@ A drawn rectangle is on screen and a copied one is not, which is why the
 rule points in opposite directions for copying and pasting: each time it
 picks whichever selection you can actually see.
 
->> Bank the \"keep\" line below with \\[donkey-bank-selection].  Now draw a rectangle over the
-   first three characters of the two \"col\" lines and press \\[donkey-copy].  The
-   rectangle is copied -- and the \"keep\" line is STILL highlighted.
-   Nothing was spent.
+First give \\[donkey-yank] something to paste.  A rectangle never reaches the kill
+ring, so a rectangle copy on its own leaves \\[donkey-yank] with nothing to insert
+and it says so.
+
+>> Put the cursor on the \"col two\" line below and press \\[donkey-visual-line-toggle] then \\[donkey-copy].
+   That is an ordinary whole-line copy, on the kill ring where \\[donkey-yank] looks.
 
    ---> keep this banked
    ---> col one
    ---> col two
 
->> With that bank still live, press \\`C-g' and then \\[donkey-yank].  The banked line is
-   replaced, and the rectangle is left alone: the bank was the selection
-   still on screen.
+>> Now bank the \"keep\" line with \\[donkey-bank-selection], draw a rectangle over the first
+   three characters of both \"col\" lines, and press \\[donkey-copy].  The rectangle
+   is copied -- and the \"keep\" line is STILL highlighted.  Nothing was
+   spent.
 
->> Try it the other way.  Press \\[donkey-clear-banked-selection] to discard the bank, then \\[donkey-yank] again
-   -- with nothing banked, the rectangle is what lands.
+>> Press \\`C-g' to drop the rectangle, then \\[donkey-yank].  The banked line is replaced
+   by the copied line, and the rectangle is left alone: the bank was the
+   selection still on screen, so it won.
+
+>> Press \\[donkey-yank] once more.  Nothing is banked now, so this time the rectangle
+   is what lands.
 
 Nothing is ever thrown away by the rule.  Take the rectangle and your
 banks are still waiting; take the banks and the rectangle is still in its
