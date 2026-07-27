@@ -3171,6 +3171,178 @@ away that a user would actually miss."
         (should (eq (key-binding (kbd "M-^")) #'delete-indentation)))
     (donkey-mode -1)))
 
+;;; ---------------------------------------------------------------------------
+;;; Banks and rectangles: the live selection wins
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-test--bank-and-rectangle (&rest body)
+  "Run BODY over a four-line buffer with DONKEY on and messages silenced.
+
+Binds every global a rectangle or a paste touches, including
+`killed-rectangle' and `donkey--last-kill-rectangle-p'.  `donkey-mode'
+goes back off in an `unwind-protect': it is a GLOBAL minor mode, so
+leaving it on leaks into every later test."
+  `(unwind-protect
+       (with-temp-buffer
+         (donkey-mode 1)
+         (let ((transient-mark-mode t)
+               (kill-ring nil)
+               (kill-ring-yank-pointer nil)
+               (killed-rectangle nil)
+               (donkey--last-kill-rectangle-p nil)
+               (donkey--clipboard-warning-shown nil)
+               (this-command nil)
+               (last-command nil))
+           (insert "AAA one\nBBB two\nCCC three\nDDD four\n")
+           (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+             ,@body)))
+     (donkey-mode -1)))
+
+(defun donkey-test--row (n)
+  "Move point to the beginning of line N, counting from `point-min'."
+  (goto-char (point-min))
+  (forward-line (1- n)))
+
+(defun donkey-test--draw-rectangle (row1 row2 cols)
+  "Select a rectangle from ROW1 to ROW2 spanning COLS columns."
+  (donkey-test--row row1)
+  (set-mark (point))
+  (donkey-test--row row2)
+  (forward-char cols)
+  (rectangle-mark-mode 1))
+
+(ert-deftest donkey-copy-takes-the-rectangle-over-a-bank ()
+  "`y' over a live rectangle copies the rectangle, banks or not.
+
+Regression: the banked branch came first, so `y' copied whole banked
+lines while a rectangle sat selected on screen -- and left
+`killed-rectangle' nil, so the rectangle the user thought they had
+copied was not even available to paste back."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--row 1)
+   (donkey-bank-selection)
+   (donkey-test--draw-rectangle 2 3 3)
+   (donkey-copy 1)
+   (should (equal killed-rectangle '("BBB" "CCC")))
+   (should-not kill-ring)))
+
+(ert-deftest donkey-copy-leaves-the-bank-standing-after-a-rectangle ()
+  "Taking the rectangle spends nothing: the banks are still there."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--row 1)
+   (donkey-bank-selection)
+   (donkey-test--draw-rectangle 2 3 3)
+   (donkey-copy 1)
+   (should (= (length (donkey--banked-spans)) 1))))
+
+(ert-deftest donkey-delete-takes-the-rectangle-over-a-bank ()
+  "`d' over a live rectangle kills the rectangle, not the banked lines.
+
+Regression, and worse than the `y' case: drawing a rectangle over two
+rows and pressing `d' deleted three whole banked lines, taking text the
+rectangle never covered."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--row 1)
+   (donkey-bank-selection)
+   (donkey-test--draw-rectangle 2 3 3)
+   (donkey-delete 1)
+   (should (equal (buffer-string) "AAA one\n two\n three\nDDD four\n"))
+   (should (equal killed-rectangle '("BBB" "CCC")))
+   (should (= (length (donkey--banked-spans)) 1))))
+
+(ert-deftest donkey-yank-takes-the-bank-over-a-pending-rectangle ()
+  "`p' replaces banked lines even when `killed-rectangle' is set.
+
+Regression: the rectangle branch came first, so the rectangle landed at
+point and the banks sat highlighted, having had no effect on anything.
+`killed-rectangle' is not on screen and the banks are, so the banks are
+the live selection here."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--draw-rectangle 2 3 3)
+   (donkey-copy 1)
+   (deactivate-mark)
+   (should donkey--last-kill-rectangle-p)
+   (kill-new "ZZZ\n")
+   ;; `kill-new' is advised to clear the flag, so put it back: this is
+   ;; the state reached by copying a rectangle and then having anything
+   ;; older already on the kill ring.
+   (setq donkey--last-kill-rectangle-p t)
+   (donkey-test--row 1)
+   (donkey-bank-selection)
+   (donkey-test--row 4)
+   (donkey-yank 1)
+   (should (equal (buffer-string) "ZZZ\nBBB two\nCCC three\nDDD four\n"))
+   (should (= (length (donkey--banked-spans)) 0))))
+
+(ert-deftest donkey-yank-pastes-the-rectangle-when-no-bank-claims-it ()
+  "With no banks, a pending rectangle still pastes as a rectangle."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--draw-rectangle 2 3 3)
+   (donkey-copy 1)
+   (deactivate-mark)
+   (donkey-test--row 4)
+   (donkey-yank 1)
+   ;; The rectangle's second row lands on the buffer's empty final line,
+   ;; so it ends there rather than adding a newline of its own.
+   (should (equal (buffer-string)
+                  "AAA one\nBBB two\nCCC three\nBBBDDD four\nCCC"))))
+
+(ert-deftest donkey-yank-over-a-bank-with-nothing-to-paste-keeps-the-bank ()
+  "A paste with an empty kill ring reports, and does not eat the bank.
+
+The emptiness check has to happen inside the banked branch now that the
+branch runs before the rectangle one -- hoisting it above would have
+made a pending rectangle unpasteable whenever the kill ring was empty,
+which is exactly the round trip it exists for."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--row 1)
+   (donkey-bank-selection)
+   (let ((interprogram-paste-function (lambda () nil)))
+     (donkey-yank 1))
+   (should (equal (buffer-string) "AAA one\nBBB two\nCCC three\nDDD four\n"))
+   (should (= (length (donkey--banked-spans)) 1))))
+
+(ert-deftest donkey-rectangle-still-wins-for-yank-when-drawn-live ()
+  "A live rectangle outranks a bank for `p' too, same rule both ways."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--draw-rectangle 2 3 3)
+   (donkey-copy 1)
+   (deactivate-mark)
+   (donkey-test--row 1)
+   (donkey-bank-selection)
+   (donkey-test--draw-rectangle 3 4 3)
+   (donkey-yank 1)
+   ;; The rectangle replaced the drawn rectangle, and the bank survived.
+   (should (equal (buffer-string) "AAA one\nBBB two\nBBB three\nCCC four\n"))
+   (should (= (length (donkey--banked-spans)) 1))))
+
+(ert-deftest donkey-bank-and-rectangle-precedence-is-the-same-in-all-three ()
+  "The three commands agree: live selection wins, bank is the fallback.
+
+They used to disagree, each silently -- `y' and `d' took the bank over a
+rectangle on screen, `p' took a pending rectangle over banks on screen.
+The inconsistency was the actual defect; this pins the single rule."
+  ;; y and d: a drawn rectangle beats a bank.
+  (donkey-test--bank-and-rectangle
+   (donkey-test--row 1)
+   (donkey-bank-selection)
+   (donkey-test--draw-rectangle 2 3 3)
+   (donkey-copy 1)
+   (should (equal killed-rectangle '("BBB" "CCC")))
+   (should (= (length (donkey--banked-spans)) 1)))
+  ;; p: a bank beats a rectangle that is only in `killed-rectangle'.
+  (donkey-test--bank-and-rectangle
+   (setq killed-rectangle '("XX" "YY")
+         donkey--last-kill-rectangle-p t)
+   (kill-new "ZZZ\n")
+   (setq donkey--last-kill-rectangle-p t)
+   (donkey-test--row 1)
+   (donkey-bank-selection)
+   (donkey-test--row 4)
+   (donkey-yank 1)
+   (should (string-prefix-p "ZZZ\n" (buffer-string)))
+   (should (= (length (donkey--banked-spans)) 0))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here

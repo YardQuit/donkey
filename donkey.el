@@ -1163,6 +1163,17 @@ pulling from the clipboard/kill ring -- completing the round trip for
 otherwise populate `killed-rectangle' with no way to paste it back
 anywhere outside of `rectangle-mark-mode' itself.
 
+Banked lines outrank that pending rectangle, and are replaced from the
+kill ring as usual.  The rule is `donkey--live-rectangle-p's: the live
+selection wins, and here the banks are what is on screen while
+`killed-rectangle' is a leftover from an earlier copy.  It used to be
+the other way round -- the rectangle landed at point and the banks sat
+there highlighted, having had no effect on anything.  Note the kill
+ring may then hold something older than the rectangle, since a
+rectangle copy never touches it; that is the entry `p' has always
+pasted, and the rectangle is still one `m DEL' away from being
+reachable again.
+
 COUNT inserts that many copies, so \\[universal-argument] 3 p pastes
 three.  That is what a count on a paste means in vi, and it is the
 reading this keymap wants: `C-y' is untouched in INSERT state, so anyone
@@ -1182,16 +1193,23 @@ what asking to replace it with nothing means."
       (if donkey--last-kill-rectangle-p
           (donkey--replace-rectangle-selection-with-killed-rectangle)
         (call-interactively #'undefined)))
+     ;; Before the pending-rectangle branch below: banked lines are on
+     ;; screen and `killed-rectangle' is not, so the bank is the live
+     ;; selection here.  See `donkey--live-rectangle-p' for the rule.
+     ;; The emptiness check is repeated inside rather than hoisted above
+     ;; this branch, because the rectangle branch pastes from
+     ;; `killed-rectangle' and has something to insert regardless of what
+     ;; the kill ring holds.  Checked BEFORE the banked lines are
+     ;; removed, so a paste with nothing to paste does not eat them.
+     ((donkey--banked-selection-p)
+      (if (donkey--nothing-to-paste-p)
+          (message "Nothing to paste")
+        (donkey--replace-banked-selection-with-paste n)))
      (donkey--last-kill-rectangle-p
       (donkey--delete-active-region-safe)
       (donkey--yank-rectangle-times n))
-     ;; Checked after the rectangle branches, which paste from
-     ;; `killed-rectangle' and so have something to insert regardless of
-     ;; what the kill ring holds.
      ((donkey--nothing-to-paste-p)
       (message "Nothing to paste"))
-     ((donkey--banked-selection-p)
-      (donkey--replace-banked-selection-with-paste n))
      (t
       (donkey--delete-active-region-safe)
       (donkey--paste-times n #'donkey--clipboard-yank)))))
@@ -1280,7 +1298,14 @@ pastes back as a complete line instead of splicing onto whatever line
 rather than in the selection.
 
 With `rectangle-mark-mode' active, copies the rectangle instead of a
-linear region.  That goes to `killed-rectangle' ONLY: the kill ring and
+linear region -- and does so even when lines are banked, leaving every
+bank standing.  The live selection wins and the bank is the fallback;
+`donkey--live-rectangle-p' has the rule and why it was needed.  This
+used to go the other way: `y' over a rectangle you had just drawn
+copied whole banked lines and left `killed-rectangle' empty, so the
+rectangle was not there to paste afterwards either.
+
+That goes to `killed-rectangle' ONLY: the kill ring and
 the system clipboard are deliberately left alone, so a rectangle copied
 here cannot be pasted into another application -- \"p\" pastes it back
 within Emacs and nothing else will.
@@ -1321,13 +1346,15 @@ kill ring's newest entry for the same reason spelled out above."
   (let* ((n (or count 1))
          (target (max (point-min) (min (point-max) (+ (point) n)))))
    (cond
+    ;; Before the bank: a rectangle on screen is the live selection, and
+    ;; the live selection wins.  See `donkey--live-rectangle-p'.
+    ((donkey--live-rectangle-p)
+     (call-interactively #'copy-rectangle-as-kill))
     ((donkey--banked-selection-p)
      (donkey--copy-banked-selection))
     ((use-region-p)
-     (if (bound-and-true-p rectangle-mark-mode)
-         (call-interactively #'copy-rectangle-as-kill)
-       (let ((bounds (donkey--visual-line-region-bounds)))
-         (kill-ring-save (car bounds) (cdr bounds)))))
+     (let ((bounds (donkey--visual-line-region-bounds)))
+       (kill-ring-save (car bounds) (cdr bounds))))
     ((zerop n) nil)
     ((/= target (point))
      (kill-ring-save (point) target))
@@ -1356,6 +1383,12 @@ With `rectangle-mark-mode' active, kills the rectangle via
 `donkey-copy', that reaches `killed-rectangle' only and never the system
 clipboard; see there for why that is deliberate.
 
+Banked lines do not override that: the rectangle is the live selection
+and wins, and the banks survive untouched.  See
+`donkey--live-rectangle-p'.  The old order was worse here than for
+`y' -- drawing a rectangle over two rows and pressing `d' deleted three
+whole banked lines instead, taking text the rectangle never covered.
+
 COUNT deletes that many characters when no region is active.
 A count larger than the text remaining stops at the end rather than
 signalling.  A negative COUNT deletes that many characters before point
@@ -1366,13 +1399,15 @@ those up to 1 instead meant \"delete zero characters\" removed one, and
   (let* ((n (or count 1))
          (target (max (point-min) (min (point-max) (+ (point) n)))))
    (cond
+    ;; Before the bank, for the reason `donkey-copy' gives: see
+    ;; `donkey--live-rectangle-p'.
+    ((donkey--live-rectangle-p)
+     (call-interactively #'kill-rectangle))
     ((donkey--banked-selection-p)
      (donkey--delete-banked-selection))
     ((use-region-p)
-     (if (bound-and-true-p rectangle-mark-mode)
-         (call-interactively #'kill-rectangle)
-       (let ((bounds (donkey--visual-line-region-bounds)))
-         (kill-region (car bounds) (cdr bounds)))))
+     (let ((bounds (donkey--visual-line-region-bounds)))
+       (kill-region (car bounds) (cdr bounds))))
     ((zerop n) nil)
     ((/= target (point))
      (delete-region (point) target))
@@ -2551,6 +2586,41 @@ donkey's own and free to change shape, this one is not."
 (defun donkey--banked-selection-p ()
   "Return non-nil if this buffer has any live banked lines."
   (and donkey--banked-overlays (donkey--banked-spans)))
+
+(defun donkey--live-rectangle-p ()
+  "Return non-nil when a rectangle selection is on screen right now.
+
+The first half of donkey's rule for the one case banking cannot
+compose with: THE LIVE SELECTION YOU ARE LOOKING AT WINS, AND THE BANK
+IS THE FALLBACK.  A rectangle is columns and a bank is whole lines, so
+no command can act on both; something has to give way, and the thing
+you just drew and can see is the better guess at what you meant.
+
+`y' and `d' therefore take the rectangle and leave every bank standing,
+and `p' does the reverse in the reverse situation -- a bank outranks a
+rectangle merely sitting in `killed-rectangle' from an earlier copy,
+because that one is not on screen and the banks are.
+
+The three used to disagree, each silently: `y' and `d' took the banks
+and ignored a rectangle the user was looking at (leaving
+`killed-rectangle' empty, so the rectangle they thought they had cut
+was not even there to paste), while `p' took the rectangle and ignored
+banks highlighted on screen.  Drawing a rectangle over two rows and
+pressing `d' deleted three whole lines.
+
+Discarding the banks at `m v' instead was considered and rejected:
+banks are not in the undo system, `m v' sits on the same prefix as
+`m w', `m u' and `m U', and a slip would throw away a collection built
+up across a long file with no way back.  `m DEL' stays the only key
+that discards everything.  This rule costs nothing and keeps the
+workflow it would have broken -- banking lines as you scroll, fixing a
+column somewhere in the middle, and still having the banks afterwards.
+
+Note `m l' already collapses the two states in the other direction: it
+banks the whole lines a rectangle covers and drops
+`rectangle-mark-mode' with it, since `donkey-bank-selection'
+deactivates the mark."
+  (and (use-region-p) (bound-and-true-p rectangle-mark-mode)))
 
 (defun donkey-clear-banked-selection ()
   "Discard every banked line in this buffer.

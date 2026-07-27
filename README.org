@@ -449,6 +449,39 @@ buffer is widened.
 standing. Nothing has been settled about what changing a multi-line bank
 should mean, so it does not guess.
 
+*** Banks and rectangles
+
+A rectangle is columns and a bank is whole lines, so no command can act
+on both. One rule settles it everywhere: *the live selection you are
+looking at wins, and the bank is the fallback.*
+
+| Situation                              | What acts                  |
+|----------------------------------------+----------------------------|
+| =y= / =d= with a rectangle drawn       | the rectangle; banks survive |
+| =y= / =d= with no rectangle drawn      | the banks                  |
+| =p= with lines banked                  | the banks                  |
+| =p= with a rectangle drawn, or no bank | the rectangle              |
+
+The reasoning is that a drawn rectangle is on screen and =killed-rectangle=
+is not, so whichever one you can currently see is the better guess at
+what you meant. Nothing is discarded either way — take the rectangle
+and your banks are still waiting afterwards.
+
+The three commands used to disagree, each silently: =y= and =d= took
+the banks and ignored a rectangle you were looking at, while =p= took a
+rectangle out of =killed-rectangle= and ignored banks highlighted on
+screen. Drawing a rectangle over two rows and pressing =d= deleted
+three whole lines.
+
+Note =m l= collapses the two states in the other direction: banking
+while a rectangle is drawn banks the whole lines it covers and ends
+rectangle mode.
+
+One consequence worth knowing: when a bank claims =p=, the kill ring
+may hold something *older* than the rectangle, since a rectangle copy
+never touches the kill ring. That is the entry =p= has always pasted,
+and =m DEL= puts the rectangle back within reach.
+
 =m l= toggles, with or without a region:
 
 - *No region* — banks the current line; pressing it again on an
