@@ -3257,13 +3257,16 @@ obeyed.  \\`C-u 3' \\[next-line] is how it is said.
 
 >> Press \\`C-u 3' \\[next-line] and watch the cursor move three lines in one go.
 
->> Press \\`C-u 5' \\[forward-word] to skip five words along the ---> line.
+>> Put the cursor on \"one\" below and press \\`C-u 5' \\[forward-word] -- five words in
+   one go, leaving the cursor just after \"five\".  \\[forward-word] lands at the END
+   of each word, so counting stops there rather than on the next one.
 
    ---> one two three four five six seven eight nine ten
 
-Counts work the same way on the editing commands you are about to meet,
-so \\`C-u 3' DONKEY-DELETE-KEYS deletes three characters and \\`C-u 2' \\[donkey-mark-word]
-selects two words.
+Counts work the same way on the editing commands you are about to meet.
+Lessons 4 and 5 each end with a line to try one on, once the command
+itself has been introduced -- a count is easier to see when you already
+know what it is counting.
 
 
 Lesson 3 -- typing
@@ -3276,8 +3279,8 @@ and Emacs behaves exactly as it always does.
     \\[donkey-insert-beginning-of-line] at the start of the line   \\[donkey-insert-end-of-line] at the end of the line
     \\[donkey-open-below] open a line below       \\[donkey-open-above] open a line above
 
->> Put the cursor on the ---> line, press \\[donkey-insert-here], type the missing word, then
-   press \\`C-g' to return to NORMAL.
+>> Put the cursor on the full stop below, press \\[donkey-insert-here], type the missing
+   word -- it is \"dog\" -- then press \\`C-g' to return to NORMAL.
 
    ---> The quick brown fox jumps over the lazy .
 
@@ -3296,6 +3299,13 @@ Lesson 4 -- deleting and changing
    \"right\", and press \\`C-g'.
 
    ---> This word is wrong and needs replacing.
+
+Both take a count, the same one Lesson 2 described.
+
+>> Put the cursor on the first \"x\" below and press \\`C-u 3' DONKEY-DELETE-KEYS.
+   All three go at once.
+
+   ---> xxxand the rest of the line stays
 
 
 Lesson 5 -- selecting things
@@ -3321,6 +3331,23 @@ mean:
    whole sentence is selected, however long it is.
 
    ---> Selecting by meaning beats counting characters.  It also reads better.
+
+A selection is something to act ON, so the editing keys from Lesson 4
+follow straight on from it: \\[donkey-change] changes what is selected rather than the
+character under the cursor.
+
+>> Put the cursor on \"replace\" below, press \\[donkey-mark-word] then \\[donkey-change], type
+   \"change\", and press \\`C-g'.  Selecting first means you never count
+   the characters.
+
+   ---> Words to replace without counting anything.
+
+These take a count too -- the same one Lesson 2 described.
+
+>> Put the cursor on \"alpha\" below and press \\`C-u 2' \\[donkey-mark-word].  Two words
+   are selected instead of one.
+
+   ---> alpha beta gamma delta
 
 You can also select by delimiter.  \\[donkey-mark-inner] asks for a character and selects
 what is INSIDE the nearest pair; \\[donkey-mark-outer] includes the delimiters too.
