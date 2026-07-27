@@ -1400,6 +1400,116 @@ Emacs session."
             (should-not (bound-and-true-p donkey-insert-mode))))
       (when (buffer-live-p buf) (kill-buffer buf)))))
 
+;;; ---------------------------------------------------------------------------
+;;; The one promise: C-g in Insert always reaches Normal
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-c-g-interception-survives-a-signalling-user-hook ()
+  "A broken `donkey-normal-mode-hook' must not cost the user their escape key.
+
+Regression, confirmed by driving a real key through `execute-kbd-macro':
+`donkey--intercept-quit-in-insert' runs on `pre-command-hook', and Emacs
+REMOVES a hook function that signals.  One error anywhere inside
+`donkey--exit-insert' -- and `donkey-normal-mode-hook' is user-facing,
+so anyone's cursor or modeline function can raise one -- silently
+disabled the whole interception for the rest of the session, in every
+buffer.
+
+That mechanism is what keeps `C-g' working when something else has taken
+the key: nested smartparens overlays, a package binding it in its own
+map, a terminal where the direct binding is not reached.  Losing it
+silently is the worst outcome DONKEY has."
+  (let ((buf (get-buffer-create "*donkey-cg-test*"))
+        (boom (lambda () (when (bound-and-true-p donkey-normal-mode)
+                           (error "Boom from a user hook")))))
+    (unwind-protect
+        (progn
+          (switch-to-buffer buf)
+          (text-mode)
+          (donkey-mode 1)
+          (insert "some text here\n")
+          (goto-char (point-min))
+          (donkey-enter-insert)
+          (add-hook 'donkey-normal-mode-hook boom)
+          (should (memq #'donkey--intercept-quit-in-insert
+                        (default-value 'pre-command-hook)))
+          (execute-kbd-macro (kbd "C-g"))
+          ;; The interception is still installed ...
+          (should (memq #'donkey--intercept-quit-in-insert
+                        (default-value 'pre-command-hook)))
+          ;; ... and the promise was kept on this press too.
+          (should (bound-and-true-p donkey-normal-mode)))
+      (remove-hook 'donkey-normal-mode-hook boom)
+      ;; If the guard has regressed, Emacs has just removed the
+      ;; interception -- put it back, so this test fails on its own
+      ;; assertion instead of taking every later `donkey-cg-' test with
+      ;; it.  Reverting the fix locally showed exactly that: 3 real
+      ;; failures and 12 pieces of collateral damage.
+      (add-hook 'pre-command-hook #'donkey--intercept-quit-in-insert)
+      (donkey-mode -1)
+      (kill-buffer buf))))
+
+(ert-deftest donkey-c-g-still-reaches-normal-when-deactivate-mark-signals ()
+  "A signalling `deactivate-mark-hook' must not strand the user in Insert.
+
+It is the only step that runs BEFORE the state transition, and it runs
+`deactivate-mark-hook', which is not DONKEY's -- so a stranger's broken
+hook would otherwise abort the very keypress meant to leave Insert."
+  (unwind-protect
+      (with-temp-buffer
+        (text-mode)
+        (donkey-mode 1)
+        (donkey-enter-insert)
+        (let ((transient-mark-mode t))
+          (insert "hello world")
+          (goto-char 1)
+          (set-mark 5)
+          (activate-mark)
+          (let ((deactivate-mark-hook
+                 (list (lambda () (error "Boom from deactivate-mark-hook")))))
+            (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+              (donkey--exit-insert)))
+          (should (bound-and-true-p donkey-normal-mode))
+          (should-not (bound-and-true-p donkey-insert-mode))))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-c-g-interception-survives-repeated-failures ()
+  "Not just the first one: the hook is still there after several."
+  (let ((buf (get-buffer-create "*donkey-cg-test-2*"))
+        (boom (lambda () (when (bound-and-true-p donkey-normal-mode)
+                           (error "Boom again")))))
+    (unwind-protect
+        (progn
+          (switch-to-buffer buf)
+          (text-mode)
+          (donkey-mode 1)
+          (insert "text\n")
+          (add-hook 'donkey-normal-mode-hook boom)
+          (dotimes (_ 3)
+            (donkey-enter-insert)
+            (execute-kbd-macro (kbd "C-g"))
+            (should (memq #'donkey--intercept-quit-in-insert
+                          (default-value 'pre-command-hook)))
+            (should (bound-and-true-p donkey-normal-mode))))
+      (remove-hook 'donkey-normal-mode-hook boom)
+      (add-hook 'pre-command-hook #'donkey--intercept-quit-in-insert)
+      (donkey-mode -1)
+      (kill-buffer buf))))
+
+(ert-deftest donkey-c-g-in-insert-is-bound-on-both-paths ()
+  "Both mechanisms behind the promise are in place.
+
+The keymap binding is the primary route; the `pre-command-hook'
+interception is the backup for when something else has taken the key."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (should (eq (lookup-key donkey-insert-mode-map (kbd "C-g"))
+                    #'donkey--exit-insert))
+        (should (memq #'donkey--intercept-quit-in-insert
+                      (default-value 'pre-command-hook))))
+    (donkey-mode -1)))
+
 (provide 'donkey-state-management-test)
 
 ;;; donkey-state-management-test.el ends here

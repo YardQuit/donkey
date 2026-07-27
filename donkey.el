@@ -3860,7 +3860,18 @@ subprocess or aborting a recursive edit)."
           (minibufferp)
           (donkey--excluded-mode-p))
       (keyboard-quit)
-    (deactivate-mark)
+    ;; Guarded because it runs `deactivate-mark-hook', which is not
+    ;; DONKEY's: anything the user or a package put there could signal,
+    ;; and this is the only step BEFORE the state transition.  Left
+    ;; unguarded, a stranger's broken hook would strand the user in
+    ;; Insert state on the very keypress meant to get them out.
+    (condition-case err
+        (deactivate-mark)
+      (error (message "DONKEY: deactivate-mark failed: %s"
+                      (error-message-string err))))
+    ;; From here the promise is kept whatever happens.  `define-minor-mode'
+    ;; sets the variable before running the body and hooks, so even a
+    ;; `donkey-normal-mode-hook' that errors leaves Normal state on.
     (donkey-enter-normal)
     (unless (bound-and-true-p donkey-normal-mode)
       (donkey-normal-mode 1))
@@ -3881,7 +3892,31 @@ permanently disabling this whole interception mechanism, in every
 buffer, after the very first `C-g' in an excluded-mode buffer.
 Skipping here lets the raw key fall through to the direct `C-g'
 binding instead, so `keyboard-quit' runs as an ordinary command
-instead of from inside a hook, where signalling `quit' is safe."
+instead of from inside a hook, where signalling `quit' is safe.
+
+The excluded-mode skip only closed the one path that was found.  Every
+OTHER way `donkey--exit-insert' can signal removes this function just
+as permanently, and there are several: the function `deactivate-mark'
+runs `deactivate-mark-hook', entering Normal state runs
+`donkey-normal-mode-hook' -- which is a user-facing hook anyone may
+have added a cursor, theme or modeline function to -- and the overlay
+cleanup cancels and schedules timers.  One error in any of them and
+this whole mechanism is gone for the session, in every buffer, leaving
+only a line in *Messages* to say so.
+
+Confirmed by driving a real `C-g' through `execute-kbd-macro' with a
+`donkey-normal-mode-hook' that errors: the interception was on the hook
+before the keypress and gone after it.
+
+So the call is wrapped.  Any condition is caught and reported rather
+than allowed to propagate, because losing this function is worse than
+whatever raised it: `C-g' returning to Normal state is the one promise
+DONKEY makes unconditionally, and this hook is what keeps it when
+something else has taken the key -- nested smartparens overlays, a
+package binding `C-g' in its own map, a terminal where the direct
+binding is not reached.  `donkey--exit-insert' guards its own one step
+that runs before the state transition, so a failure partway through
+still leaves the user in Normal state, which is what they asked for."
   (when (and (bound-and-true-p donkey-insert-mode)
              (not donkey--just-exited-from-insert)
              (not (minibufferp))
@@ -3894,7 +3929,16 @@ instead of from inside a hook, where signalling `quit' is safe."
     ;; current again for its next command, not whichever buffer
     ;; happens to run the next command globally.
     (add-hook 'pre-command-hook #'donkey--reset-exit-guard -100 t)
-    (donkey--exit-insert)))
+    (condition-case err
+        (donkey--exit-insert)
+      ;; Reported, not swallowed: a real bug in the exit path should
+      ;; still be visible, it just must not cost the user their escape
+      ;; key for the rest of the session.
+      (error
+       (message "DONKEY: error leaving Insert state: %s"
+                (error-message-string err)))
+      (quit
+       (message "DONKEY: quit while leaving Insert state")))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Smartparens Integration (Opt-in)
