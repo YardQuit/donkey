@@ -3265,6 +3265,44 @@ Pasting over a selection replaces it -- and that includes banked lines, so
 \\[donkey-yank] with lines banked swaps all of them for what you copied.
 
 
+Your Emacs still works
+----------------------
+
+DONKEY is meant to be an addition, not a replacement.  In BOTH states your
+\\`C-x' and \\`C-c' prefixes, \\[execute-extended-command], \\`C-h', isearch, the arrow keys, every
+Meta binding and every package you have bound behave exactly as they always
+did.  Nothing was taken away to make room for the letters above.
+
+A modal editor cannot be entirely free, though, and the price is short
+enough to state in full.
+
+In INSERT state, one key changes: \\`C-g' returns to NORMAL state.  It still
+clears the selection, and in the minibuffer it still quits, so the escape
+hatch is where you expect it.  (It does not stop a keyboard macro that is
+being recorded -- the one errand Emacs' own \\`C-g' runs that this one does
+not.)
+
+In NORMAL state, four things differ:
+
+  - Letters run commands instead of typing.  That is the whole idea.
+  - Digits are not counts.  \\`3 j' does nothing; \\`C-u 3' \\[next-line] moves down three.
+  - RET does nothing in a buffer you are editing -- a stray newline in
+    NORMAL state is rarely what was meant.  In dired, magit and org-agenda
+    it is NOT inert: it still opens the file, visits the entry, follows
+    the link, because the key is handed back to the mode that owns it.
+  - BACKSPACE and DELETE do nothing, so a slip cannot damage the buffer
+    from NORMAL state.  Use \\[donkey-delete].
+
+>> Try it: press \\`C-x' \\`C-s' below, or \\[execute-extended-command] and then RET to abort.  Neither is
+   DONKEY's, and both work from NORMAL state exactly as usual.
+
+In dired and other special buffers DONKEY is on too, and its letters win
+where they collide -- but a key the mode bound that DONKEY does not use
+still works.  In dired, \\`n', \\`t', \\`q', \\`^' and \\`+' are still dired's.
+Terminals and shells (eshell, term, vterm) stay in INSERT throughout, so
+nothing is suppressed underneath a running process.
+
+
 That is the working set
 -----------------------
 
