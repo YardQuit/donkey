@@ -186,6 +186,15 @@ reporting it: the newline goes along even though nothing marks it.
 | =O= | =donkey-open-above=               | Open new line above, enter Insert   |
 | =c= | =donkey-change=                   | Change char or region, enter Insert |
 
+During a visual-line session (=V=), =c= does *not* take the trailing
+newline the way =y= and =d= do. =V c= empties the line and leaves point
+on it ready to type, rather than removing the line and dropping you onto
+the next one — this is vi's =cc=, the linewise change that keeps its
+line. =V J c= collapses the whole span to a single empty line. It is the
+one place the two line commands part company: =V d= takes the newline
+because you asked for the line to go, =V c= keeps it because you asked
+to replace what is on it.
+
 Under =rectangle-mark-mode= (=m v=), =c= behaves differently: it runs
 =string-rectangle=, which prompts for the replacement text and applies
 it to every covered line itself. Since that finishes the whole edit,
@@ -279,6 +288,12 @@ out of reach of everything but =undo=.
 | =m U=   | =donkey-unbank-section=      | Unbank the whole run at point        |
 | =m DEL= | =donkey-clear-banked-selection= | Discard all banked lines (Backspace or Delete) |
 
+=m w=, =m W=, =m s= and =m p= all report =No ... at or before point=
+rather than marking nothing when there is nothing of substance to mark —
+an empty buffer, or one holding only blank lines and whitespace. A blank
+line *between* paragraphs is not such a case: =m p= marks the paragraph
+above it, as it always has.
+
 =donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ’ “ ” = * ~ | \ / : + _ $=
 by default -- an alist of (OPEN . CLOSE) pairs in =donkey-mark-pair-delimiters=
 (a Customization Group variable). For symmetric delimiters (e.g. straight
@@ -343,7 +358,13 @@ explicitly — in the example above, line 8 is included by =y= without a
 third =m l=.
 
 =y=, =d= and =p= all act on the banked lines plus the live region, and
-all three spend the bank once they have.
+all three spend the bank once they have — only the spans they actually
+acted on, so banks hidden by narrowing survive to count again once the
+buffer is widened.
+
+=c= is the exception: it changes the character at point and leaves banks
+standing. Nothing has been settled about what changing a multi-line bank
+should mean, so it does not guess.
 
 =m l= toggles, with or without a region:
 
@@ -359,8 +380,8 @@ all three spend the bank once they have.
 
 *** Taking banks back
 
-Banked lines are consumed by =y= or =d=. To remove them without doing
-anything else, there are three levels:
+Banked lines are consumed by =y=, =d= or =p=. To remove them without
+doing anything else, there are three levels:
 
 | Key     | Removes                                          |
 |---------+--------------------------------------------------|

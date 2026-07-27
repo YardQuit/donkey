@@ -171,9 +171,40 @@ interaction entirely."
 ;;; ---------------------------------------------------------------------------
 
 (defcustom donkey-position-ring-max 10
-  "Number of position markers retained in the ring."
+  "Number of position markers retained in the ring.
+
+Zero switches position tracking off: nothing is retained, so
+`donkey-jump-back' has nowhere to go and says so.  Anything that is not
+a number is read the same way rather than signalling -- see
+`donkey--position-ring-limit' for why erroring there is not an option."
   :type 'integer
   :group 'donkey)
+
+(defun donkey--position-ring-limit ()
+  "Return `donkey-position-ring-max' as a usable count, never signalling.
+
+`donkey--track-position' runs on `post-command-hook', where an error is
+not merely noisy: Emacs REMOVES the offending function from the hook and
+carries on.  One bad command therefore switches position tracking off
+for the rest of the session, and repairing the variable afterwards does
+not bring it back -- the hook no longer holds the function.  `S' then
+reports \"Position 1/1\" forever, pointing at whatever marker happened to
+land before the break, with nothing on screen to connect the two.
+
+Reached by a plausible misconfiguration, not a perverse one:
+`donkey-position-ring-max' blesses 0 as the way to switch tracking off,
+and setting it to nil is the obvious guess for anyone who reaches for
+nil to mean \"no limit\" or \"disabled\".  Confirmed by
+driving real keys through `execute-kbd-macro': the second keypress
+logged \"Error in post-command-hook\" and the tracker was gone from both
+the global and the buffer-local hook value.
+
+A non-number is read as 0 -- tracking off, which is what nil was reaching
+for anyway.  A negative count means the same.  A float is truncated
+rather than rejected, since it already worked."
+  (if (numberp donkey-position-ring-max)
+      (max 0 (truncate donkey-position-ring-max))
+    0))
 
 (defvar-local donkey--position-ring nil
   "List of markers recording previous cursor positions, most recent first.")
@@ -191,7 +222,12 @@ recorded.")
   "Record the previous cursor position.
 
 Runs on `post-command-hook', recording point whenever it has moved
-since the last command.  Independent of the mark ring and region."
+since the last command.  Independent of the mark ring and region.
+
+Must not signal.  Emacs removes a `post-command-hook' function that
+errors, so a single bad command would switch position tracking off for
+the rest of the session -- see `donkey--position-ring-limit', which is
+where the one value a user can get wrong is made safe."
   (unless (minibufferp)
     (let ((now-pt (point)))
       (when (and donkey--last-tracked-state
@@ -199,7 +235,7 @@ since the last command.  Independent of the mark ring and region."
         (let ((m (make-marker)))
           (set-marker m (cdr donkey--last-tracked-state))
           (push m donkey--position-ring)
-          (when (> (length donkey--position-ring) donkey-position-ring-max)
+          (when (> (length donkey--position-ring) (donkey--position-ring-limit))
             (set-marker (car (last donkey--position-ring)) nil)
             ;; Assigned back, not just called for effect: `nbutlast'
             ;; cannot destructively empty a ONE-element list -- it
@@ -380,6 +416,26 @@ dropping into INSERT there just means the next navigation keypress
 self-inserts.  Confirmed live: after `m v', `c', a replacement string
 and RET, pressing `j' and `l' typed a literal \"jl\" into the buffer
 instead of moving.
+
+A visual-line selection made with `V' is NOT widened to whole lines
+here, unlike `donkey-copy' and `donkey-delete' -- see
+`donkey--visual-line-region-bounds' for the widening those two do.  The
+newline ending the last line is kept, so `V c' empties the line and
+leaves point on it ready to type, rather than removing the line and
+dropping INSERT state onto the following one.  That is what changing a
+line means in vi, where `cc' is precisely the linewise change that keeps
+its line; `V J c' likewise collapses the span to a single empty line.
+Deliberate, and the one place the two line commands part company: `V d'
+takes the newline because you asked for the line to go, `V c' keeps it
+because you asked to replace what is on it.
+
+Banked lines are not honoured either.  With lines banked via
+`donkey-bank-selection' and no active region, this changes the character
+at point and leaves the banks standing -- `y', `d' and `p' all act on
+the bank instead.  Nothing has been decided about what changing a
+multi-line bank ought to do, and guessing at it silently would be worse
+than the present split; recorded here so the difference is a known one
+rather than a discovery.
 
 Entering INSERT state in the other cases is the whole point of this
 command, so it happens even when there is nothing to delete: at the
@@ -2232,16 +2288,40 @@ an ALLOW-EXTEND argument that is nil when called from Lisp."
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
+With no paragraph to be found -- an empty buffer, or one holding only
+blank lines or whitespace -- reports a `user-error', the way
+`donkey-mark-word', `donkey-mark-symbol' and `donkey-mark-sentence' all
+already do.  This one was the odd member of the family: the paragraph
+motions do not signal on a blank buffer, they simply walk to its end and
+back, so it announced \"Paragraph marked\" over an empty buffer with no
+region active at all, and over a buffer of nothing but newlines it
+\"marked\" the blank.  A command that reports success and leaves nothing
+selected is worse than one that says it found nothing.
+
+Checked on the result rather than beforehand, matching
+`donkey-mark-sentence': a blank line BETWEEN two paragraphs is a normal
+place to press this from and marks the paragraph above, so gating on
+what is under point would reject work this command does correctly.  A
+COUNT of zero is exempt -- it is documented to mark nothing, and the
+nothing came from the count rather than from the buffer.
+
 COUNT marks that many paragraphs.  A negative COUNT marks that many
 paragraphs before the one point normalises onto, and a COUNT of zero
 marks nothing, matching how `forward-paragraph' reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (backward-paragraph 1)
-  (push-mark (point) nil t)
-  (forward-paragraph (or count 1))
-  (activate-mark)
-  (message "Paragraph marked"))
+  (let ((n (or count 1)))
+    (backward-paragraph 1)
+    (push-mark (point) nil t)
+    (forward-paragraph n)
+    (activate-mark)
+    (when (and (/= n 0)
+               (string-match-p "\\`[[:space:]\n]*\\'"
+                               (buffer-substring-no-properties (region-beginning)
+                                                               (region-end))))
+      (deactivate-mark)
+      (user-error "No paragraph at or before point"))
+    (message "Paragraph marked")))
 
 (defun donkey-mark-symbol (&optional count)
   "Select the entire symbol at or adjacent to point.
@@ -2481,9 +2561,15 @@ Banks every whole line the active region touches (or just the current
 line when no region is active), highlights them with
 `donkey-banked-selection', then deactivates the mark so ordinary
 navigation and a fresh selection can continue.  Repeat as often as
-needed: `donkey-copy' and `donkey-delete' then act on all banked lines
-at once, plus whatever region happens to be active at the time, so the
-final piece never has to be banked explicitly.
+needed: `donkey-copy', `donkey-delete' and `donkey-yank' then act on all
+banked lines at once, plus whatever region happens to be active at the
+time, so the final piece never has to be banked explicitly.
+
+`donkey-change' is the exception -- it changes the character at point
+and leaves banks standing; see there.  The prompt says \"y/d/p\" for
+that reason, and said \"y/d\" until `donkey-yank' learned to replace a
+bank, which left the one command that had grown a new use unadvertised
+on screen.
 
 This toggles, with or without a region.  With no region, point on an
 already-banked line unbanks that line.  With a region whose lines are
@@ -2493,9 +2579,12 @@ by line or clearing every other bank too.  A region covering a only
 partly-banked block banks the rest instead, so a block only ever
 toggles off once it is uniformly on; press again to then clear it.
 
-Banked lines are discarded automatically once `donkey-copy' or
-`donkey-delete' consumes them; `donkey-clear-banked-selection'
-discards them without doing anything else."
+Banked lines are discarded automatically once `donkey-copy',
+`donkey-delete' or `donkey-yank' consumes them -- and only the spans
+actually acted on are spent, so banks outside the accessible portion of
+a narrowed buffer survive to count again;
+`donkey-clear-banked-selection' discards them without doing anything
+else."
   (interactive)
   (if (use-region-p)
       (let* ((span (donkey--whole-line-span (region-beginning) (region-end)))
@@ -2510,7 +2599,7 @@ discards them without doing anything else."
                  lines
                  (if (= 1 lines) "" "s")
                  (donkey--banked-line-count)
-                 (if unbanking "" " -- navigate, then y/d")))
+                 (if unbanking "" " -- navigate, then y/d/p")))
     (let ((existing (donkey--banked-overlay-at (point))))
       (if existing
           (progn
@@ -2530,7 +2619,7 @@ discards them without doing anything else."
           (if (>= (car span) (cdr span))
               (message "Nothing to bank -- empty final line")
             (donkey--bank-span (car span) (cdr span))
-            (message "Banked this line (%d total) -- navigate, then y/d"
+            (message "Banked this line (%d total) -- navigate, then y/d/p"
                      (donkey--banked-line-count))))))))
 
 (defun donkey--banked-overlay-at (pos)

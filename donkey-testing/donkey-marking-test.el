@@ -712,6 +712,74 @@ satisfied just as well as the clean report does."
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "\nB.\n"))))
 
+(ert-deftest donkey-mark-paragraph-empty-buffer-errors ()
+  "An empty buffer has no paragraph, and this says so.
+
+Regression: the paragraph motions do not signal on an empty buffer --
+they walk to its end and back -- so this announced \"Paragraph marked\"
+with no region active at all.  Its three siblings (`donkey-mark-word',
+`donkey-mark-symbol', `donkey-mark-sentence') all already errored here;
+this was the odd one out."
+  (with-temp-buffer
+    (should-error (donkey-mark-paragraph) :type 'user-error)))
+
+(ert-deftest donkey-mark-paragraph-whitespace-only-buffer-errors ()
+  "A buffer of nothing but blank lines has no paragraph either.
+
+Before the guard this \"marked\" the blank and reported success --
+`donkey-mark-sentence' rejects exactly this case, for exactly this
+reason."
+  (dolist (blank '("\n\n\n" "   \n\t\n" "\n   \n\n"))
+    (with-temp-buffer
+      (insert blank)
+      (goto-char (point-min))
+      (should-error (donkey-mark-paragraph) :type 'user-error))))
+
+(ert-deftest donkey-mark-paragraph-error-leaves-no-selection-behind ()
+  "Rejecting the mark deactivates it rather than leaving a stale region."
+  (with-temp-buffer
+    (insert "\n\n\n")
+    (goto-char (point-min))
+    (let ((transient-mark-mode t))
+      (ignore-errors (donkey-mark-paragraph))
+      (should-not (use-region-p)))))
+
+(ert-deftest donkey-mark-paragraph-zero-count-is-exempt-from-the-guard ()
+  "A zero count marks nothing WITHOUT erroring, as documented.
+
+The nothing came from the count, not from the buffer -- there is a
+paragraph right there.  Pinned because the emptiness guard would
+otherwise swallow this documented case."
+  (with-temp-buffer
+    (insert "A paragraph.\n")
+    (goto-char 3)
+    (let ((transient-mark-mode t))
+      (should (progn (donkey-mark-paragraph 0) t))
+      (should-not (use-region-p)))))
+
+(ert-deftest donkey-mark-paragraph-blank-line-between-paragraphs-still-works ()
+  "Pressing this from a blank line between paragraphs marks the one above.
+
+The guard checks the RESULT, not what is under point, precisely so this
+keeps working: point sits on whitespace, but the command has a real
+paragraph to give."
+  (with-temp-buffer
+    (insert "Para one.\n\nPara two.\n")
+    (goto-char 11)
+    (donkey-mark-paragraph)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "Para one.\n"))))
+
+(ert-deftest donkey-mark-paragraph-leading-blank-lines-reach-the-text-below ()
+  "From leading blank lines, the paragraph below is still marked."
+  (with-temp-buffer
+    (insert "\n\n\nReal text here.\n")
+    (goto-char (point-min))
+    (donkey-mark-paragraph)
+    (should (string-match-p "Real text here"
+                            (buffer-substring-no-properties (region-beginning)
+                                                            (region-end))))))
+
 (ert-deftest donkey-mark-paragraph-with-newlines ()
   "Paragraph with multiple lines selected correctly."
   (with-temp-buffer
@@ -776,13 +844,17 @@ satisfied just as well as the clean report does."
                    "Last para."))))
 
 (ert-deftest donkey-mark-paragraph-only-whitespace ()
-  "Paragraph with only whitespace and newlines selected."
+  "A buffer of only whitespace has no paragraph to mark.
+
+Was \"Paragraph with only whitespace and newlines selected\", asserting
+that `\"   \\n\\n  \"' came back as the marked paragraph.  It described
+what the code did rather than what marking a paragraph is for, and so
+held the defect in place: `donkey-mark-sentence' rejects this very
+buffer, and rejecting it is the whole reason that guard exists."
   (with-temp-buffer
     (insert "   \n\n  ")
     (goto-char 2)
-    (donkey-mark-paragraph)
-    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
-                   "   \n\n  "))))
+    (should-error (donkey-mark-paragraph) :type 'user-error)))
 
 (ert-deftest donkey-mark-paragraph-has-mark ()
   "Mark is set after command."
@@ -801,10 +873,15 @@ satisfied just as well as the clean report does."
     (should (< (region-beginning) (region-end)))))
 
 (ert-deftest donkey-mark-paragraph-empty-buffer ()
-  "Empty buffer marks empty region."
+  "An empty buffer has no paragraph, and this reports so.
+
+Was \"Empty buffer marks empty region\", and asserted only `(should
+(mark))' -- true of a mark that had been pushed and then went nowhere.
+It passed while the command announced \"Paragraph marked\" over a buffer
+with nothing in it and no region active, which is what a test written
+from the implementation rather than the purpose will do."
   (with-temp-buffer
-    (donkey-mark-paragraph)
-    (should (mark))))
+    (should-error (donkey-mark-paragraph) :type 'user-error)))
 
 (ert-deftest donkey-mark-paragraph-point-on-separator ()
   "Point on separator between paragraphs selects adjacent paragraph."

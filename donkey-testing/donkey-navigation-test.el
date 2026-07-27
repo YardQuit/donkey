@@ -279,6 +279,66 @@ instead of the ordinary `user-error' for an empty ring."
       (donkey--track-position)
       (should-error (donkey-jump-back) :type 'user-error))))
 
+(ert-deftest donkey-track-position-survives-a-non-numeric-ring-max ()
+  "A non-numeric ring max must not make the tracker signal.
+
+Regression: `donkey--track-position' compared the ring length against
+`donkey-position-ring-max' directly, so setting it to nil -- the obvious
+guess for \"disabled\", and the defcustom already blesses 0 for exactly
+that -- raised `wrong-type-argument' from `post-command-hook'.  Emacs
+REMOVES a hook function that errors, so one keypress switched position
+tracking off for the rest of the session and repairing the variable did
+not bring it back."
+  (with-temp-buffer
+    (insert "a\nb\nc\n")
+    (goto-char (point-min))
+    (let ((donkey--position-ring nil)
+          (donkey--position-index 0)
+          (donkey--last-tracked-state nil)
+          (donkey-position-ring-max nil))
+      (donkey--track-position)
+      (goto-char 3)
+      (should (progn (donkey--track-position) t))
+      ;; Read as 0: tracking off, which is what nil was reaching for.
+      (should-not donkey--position-ring)
+      (should-error (donkey-jump-back) :type 'user-error))))
+
+(ert-deftest donkey-track-position-survives-other-junk-ring-maxes ()
+  "Every wrong-typed ring max is read as \"off\" rather than signalling.
+
+A string and a symbol stand in for whatever a hand-written init file
+might put there.  A negative count already meant \"keep nothing\"; it is
+pinned here so making the junk cases safe did not quietly change it."
+  (dolist (junk '("10" some-symbol (10) -3))
+    (with-temp-buffer
+      (insert "a\nb\nc\n")
+      (goto-char (point-min))
+      (let ((donkey--position-ring nil)
+            (donkey--position-index 0)
+            (donkey--last-tracked-state nil)
+            (donkey-position-ring-max junk))
+        (donkey--track-position)
+        (goto-char 3)
+        (should (progn (donkey--track-position) t))
+        (should-not donkey--position-ring)))))
+
+(ert-deftest donkey-track-position-truncates-a-float-ring-max ()
+  "A float ring max keeps working, truncated rather than rejected.
+
+It happened to work before the guard went in -- `>' accepts floats --
+so reading it as 0 would have been a regression dressed up as a fix."
+  (with-temp-buffer
+    (insert "abcdefghij\n")
+    (goto-char (point-min))
+    (let ((donkey--position-ring nil)
+          (donkey--position-index 0)
+          (donkey--last-tracked-state nil)
+          (donkey-position-ring-max 3.0))
+      (dolist (pos '(2 3 4 5 6 7))
+        (goto-char pos)
+        (donkey--track-position))
+      (should (= (length donkey--position-ring) 3)))))
+
 (ert-deftest donkey-jump-back-single-position-jumps ()
   "With one position, jumps to it and wraps the index."
   (with-temp-buffer
