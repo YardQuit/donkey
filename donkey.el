@@ -3268,6 +3268,19 @@ Lessons 4 and 5 each end with a line to try one on, once the command
 itself has been introduced -- a count is easier to see when you already
 know what it is counting.
 
+Where the cursor sits matters more for some commands than others, and it
+is worth knowing which is which before you start counting:
+
+  - Counting CHARACTERS counts from the cursor.  Put it on the first
+    character you mean to affect; one place off and you act on the wrong
+    five.
+  - Counting or selecting THINGS -- a word, a sentence, a paragraph --
+    does not care where inside the thing you are.  Anywhere in the word
+    is anywhere in the word.
+
+The second kind is why the exercises for it say \"anywhere\", and the
+first kind is why the others name an exact character.
+
 
 Lesson 3 -- typing
 ------------------
@@ -3295,10 +3308,14 @@ Lesson 4 -- deleting and changing
 
    ---> Thiis liine haas extraa letterss in itt.
 
->> Put the cursor on the word \"wrong\" below, press \\`C-u 5' \\[donkey-change], type
-   \"right\", and press \\`C-g'.
+>> Put the cursor on the \"w\" of \"wrong\" below -- the FIRST character, not
+   just somewhere in the word -- then press \\`C-u 5' \\[donkey-change], type \"right\",
+   and press \\`C-g'.
 
    ---> This word is wrong and needs replacing.
+
+   One character off and you replace the wrong five: starting on the
+   \"r\" gives \"wrightand\".  Lesson 5 shows the way round that.
 
 Both take a count, the same one Lesson 2 described.
 
