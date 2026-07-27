@@ -2107,7 +2107,7 @@ ends at `point-max', but its span is not empty."
       (cl-letf (((symbol-function 'message)
                  (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
         (donkey-bank-selection))
-      (should (equal shown "Banked this line (1 total) -- navigate, then y/d"))
+      (should (equal shown "Banked this line (1 total) -- navigate, then y/d/p"))
       (should (= 1 (donkey--banked-line-count))))))
 
 (ert-deftest donkey-banked-copy-ignores-spans-outside-narrowing ()
@@ -2985,6 +2985,103 @@ than looking like the rectangle path was simply forgotten."
     (donkey-bank-selection)
     (donkey-copy)
     (should (equal sent '("AAA one\nCCC three\n")))))
+
+;;; ---------------------------------------------------------------------------
+;;; Where `c' deliberately parts company with `y' and `d'
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-test--change-buffer (&rest body)
+  "Run BODY over a three-line buffer with DONKEY on and messages silenced.
+
+`donkey-mode' is turned back off in an `unwind-protect' -- it is a GLOBAL
+minor mode, so leaving it on leaks into every later test."
+  `(unwind-protect
+       (with-temp-buffer
+         (donkey-mode 1)
+         (let ((transient-mark-mode t)
+               (kill-ring nil)
+               (kill-ring-yank-pointer nil)
+               (this-command nil)
+               (last-command nil))
+           (insert "alpha\nbeta\ngamma\n")
+           (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+             ,@body)))
+     (donkey-mode -1)))
+
+(ert-deftest donkey-visual-line-change-empties-the-line-and-keeps-it ()
+  "`V c' clears the line and leaves point on it, vi's linewise change.
+
+The deliberate counterpart to `V d', which takes the newline too.  Pinned
+because the two now read as inconsistent unless you know `cc' -- and a
+later tidy-up that routed `c' through
+`donkey--visual-line-region-bounds' for symmetry would silently turn
+\"change this line\" into \"delete it and type on the next\"."
+  (donkey-test--change-buffer
+   (goto-char (point-min))
+   (forward-line 1)
+   (donkey-visual-line-toggle)
+   (donkey-change 1)
+   (should (equal (buffer-string) "alpha\n\ngamma\n"))
+   (should (bound-and-true-p donkey-insert-mode))))
+
+(ert-deftest donkey-visual-line-change-collapses-a-span-to-one-blank-line ()
+  "`V J c' clears both lines and leaves a single empty one, as vi does."
+  (donkey-test--change-buffer
+   (goto-char (point-min))
+   (forward-line 1)
+   (donkey-visual-line-toggle)
+   (donkey-visual-next-line 1)
+   (donkey-change 1)
+   (should (equal (buffer-string) "alpha\n\n"))))
+
+(ert-deftest donkey-visual-line-delete-removes-the-line-outright ()
+  "`V d' takes the newline, the contrast that makes `V c' meaningful."
+  (donkey-test--change-buffer
+   (goto-char (point-min))
+   (forward-line 1)
+   (donkey-visual-line-toggle)
+   (donkey-delete 1)
+   (should (equal (buffer-string) "alpha\ngamma\n"))))
+
+(ert-deftest donkey-change-does-not-act-on-banked-lines ()
+  "`c' changes the character at point and leaves banks standing.
+
+Documented rather than fixed: nothing has been decided about what
+changing a multi-line bank should do.  Pinned so the split is a known
+one -- if `c' ever learns to honour banks, this test is the place that
+says the change was deliberate."
+  (donkey-test--change-buffer
+   (goto-char (point-min))
+   (forward-line 1)
+   (donkey-bank-selection)
+   (goto-char (point-min))
+   (should (= (length (donkey--banked-spans)) 1))
+   (donkey-change 1)
+   (should (equal (buffer-string) "lpha\nbeta\ngamma\n"))
+   (should (= (length (donkey--banked-spans)) 1))))
+
+(ert-deftest donkey-delete-does-act-on-banked-lines ()
+  "`d' consumes the bank -- the contrast `c' is measured against."
+  (donkey-test--change-buffer
+   (goto-char (point-min))
+   (forward-line 1)
+   (donkey-bank-selection)
+   (goto-char (point-min))
+   (donkey-delete 1)
+   (should (equal (buffer-string) "alpha\ngamma\n"))
+   (should (= (length (donkey--banked-spans)) 0))))
+
+(ert-deftest donkey-bank-prompt-names-every-command-that-spends-a-bank ()
+  "The banking prompt says y/d/p, not y/d.
+
+`donkey-yank' replaces a bank as well, and said so nowhere on screen."
+  (donkey-test--change-buffer
+   (let (shown)
+     (cl-letf (((symbol-function 'message)
+                (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+       (goto-char (point-min))
+       (donkey-bank-selection))
+     (should (string-suffix-p "-- navigate, then y/d/p" shown)))))
 
 (provide 'donkey-editing-test)
 
