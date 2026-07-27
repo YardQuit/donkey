@@ -3272,6 +3272,25 @@ outer one.
 
    ---> outer (middle (deep) middle) outer
 
+\\[donkey-mark-sexp-inner] and \\[donkey-mark-sexp-outer] do the same job without asking.  They read the
+buffer's syntax table and find the enclosing brackets themselves,
+whatever kind those turn out to be -- useful in code, where the nearest
+pair is as likely to be square or curly as round.
+
+    \\[donkey-mark-inner] and \\[donkey-mark-outer]   you name the delimiter
+    \\[donkey-mark-sexp-inner] and \\[donkey-mark-sexp-outer]   DONKEY works it out
+
+>> Put the cursor on the \"2\" below and press \\[donkey-mark-sexp-inner].  \"1 2 3\" is selected
+   without you naming the bracket.  Press \\[donkey-mark-sexp-outer] instead and the square
+   brackets come with it.
+
+   ---> (defun f (a b) [1 2 3])
+
+Counts go outward here too, and cross bracket types on the way out.
+
+>> From that same \"2\", press \\`C-u 2' \\[donkey-mark-sexp-inner].  The selection jumps past the
+   square brackets to what is inside the surrounding parentheses.
+
 
 Lesson 6 -- whole lines
 -----------------------
@@ -3333,6 +3352,88 @@ A count on \\[donkey-yank] pastes that many copies.
 
 Pasting over a selection replaces it -- and that includes banked lines, so
 \\[donkey-yank] with lines banked swaps all of them for what you copied.
+
+
+Lesson 9 -- columns
+-------------------
+
+\\[donkey-rectangle-mark-mode] makes the selection a RECTANGLE.  Instead of a run of text it
+covers the same columns on every line it spans -- for editing a column of
+a table, or the leading characters of a block of lines.
+
+    \\[donkey-rectangle-mark-mode] start a rectangle selection (press it again to cancel)
+
+>> Put the cursor on the first \"1\" below, press \\[donkey-rectangle-mark-mode], then \\[next-line] twice and
+   \\[forward-char] twice.  Only the block of digits is highlighted, not the
+   words.  Press \\[donkey-delete] to cut it out.
+
+   Count the presses off the highlight rather than off the characters:
+   the anchor column counts as one, so reaching the third digit takes two
+   presses and not three.
+
+   ---> 111 alpha
+   ---> 222 beta
+   ---> 333 gamma
+
+The selection is released by the cut, so you can put the cursor back on
+the first line and press \\[donkey-yank] straight away -- the block goes back where it
+came from.
+
+Two things worth knowing before you rely on it:
+
+  - A rectangle lives in DONKEY's own store, NOT the system clipboard.
+    \\[donkey-yank] puts it back inside Emacs; another application will paste
+    whatever was on the clipboard before.  A block of columns has no
+    shape a flat clipboard could carry, and Emacs' own rectangle
+    commands behave the same way.
+  - Pasting a rectangle ONTO a rectangle needs the same number of rows.
+    A three-row block over a two-row selection is refused with a message
+    rather than half-applied.
+
+
+Lesson 10 -- when two selections disagree
+-----------------------------------------
+
+Banked lines are whole lines.  A rectangle is columns.  No command can act
+on both at once, so DONKEY has one rule:
+
+    THE SELECTION YOU ARE LOOKING AT WINS.  THE BANK IS THE FALLBACK.
+
+    with a rectangle drawn    \\[donkey-copy] and \\[donkey-delete] take the rectangle; banks stay
+    with no rectangle drawn   \\[donkey-copy] and \\[donkey-delete] take the banked lines
+    with lines banked         \\[donkey-yank] replaces the banked lines
+    with nothing banked       \\[donkey-yank] pastes the rectangle
+
+A drawn rectangle is on screen and a copied one is not, which is why the
+rule points in opposite directions for copying and pasting: each time it
+picks whichever selection you can actually see.
+
+First give \\[donkey-yank] something to paste.  A rectangle never reaches the kill
+ring, so a rectangle copy on its own leaves \\[donkey-yank] with nothing to insert
+and it says so.
+
+>> Put the cursor on the \"col two\" line below and press \\[donkey-visual-line-toggle] then \\[donkey-copy].
+   That is an ordinary whole-line copy, on the kill ring where \\[donkey-yank] looks.
+
+   ---> keep this banked
+   ---> col one
+   ---> col two
+
+>> Now bank the \"keep\" line with \\[donkey-bank-selection], draw a rectangle over the first
+   three characters of both \"col\" lines, and press \\[donkey-copy].  The rectangle
+   is copied -- and the \"keep\" line is STILL highlighted.  Nothing was
+   spent.
+
+>> Press \\`C-g' to drop the rectangle, then \\[donkey-yank].  The banked line is replaced
+   by the copied line, and the rectangle is left alone: the bank was the
+   selection still on screen, so it won.
+
+>> Press \\[donkey-yank] once more.  Nothing is banked now, so this time the rectangle
+   is what lands.
+
+Nothing is ever thrown away by the rule.  Take the rectangle and your
+banks are still waiting; take the banks and the rectangle is still in its
+store.  \\[donkey-clear-banked-selection] is the only key that discards banks.
 
 
 Your Emacs still works
