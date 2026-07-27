@@ -2137,6 +2137,67 @@ its initial widening."
       (donkey-rectangle-mark-mode)
       (should (string= (buffer-substring (region-beginning) (region-end)) "A")))))
 
+(ert-deftest donkey-rectangle-mark-mode-at-end-of-line-stays-on-its-column ()
+  "The initial widening must not step over the newline.
+
+Regression test: `right-char' at end of line moves to column 0 of the
+NEXT line, so the widening did not widen the rectangle -- it moved it,
+to the far side of the buffer from the column being looked at.
+
+Confirmed live: point at the end of \"alpha\" (column 5), then \"m v\",
+gave a rectangle whose columns were (0 . 0).  Pressing \"j\" twice and
+\"c\" then prefixed every line against the left margin instead of
+appending to it, with nothing on screen to explain why.
+
+Zero width is the right answer here, not a bug to widen away:
+`string-rectangle' INSERTS when the width is zero, which is what
+standing at end of line and starting a rectangle is for."
+  (with-temp-buffer
+    (let ((transient-mark-mode t))
+      (insert "alpha\nbeta\ngamma\n")
+      (goto-char (point-min))
+      (end-of-line)
+      (let ((col (current-column)))
+        (should (= col 5))
+        (donkey-rectangle-mark-mode)
+        (should (bound-and-true-p rectangle-mark-mode))
+        ;; The column is kept; only the width is zero.
+        (should (= (current-column) col))
+        (should (equal (rectangle--pos-cols (region-beginning) (region-end))
+                       (cons col col)))))))
+
+(ert-deftest donkey-rectangle-mark-mode-mid-line-still-widens ()
+  "The end-of-line guard must not disarm the ordinary widening.
+
+The guard is one `eolp\' test, and the failure it invites is disarming
+the widening everywhere.  Pinned next to the end-of-line case so the two
+cannot drift apart: mid-line keeps its one column of width."
+  (with-temp-buffer
+    (let ((transient-mark-mode t))
+      (insert "alpha\nbeta\ngamma\n")
+      (goto-char (point-min))
+      (donkey-rectangle-mark-mode)
+      (should (= (current-column) 1))
+      (should (equal (rectangle--pos-cols (region-beginning) (region-end))
+                     (cons 0 1))))))
+
+(ert-deftest donkey-rectangle-mark-mode-at-end-of-line-appends-via-change ()
+  "End to end: a rectangle started at end of line appends to every row.
+
+The point of the guard.  With the rectangle collapsed to column 0 this
+inserted against the left margin instead, so the check is on the text,
+not on the columns -- a reader never sees a column number."
+  (with-temp-buffer
+    (let ((transient-mark-mode t))
+      (insert "aaaaa\nbbbbb\nccccc\n")
+      (goto-char (point-min))
+      (end-of-line)
+      (donkey-rectangle-mark-mode)
+      (next-line 2)
+      (cl-letf (((symbol-function 'read-string) (lambda (&rest _) ";")))
+        (donkey-change))
+      (should (equal (buffer-string) "aaaaa;\nbbbbb;\nccccc;\n")))))
+
 (ert-deftest donkey-rectangle-mark-mode-creates-rectangular-selection ()
   "Rect mark mode creates a rectangular region selection."
   (with-temp-buffer
