@@ -1578,6 +1578,93 @@ to correct it."
           (should (equal (donkey-indicator) " DONKEY[E]"))))
     (donkey-mode -1)))
 
+(ert-deftest donkey-c-g-in-insert-stops-a-recording-macro ()
+  "Leaving Insert state aborts a keyboard macro, as `keyboard-quit\=' does.
+
+Regression: `C-g\=' looked like it had abandoned the recording -- Normal
+state, box cursor, nothing to suggest otherwise -- while every later
+keystroke was still being recorded.  The only signal was
+`kmacro-start-macro\=' refusing later with \"Already defining keyboard
+macro\"."
+  (unwind-protect
+      (with-temp-buffer
+        (text-mode)
+        (donkey-mode 1)
+        (donkey-enter-insert)
+        (setq defining-kbd-macro t)
+        (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+          (donkey--exit-insert))
+        (should-not defining-kbd-macro)
+        (should (bound-and-true-p donkey-normal-mode)))
+    (setq defining-kbd-macro nil)
+    (donkey-mode -1)))
+
+(ert-deftest donkey-macro-abort-cannot-block-the-state-transition ()
+  "A signal from the macro cleanup must not strand the user in Insert.
+
+It runs AFTER the transition and is caught, for the same reason the rest
+of this path is: it is reached from `pre-command-hook\=', where a signal
+costs the user the whole `C-g\=' interception for the session.  No macro
+is worth that."
+  (unwind-protect
+      (with-temp-buffer
+        (text-mode)
+        (donkey-mode 1)
+        (donkey-enter-insert)
+        (setq defining-kbd-macro t)
+        (cl-letf (((symbol-function 'kmacro-keyboard-quit)
+                   (lambda () (error "Boom from kmacro")))
+                  ((symbol-function 'message) (lambda (&rest _) nil)))
+          (donkey--exit-insert))
+        (should (bound-and-true-p donkey-normal-mode))
+        (should-not (bound-and-true-p donkey-insert-mode)))
+    (setq defining-kbd-macro nil)
+    (donkey-mode -1)))
+
+(ert-deftest donkey-macro-abort-does-nothing-when-no-macro-is-recording ()
+  "The ordinary case is untouched: no recording, nothing to stop."
+  (unwind-protect
+      (with-temp-buffer
+        (text-mode)
+        (donkey-mode 1)
+        (donkey-enter-insert)
+        (setq defining-kbd-macro nil)
+        (donkey--exit-insert)
+        (should-not defining-kbd-macro)
+        (should (bound-and-true-p donkey-normal-mode)))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-backspace-and-delete-are-blocked-under-every-key-name ()
+  "All four names, not just the graphical pair.
+
+BACKSPACE and DELETE arrive under different names depending on the
+frame: a GUI sends <backspace> and <delete>, a terminal sends DEL
+\(ASCII 127) and <deletechar>.  Only the first two were bound, so the
+block worked on a GUI and did nothing in a terminal -- absent for the
+users most likely to be running `emacs -nw\='."
+  (unwind-protect
+      (with-temp-buffer
+        (text-mode)
+        (donkey-mode 1)
+        (donkey-normal-mode 1)
+        (dolist (key (list [backspace] [?\C-?] [delete] [deletechar]))
+          (should (eq (key-binding key) #'ignore))))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-blocking-DEL-leaves-the-bank-clear-binding-alone ()
+  "`m DEL\=' still clears the bank under all three of its key names.
+
+`m\=' is a prefix, so `m DEL\=' is a different key sequence from `DEL\=' --
+but it is the obvious thing for this change to have broken."
+  (unwind-protect
+      (with-temp-buffer
+        (text-mode)
+        (donkey-mode 1)
+        (donkey-normal-mode 1)
+        (dolist (key '("m DEL" "m <deletechar>" "m <delete>"))
+          (should (eq (key-binding (kbd key)) #'donkey-clear-banked-selection))))
+    (donkey-mode -1)))
+
 (provide 'donkey-state-management-test)
 
 ;;; donkey-state-management-test.el ends here

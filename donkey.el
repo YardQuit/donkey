@@ -3504,9 +3504,9 @@ enough to state in full.
 
 In INSERT state, one key changes: \\`C-g' returns to NORMAL state.  It still
 clears the selection, and in the minibuffer it still quits, so the escape
-hatch is where you expect it.  (It does not stop a keyboard macro that is
-being recorded -- the one errand Emacs' own \\`C-g' runs that this one does
-not.)
+hatch is where you expect it.  It stops a keyboard macro that is being
+recorded, too; the only errand of Emacs' own \\`C-g' it skips is signalling
+a quit condition, which nothing in these lessons needs.
 
 In NORMAL state, four things differ:
 
@@ -3762,9 +3762,25 @@ outcome than retyping a lesson."
 (keymap-set donkey-normal-mode-map "<enter>" #'donkey-enter-dwim)
 (keymap-set donkey-normal-mode-map "RET" #'donkey-enter-dwim)
 
-;; Block raw typing keys in NORMAL state
+;; Block raw typing keys in NORMAL state.
+;;
+;; All FOUR key names, not just the graphical pair.  BACKSPACE and DELETE
+;; each arrive under a different name depending on the frame: a GUI frame
+;; sends <backspace> and <delete>, a terminal sends DEL (ASCII 127) and
+;; <deletechar>.  Only the first two were bound, so the block worked on a
+;; GUI and did nothing in a terminal, where the unbound names fell
+;; through to the global map and still deleted text from NORMAL state --
+;; exactly what this section exists to prevent, absent for the users
+;; most likely to be running `emacs -nw'.
+;;
+;; The `m DEL' bindings a few lines above already got this right, and
+;; carry the same explanation; it simply was not carried up here.
+;; Binding DEL at top level does not disturb them: `m' is a prefix, so
+;; `m DEL' is a different key sequence entirely.
 (keymap-set donkey-normal-mode-map "<backspace>" #'ignore)
 (keymap-set donkey-normal-mode-map "<delete>" #'ignore)
+(keymap-set donkey-normal-mode-map "DEL" #'ignore)
+(keymap-set donkey-normal-mode-map "<deletechar>" #'ignore)
 (keymap-set donkey-normal-mode-map "," #'ignore)
 (keymap-set donkey-normal-mode-map "-" #'ignore)
 (keymap-set donkey-normal-mode-map "/" #'ignore)
@@ -4243,7 +4259,43 @@ subprocess or aborting a recursive edit)."
     (donkey-enter-normal)
     (unless (bound-and-true-p donkey-normal-mode)
       (donkey-normal-mode 1))
+    (donkey--abort-keyboard-macro-definition)
     (donkey--schedule-overlay-cleanup)))
+
+(defun donkey--abort-keyboard-macro-definition ()
+  "Stop a keyboard macro that is being recorded, the way `keyboard-quit' does.
+
+The one errand of Emacs\\=' own `C-g' that leaving Insert state used to
+skip.  Pressing `C-g' part way through `\\[kmacro-start-macro]' looked
+like it had abandoned the recording -- Normal state, box cursor, nothing
+to suggest otherwise -- while every later keystroke was still being
+recorded.  The only signal was `\\[kmacro-start-macro]' refusing later
+with \"Already defining keyboard macro\".
+
+Recoverable rather than destructive: `C-g' from NORMAL state runs the
+real `keyboard-quit', which does stop it, so the escape always worked in
+two presses.  This makes the first press mean what it looks like.
+
+Runs AFTER the state transition and cannot prevent it.  Any condition is
+caught and reported: this is reached from `pre-command-hook' via
+`donkey--intercept-quit-in-insert', where a signal costs the user the
+whole interception mechanism for the session, and no macro is worth
+that.
+
+Deliberately not the rest of `keyboard-quit'.  Insert state\\='s `C-g' is
+an exit key, not a general abort, and folding in every stock side effect
+would make it less predictable rather than more.  A macro left recording
+is the one omission that leaves the editor in a state the user believes
+it is not in."
+  (when (bound-and-true-p defining-kbd-macro)
+    (condition-case err
+        (progn
+          (when (fboundp 'kmacro-keyboard-quit)
+            (kmacro-keyboard-quit))
+          (setq defining-kbd-macro nil))
+      (error
+       (message "DONKEY: could not stop the keyboard macro: %s"
+                (error-message-string err))))))
 
 (defun donkey--intercept-quit-in-insert ()
   "Intercept the quit key in insert mode by raw key event or `sp-cancel' command.
