@@ -1,5 +1,7 @@
 ;;; donkey-navigation-test.el --- Tests for DONKEY navigation commands -*- lexical-binding: t; -*-
 
+;;; Code:
+
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
@@ -11,16 +13,16 @@
 (defvar donkey-position-ring-max)
 (defvar donkey-visual-anchor)
 
-;; Helper: go to absolute line N (1-based) in current buffer
 (defmacro donkey--goto-line (n)
+  "Move point to the start of absolute line N (1-based) in the current buffer."
   `(progn (goto-char (point-min)) (forward-line (1- ,n))))
 
-;; Helper: absolute line-beginning-position for line N
 (defmacro donkey--bol (n)
+  "Return the buffer position starting absolute line N (1-based)."
   `(save-excursion (donkey--goto-line ,n) (line-beginning-position)))
 
-;; Helper: absolute line-end-position for line N
 (defmacro donkey--eol (n)
+  "Return the buffer position ending absolute line N (1-based)."
   `(save-excursion (donkey--goto-line ,n) (line-end-position)))
 
 ;;; ---------------------------------------------------------------------------
@@ -61,7 +63,7 @@
       (should (= (point) 5)))))
 
 (ert-deftest donkey-goto-line-line-beyond-buffer ()
-  "Request line number beyond buffer end: forward-line stops at end."
+  "Request line number beyond buffer end: `forward-line' stops at end."
   (let ((target-line 10))
     (with-temp-buffer
       (insert "one\ntwo\n")
@@ -72,7 +74,7 @@
       (should (= (point) (point-max))))))
 
 (ert-deftest donkey-goto-line-read-number-prompted ()
-  "User is prompted via read-number."
+  "User is prompted via `read-number'."
   (let (read-number-called)
     (with-temp-buffer
       (insert "test\n")
@@ -94,8 +96,10 @@
       (should (= (point) 1)))))
 
 (ert-deftest donkey-goto-line-request-zero-or-negative ()
-  "Request line 0 (undocumented, unvalidated input): no error, point stays
-at point-min since forward-line -1 there has nowhere to go."
+  "Requesting line 0 or a negative line leaves point at `point-min'.
+
+Request line 0 (undocumented, unvalidated input): no error, point stays
+at point-min since `forward-line' -1 there has nowhere to go."
   (let ((target-line 0))
     (with-temp-buffer
       (insert "line one\n")
@@ -117,7 +121,9 @@ at point-min since forward-line -1 there has nowhere to go."
       (should (= (point) (point-max))))))
 
 (ert-deftest donkey-goto-line-fractional-input-rounds-instead-of-erroring ()
-  "Regression test: `read-number' happily returns a float (e.g. typing
+  "A fractional line number is rounded instead of signalling an error.
+
+Regression test: `read-number' happily returns a float (e.g. typing
 \"3.5\" at the prompt, an easy typo for \"35\" or \"3\"), which used to
 be passed straight to `forward-line' -- signalling a raw
 `wrong-type-argument' error, since `forward-line' requires an integer,
@@ -130,7 +136,7 @@ instead of just going to a line. Now rounded to the nearest whole line."
     (should (= (line-number-at-pos) 4))))
 
 (ert-deftest donkey-goto-line-preserves-buffer-text ()
-  "After goto-line, buffer text is unchanged."
+  "After `goto-line', buffer text is unchanged."
   (let ((original-text "original text\n"))
     (with-temp-buffer
       (insert original-text)
@@ -537,7 +543,7 @@ the whole reason `S' exists is to take back the jump just made."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-switch-other-buffer-calls-other-buffer ()
-  "Calls other-buffer with the current buffer."
+  "Calls `other-buffer' with the current buffer."
   (let (other-arg)
     (cl-letf (((symbol-function 'other-buffer)
                (lambda (buf) (setq other-arg buf) buf)))
@@ -546,7 +552,7 @@ the whole reason `S' exists is to take back the jump just made."
     (should (eq other-arg (current-buffer)))))
 
 (ert-deftest donkey-switch-other-buffer-call-order ()
-  "other-buffer executes before switch-to-buffer."
+  "`other-buffer' executes before `switch-to-buffer'."
   (let (order)
     (cl-letf (((symbol-function 'other-buffer)
                (lambda (buf) (push 'other order) buf))
@@ -558,7 +564,7 @@ the whole reason `S' exists is to take back the jump just made."
     (should (= (length order) 2))))
 
 (ert-deftest donkey-switch-other-buffer-switches-back-and-forth ()
-  "Calling twice passes current-buffer each time."
+  "Calling twice passes `current-buffer' each time."
   (let ((results)
         (buf-a (generate-new-buffer "*donkey-test-aa*"))
         (buf-b (generate-new-buffer "*donkey-test-bb*")))
@@ -582,7 +588,7 @@ the whole reason `S' exists is to take back the jump just made."
         (when (buffer-live-p b) (kill-buffer b))))))
 
 (ert-deftest donkey-switch-other-buffer-other-buffer-returns-nil ()
-  "If other-buffer returns nil, switch-to-buffer receives nil without error."
+  "If `other-buffer' returns nil, `switch-to-buffer' receives nil without error."
   (let (switch-arg)
     (cl-letf (((symbol-function 'other-buffer)
                (lambda (buf) nil))
@@ -592,7 +598,7 @@ the whole reason `S' exists is to take back the jump just made."
     (should-not switch-arg)))
 
 (ert-deftest donkey-switch-other-buffer-call-interactively ()
-  "Can be called via call-interactively."
+  "Can be called via `call-interactively'."
   (let (other-called switch-called)
     (cl-letf (((symbol-function 'other-buffer)
                (lambda (buf) (setq other-called t) buf))
@@ -619,7 +625,9 @@ the whole reason `S' exists is to take back the jump just made."
       (should (= (point) (donkey--eol 1))))))
 
 (ert-deftest donkey-visual-line-toggle-message-names-the-real-extend-keys ()
-  "Regression test: the start-of-session message must distinguish the
+  "The toggle message names the real whole-line extend keys.
+
+Regression test: the start-of-session message must distinguish the
 whole-line extend keys from the character-wise ones.
 
 It used to say only \"j/k to extend\", but lowercase `j'/`k' are bound
@@ -649,7 +657,9 @@ are legitimate -- the message just has to say which does which."
     (should (eq (lookup-key donkey-normal-mode-map "k") #'previous-line))))
 
 (ert-deftest donkey-visual-line-session-survives-character-wise-motion ()
-  "Regression test: `j'/`k' (plain `next-line'/`previous-line') must not
+  "A visual-line session survives character-wise motion.
+
+Regression test: `j'/`k' (plain `next-line'/`previous-line') must not
 end a visual-line session -- a following `J'/`K' has to still
 recognize it and re-anchor to whole lines.
 
@@ -678,7 +688,9 @@ only move point."
                        "ab\nlonger line here\nxyz")))))
 
 (ert-deftest donkey-visual-line-session-still-rejects-stale-anchor ()
-  "The relaxed session check must still ignore an anchor left over from
+  "The relaxed session check still rejects a stale anchor.
+
+The relaxed session check must still ignore an anchor left over from
 an earlier session once an unrelated command has moved the mark.
 
 This is the case `donkey--visual-line-session-active-p' exists for: a
@@ -699,7 +711,9 @@ line, which is exactly what the check keys off now."
       (should-not (donkey--visual-line-session-active-p)))))
 
 (ert-deftest donkey-visual-line-toggle-cancels-active-region ()
-  "With a genuinely active visual-line session, deactivates the mark
+  "Toggling during an active session cancels the region.
+
+With a genuinely active visual-line session, deactivates the mark
 and clears the anchor."
   (with-temp-buffer
     (insert "hello world\n")
@@ -727,7 +741,9 @@ and clears the anchor."
       (should-not donkey-visual-anchor))))
 
 (ert-deftest donkey-visual-line-toggle-with-unrelated-region-starts-fresh-session ()
-  "Regression test: pressing this with an active region that is NOT a
+  "Toggling over an unrelated region starts a fresh session.
+
+Regression test: pressing this with an active region that is NOT a
 genuine visual-line session (e.g. a `donkey-mark-inner' selection,
 where `last-command' is not one of the visual-line commands) must
 start a fresh visual-line session anchored at the current line,
@@ -755,7 +771,7 @@ starting a new visual-line selection on the current line."
       (should (= (point) (donkey--eol 1))))))
 
 (ert-deftest donkey-visual-line-toggle-call-interactively ()
-  "Can be called via call-interactively."
+  "Can be called via `call-interactively'."
   (with-temp-buffer
     (insert "hello\n")
     (goto-char 1)
@@ -764,7 +780,9 @@ starting a new visual-line selection on the current line."
       (should (region-active-p)))))
 
 (ert-deftest donkey-visual-anchor-is-buffer-local ()
-  "`donkey-visual-anchor' must be buffer-local.  Regression test: it used
+  "`donkey-visual-anchor' must be buffer-local.
+
+Regression test: it used
 to be a plain `defvar', so starting a visual-line selection in one
 buffer leaked its anchor position into any other buffer that
 separately activated a region (e.g. via `set-mark-command'), causing
@@ -797,10 +815,12 @@ that belongs to a completely different buffer."
       (when (buffer-live-p buf-b) (kill-buffer buf-b)))))
 
 (ert-deftest donkey-visual-anchor-cleared-on-external-deactivate-mark ()
-  "`donkey-visual-anchor' must be cleared whenever the mark is
+  "`donkey-visual-anchor' is cleared on any mark deactivation.
+
+The anchor must be cleared whenever the mark is
 deactivated, not just when cancelled via `donkey-visual-line-toggle'
-itself.  Regression test: if some other command deactivated the mark
-(e.g. `keyboard-quit'), the anchor was left stale in the SAME buffer,
+itself.  Regression test: if some other command deactivated the
+mark (e.g. `keyboard-quit'), the anchor was left stale in the SAME buffer,
 so a later, unrelated region activation (e.g. via `set-mark-command')
 would have its selection hijacked by the leftover anchor position."
   (with-temp-buffer
@@ -823,7 +843,9 @@ would have its selection hijacked by the leftover anchor position."
       (should (= (mark) mark-before)))))
 
 (ert-deftest donkey-visual-anchor-stale-does-not-hijack-region-set-without-deactivating ()
-  "Regression test: an unrelated command that sets a NEW region WITHOUT
+  "A stale anchor does not hijack a region set without a deactivation.
+
+Regression test: an unrelated command that sets a NEW region WITHOUT
 first deactivating the old one (e.g. `donkey-mark-inner', which calls
 `push-mark'/`activate-mark' directly) must not have its selection
 hijacked by a stale `donkey-visual-anchor' left over from an earlier
@@ -899,7 +921,7 @@ original anchor line instead of extending \"hello\" by one line."
         (should (= (mark) (donkey--eol 3)))))))
 
 (ert-deftest donkey-visual-next-line-above-anchor-extends-selection ()
-  "Point above anchor. Move down twice, crossing then passing the anchor."
+  "Point above anchor.  Move down twice, crossing then passing the anchor."
   (with-temp-buffer
     (insert "line1\nline2\nline3\nline4\nline5\n")
     (let ((anchor (donkey--bol 3)))
@@ -918,7 +940,7 @@ original anchor line instead of extending \"hello\" by one line."
         (should (= (mark) anchor))))))
 
 (ert-deftest donkey-visual-next-line-below-anchor-sets-mark-to-anchor-beg ()
-  "Point below anchor. Moving further down keeps mark pinned to the anchor."
+  "Point below anchor.  Moving further down keeps mark pinned to the anchor."
   (with-temp-buffer
     (insert "line1\nline2\nline3\nline4\nline5\n")
     (let ((anchor (donkey--bol 3)))
@@ -1028,7 +1050,7 @@ original anchor line instead of extending \"hello\" by one line."
         (should (= (mark) anchor))))))
 
 (ert-deftest donkey-visual-previous-line-below-anchor-extends-selection ()
-  "Point below anchor. Move up twice, crossing then passing the anchor."
+  "Point below anchor.  Move up twice, crossing then passing the anchor."
   (with-temp-buffer
     (insert "line1\nline2\nline3\nline4\nline5\n")
     (let ((anchor (donkey--bol 3)))

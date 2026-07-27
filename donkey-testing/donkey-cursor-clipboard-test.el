@@ -1,5 +1,7 @@
 ;;; donkey-cursor-clipboard-test.el --- Tests for DONKEY cursor, clipboard, and platform diagnostics -*- lexical-binding: t -*-
 
+;;; Code:
+
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
@@ -37,13 +39,14 @@
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-terminal-supports-decscusr-p-returns-nil-in-gui ()
-  "Nil when display-graphic-p returns t, even if terminal type would
-otherwise qualify."
+  "Nil when `display-graphic-p' returns t.
+The terminal type is not consulted, even if it would otherwise
+qualify."
   (cl-letf (((symbol-function 'display-graphic-p) (lambda () t)))
     (should (null (donkey--terminal-supports-decscusr-p)))))
 
 (ert-deftest donkey-terminal-supports-decscusr-p-returns-nil-when-tty-type-is-dumb ()
-  "Nil when tty-type returns 'dumb'."
+  "Nil when `tty-type' returns 'dumb'."
   (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
             ((symbol-function 'tty-type) (lambda () "dumb")))
     (should (null (donkey--terminal-supports-decscusr-p)))))
@@ -67,7 +70,7 @@ otherwise qualify."
     (should (donkey--terminal-supports-decscusr-p))))
 
 (ert-deftest donkey-terminal-supports-decscusr-p-falls-back-to-TERM-env ()
-  "Uses TERM env var when tty-type returns nil."
+  "Uses TERM env var when `tty-type' returns nil."
   (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
             ((symbol-function 'tty-type) (lambda () nil))
             ((symbol-function 'getenv) (lambda (var) "xterm-256color")))
@@ -121,7 +124,7 @@ otherwise qualify."
       (should-not send-called))))
 
 (ert-deftest donkey-send-cursor-sequence-swallows-io-errors ()
-  "Silently absorbs I/O errors from send-string-to-terminal."
+  "Silently absorbs I/O errors from `send-string-to-terminal'."
   (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
             ((symbol-function 'tty-type) (lambda () "xterm-256color"))
             ((symbol-function 'send-string-to-terminal)
@@ -134,14 +137,14 @@ otherwise qualify."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-apply-cursor-setting-sets-local-when-non-nil ()
-  "Sets cursor-type buffer-local when given a non-nil setting."
+  "Sets `cursor-type' buffer-local when given a non-nil setting."
   (with-temp-buffer
     (donkey--apply-cursor-setting 'bar)
     (should (local-variable-p 'cursor-type))
     (should (eq cursor-type 'bar))))
 
 (ert-deftest donkey-apply-cursor-setting-kills-local-when-nil ()
-  "Kills local cursor-type when given a nil setting."
+  "Kills local `cursor-type' when given a nil setting."
   (with-temp-buffer
     (setq-local cursor-type 'bar)
     (should (local-variable-p 'cursor-type))
@@ -226,10 +229,10 @@ synchronous `sit-for' delay on every single transition."
       (setq donkey-cursor-insert original-value))))
 
 (ert-deftest donkey-update-cursor-fires-once-per-transition ()
-  "A single Insert<->Normal transition sends DECSCUSR only once, not
-twice, even though donkey--update-cursor is registered on both
-donkey-normal-mode-hook and donkey-insert-mode-hook and each mode's
-body toggles the other off."
+  "A single Insert<->Normal transition sends DECSCUSR only once.
+Not twice, even though `donkey--update-cursor' is registered on both
+`donkey-normal-mode-hook' and `donkey-insert-mode-hook', and each
+mode's body toggles the other off."
   (let ((send-count 0))
     (clrhash donkey--last-applied-cursor-settings)
     (with-temp-buffer
@@ -251,7 +254,7 @@ Insert-state window via `other-window' would apply the correct shape
 on first visiting each buffer, but then wrongly skip resending on
 returning to a previously-visited buffer, since that buffer's own
 cache still (correctly, for itself) remembered its own last
-self-applied value. Confirmed live in `emacs -nw': switching from a
+self-applied value.  Confirmed live in `emacs -nw': switching from a
 Normal-state buffer to an Insert-state buffer and back sent no DECSCUSR
 sequence at all for the return trip until this was fixed."
   (let ((send-log nil))
@@ -341,7 +344,7 @@ sequence at all for the return trip until this was fixed."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-detect-clipboard-tools-returns-t-on-darwin ()
-  "t on macOS, regardless of external tools.
+  "Returns t on macOS, regardless of external tools.
 `system-type' is a variable, not a function -- it must be let-bound,
 not mocked via `symbol-function', or the test silently checks the
 real platform instead of the intended one."
@@ -349,12 +352,12 @@ real platform instead of the intended one."
     (should (eq (donkey--detect-clipboard-tools) t))))
 
 (ert-deftest donkey-detect-clipboard-tools-returns-t-on-windows ()
-  "t on Windows, regardless of external tools."
+  "Returns t on Windows, regardless of external tools."
   (let ((system-type 'windows-nt))
     (should (eq (donkey--detect-clipboard-tools) t))))
 
 (ert-deftest donkey-detect-clipboard-tools-returns-t-in-gui-mode ()
-  "t in GUI mode, regardless of tools found."
+  "Returns t in GUI mode, regardless of tools found."
   (let ((system-type 'gnu/linux))
     (cl-letf (((symbol-function 'executable-find) (lambda (&rest _) nil))
               ((symbol-function 'display-graphic-p) (lambda () t)))
@@ -368,7 +371,7 @@ real platform instead of the intended one."
       (should (null (donkey--detect-clipboard-tools))))))
 
 (ert-deftest donkey-detect-clipboard-tools-returns-t-when-wl-copy-found ()
-  "t when wl-copy is found on the search path."
+  "Returns t when wl-copy is found on the search path."
   (let ((system-type 'gnu/linux))
     (cl-letf (((symbol-function 'executable-find)
                (lambda (name) (equal name "wl-copy")))
@@ -380,7 +383,7 @@ real platform instead of the intended one."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-clipboard-yank-uses-clipboard-yank-when-available ()
-  "Calls clipboard-yank when fboundp; kill-ring yank is not called."
+  "Calls `clipboard-yank' when fboundp; `kill-ring' yank is not called."
   (let ((clipboard-called nil)
         (yank-called nil))
     (cl-letf (((symbol-function 'clipboard-yank)
@@ -392,7 +395,7 @@ real platform instead of the intended one."
       (should-not yank-called))))
 
 (ert-deftest donkey-clipboard-yank-falls-back-to-yank-when-clipboard-undefined ()
-  "Falls back to yank when clipboard-yank is not fboundp."
+  "Falls back to yank when `clipboard-yank' is not fboundp."
   (let ((yank-called nil))
     (cl-letf (((symbol-function 'clipboard-yank) nil)
               ((symbol-function 'yank)
@@ -404,7 +407,7 @@ real platform instead of the intended one."
       (should yank-called))))
 
 (ert-deftest donkey-clipboard-yank-falls-back-to-yank-on-clipboard-error ()
-  "Falls back to yank when clipboard-yank signals an error."
+  "Falls back to yank when `clipboard-yank' signals an error."
   (let ((yank-called nil))
     (cl-letf (((symbol-function 'clipboard-yank)
                (lambda () (signal 'error "Clipboard inaccessible")))
@@ -438,7 +441,8 @@ Lisp tree.  Asserted here so the fiction cannot come back."
 
 Deliberate: every caller is about to paste, and killing first would make
 the `yank' that follows pull back the text just removed instead of what
-the user asked to paste.  `delete-active-region' takes a KILLP argument
+the user asked to paste.  The function `delete-active-region' takes a
+KILLP argument
 that would do exactly that; it is not passed."
   (let ((delete-called nil)
         (killp-passed 'unset))
@@ -485,7 +489,7 @@ correctly does nothing at all, which is a different test below."
       (should yank-called))))
 
 (ert-deftest donkey-yank-pop-deletes-region-then-pops ()
-  "Deletes active region before yank-pop."
+  "Deletes active region before `yank-pop'."
   (let ((delete-called nil)
         (pop-called nil))
     (cl-letf (((symbol-function 'use-region-p) (lambda () t))
@@ -522,22 +526,23 @@ correctly does nothing at all, which is a different test below."
     (should (plist-member info :emacs-version))))
 
 (ert-deftest donkey-platform-info-display-type-gui ()
-  "Reports 'gui when display-graphic-p is non-nil."
+  "Reports 'gui when `display-graphic-p' is non-nil."
   (cl-letf (((symbol-function 'display-graphic-p) (lambda () t)))
     (should (eq (plist-get (donkey--platform-info) :display-type) 'gui))))
 
 (ert-deftest donkey-platform-info-display-type-terminal ()
-  "Reports 'terminal when display-graphic-p is nil."
+  "Reports 'terminal when `display-graphic-p' is nil."
   (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil)))
     (should (eq (plist-get (donkey--platform-info) :display-type) 'terminal))))
 
 (ert-deftest donkey-platform-info-reflects-clipboard-tools-available ()
-  "Reflects the live result of `donkey--detect-clipboard-tools', not a
-value cached once at load time.  Regression test: this used to read a
+  "Reflects the live result of `donkey--detect-clipboard-tools'.
+
+Not a value cached once at load time.  Regression test: this used to read a
 variable computed only when the package first loaded, which could go
 stale — e.g. across different frames in an `emacs --daemon' session,
-where a GUI frame (`emacsclient -c') and a terminal frame
-(`emacsclient -t') can have different clipboard capabilities."
+where a GUI frame (`emacsclient -c') and a terminal
+frame (`emacsclient -t') can have different clipboard capabilities."
   (cl-letf (((symbol-function 'donkey--detect-clipboard-tools)
              (lambda () 'sentinel-value)))
     (should (eq (plist-get (donkey--platform-info) :clipboard-tools-available)
@@ -559,7 +564,7 @@ where a GUI frame (`emacsclient -c') and a terminal frame
       (kill-buffer "*DONKEY Platform Debug*"))))
 
 (ert-deftest donkey-debug-platform-buffer-is-read-only-special-mode ()
-  "The debug buffer is read-only and uses special-mode with a 'q' binding."
+  "The debug buffer is read-only and uses `special-mode' with a 'q' binding."
   (when (get-buffer "*DONKEY Platform Debug*")
     (kill-buffer "*DONKEY Platform Debug*"))
   (unwind-protect
@@ -573,8 +578,8 @@ where a GUI frame (`emacsclient -c') and a terminal frame
       (kill-buffer "*DONKEY Platform Debug*"))))
 
 (ert-deftest donkey-debug-platform-retains-special-mode-map-bindings ()
-  "The debug buffer keeps `special-mode-map's other default bindings
-\(scrolling, revert), not just 'q'.
+  "The debug buffer keeps `special-mode-map's other default bindings.
+Scrolling and revert survive, not just `q'.
 
 `donkey-debug-platform' used to build a custom keymap (parented to
 `help-map' or `special-mode-map') and install it via `use-local-map'

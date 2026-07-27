@@ -1,5 +1,7 @@
 ;;; donkey-org-integration-test.el --- Tests for DONKEY org/markdown/enter-dwim integration -*- lexical-binding: t; -*-
 
+;;; Code:
+
 (require 'ert)
 (require 'cl-lib)
 (require 'org)
@@ -29,7 +31,7 @@
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-insert-org-scratch-message-inserts-text ()
-  "Should insert the org-mode scribble header into the current buffer."
+  "Should insert the `org-mode' scribble header into the current buffer."
   (with-temp-buffer
     (donkey-insert-org-scratch-message)
     (goto-char (point-min))
@@ -55,7 +57,7 @@
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-create-org-scratch-creates-named-buffer ()
-  "Should create a buffer named *org-scratch* in org-mode."
+  "Should create a buffer named *org-scratch* in `org-mode'."
   (donkey-with-clean-scratch
    (donkey-create-org-scratch)
    (should (buffer-live-p (get-buffer "*org-scratch*")))
@@ -149,7 +151,9 @@
     (should-not (donkey--editing-mode-p))))
 
 (ert-deftest donkey-editing-mode-p-derived-mode-is-caught ()
-  "Modes derived from a listed mode ARE matched via `derived-mode-p',
+  "A mode derived from a listed mode is treated as an editing mode.
+
+Modes derived from a listed mode ARE matched via `derived-mode-p',
 even though their own major-mode symbol differs from the literal
 entries in `donkey-editing-modes'.  Regression test: this used to rely
 on `member' (exact equality) only, so real code buffers like
@@ -161,7 +165,9 @@ prevent accidental line breaks\" mechanism for ordinary code buffers."
     (should (donkey--editing-mode-p))))
 
 (ert-deftest donkey-non-editing-enter-handler-blocks-in-derived-prog-mode ()
-  "`donkey--non-editing-enter-handler' must not fire in a real
+  "The non-editing RET handler stays out of derived prog modes.
+
+The function `donkey--non-editing-enter-handler' must not fire in a real
 prog-mode-derived buffer, even when a saved RET binding is present and
 callable.  Regression test: before `donkey--editing-mode-p' recognized
 derived modes, this would have called the saved binding, e.g.
@@ -177,9 +183,11 @@ inserting a newline via the mode's own RET command — precisely the
       (should-not called))))
 
 (ert-deftest donkey-non-editing-enter-handler-fires-outside-editing-modes ()
-  "`donkey--non-editing-enter-handler' still falls through to the saved
+  "The non-editing RET handler still fires outside editing modes.
+
+It still falls through to the saved
 RET binding in a genuinely non-editing mode (e.g. `dired-mode'-like
-buffers), confirming the derived-mode-p fix didn't overreach."
+buffers), confirming the `derived-mode-p' fix didn't overreach."
   (with-temp-buffer
     (fundamental-mode)
     (let ((major-mode 'dired-mode)
@@ -213,7 +221,9 @@ buffers), confirming the derived-mode-p fix didn't overreach."
         (cl-remove 'test-rule donkey--enter-rules :key #'car :test 'eq)))
 
 (ert-deftest donkey-enter-dwim-register-rule-prepends-to-front ()
-  "Registering a rule PREPENDS it to the front of `donkey--enter-rules',
+  "Registering a rule prepends it to the front of the rule list.
+
+Registering a rule PREPENDS it to the front of `donkey--enter-rules',
 so the most recently added rule is tried first.  Regression test:
 this used to append (`add-to-list' with APPEND non-nil), so a rule
 added last in config.el ended up LAST in the dispatch list instead of
@@ -227,7 +237,9 @@ it win\" customization contract in the README."
                       donkey--enter-rules)))
 
 (ert-deftest donkey-enter-dwim-later-rule-overrides-default-for-same-element ()
-  "A rule added after the defaults, for the SAME element-type and
+  "A later rule overrides a default rule for the same element.
+
+A rule added after the defaults, for the SAME element-type and
 property as a default rule, is dispatched instead of the default.
 End-to-end regression test matching the README's documented override
 example (adding a link-handling rule last so it takes priority)."
@@ -263,7 +275,9 @@ example (adding a link-handling rule last so it takes priority)."
     (should-not (cl-find 'table donkey--enter-rules :key #'car :test 'eq))))
 
 (ert-deftest donkey-enter-dwim-config-custom-rules ()
-  "When `donkey-default-enter-rules-enabled' is nil, no default rules are
+  "Disabling the defaults leaves only user-added rules.
+
+When `donkey-default-enter-rules-enabled' is nil, no default rules are
 installed and only user-added rules exist."
   (let ((donkey-default-enter-rules-enabled nil)
         (donkey--enter-rules nil))
@@ -330,7 +344,7 @@ installed and only user-added rules exist."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-enter-dwim-org-link-follows-org-open-at-point ()
-  "In org-mode with link element (context), calls `org-open-at-point'."
+  "In `org-mode' with link element (context), calls `org-open-at-point'."
   (let (called-cmd)
     (cl-letf (((symbol-function 'org-element-at-point)
                (lambda () '(paragraph (:begin 1 :end 10))))
@@ -345,7 +359,7 @@ installed and only user-added rules exist."
     (should (eq called-cmd 'org-open-at-point))))
 
 (ert-deftest donkey-enter-dwim-org-checkbox-toggles ()
-  "In org-mode with checkbox item (parent element), calls `org-toggle-checkbox'."
+  "In `org-mode' with checkbox item (parent element), calls `org-toggle-checkbox'."
   (let (called-cmd)
     (cl-letf (((symbol-function 'org-element-at-point)
                (lambda () '(item (:checkbox t))))
@@ -365,7 +379,7 @@ installed and only user-added rules exist."
     (should (eq called-cmd 'org-toggle-checkbox))))
 
 (ert-deftest donkey-enter-dwim-org-todo-cycles ()
-  "In org-mode with TODO headline, calls `donkey-org-todo'."
+  "In `org-mode' with TODO headline, calls `donkey-org-todo'."
   (let (called-cmd)
     (cl-letf (((symbol-function 'org-element-at-point)
                (lambda () '(headline (:todo-type todo))))
@@ -385,7 +399,7 @@ installed and only user-added rules exist."
     (should (eq called-cmd 'donkey-org-todo))))
 
 (ert-deftest donkey-enter-dwim-org-table-follows-rule ()
-  "In org-mode with table element (parent), calls `org-table-next-row'."
+  "In `org-mode' with table element (parent), calls `org-table-next-row'."
   (let (called-cmd)
     (donkey-add-enter-rule table nil org-table-next-row)
     (cl-letf (((symbol-function 'org-element-at-point)
@@ -403,7 +417,7 @@ installed and only user-added rules exist."
     (should (eq called-cmd 'org-table-next-row))))
 
 (ert-deftest donkey-enter-dwim-org-src-block-does-nothing ()
-  "In org-mode on src-block with no matching rule, no command called."
+  "In `org-mode' on src-block with no matching rule, no command called."
   (let (called-cmd)
     (cl-letf (((symbol-function 'org-element-at-point)
                (lambda () '(src-block (:language "python"))))
@@ -440,7 +454,9 @@ installed and only user-added rules exist."
     (should (eq called-cmd 'org-open-at-point))))
 
 (ert-deftest donkey-enter-dwim-table-under-headline-fires-table-first ()
-  "When a table is nested under a headline, the table rule fires before
+  "A table nested under a headline fires the table rule first.
+
+When a table is nested under a headline, the table rule fires before
 the headline rule (parent before ancestor)."
   (let (called-cmd)
     (donkey-add-enter-rule table nil org-table-next-row)
@@ -499,7 +515,9 @@ the headline rule (parent before ancestor)."
     (should (eq called-cmd 'org-open-at-point))))
 
 (ert-deftest donkey-find-enter-handler-checkbox-at-line-start ()
-  "Regression test using a REAL org buffer (not mocked): `org-element-at-point'
+  "A checkbox is found even when point sits at the line start.
+
+Regression test using a REAL org buffer (not mocked): `org-element-at-point'
 resolves to the enclosing `plain-list' instead of the specific checkbox
 `item' when point sits exactly at `line-beginning-position' -- the
 position `j'/`k' navigation leave point at after every line move.
@@ -513,7 +531,9 @@ never matches at this very common cursor position."
     (should (eq (donkey--find-enter-handler) 'org-toggle-checkbox))))
 
 (ert-deftest donkey-enter-dwim-checkbox-at-line-start-under-todo-headline ()
-  "Regression test using a REAL org buffer (not mocked): when a checkbox
+  "A line-start checkbox under a TODO headline still toggles.
+
+Regression test using a REAL org buffer (not mocked): when a checkbox
 item is nested under a TODO headline, the mis-resolved `plain-list'
 parent at line start must not let the broader, less specific ancestor
 headline's rule win over the correct checkbox toggle.  The line-start
@@ -599,8 +619,10 @@ fallback has to be tried before ancestors, not after."
     (should (eq called-cmd 'org-agenda-switch-to))))
 
 (ert-deftest donkey-enter-dwim-agenda-requires-derived-mode ()
-  "Agenda dispatch does not fire when major-mode is unrelated, even with
-org-agenda-mode-map bound, confirming derived-mode-p (not just boundp)
+  "Agenda dispatch requires a derived agenda mode.
+
+Agenda dispatch does not fire when major-mode is unrelated, even with
+org-agenda-mode-map bound, confirming `derived-mode-p' (not just boundp)
 gates the handler."
   (let (called-cmd)
     (cl-letf (((symbol-function 'lookup-key)
@@ -638,8 +660,10 @@ happens to be loaded in this process."
     (should (eq called-cmd 'markdown-follow-thing-at-point))))
 
 (ert-deftest donkey-enter-dwim-markdown-fallback-to-browse-url ()
-  "In markdown-mode without org-open-at-point or the markdown function
-available, falls back to browse-url-at-point."
+  "Markdown link following falls back to `browse-url-at-point'.
+
+In markdown-mode without org-open-at-point or the markdown function
+available, falls back to `browse-url-at-point'."
   (let (called-cmd)
     (cl-letf (((symbol-function 'org-element-at-point)
                (lambda () '(paragraph (:begin 1 :end 10))))

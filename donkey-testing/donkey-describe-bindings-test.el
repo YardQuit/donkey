@@ -1,5 +1,7 @@
 ;;; donkey-describe-bindings-test.el --- Tests for donkey-describe-bindings -*- lexical-binding: t; -*-
 
+;;; Code:
+
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
@@ -123,8 +125,8 @@ Expected: empty result (the only binding was such a remap)."
     (should (null res))))
 
 (ert-deftest donkey-describe-bindings-collect-leaves-non-self-insert-remap-collected ()
-  "A remap to any command other than `self-insert-command' is treated
-as a regular leaf and included in the result.
+  "A remap to a command other than `self-insert-command' is a leaf.
+It is treated like any other binding and included in the result.
 Expected: one entry whose value is #'ignore."
   (let* ((map (donkey-describe-bindings-test--non-sic-remap-map))
          (res (donkey--desc-bindings-collect-leaves map "")))
@@ -134,8 +136,8 @@ Expected: one entry whose value is #'ignore."
 ;;; --- Cons-cdr-keymap traversal ---
 
 (ert-deftest donkey-describe-bindings-collect-leaves-cons-cdr-keymap ()
-  "When a binding's definition is a cons whose cdr is a keymap, the
-collector descends into that inner keymap.
+  "A cons whose cdr is a keymap is descended into.
+When a binding takes that shape, the collector walks the inner keymap.
 Expected: the inner binding 'j' appears with prefix 'm '."
   (let* ((map (donkey-describe-bindings-test--cons-cdr-keymap-map))
          (res (donkey--desc-bindings-collect-leaves map "")))
@@ -273,8 +275,9 @@ Expected: \"1 Prefix\"."
 ;;; --- Pre-condition error ---
 
 (ert-deftest donkey-describe-bindings-errors-without-map ()
-  "Calling `donkey-describe-bindings' when `donkey-normal-mode-map' is unbound
-raises a `user-error'.
+  "An unbound `donkey-normal-mode-map' raises a `user-error'.
+Calling `donkey-describe-bindings' there signals rather than failing
+obscurely.
 Expected: signal of type `user-error'."
   (let ((had-map (boundp 'donkey-normal-mode-map))
         (old-val (and (boundp 'donkey-normal-mode-map)
@@ -520,16 +523,16 @@ inert, since the keys it names would type rather than act."
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 (ert-deftest donkey-tutor-substitutes-every-key-it-names ()
-  "Bindings render as keys, not as M-x invocations.
+  "Bindings render as keys, not as \\=`M-x\\=' invocations.
 
 Regression: `substitute-command-keys' resolves against the CURRENT
 buffer's active keymaps, so running it before `donkey-mode' was enabled
-rendered every binding as an M-x invocation -- silently, and worst for
+rendered every binding as an \\=`M-x\\=' invocation -- silently, and worst for
 exactly the commands a new reader most needs named.
 
 Now that `donkey-tutor' is bound to \\=`g ?\\=' there is nothing left that
-resolves to M-x at all: it was the one command deliberately shown that
-way while it had no key.  An M-x appearing here again means either a
+resolves to \\=`M-x\\=' at all: it was the one command deliberately shown that
+way while it had no key.  An \\=`M-x\\=' appearing here again means either a
 command lost its binding or the substitution moved back ahead of
 `donkey-mode'."
   (unwind-protect
@@ -588,9 +591,10 @@ read once would take a key a motion will want later."
 (ert-deftest donkey-tutor-names-every-key-with-the-same-markup ()
   "Every key the tutor names carries `help-key-binding', none is bare text.
 
-Regression: keys written literally -- C-g, g g, the C-u N part of a count
--- rendered as plain text while substituted bindings rendered as faced
-chips, so the same buffer showed two kinds of key.  Literal ones now use
+Regression: keys written literally -- \\=`C-g\\=', g g, the \\=`C-u\\=' N
+part of a count -- rendered as plain text while substituted bindings
+rendered as faced chips, so the same buffer showed two kinds of key.
+Literal ones now use
 the \\=`KEY\\=' markup, which carries the same face."
   (unwind-protect
       (progn
@@ -762,7 +766,7 @@ this map would make that false."
     (should (equal bindings '(("C-g" . donkey--exit-insert))))))
 
 (ert-deftest donkey-tutor-claim-dired-keys-survive ()
-  "The dired keys the tutor names by hand are really still dired's."
+  "The Dired keys the tutor names by hand are really still Dired's."
   (skip-unless (require 'dired nil t))
   (unwind-protect
       (with-temp-buffer
