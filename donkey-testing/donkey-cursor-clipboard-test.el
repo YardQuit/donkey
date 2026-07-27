@@ -492,7 +492,7 @@ correctly does nothing at all, which is a different test below."
               ((symbol-function 'delete-active-region)
                (lambda (&optional _killp) (setq delete-called t)))
               ((symbol-function 'yank-pop)
-               (lambda () (setq pop-called t))))
+               (lambda (&optional _n) (setq pop-called t))))
       (let ((kill-ring (list "something")))
         (donkey-yank-pop))
       (should delete-called)

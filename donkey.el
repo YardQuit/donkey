@@ -1024,7 +1024,40 @@ needing any adjustment."
       (goto-char top-left)
       (insert-rectangle source))))
 
-(defun donkey-yank ()
+(defun donkey--yank-rectangle-times (n)
+  "Paste `killed-rectangle' with each of its rows repeated N times.
+
+Sideways, not stacked.  A rectangle is a block of columns, so repeating
+it means a wider block -- which is what a count on a blockwise paste
+does in vi, and what `donkey--paste-times' cannot express: calling
+`yank-rectangle' N times pastes the second block wherever the first one
+left point, which is partway down and across the first, so two copies of
+a three-row block came out as a staircase rather than as anything a user
+asked for.
+
+N below 1 pastes nothing, matching `donkey--paste-times'."
+  (when (> n 0)
+    (let ((killed-rectangle
+           (mapcar (lambda (row) (mapconcat #'identity (make-list n row) ""))
+                   killed-rectangle)))
+      (yank-rectangle))))
+
+(defun donkey--paste-times (n inserter)
+  "Call INSERTER N times, or not at all when N is below 1.
+
+The whole of what a count means for a paste.  INSERTER is called
+repeatedly rather than its text being fetched once and inserted N times,
+so the clipboard fallback and the rectangle path each keep their own
+behaviour instead of being reimplemented here.
+
+A count below 1 inserts nothing, the way `donkey-copy' copies nothing and
+`donkey-delete' deletes nothing at zero.  Negative gets the same answer
+rather than a separate one: a paste has no backward direction for a
+negative count to mean, so there is nothing for it to do but nothing."
+  (dotimes (_ (max 0 n))
+    (funcall inserter)))
+
+(defun donkey-yank (&optional count)
   "Yank clipboard content, replacing the active region if present.
 
 Falls back to the kill ring when the system clipboard is
@@ -1055,28 +1088,42 @@ rectangle, pastes it back via `yank-rectangle' at point instead of
 pulling from the clipboard/kill ring -- completing the round trip for
 `donkey-copy'/`donkey-delete's rectangle handling, which would
 otherwise populate `killed-rectangle' with no way to paste it back
-anywhere outside of `rectangle-mark-mode' itself."
-  (interactive)
-  (cond
-   ((bound-and-true-p rectangle-mark-mode)
-    (if donkey--last-kill-rectangle-p
-        (donkey--replace-rectangle-selection-with-killed-rectangle)
-      (call-interactively #'undefined)))
-   (donkey--last-kill-rectangle-p
-    (donkey--delete-active-region-safe)
-    (yank-rectangle))
-   ;; Checked after the rectangle branches, which paste from
-   ;; `killed-rectangle' and so have something to insert regardless of
-   ;; what the kill ring holds.
-   ((donkey--nothing-to-paste-p)
-    (message "Nothing to paste"))
-   ((donkey--banked-selection-p)
-    (donkey--replace-banked-selection-with-paste))
-   (t
-    (donkey--delete-active-region-safe)
-    (donkey--clipboard-yank))))
+anywhere outside of `rectangle-mark-mode' itself.
 
-(defun donkey-yank-pop ()
+COUNT inserts that many copies, so \\[universal-argument] 3 p pastes
+three.  That is what a count on a paste means in vi, and it is the
+reading this keymap wants: `C-y' is untouched in INSERT state, so anyone
+reaching for Emacs\=' own meaning -- a prefix argument selecting WHICH
+`kill-ring' entry to pull -- still has it there, on the key it belongs
+to.
+Nothing is given up by making \"p\" read the vi way.
+
+A COUNT below 1 inserts nothing, matching what zero and negative counts
+do for the other editing commands.  Any selection is still replaced
+first: \\[universal-argument] 0 p over a region is a delete, which is
+what asking to replace it with nothing means."
+  (interactive "p")
+  (let ((n (or count 1)))
+    (cond
+     ((bound-and-true-p rectangle-mark-mode)
+      (if donkey--last-kill-rectangle-p
+          (donkey--replace-rectangle-selection-with-killed-rectangle)
+        (call-interactively #'undefined)))
+     (donkey--last-kill-rectangle-p
+      (donkey--delete-active-region-safe)
+      (donkey--yank-rectangle-times n))
+     ;; Checked after the rectangle branches, which paste from
+     ;; `killed-rectangle' and so have something to insert regardless of
+     ;; what the kill ring holds.
+     ((donkey--nothing-to-paste-p)
+      (message "Nothing to paste"))
+     ((donkey--banked-selection-p)
+      (donkey--replace-banked-selection-with-paste n))
+     (t
+      (donkey--delete-active-region-safe)
+      (donkey--paste-times n #'donkey--clipboard-yank)))))
+
+(defun donkey-yank-pop (&optional count)
   "Replace the last yanked text with the next `kill-ring' entry.
 
 Removes the active region first if one is present.  With
@@ -1096,8 +1143,13 @@ nothing to do with the rectangle just pasted and fails confusingly
 nothing in it, since a rectangle kill never touches it\).
 `killed-rectangle' is a single slot with no history to begin with, so
 there is nothing meaningful to \"pop\" to regardless -- re-press `p'
-to paste the same rectangle again."
-  (interactive)
+to paste the same rectangle again.
+
+COUNT is handed to `yank-pop', where it already means how many entries to
+reach back -- so \\[universal-argument] 3 P takes the third one down.
+Unlike \"p\", this needs no reinterpretation: reaching back through the
+ring is what popping IS, in vi and in Emacs alike."
+  (interactive "p")
   (cond
    ((bound-and-true-p rectangle-mark-mode)
     (call-interactively #'undefined))
@@ -1109,7 +1161,7 @@ to paste the same rectangle again."
     (message "Nothing to paste"))
    (t
     (donkey--delete-active-region-safe)
-    (yank-pop))))
+    (yank-pop (or count 1)))))
 
 (defun donkey--visual-line-region-bounds ()
   "Return the active region as (BEG . END), whole-lined for a `V' session.
@@ -2578,9 +2630,19 @@ indistinguishable on screen."
 (defun donkey--banked-line-count ()
   "Return how many lines are currently banked.
 
-One overlay per line (see `donkey--bank-span'), so this is simply how
-many live spans there are."
-  (length (donkey--banked-spans)))
+Counts LINES, not overlays.  `donkey--bank-span' makes one overlay per
+line, so the two agree right up until an edit grows one past the line it
+was created for -- and an overlay that advances with text inserted at its
+end does exactly that the moment a newline is typed inside a banked line.
+Reporting the number of overlays then reported one line while `y' and `d'
+acted on two, the same divergence `donkey--bank-span' documents for the
+emptied-buffer case that `evaporate' handles: evaporating cannot help
+here, because the text was never deleted.
+
+`donkey--span-line-count' is what `donkey-copy' and `donkey-delete'
+already use for the totals they report, so counting the same way is also
+what keeps every message about the bank agreeing with every other."
+  (donkey--span-line-count (donkey--banked-spans)))
 
 (defun donkey--span-line-count (spans)
   "Return how many buffer lines SPANS cover in total.
@@ -2602,8 +2664,12 @@ text, so a banked blank line still counts as a line."
     (deactivate-mark)
     (message "Copied %d line%s" lines (if (= 1 lines) "" "s"))))
 
-(defun donkey--replace-banked-selection-with-paste ()
-  "Replace every banked line (plus any active region's lines) with a paste.
+(defun donkey--replace-banked-selection-with-paste (&optional count)
+  "Replace banked lines (plus any active region's lines) with a paste.
+
+COUNT inserts that many copies -- see `donkey--paste-times'.  The lines
+are removed once regardless, so a count of zero over banked lines is a
+delete, which is what replacing them with nothing means.
 
 Banked lines are a selection, so a paste replaces them exactly as it
 replaces an active region -- previously `donkey-yank' was the one command
@@ -2629,7 +2695,7 @@ Consumes the bank, the way `donkey-copy' and `donkey-delete' do."
     (donkey-clear-banked-selection)
     (deactivate-mark)
     (goto-char target)
-    (donkey--clipboard-yank)
+    (donkey--paste-times (or count 1) #'donkey--clipboard-yank)
     (message "Replaced %d line%s" lines (if (= 1 lines) "" "s"))))
 
 (defun donkey--delete-banked-selection ()

@@ -784,7 +784,7 @@ yanks normally via clipboard-yank, not yank-rectangle."
       (cl-letf (((symbol-function 'use-region-p)
                  (lambda () nil))
                 ((symbol-function 'yank-pop)
-                 (lambda () (setq popped t))))
+                 (lambda (&optional _n) (setq popped t))))
         (donkey-yank-pop)))
     (should popped)))
 
@@ -801,7 +801,7 @@ in that order."
                 ((symbol-function 'delete-active-region)
                  (lambda () (push 'delete order)))
                 ((symbol-function 'yank-pop)
-                 (lambda () (push 'pop order))))
+                 (lambda (&optional _n) (push 'pop order))))
         (donkey-yank-pop)))
     (should (eq (nth 0 order) 'pop))
     (should (eq (nth 1 order) 'delete))
@@ -815,7 +815,7 @@ in that order."
     (cl-letf (((symbol-function 'use-region-p)
                (lambda () nil))
               ((symbol-function 'yank-pop)
-               (lambda () (insert "world"))))
+               (lambda (&optional _n) (insert "world"))))
       (donkey-yank-pop))
     (should (string= (buffer-substring 1 6) "world"))))
 
@@ -830,7 +830,7 @@ in that order."
               ((symbol-function 'delete-active-region)
                (lambda () (delete-region 1 6)))
               ((symbol-function 'yank-pop)
-               (lambda () (insert "hey"))))
+               (lambda (&optional _n) (insert "hey"))))
       (donkey-yank-pop))
     (should (string= (buffer-substring 1 4) "hey"))))
 
@@ -840,7 +840,7 @@ in that order."
     (cl-letf (((symbol-function 'use-region-p)
                (lambda () nil))
               ((symbol-function 'yank-pop)
-               (lambda () (insert "text"))))
+               (lambda (&optional _n) (insert "text"))))
       (donkey-yank-pop))
     (should (= (buffer-size) 4))
     (should (string= (buffer-string) "text"))))
@@ -857,14 +857,21 @@ in that order."
                 ((symbol-function 'delete-active-region)
                  (lambda () (setq deleted t)))
                 ((symbol-function 'yank-pop)
-                 (lambda () (setq popped t))))
+                 (lambda (&optional _n) (setq popped t))))
         (call-interactively #'donkey-yank-pop))
       (should deleted)
       (should popped))))
 
-(ert-deftest donkey-yank-pop-ignores-prefix-arg ()
-  "yank-pop is called regardless of prefix arg."
-  (let (popped)
+(ert-deftest donkey-yank-pop-passes-the-prefix-arg-through ()
+  "A prefix arg reaches `yank-pop' as the number of entries to reach back.
+
+Renamed from `donkey-yank-pop-ignores-prefix-arg', whose point was that a
+prefix arg does not PREVENT the pop -- it was ignored only because the
+command took no argument to receive it.  It does now: `yank-pop's own ARG
+already means how many entries to reach back, so \\[universal-argument] 3 P
+takes the third one down.  Bare \\[universal-argument] means FOUR, which
+is what this passes."
+  (let (popped-with)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -872,9 +879,9 @@ in that order."
         (cl-letf (((symbol-function 'use-region-p)
                    (lambda () nil))
                   ((symbol-function 'yank-pop)
-                   (lambda () (setq popped t))))
+                   (lambda (&optional n) (setq popped-with n))))
           (call-interactively #'donkey-yank-pop)))
-      (should popped))))
+      (should (equal popped-with 4)))))
 
 (ert-deftest donkey-yank-pop-rectangle-mode-falls-through-to-undefined ()
   "Regression test: same guard as `donkey-yank', for the same reason --
@@ -890,7 +897,7 @@ see `donkey-yank-rectangle-mode-falls-through-to-undefined'."
                 ((symbol-function 'delete-active-region)
                  (lambda () (setq deleted t)))
                 ((symbol-function 'yank-pop)
-                 (lambda () (setq popped t))))
+                 (lambda (&optional _n) (setq popped t))))
         (let ((rectangle-mark-mode t))
           (donkey-yank-pop))))
     (should (eq called-cmd 'undefined))
@@ -910,7 +917,7 @@ see `donkey-yank-rectangle-mode-falls-through-to-undefined'."
                 ((symbol-function 'delete-active-region)
                  (lambda () (setq deleted t)))
                 ((symbol-function 'yank-pop)
-                 (lambda () (setq popped t))))
+                 (lambda (&optional _n) (setq popped t))))
         (let ((rectangle-mark-mode nil))
           (donkey-yank-pop))))
     (should-not called-cmd)
@@ -933,7 +940,7 @@ pop through regardless."
       (goto-char 1)
       (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
                 ((symbol-function 'yank-pop)
-                 (lambda () (setq popped t))))
+                 (lambda (&optional _n) (setq popped t))))
         (should-error (donkey-yank-pop) :type 'user-error)))
     (should-not popped)))
 
@@ -949,7 +956,7 @@ normally."
       (goto-char 1)
       (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
                 ((symbol-function 'yank-pop)
-                 (lambda () (setq popped t))))
+                 (lambda (&optional _n) (setq popped t))))
         (donkey-yank-pop)))
     (should popped)))
 
@@ -966,7 +973,7 @@ than signalling the rectangle-specific error."
       (goto-char 1)
       (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
                 ((symbol-function 'yank-pop)
-                 (lambda () (setq popped t))))
+                 (lambda (&optional _n) (setq popped t))))
         (donkey-yank-pop)))
     (should popped)))
 
@@ -2530,6 +2537,215 @@ selected rows vanished with the kill ring still empty afterwards."
    (should (equal (buffer-string)
                   "AAA one\nBBB two\nCCC three\nDDD four\nEEE five\n"))
    (should (region-active-p))))
+
+;;; ---------------------------------------------------------------------------
+;;; Counts on paste
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-yank-count-inserts-that-many-copies ()
+  "A count on `p' inserts that many copies, as it does in vi.
+
+Emacs reads a prefix argument on `C-y' as WHICH kill-ring entry to pull
+instead.  Nothing is given up by taking the vi reading here: `C-y' is
+untouched in INSERT state, so Emacs' own meaning is still available on
+the key it belongs to."
+  (donkey-test--paste-buffer
+   (kill-new "X")
+   (goto-char (point-min))
+   (donkey-yank 3)
+   (should (equal (buffer-substring-no-properties (point-min) 4) "XXX"))))
+
+(ert-deftest donkey-yank-without-a-count-inserts-one-copy ()
+  "No count still means one."
+  (donkey-test--paste-buffer
+   (kill-new "X")
+   (goto-char (point-min))
+   (donkey-yank)
+   (should (equal (buffer-substring-no-properties (point-min) 5) "XAAA"))))
+
+(ert-deftest donkey-yank-count-of-zero-inserts-nothing ()
+  "A count of zero pastes nothing, like zero counts elsewhere."
+  (donkey-test--paste-buffer
+   (kill-new "X")
+   (goto-char (point-min))
+   (donkey-yank 0)
+   (should (equal (buffer-string)
+                  "AAA one\nBBB two\nCCC three\nDDD four\nEEE five\n"))))
+
+(ert-deftest donkey-yank-negative-count-inserts-nothing ()
+  "Negative gets the same answer as zero.
+
+A paste has no backward direction for a negative count to mean, unlike
+`donkey-delete', so there is nothing for it to do but nothing."
+  (donkey-test--paste-buffer
+   (kill-new "X")
+   (goto-char (point-min))
+   (donkey-yank -2)
+   (should (equal (buffer-string)
+                  "AAA one\nBBB two\nCCC three\nDDD four\nEEE five\n"))))
+
+(ert-deftest donkey-yank-count-over-a-region-replaces-with-copies ()
+  "The selection is replaced once, then the paste repeats."
+  (donkey-test--paste-buffer
+   (kill-new "X")
+   (goto-char (point-min))
+   (push-mark (save-excursion (donkey-test--row 2) (point)) t t)
+   (donkey-yank 3)
+   (should (equal (buffer-string)
+                  "XXXBBB two\nCCC three\nDDD four\nEEE five\n"))))
+
+(ert-deftest donkey-yank-count-of-zero-over-a-region-is-a-delete ()
+  "Replacing a selection with nothing is a delete, and says so by doing it."
+  (donkey-test--paste-buffer
+   (kill-new "X")
+   (goto-char (point-min))
+   (push-mark (save-excursion (donkey-test--row 2) (point)) t t)
+   (donkey-yank 0)
+   (should (equal (buffer-string)
+                  "BBB two\nCCC three\nDDD four\nEEE five\n"))))
+
+(ert-deftest donkey-yank-count-over-banked-lines-replaces-with-copies ()
+  "Banked lines are removed once, then the paste repeats."
+  (donkey-test--paste-buffer
+   (kill-new "ZZ\n")
+   (donkey-test--row 1) (donkey-bank-selection)
+   (donkey-test--row 3) (donkey-bank-selection)
+   (donkey-yank 2)
+   (should (equal (buffer-string) "ZZ\nZZ\nBBB two\nDDD four\nEEE five\n"))))
+
+(ert-deftest donkey-yank-pop-count-reaches-further-back ()
+  "`P' hands its count to `yank-pop', which counts entries back.
+
+No reinterpretation needed, unlike `p': reaching back through the ring is
+what popping IS, in vi and in Emacs alike."
+  (donkey-test--paste-buffer
+   (kill-new "one") (kill-new "two") (kill-new "three")
+   (goto-char (point-min))
+   (donkey-yank)
+   (setq last-command 'yank this-command 'yank-pop)
+   (donkey-yank-pop 2)
+   (should (equal (buffer-substring-no-properties (point-min) 4) "one"))))
+
+(ert-deftest donkey-yank-rectangle-count-widens-rather-than-stacking ()
+  "A count on a blockwise paste repeats each row, giving a wider block.
+
+Regression: routing the rectangle path through `donkey--paste-times'
+called `yank-rectangle' N times, and each call pastes wherever the last
+one left point -- partway down and across the previous block -- so two
+copies of a three-row block came out as a staircase.  A rectangle is a
+block of columns; repeating it means a wider block, which is also what a
+count on a blockwise paste does in vi."
+  (with-temp-buffer
+    (donkey-mode 1)
+    ;; `donkey--last-kill-rectangle-p' is deliberately global, not
+    ;; buffer-local, so a rectangle copied here would otherwise be seen by
+    ;; every later test in the run -- which is exactly what happened: three
+    ;; `donkey-yank-region-*' tests started taking the rectangle branch.
+    (let ((transient-mark-mode t) (kill-ring nil) (killed-rectangle nil)
+          (donkey--last-kill-rectangle-p nil))
+      (insert "AAA one\nBBB two\nCCC three\nDDD four\n")
+      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+        (goto-char (point-min))
+        (push-mark 20 t t)
+        (rectangle-mark-mode 1)
+        (donkey-copy)
+        (deactivate-mark)
+        (goto-char (point-max))
+        (donkey-yank 2))
+      (should (equal (buffer-string)
+                     "AAA one\nBBB two\nCCC three\nDDD four\nAAAAAA\nBBBBBB\nCCCCCC")))))
+
+(ert-deftest donkey-yank-rectangle-count-of-one-is-a-plain-paste ()
+  "Without a count the block is pasted once, exactly as before."
+  (with-temp-buffer
+    (donkey-mode 1)
+    ;; `donkey--last-kill-rectangle-p' is deliberately global, not
+    ;; buffer-local, so a rectangle copied here would otherwise be seen by
+    ;; every later test in the run -- which is exactly what happened: three
+    ;; `donkey-yank-region-*' tests started taking the rectangle branch.
+    (let ((transient-mark-mode t) (kill-ring nil) (killed-rectangle nil)
+          (donkey--last-kill-rectangle-p nil))
+      (insert "AAA one\nBBB two\nCCC three\nDDD four\n")
+      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+        (goto-char (point-min))
+        (push-mark 20 t t)
+        (rectangle-mark-mode 1)
+        (donkey-copy)
+        (deactivate-mark)
+        (goto-char (point-max))
+        (donkey-yank))
+      (should (equal (buffer-string)
+                     "AAA one\nBBB two\nCCC three\nDDD four\nAAA\nBBB\nCCC")))))
+
+(ert-deftest donkey-yank-rectangle-count-of-zero-pastes-nothing ()
+  "A count below 1 pastes nothing here too."
+  (with-temp-buffer
+    (donkey-mode 1)
+    ;; `donkey--last-kill-rectangle-p' is deliberately global, not
+    ;; buffer-local, so a rectangle copied here would otherwise be seen by
+    ;; every later test in the run -- which is exactly what happened: three
+    ;; `donkey-yank-region-*' tests started taking the rectangle branch.
+    (let ((transient-mark-mode t) (kill-ring nil) (killed-rectangle nil)
+          (donkey--last-kill-rectangle-p nil))
+      (insert "AAA one\nBBB two\nCCC three\nDDD four\n")
+      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+        (goto-char (point-min))
+        (push-mark 20 t t)
+        (rectangle-mark-mode 1)
+        (donkey-copy)
+        (deactivate-mark)
+        (goto-char (point-max))
+        (donkey-yank 0))
+      (should (equal (buffer-string)
+                     "AAA one\nBBB two\nCCC three\nDDD four\n")))))
+
+(ert-deftest donkey-banked-line-count-follows-a-split-banked-line ()
+  "Typing a newline inside a banked line makes it count as two.
+
+Regression: the count was the number of OVERLAYS, on the invariant that
+`donkey--bank-span' makes one per line.  An overlay advances with text
+inserted at its end, so a newline typed inside a banked line grows it
+over both -- and the count then reported one while `y' and `d' acted on
+two.  `donkey--bank-span' documents the same divergence for the emptied
+-buffer case that `evaporate' handles; evaporating cannot help here,
+because the text was never deleted."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (let ((transient-mark-mode t) (kill-ring nil))
+      (insert "r1 aaa\nr2 bbb\nr3 ccc\n")
+      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+        (goto-char (point-min))
+        (forward-line 1)
+        (donkey-bank-selection)
+        (should (= 1 (donkey--banked-line-count)))
+        (goto-char (point-min))
+        (forward-line 1)
+        (end-of-line)
+        (insert "\nSPLIT")
+        (should (= 2 (donkey--banked-line-count)))))))
+
+(ert-deftest donkey-banked-line-count-agrees-with-what-copy-reports ()
+  "Every message about the bank counts the same way.
+
+`donkey-copy' and `donkey-delete' report via `donkey--span-line-count';
+so does the total in `donkey-bank-selection's own message now, so the two
+cannot drift apart."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (let ((transient-mark-mode t) (kill-ring nil) shown)
+      (insert "r1 aaa\nr2 bbb\nr3 ccc\n")
+      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+        (goto-char (point-min))
+        (forward-line 1)
+        (donkey-bank-selection)
+        (goto-char (point-min))
+        (forward-line 1)
+        (end-of-line)
+        (insert "\nSPLIT"))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-copy))
+      (should (equal shown "Copied 2 lines")))))
 
 (provide 'donkey-editing-test)
 
