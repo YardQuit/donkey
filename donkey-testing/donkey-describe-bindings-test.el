@@ -937,7 +937,7 @@ which signals, and batch has no command loop to absorb it."
   "Return the current line as a string."
   (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
 
-(ert-deftest donkey-tutor-lesson-7-paste-over-a-selection-works ()
+(ert-deftest donkey-tutor-banking-paste-over-a-selection-works ()
   "The banking exercise replaces the marker line rather than pushing it down.
 
 The `V\=' step is what makes the exercise teach two things at once: the
@@ -964,6 +964,86 @@ tidier to read about than to look at."
    (should (equal (donkey-tutor-test--line) "   ---> milk"))
    (forward-line 1)
    (should (equal (donkey-tutor-test--line) "   ---> bread"))))
+
+(ert-deftest donkey-tutor-lessons-are-in-dependency-order ()
+  "No lesson uses a key that a later lesson introduces.
+
+Three forward references were found by checking this mechanically: `y\='
+and `p\=' were both used in exercises before copy-and-paste was taught,
+and `v\=' was used in an exercise having never been taught at all.  The
+fix was to move copy-and-paste ahead of banking -- banking is ABOUT
+copying several things at once, so it cannot be demonstrated first --
+and to give `v\=' its own place in the selecting lesson."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let* ((text (buffer-string))
+                 (pos (lambda (s) (string-match (regexp-quote s) text))))
+            ;; copy and paste before banking, which depends on them
+            (should (< (funcall pos "Lesson 7 -- copy and paste")
+                       (funcall pos "Lesson 8 -- banking")))
+            ;; v is taught in the selecting lesson, before it is used
+            (should (< (funcall pos "drops a mark and starts a selection")
+                       (funcall pos "select the \"bread\" line")))
+            ;; and the whole sequence is still numbered 1..10 in order
+            (let ((n 0))
+              (dolist (heading '("Lesson 1 -- " "Lesson 2 -- " "Lesson 3 -- "
+                                 "Lesson 4 -- " "Lesson 5 -- " "Lesson 6 -- "
+                                 "Lesson 7 -- " "Lesson 8 -- " "Lesson 9 -- "
+                                 "Lesson 10 -- "))
+                (let ((at (funcall pos heading)))
+                  (should at)
+                  (should (> at n))
+                  (setq n at)))))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-lesson-2-tells-the-truth-about-bare-digits ()
+  "A bare digit drops the count and runs the motion once.
+
+The lesson first said `3 j\=' \"moves nowhere\", which is wrong and the
+comfortable half of the truth.  Running it shows the digit is rejected
+with a message and the motion then runs on its own, so the reader moves
+ONE line while believing they asked for three -- a silently wrong result
+rather than a visibly absent one."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> one two three four five")
+   (let ((l0 (line-number-at-pos)))
+     (condition-case nil (execute-kbd-macro (kbd "3 j")) (error nil) (quit nil))
+     (should (= (line-number-at-pos) (1+ l0)))))
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should (string-match-p "move ONE line instead of three" (buffer-string)))
+          (should-not (string-match-p "moves nowhere" (buffer-string)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-lesson-5-teaches-v-before-it-is-used ()
+  "`v\=' has its own explanation and exercise, not just a passing mention."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> Select part of this line by hand")
+   (search-forward "---> ")
+   (donkey-tutor-test--keys "v l l l l l")
+   (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                  "Selec"))
+   (donkey-tutor-test--keys "v")
+   (should-not (use-region-p))))
+
+(ert-deftest donkey-tutor-lesson-6-explains-the-invisible-newline ()
+  "Lesson 6 warns that a V selection takes one character more than it shows.
+
+It is the tutor's counterpart to the note already in the README: the
+highlight stops at the end of the last line, so the newline never looks
+selected, and a reader who notices reports it as a bug."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((text (buffer-string)))
+            (should (string-match-p "never LOOKS selected" text))
+            (should (string-match-p "one character shorter than what it takes" text)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 (ert-deftest donkey-tutor-lesson-6-teaches-joining ()
   "Lesson 6 covers `g j', with its own exercise and practice lines."
