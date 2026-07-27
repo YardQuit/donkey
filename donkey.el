@@ -3361,7 +3361,7 @@ In NORMAL state, four things differ:
     it is NOT inert: it still opens the file, visits the entry, follows
     the link, because the key is handed back to the mode that owns it.
   - BACKSPACE and DELETE do nothing, so a slip cannot damage the buffer
-    from NORMAL state.  Use \\[donkey-delete].
+    from NORMAL state.  Use DONKEY-DELETE-KEYS.
 
 >> Try it: press \\`C-x' \\`C-s' below, or \\[execute-extended-command] and then RET to abort.  Neither is
    DONKEY's, and both work from NORMAL state exactly as usual.
@@ -3391,7 +3391,43 @@ equipped to work out why.
 
 Written with `substitute-command-keys' escapes rather than literal keys,
 so a reader who has rebound anything is taught the keys they actually
-have rather than the ones this file was written with.")
+have rather than the ones this file was written with.
+
+One token is not a `substitute-command-keys' escape:
+\"DONKEY-DELETE-KEYS\" is replaced by `donkey--tutor-delete-keys' before
+substitution runs.  `\\\\[donkey-delete]' would name only one of the two
+keys it is on -- `substitute-command-keys' picks whichever it finds
+first, which is \"x\" -- so the tutor never mentioned \"d\" at all,
+despite it being the Helix binding and the one half the audience will
+reach for.")
+
+(defun donkey--tutor-delete-keys ()
+  "Return the keys running `donkey-delete', as prose: \"d or x\".
+
+Computed rather than written into `donkey--tutor-content' so a reader
+who has rebound either key is still taught the keys they actually have
+-- the same promise the `substitute-command-keys' escapes make, which
+`\\\\[donkey-delete]' cannot keep here because it names one binding and
+this command has two.
+
+Sorted, because `where-is-internal' returns keymap order: that put the
+vi key ahead of the Helix one purely by where the two `keymap-set'
+calls happen to sit, and would silently reorder the sentence if they
+were ever swapped.
+
+Falls back to naming the command when it has no keys at all, which is
+what `substitute-command-keys' does for an unbound command and is
+better than a sentence ending in nothing."
+  (let ((keys (sort (mapcar #'key-description
+                            (where-is-internal #'donkey-delete
+                                               donkey-normal-mode-map))
+                    #'string<)))
+    (cond
+     ((null keys) "\\[donkey-delete]")
+     ((null (cdr keys)) (car keys))
+     (t (concat (mapconcat #'identity (butlast keys) ", ")
+                " or "
+                (car (last keys)))))))
 
 (defun donkey-tutor ()
   "Open the DONKEY tutor: a buffer to learn DONKEY by editing it.
@@ -3421,7 +3457,14 @@ outcome than retyping a lesson."
           ;; worst for exactly the commands a new reader most needs named.
           (donkey-mode 1)
           (donkey-enter-normal)
-          (insert (substitute-command-keys donkey--tutor-content))
+          ;; Before `substitute-command-keys', and with the keymap already
+          ;; live above, so `donkey--tutor-delete-keys' resolves against
+          ;; the same maps every other key in the tutor does.
+          (insert (substitute-command-keys
+                   (replace-regexp-in-string
+                    "DONKEY-DELETE-KEYS"
+                    (donkey--tutor-delete-keys)
+                    donkey--tutor-content t t)))
           (goto-char (point-min))
           (set-buffer-modified-p nil))
         (pop-to-buffer buf)))))

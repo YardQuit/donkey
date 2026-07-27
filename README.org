@@ -27,8 +27,19 @@ Donkey is an opinionated modal editing minor-mode for Emacs, that
 leverages Emacs' own built-in functions wherever possible. There is no
 overlay state — just a minor-mode keymap that toggles on and off.
 
+It is meant to be an *addition* to Emacs rather than a replacement.
+What it provides are improvements layered on top of what is already
+there; your existing keys, packages and habits are meant to survive
+intact. A modal editor cannot be entirely free of friction, so the few
+native behaviours it does take are named in full below rather than left
+to be discovered.
+
 ** Design Philosophy
 
+- An addition to Emacs, not a replacement — improvements layered on
+  top, never a reimplementation of what already works
+- As little friction with native Emacs as possible; whatever cannot be
+  kept is named in full rather than left to surprise you
 - Leverage Emacs native commands and built-in functions wherever possible
 - Custom commands only where beneficial
 - No overlay-based state tracking — just minor-mode keymaps
@@ -38,14 +49,12 @@ overlay state — just a minor-mode keymap that toggles on and off.
 
 ** What DONKEY takes from native Emacs
 
-The aim is as little friction with Emacs as possible. What DONKEY adds
-is meant to be an *addition*, not a replacement: your =C-x= and =C-c=
-prefixes, =M-x=, =C-h=, isearch, the arrow keys, every =M-= binding and
-every package you have bound work exactly as they always did, in both
-states.
+Concretely: your =C-x= and =C-c= prefixes, =M-x=, =C-h=, isearch, the
+arrow keys, every =M-= binding and every package you have bound work
+exactly as they always did, in both states.
 
-A modal editor cannot be free, though, and it is better to name the
-price than to let you discover it. This is the complete list.
+What follows is the complete list of what does not — better named than
+discovered.
 
 *** Insert state
 

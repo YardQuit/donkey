@@ -745,4 +745,68 @@ this map would make that false."
           (should (eq (key-binding (kbd (car pair))) (cadr pair)))))
     (donkey-mode -1)))
 
+;;; ---------------------------------------------------------------------------
+;;; The tutor names BOTH delete keys
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-tutor-names-both-delete-keys ()
+  "The tutor says \"d or x\", not just one of them.
+
+`\\=\\[donkey-delete]' names whichever binding `substitute-command-keys'
+finds first -- \"x\" -- so the tutor never mentioned \"d\" at all,
+despite it being the Helix binding and the one half the audience
+reaches for."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should (string-match-p "Use d or x\\." (buffer-string)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-delete-keys-placeholder-is-always-replaced ()
+  "No DONKEY-DELETE-KEYS token may survive into the rendered tutor.
+
+It is not a `substitute-command-keys' escape, so nothing else would
+catch it -- a reader would simply see the raw token."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should-not (string-match-p "DONKEY-DELETE-KEYS" (buffer-string)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-delete-keys-follow-a-rebinding ()
+  "A reader who rebound the delete keys is taught the keys they have.
+
+That is the promise the `substitute-command-keys' escapes make, and the
+reason this is computed rather than written into the tutor text."
+  (let ((map (copy-keymap donkey-normal-mode-map)))
+    (define-key map "d" nil)
+    (define-key map "x" nil)
+    (keymap-set map "Z" #'donkey-delete)
+    (cl-letf (((symbol-function 'donkey--tutor-delete-keys)
+               (lambda ()
+                 (let ((keys (sort (mapcar #'key-description
+                                           (where-is-internal #'donkey-delete map))
+                                   #'string<)))
+                   (cond ((null keys) "\\[donkey-delete]")
+                         ((null (cdr keys)) (car keys))
+                         (t (concat (mapconcat #'identity (butlast keys) ", ")
+                                    " or " (car (last keys)))))))))
+      (unwind-protect
+          (progn
+            (donkey-tutor)
+            (with-current-buffer "*DONKEY Tutor*"
+              (should (string-match-p "Use Z\\." (buffer-string)))
+              (should-not (string-match-p "Use d or x\\." (buffer-string)))))
+        (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))))
+
+(ert-deftest donkey-tutor-delete-keys-are-sorted-not-keymap-ordered ()
+  "The order is deterministic, not whichever `keymap-set' call came first.
+
+`where-is-internal' returns keymap order, which put the vi key ahead of
+the Helix one by accident of layout and would have reordered the
+sentence if the two `keymap-set' calls were ever swapped."
+  (should (equal (donkey--tutor-delete-keys) "d or x")))
+
 ;;; donkey-describe-bindings-test.el ends here
