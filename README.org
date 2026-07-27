@@ -229,8 +229,14 @@ process interaction.
 | =J= | =donkey-visual-next-line=     | Move down, extending visual selection |
 | =K= | =donkey-visual-previous-line= | Move up, extending visual selection   |
 | =V= | =donkey-visual-line-toggle=   | Toggle visual line selection          |
-| =v= | =donkey-set-mark=           | Toggle mark                           |
+| =v= | =donkey-set-mark=           | Drop a mark and start selecting; =C-g= lets go |
 | =(= =[= ={= ="= ='= =`= | =donkey-wrap-region= | Wrap active region with delimiter, see below |
+
+=V= and =m v= toggle: pressing either a second time cancels the
+selection it started. =v= does not. It is =set-mark-command=, so a
+second press drops a fresh mark where point is standing and begins
+selecting again from there — the old selection is gone, but you are
+still selecting. Use =C-g= to let go of a =v= selection.
 
 Within a visual-line session (started with =V=), =J= and =K= extend the
 selection by whole lines, always anchored to the line =V= was pressed

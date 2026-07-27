@@ -2481,7 +2481,19 @@ matching how `forward-sexp' reads its argument."
 (defun donkey-set-mark ()
   "Call `set-mark-command', disabling a stale `rectangle-mark-mode' first.
 
-See `donkey--ensure-non-rectangle-selection' for why."
+See `donkey--ensure-non-rectangle-selection' for why.
+
+This does NOT toggle, unlike its two neighbours `donkey-visual-line-toggle'
+\(\"V\") and `donkey-rectangle-mark-mode' (\"m v\"), which both cancel the
+selection they started when pressed again.  `set-mark-command' re-anchors:
+a second press drops a fresh mark at point and carries on selecting from
+there, so the previous selection is discarded but the buffer is still in
+a selecting state.  \\[keyboard-quit] is what lets go.
+
+Left as stock behaviour deliberately -- \"v\" is `set-mark-command' and
+nothing else, so `C-u v' still pops the mark ring and anything built on
+`set-mark-command' keeps working.  Documented in the tutor and the README
+rather than papered over here."
   (interactive)
   (donkey--ensure-non-rectangle-selection)
   (call-interactively #'set-mark-command))
@@ -3202,6 +3214,11 @@ INSERT state they type.  The modeline shows which: DONKEY[N] or DONKEY[I].
 If a key ever does something you did not expect, you are probably in the
 other state -- press \\`C-g' to get back to NORMAL.
 
+\\`C-g' also cancels a selection, and it is worth pressing at the end of
+any lesson that made one.  A selection left active changes what the next
+lesson's keys do: several of them act on the selection when there is one
+and on the character or line at point when there is not.
+
 You may also see DONKEY[E] one day, in a terminal or shell buffer.  That
 is INSERT state with NORMAL state permanently out of reach, so none of
 what follows applies there and \\`C-g' quits rather than switching state.
@@ -3329,10 +3346,14 @@ Lesson 5 -- selecting things
 ----------------------------
 
 \\[donkey-set-mark] drops a mark and starts a selection that grows as you move: press
-it, move, and everything between is selected.  Press it again to let go.
+it, move, and everything between is selected.  \\`C-g' lets go.
+
+Pressing \\[donkey-set-mark] a second time does not let go.  It drops a fresh mark
+where you are standing and starts a new selection from there, so the
+one you had is gone but you are still selecting.
 
 >> Put the cursor at the start of the ---> line, press \\[donkey-set-mark], then move
-   right with \\[forward-char] and down with \\[next-line].  Press \\[donkey-set-mark] again to drop the
+   right with \\[forward-char] and down with \\[next-line].  Press \\`C-g' to drop the
    selection.
 
    ---> Select part of this line by hand before meeting the shortcuts.

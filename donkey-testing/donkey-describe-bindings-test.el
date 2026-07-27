@@ -1429,4 +1429,79 @@ an earlier draft put the keys first and rendered ragged."
             (should (= 1 (length (delete-dups offsets)))))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
+
+(ert-deftest donkey-tutor-lesson-5-v-drop-step-really-drops-the-selection ()
+  "Lesson 5's drop step leaves nothing selected, and `v' would not have.
+
+Reported live: the lesson said to press \\=`v\\=' again to let go, and it does
+not let go -- \\=`v\\=' is `set-mark-command', which re-anchors.  A second press
+drops a fresh mark at point and carries on selecting, so a reader
+following the old wording moved to Lesson 6 with a selection still
+active and the next lesson's keys acting on it.
+
+Both halves are pinned: the corrected key clears the selection, and the
+key the lesson used to name does not."
+  ;; The step as the lesson now writes it.
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> Select part of this line")
+   (donkey-tutor-test--keys "v")
+   (should (region-active-p))
+   (donkey-tutor-test--keys "l l l j")
+   (should (region-active-p))
+   (donkey-tutor-test--keys "C-g")
+   (should-not (region-active-p)))
+  ;; The step as it used to be written.
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> Select part of this line")
+   (donkey-tutor-test--keys "v")
+   (donkey-tutor-test--keys "l l l j")
+   (let ((anchor (mark t)))
+     (donkey-tutor-test--keys "v")
+     (should mark-active)
+     (should-not (equal (mark t) anchor))
+     (should (= (mark t) (point))))))
+
+(ert-deftest donkey-tutor-says-v-does-not-toggle ()
+  "The lesson states that a second `v' re-anchors instead of letting go.
+
+The old wording was not merely imprecise, it told the reader to press a
+key that does the opposite of what the sentence promised.  Pinned as
+prose because the behaviour is stock `set-mark-command' and is staying
+that way -- the tutor is where the correction lives."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-min))
+          (should (search-forward "Lesson 5 -- selecting things" nil t))
+          (let ((lesson-5 (point)))
+            (should (search-forward "does not let go" nil t))
+            (goto-char lesson-5)
+            (should (search-forward "C-g to drop the" nil t))
+            (goto-char lesson-5)
+            ;; The instruction that was wrong must not have come back.
+            (should-not (search-forward "again to drop the" nil t)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-warns-early-that-c-g-clears-a-selection ()
+  "The opening says `C-g' cancels a selection, before any lesson makes one.
+
+Requested after the `v' correction: a selection carried into the next
+lesson changes what its keys do, so the reader needs this before Lesson
+5, not inside it.  Pinned to the opening rather than to the file at
+large -- stating it only in Lesson 5 would be stating it too late."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-min))
+          (let ((lesson-1 (save-excursion
+                            (search-forward "Lesson 1 -- moving around")
+                            (point))))
+            (goto-char (point-min))
+            (let ((hit (search-forward "also cancels a selection" nil t)))
+              (should hit)
+              (should (< hit lesson-1))))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
 ;;; donkey-describe-bindings-test.el ends here
