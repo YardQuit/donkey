@@ -621,6 +621,29 @@ the \\=`KEY\\=' markup, which carries the same face."
 ;;; The tutor's claims about native Emacs must stay true
 ;;; ---------------------------------------------------------------------------
 
+(ert-deftest donkey-tutor-intro-mentions-E-and-its-forward-reference-resolves ()
+  "The intro names DONKEY[E] and points at a section that really explains it.
+
+A cross-reference by name is the kind of claim that rots quietly: rename
+the section and the intro sends the reader nowhere.  The HEADING is what
+is matched here, not the bare phrase -- matching the phrase finds the
+intro\='s own quoted mention of it and proves nothing, which is how the
+first version of this test passed against a deliberately renamed
+section."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let* ((text (buffer-string))
+                 (intro (string-match "DONKEY\\[E\\]" text))
+                 (section (string-match "^Your Emacs still works\n-+$" text)))
+            (should intro)
+            (should section)
+            (should (< intro section))
+            ;; the section it points at really does explain the indicator
+            (should (string-match "DONKEY\\[E\\]" text section)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
 (ert-deftest donkey-tutor-claim-emacs-keys-still-work ()
   "Every key the tutor promises is untouched must really be untouched.
 

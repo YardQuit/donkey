@@ -3159,6 +3159,12 @@ INSERT state they type.  The modeline shows which: DONKEY[N] or DONKEY[I].
 If a key ever does something you did not expect, you are probably in the
 other state -- press \\`C-g' to get back to NORMAL.
 
+You may also see DONKEY[E] one day, in a terminal or shell buffer.  That
+is INSERT state with NORMAL state permanently out of reach, so none of
+what follows applies there and \\`C-g' quits rather than switching state.
+Nothing in this tutor will put you in it; \"Your Emacs still works\" at the
+end says what it is for.
+
 To stop, kill this buffer.
 
 
