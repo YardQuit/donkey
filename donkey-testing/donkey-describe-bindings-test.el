@@ -750,7 +750,7 @@ this map would make that false."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-tutor-names-both-delete-keys ()
-  "The tutor says \"d or x\", not just one of them.
+  "The tutor names BOTH delete keys, everywhere, not just one of them.
 
 `\\=\\[donkey-delete]' names whichever binding `substitute-command-keys'
 finds first -- \"x\" -- so the tutor never mentioned \"d\" at all,
@@ -760,7 +760,13 @@ reaches for."
       (progn
         (donkey-tutor)
         (with-current-buffer "*DONKEY Tutor*"
-          (should (string-match-p "Use d or x\\." (buffer-string)))))
+          (let ((text (buffer-string)))
+            (should (string-match-p "Use d/x\\." text))
+            ;; and not only in that one sentence: every place the tutor
+            ;; names the delete command now names both keys.
+            (should (>= (cl-count-if (lambda (l) (string-match-p "d/x" l))
+                                     (split-string text "\n"))
+                        10)))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 (ert-deftest donkey-tutor-delete-keys-placeholder-is-always-replaced ()
@@ -798,7 +804,7 @@ reason this is computed rather than written into the tutor text."
             (donkey-tutor)
             (with-current-buffer "*DONKEY Tutor*"
               (should (string-match-p "Use Z\\." (buffer-string)))
-              (should-not (string-match-p "Use d or x\\." (buffer-string)))))
+              (should-not (string-match-p "Use d/x\\." (buffer-string)))))
         (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))))
 
 (ert-deftest donkey-tutor-delete-keys-render-as-keys-not-prose ()
@@ -830,7 +836,7 @@ sentence if the two `keymap-set' calls were ever swapped.
 The keys come back wrapped in the key-quote escape, unresolved: this
 runs BEFORE `substitute-command-keys', which is what lets them pick up
 the `help-key-binding' face."
-  (should (equal (donkey--tutor-delete-keys) "\\`d' or \\`x'")))
+  (should (equal (donkey--tutor-delete-keys) "\\`d'/\\`x'")))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Lessons 9 and 10 teach what the code actually does
@@ -930,6 +936,88 @@ which signals, and batch has no command loop to absorb it."
 (defun donkey-tutor-test--line ()
   "Return the current line as a string."
   (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
+
+(ert-deftest donkey-tutor-lesson-7-paste-over-a-selection-works ()
+  "The banking exercise replaces the marker line rather than pushing it down.
+
+The `V\=' step is what makes the exercise teach two things at once: the
+banked lines arrive together, AND a paste replaces whatever is selected.
+Without it the marker line survives underneath the pasted pair, which is
+tidier to read about than to look at."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> milk")
+   (donkey-tutor-test--keys "m l")
+   (donkey-tutor-test--goline "---> bread")
+   (donkey-tutor-test--keys "m l")
+   (donkey-tutor-test--keys "y")
+   (should (equal (car kill-ring) "   ---> milk\n   ---> bread\n"))
+   ;; the practice line is the SECOND "(paste here)" -- the first is in
+   ;; the instruction text above it
+   (donkey-tutor-test--goline "(paste here)" 2)
+   (donkey-tutor-test--keys "V p")
+   ;; The marker line is replaced, not pushed down: only the mention
+   ;; inside the instruction text above it is left.
+   (should (= 1 (save-excursion
+                  (goto-char (point-min))
+                  (cl-loop while (search-forward "(paste here)" nil t) count t))))
+   (donkey-tutor-test--goline "---> milk" 2)
+   (should (equal (donkey-tutor-test--line) "   ---> milk"))
+   (forward-line 1)
+   (should (equal (donkey-tutor-test--line) "   ---> bread"))))
+
+(ert-deftest donkey-tutor-lesson-6-teaches-joining ()
+  "Lesson 6 covers `g j', with its own exercise and practice lines."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((text (buffer-string)))
+            (should (string-match-p "Lines can be put back together" text))
+            (should (string-match-p "---> a sentence broken" text))
+            ;; the direction matters: it must say the line BELOW comes up
+            (should (string-match-p "line BELOW up onto the one you are on" text))
+            ;; and that Emacs\' own join, the other way, still works
+            (should (string-match-p "M-\\^" text)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-lesson-6-join-exercise-works-with-real-keys ()
+  "The `g j' exercise and its count claim both do what the lesson says."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> a sentence broken")
+   (donkey-tutor-test--keys "g j")
+   (should (equal (donkey-tutor-test--line)
+                  "   ---> a sentence broken ---> across three"))
+   (donkey-tutor-test--keys "g j")
+   (should (equal (donkey-tutor-test--line)
+                  "   ---> a sentence broken ---> across three ---> separate lines")))
+  ;; "A count joins that many lines at once" -- same result in one press.
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> a sentence broken")
+   (donkey-tutor-test--keys "C-u 2 g j")
+   (should (equal (donkey-tutor-test--line)
+                  "   ---> a sentence broken ---> across three ---> separate lines"))))
+
+(ert-deftest donkey-tutor-both-delete-keys-really-work ()
+  "Every exercise the tutor gives for the delete command works on both keys.
+
+The tutor now names them as \"d/x\" throughout, so a reader may reach for
+either.  Pinned because the prose promising both is only honest if both
+are actually bound to the same command."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> Thiis liine")
+   (search-forward "Thi")
+   (donkey-tutor-test--keys "x")
+   (should (string-match-p "This liine" (donkey-tutor-test--line))))
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> Thiis liine")
+   (search-forward "Thi")
+   (donkey-tutor-test--keys "d")
+   (should (string-match-p "This liine" (donkey-tutor-test--line))))
+  ;; and on the whole-line exercise too
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> first line to remove")
+   (donkey-tutor-test--keys "V J J d")
+   (should-not (string-match-p "line to remove" (buffer-string)))))
 
 (ert-deftest donkey-tutor-lesson-9-exercise-works-with-real-keys ()
   "The Lesson 9 exercise does what it says, driven by actual keys.

@@ -3207,7 +3207,7 @@ thing: how many.  Give it as C-u N before the key.
    ---> one two three four five six seven eight nine ten
 
 Counts work the same way on the editing commands you are about to meet,
-so \\`C-u 3' \\[donkey-delete] deletes three characters and \\`C-u 2' \\[donkey-mark-word]
+so \\`C-u 3' DONKEY-DELETE-KEYS deletes three characters and \\`C-u 2' \\[donkey-mark-word]
 selects two words.
 
 
@@ -3230,10 +3230,10 @@ and Emacs behaves exactly as it always does.
 Lesson 4 -- deleting and changing
 ---------------------------------
 
-    \\[donkey-delete] delete the character under the cursor, or the selection
-    \\[donkey-change] change it -- deletes, then drops you into INSERT
+    DONKEY-DELETE-KEYS delete the character under the cursor, or the selection
+    \\[donkey-change]   change it -- deletes, then drops you into INSERT
 
->> Fix the doubled letters on the ---> line using \\[donkey-delete].
+>> Fix the doubled letters on the ---> line using DONKEY-DELETE-KEYS.
 
    ---> Thiis liine haas extraa letterss in itt.
 
@@ -3298,12 +3298,31 @@ Lesson 6 -- whole lines
 \\[donkey-visual-line-toggle] starts a line selection anchored on the current line.  \\[donkey-visual-next-line] and
 \\[donkey-visual-previous-line] then grow it a whole line at a time, and they take counts too.
 
->> Put the cursor on the first ---> line, press \\[donkey-visual-line-toggle], then \\[donkey-visual-next-line] twice, then \\[donkey-delete].
+>> Put the cursor on the first ---> line, press \\[donkey-visual-line-toggle], then \\[donkey-visual-next-line] twice, then DONKEY-DELETE-KEYS.
    All three lines go, leaving no blank behind.
 
    ---> first line to remove
    ---> second line to remove
    ---> third line to remove
+
+Lines can be put back together as well as taken apart.  \\[donkey-join-line] pulls the
+line BELOW up onto the one you are on, tidying the whitespace at the
+join -- the direction you want when you are sitting on a line deciding
+to absorb what follows.
+
+>> Put the cursor on the first ---> line below and press \\[donkey-join-line].  The
+   second line joins it.  Press it again and the third comes up too.
+
+   ---> a sentence broken
+   ---> across three
+   ---> separate lines
+
+A count joins that many lines at once, so \\`C-u 2' \\[donkey-join-line] from the first
+line would have done both in one go.
+
+Emacs\\=' own \\`M-^' is untouched and joins the other way -- it pulls the
+line you are ON up onto the one above.  Every Meta binding still works
+here, so both directions are available.
 
 
 Lesson 7 -- banking, which is DONKEY's own idea
@@ -3318,12 +3337,17 @@ aside lines from anywhere in the buffer and act on all of them at once.
     \\[donkey-clear-banked-selection] discard every bank
 
 Banked lines stay highlighted while you carry on moving around.  When you
-press \\[donkey-copy] or \\[donkey-delete], every banked line is taken at once, as a single
+press \\[donkey-copy] or DONKEY-DELETE-KEYS, every banked line is taken at once, as a single
 piece, in the order they appear in the buffer.
 
 >> Bank the first and third shopping lines below with \\[donkey-bank-selection], then press \\[donkey-copy].
-   The message reads \"Copied 2 lines\".  Move to the (paste here) line and
-   press \\[donkey-yank] -- both arrive together.
+   The message reads \"Copied 2 lines\".  Now put the cursor on the
+   (paste here) line, press \\[donkey-visual-line-toggle] to select it, and press \\[donkey-yank]: both
+   banked lines arrive at once, and the line you had selected is gone.
+
+   That is the second thing to notice -- pasting REPLACES whatever is
+   selected.  Without the \\[donkey-visual-line-toggle] the two lines would simply have been
+   inserted, leaving the marker line sitting underneath them.
 
    ---> milk
    ---> nails
@@ -3341,7 +3365,7 @@ to be banked explicitly.
 Lesson 8 -- copy and paste
 --------------------------
 
-    \\[donkey-copy] copy      \\[donkey-delete] cut      \\[donkey-yank] paste      \\[donkey-yank-pop] paste the entry before
+    \\[donkey-copy] copy    DONKEY-DELETE-KEYS cut    \\[donkey-yank] paste    \\[donkey-yank-pop] paste the entry before
 
 A count on \\[donkey-yank] pastes that many copies.
 
@@ -3365,7 +3389,7 @@ a table, or the leading characters of a block of lines.
 
 >> Put the cursor on the first \"1\" below, press \\[donkey-rectangle-mark-mode], then \\[next-line] twice and
    \\[forward-char] twice.  Only the block of digits is highlighted, not the
-   words.  Press \\[donkey-delete] to cut it out.
+   words.  Press DONKEY-DELETE-KEYS to cut it out.
 
    Count the presses off the highlight rather than off the characters:
    the anchor column counts as one, so reaching the third digit takes two
@@ -3399,8 +3423,8 @@ on both at once, so DONKEY has one rule:
 
     THE SELECTION YOU ARE LOOKING AT WINS.  THE BANK IS THE FALLBACK.
 
-    with a rectangle drawn    \\[donkey-copy] and \\[donkey-delete] take the rectangle; banks stay
-    with no rectangle drawn   \\[donkey-copy] and \\[donkey-delete] take the banked lines
+    with a rectangle drawn    \\[donkey-copy] and DONKEY-DELETE-KEYS take the rectangle; banks stay
+    with no rectangle drawn   \\[donkey-copy] and DONKEY-DELETE-KEYS take the banked lines
     with lines banked         \\[donkey-yank] replaces the banked lines
     with nothing banked       \\[donkey-yank] pastes the rectangle
 
@@ -3534,9 +3558,7 @@ better than a sentence ending in nothing."
     (cond
      ((null keys) "\\[donkey-delete]")
      ((null (cdr keys)) (car keys))
-     (t (concat (mapconcat #'identity (butlast keys) ", ")
-                " or "
-                (car (last keys)))))))
+     (t (mapconcat #'identity keys "/")))))
 
 (defun donkey-tutor ()
   "Open the DONKEY tutor: a buffer to learn DONKEY by editing it.
