@@ -701,9 +701,10 @@ are absences."
           (should (eq (key-binding (kbd d)) 'undefined)))
         ;; 3. RET is DONKEY's.
         (should (eq (key-binding (kbd "RET")) #'donkey-enter-dwim))
-        ;; 4. Backspace and Delete do nothing.
-        (should (eq (key-binding [backspace]) #'ignore))
-        (should (eq (key-binding [delete]) #'ignore)))
+        ;; 4. Backspace and Delete do nothing -- under every key name they
+        ;; arrive as, graphical and terminal alike.
+        (dolist (key (list [backspace] [delete] [?\C-?] [deletechar]))
+          (should (eq (key-binding key) #'ignore))))
     (donkey-mode -1)))
 
 (ert-deftest donkey-tutor-claim-no-fifth-shadowed-emacs-command ()
@@ -712,8 +713,17 @@ are absences."
 Resolves every leaf of `donkey-normal-mode-map' against what a plain
 `text-mode' buffer would do with the same keys.  Anything that differs,
 and whose Emacs meaning is a real command rather than self-insertion,
-must be one the tutor and README already name."
-  (let ((documented '("RET" "<backspace>" "<delete>"))
+must be one the tutor and README already name.
+
+DEL and <deletechar> joined the list when the BACKSPACE/DELETE block was
+extended to cover the terminal key names as well as the graphical ones.
+They are the two entries this test can actually catch: `key-binding\='
+applies no `function-key-map\=' translation, so <backspace> and <delete>
+resolve to nil in a vanilla buffer and slip through the filter -- they
+are listed for completeness and checked by name in the test above.  This
+test earned its keep on that change, failing the moment the keymap grew
+past what the docs described."
+  (let ((documented '("RET" "<backspace>" "<delete>" "DEL" "<deletechar>"))
         (found '()))
     (cl-labels
         ((walk (map prefix)

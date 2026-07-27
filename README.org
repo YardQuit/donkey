@@ -63,9 +63,9 @@ instead of running =keyboard-quit=. It still deactivates the mark, and
 in the minibuffer or an excluded mode it hands off to the real
 =keyboard-quit=, so the escape hatch is intact where you need it.
 
-Two things =keyboard-quit= does that this does not: it does not signal
-a =quit= condition, and it does not stop a keyboard macro that is being
-recorded. Everything else you reach for =C-g= for is untouched —
+It also stops a keyboard macro that is being recorded, the way
+=keyboard-quit= does. The one thing it still does not do is signal a
+=quit= condition. Everything else you reach for =C-g= for is untouched —
 interrupting a running command is handled below the keymap, isearch has
 its own, and =C-x C-g= is a different key sequence.
 
@@ -80,6 +80,11 @@ Normal state.
 | Digits =0=–=9=          | insert themselves               | unbound; use =C-u N=    |
 | =RET=                   | =newline=                       | nothing, in an editing buffer |
 | =BACKSPACE= / =DELETE=  | delete a character              | nothing                 |
+
+(=BACKSPACE= and =DELETE= are blocked under all four of the key names
+they arrive as — =<backspace>= and =<delete>= on a graphical frame,
+=DEL= and =<deletechar>= in a terminal — so the block behaves the same
+whichever way you run Emacs.)
 
 The first is the whole point of a modal editor rather than a cost. The
 others are worth knowing:
