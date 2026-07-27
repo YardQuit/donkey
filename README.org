@@ -307,6 +307,13 @@ this one. Emacs' own =M-^= goes the other way — pulling the current
 line up onto the previous one — and is untouched, since every =M-= key
 falls through in Normal state.
 
+On the last line there is nothing below to pull up, so nothing happens
+and it says so. Left to =join-line= this quietly removed the buffer's
+final newline instead — the "line" below the last one is the empty
+position after it — with no visible change to show for it until a diff
+reported =\\ No newline at end of file=. A count that overshoots stops
+there too.
+
 This moved off =C-j=, and changed direction with it. =C-j= looks free
 but is not: globally it is =electric-newline-and-maybe-indent=,
 and in =*scratch*= or any =lisp-interaction-mode= buffer it is
