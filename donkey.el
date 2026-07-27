@@ -89,6 +89,19 @@ caught even when only its parent mode is listed."
   "Return non-nil if the current major mode is in `donkey-excluded-modes'."
   (donkey--major-mode-in-p donkey-excluded-modes))
 
+(defun donkey--insert-state-lighter ()
+  "Return the modeline text for Insert state in the current buffer.
+
+\" DONKEY[E]\" in a `donkey-excluded-modes' buffer, \" DONKEY[I]\"
+everywhere else.  See `donkey-insert-mode' for why the two are told
+apart at all.
+
+One function rather than the same expression in two places:
+`donkey-insert-mode's lighter and `donkey-indicator' both need it, and
+they are four hundred lines apart, so a change to one would not
+obviously want the other."
+  (if (donkey--excluded-mode-p) " DONKEY[E]" " DONKEY[I]"))
+
 (defun donkey--handle-non-editing-buffer ()
   "Bounce straight back to Insert state in an excluded major mode.
 
@@ -1449,11 +1462,41 @@ COUNT joins that many following lines, so `C-u 3 g j' collapses three
 lines into this one.  A COUNT below 1 joins nothing:
 `join-line' reads any nil-or-non-positive argument as \"join to the
 PREVIOUS line\" instead, which would silently reverse the direction of
-a command the user asked to do less of."
+a command the user asked to do less of.
+
+On the last line there is nothing to pull up and nothing happens.  Left
+to `join-line' this quietly ate the buffer's final newline instead: the
+\"line\" below the last one is the empty position after it, and joining
+that removes the newline separating them.  Nothing visible changes --
+the screen looks identical and point sits at `point-max' either way --
+so the first sign is a diff reporting \"\\\\ No newline at end of file\"
+later on.  A count that overshoots hit the same thing on its last
+iteration.
+
+vi's `J' stops at the last line for the same reason, and every other
+whole-line command here already leaves the final newline alone: `V d',
+`V y', a banked copy and `D' were all checked."
   (interactive "p")
-  (let ((n (or count 1)))
-    (dotimes (_ (max 0 n))
-      (join-line 1))))
+  (let ((n (max 0 (or count 1)))
+        (joined 0))
+    (while (and (> n 0) (not (donkey--no-line-below-p)))
+      (join-line 1)
+      (setq joined (1+ joined)
+            n (1- n)))
+    (when (and (zerop joined) (> (or count 1) 0))
+      (message "No line below to join"))))
+
+(defun donkey--no-line-below-p ()
+  "Return non-nil when no line follows the one point is on.
+
+True on the last line whether or not the buffer ends in a newline: for
+`\"a\\n\"' the position after `forward-line' is `point-max' because the
+final newline ends the only line, and for `\"a\"' because there is no
+newline at all.  On an empty line BETWEEN lines it is nil, so joining a
+blank line away still works."
+  (save-excursion
+    (forward-line 1)
+    (eobp)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Wrap Region Commands
@@ -3347,7 +3390,8 @@ to absorb what follows.
    ---> separate lines
 
 A count joins that many lines at once, so \\`C-u 2' \\[donkey-join-line] from the first
-line would have done both in one go.
+line would have done both in one go.  On the last line there is nothing
+below to pull up, so nothing happens and it tells you.
 
 Emacs\\=' own \\`M-^' is untouched and joins the other way -- it pulls the
 line you are ON up onto the one above.  Every Meta binding still works
@@ -3840,7 +3884,7 @@ buffer makes it excluded without any DONKEY transition firing.
 `donkey--excluded-mode-p' costs about a microsecond, which is nothing
 beside the redisplay it is part of."
   :group 'donkey
-  :lighter (:eval (if (donkey--excluded-mode-p) " DONKEY[E]" " DONKEY[I]"))
+  :lighter (:eval (donkey--insert-state-lighter))
   :keymap donkey-insert-mode-map
   (when donkey-insert-mode
     (when (bound-and-true-p donkey-normal-mode)
@@ -4519,8 +4563,7 @@ is broken when nothing happens.  Kept in step with
 `donkey-insert-mode's own lighter, which makes the same distinction."
   (cond
    ((bound-and-true-p donkey-normal-mode) " DONKEY[N]")
-   ((bound-and-true-p donkey-insert-mode)
-    (if (donkey--excluded-mode-p) " DONKEY[E]" " DONKEY[I]"))
+   ((bound-and-true-p donkey-insert-mode) (donkey--insert-state-lighter))
    (t "")))
 
 ;;; ---------------------------------------------------------------------------

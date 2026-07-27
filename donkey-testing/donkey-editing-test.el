@@ -3343,6 +3343,90 @@ The inconsistency was the actual defect; this pins the single rule."
    (should (string-prefix-p "ZZZ\n" (buffer-string)))
    (should (= (length (donkey--banked-spans)) 0))))
 
+(ert-deftest donkey-join-line-on-the-last-line-keeps-the-final-newline ()
+  "`g j\=' on the last line does nothing, rather than eating the EOF newline.
+
+Regression, found by a live audit: `join-line\=' pulls up the empty
+position after the final newline, which removes it.  Nothing visible
+changes -- the screen is identical and point sits at `point-max\=' either
+way -- so the first sign is a diff reporting \"\\ No newline at end of
+file\".  Checked in both buffer shapes, since the last line is a
+different place depending on whether the buffer ends in a newline."
+  (dolist (text '("alpha\nbeta\n" "alpha\n" "alpha\nbeta"))
+    (with-temp-buffer
+      (insert text)
+      (goto-char (point-max))
+      (beginning-of-line)
+      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+        (donkey-join-line 1))
+      (should (equal (buffer-string) text)))))
+
+(ert-deftest donkey-join-line-count-past-the-end-keeps-the-final-newline ()
+  "A count that overshoots stops at the last line instead of eating it.
+
+The same defect on the last iteration: `C-u 99 g j\=' joined everything
+and then took the newline as well."
+  (with-temp-buffer
+    (insert "a\nb\nc\n")
+    (goto-char (point-min))
+    (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+      (donkey-join-line 99))
+    (should (equal (buffer-string) "a b c\n"))))
+
+(ert-deftest donkey-join-line-still-joins-when-there-is-a-line-below ()
+  "The guard must not cost the command its actual job."
+  (with-temp-buffer
+    (insert "a\nb\nc\nd\n")
+    (goto-char (point-min))
+    (donkey-join-line 1)
+    (should (equal (buffer-string) "a b\nc\nd\n")))
+  (with-temp-buffer
+    (insert "a\nb\nc\nd\n")
+    (goto-char (point-min))
+    (donkey-join-line 2)
+    (should (equal (buffer-string) "a b c\nd\n")))
+  ;; a blank line between two lines is still joined away
+  (with-temp-buffer
+    (insert "a\n\nb\n")
+    (goto-char (point-min))
+    (donkey-join-line 1)
+    (should (equal (buffer-string) "a\nb\n"))))
+
+(ert-deftest donkey-join-line-says-so-when-there-is-nothing-below ()
+  "It reports rather than appearing to have done something."
+  (with-temp-buffer
+    (insert "only\n")
+    (goto-char (point-min))
+    (let (shown)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+        (donkey-join-line 1))
+      (should (equal shown "No line below to join")))))
+
+(ert-deftest donkey-whole-line-commands-all-keep-the-final-newline ()
+  "Every whole-line command leaves the buffer\='s last newline alone.
+
+`g j\=' was the only one that did not, which is what made it stand out.
+Pinned as a family so the next one added is measured against them."
+  (dolist (act (list (lambda () (donkey-visual-line-toggle) (donkey-delete 1))
+                     (lambda () (donkey-visual-line-toggle) (donkey-copy 1))
+                     (lambda () (donkey-bank-selection) (donkey-copy 1))
+                     (lambda () (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+                                  (donkey-join-line 1)))))
+    (unwind-protect
+        (with-temp-buffer
+          (donkey-mode 1)
+          (let ((transient-mark-mode t) (kill-ring nil) (kill-ring-yank-pointer nil))
+            (insert "alpha\nbeta\n")
+            (goto-char (point-max))
+            (beginning-of-line)
+            (forward-line -1)
+            (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+              (funcall act))
+            (should (or (string-suffix-p "\n" (buffer-string))
+                        (equal (buffer-string) "")))))
+      (donkey-mode -1))))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here
