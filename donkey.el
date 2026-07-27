@@ -3603,6 +3603,38 @@ have to happen before \\[donkey-change].
 
    ---> 555 solo
 
+The block does not have to cover any text at all.  A rectangle with NO
+width INSERTS instead of replacing, which is how the same text goes at
+the front, or the end, of a run of lines at once.
+
+\\[donkey-rectangle-mark-mode] always starts one column wide, so for a prefix take that
+width straight back off with \\[backward-char] before going down.
+
+>> Put the cursor on the \"r\" of \"red\" below, press \\[donkey-rectangle-mark-mode] then \\[backward-char],
+   then \\[next-line] twice.  Press \\[donkey-change], type \"// \" and press RET.  Nothing is
+   replaced; every row simply gains a front.
+
+   ---> red
+   ---> green
+   ---> blue
+
+For a suffix, start from the end of the line instead.  There is nothing
+to the right to widen into, so the rectangle is already zero-width and
+\\[backward-char] is not wanted.
+
+>> Put the cursor on the first row below and press \\[move-end-of-line], then
+   \\[donkey-rectangle-mark-mode], then \\[next-line] twice.  Press \\[donkey-change], type \" ;\" and press
+   RET.
+
+   ---> aaaaa
+   ---> bbbbb
+   ---> ccccc
+
+A suffix lands on a COLUMN, though, not at the end of each line -- the
+column the FIRST row happened to end on.  On rows of equal length, as
+above, those are the same place.  On ragged rows they are not: a short
+row is padded out to the column, and a long one is split at it.
+
 Two things worth knowing before you rely on it:
 
   - A rectangle lives in DONKEY's own store, NOT the system clipboard.

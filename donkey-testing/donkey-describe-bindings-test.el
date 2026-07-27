@@ -1713,4 +1713,68 @@ every selection."
    (donkey-tutor-test--goline "solo")
    (should (equal (donkey-tutor-test--line) "   ---> 55 solo"))))
 
+
+(ert-deftest donkey-tutor-lesson-9-prefix-exercise-really-works ()
+  "The prefix exercise adds text without replacing any.
+
+The whole point of taking the width back off with `h' is that nothing is
+deleted.  Asserted on the full rows rather than on a prefix match: a
+one-column rectangle would also produce a line STARTING with \"// \", and
+would have eaten a character to do it."
+  (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "// ")))
+    (donkey-tutor-test--live
+     (donkey-tutor-test--goline "---> red")
+     (search-forward "red")
+     (goto-char (match-beginning 0))
+     (donkey-tutor-test--keys "m v")
+     (donkey-tutor-test--keys "h")
+     (donkey-tutor-test--keys "j j")
+     (donkey-tutor-test--keys "c")
+     (donkey-tutor-test--goline "// red")
+     (dolist (expected '("   ---> // red" "   ---> // green" "   ---> // blue"))
+       (should (equal (donkey-tutor-test--line) expected))
+       (forward-line 1)))))
+
+(ert-deftest donkey-tutor-lesson-9-suffix-exercise-really-works ()
+  "The suffix exercise appends to every row, at the column the first ends on.
+
+Depends on the end-of-line guard in `donkey-rectangle-mark-mode'.
+Without it the initial widening steps over the newline and the rectangle
+collapses to column 0, so this exercise would prefix all three rows
+instead -- which is why the assertion is on whole rows and not on a
+suffix match."
+  (cl-letf (((symbol-function 'read-string) (lambda (&rest _) " ;")))
+    (donkey-tutor-test--live
+     (donkey-tutor-test--goline "---> aaaaa")
+     (donkey-tutor-test--keys "g l")
+     (donkey-tutor-test--keys "m v")
+     (donkey-tutor-test--keys "j j")
+     (donkey-tutor-test--keys "c")
+     (donkey-tutor-test--goline "aaaaa")
+     (dolist (expected '("   ---> aaaaa ;" "   ---> bbbbb ;" "   ---> ccccc ;"))
+       (should (equal (donkey-tutor-test--line) expected))
+       (forward-line 1)))))
+
+(ert-deftest donkey-tutor-lesson-9-suffix-rows-are-equal-length ()
+  "The suffix exercise's rows are equal length, as its caveat requires.
+
+The lesson says a suffix lands on a column rather than at each line's
+own end, and that the two coincide only on rows of equal length.  Its
+own rows have to be that case or the exercise contradicts the sentence
+under it -- ragged rows would pad one and split another in front of the
+reader."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-min))
+          (should (search-forward "---> aaaaa" nil t))
+          (beginning-of-line)
+          (let (lengths)
+            (dotimes (_ 3)
+              (push (- (line-end-position) (line-beginning-position)) lengths)
+              (forward-line 1))
+            (should (= 1 (length (delete-dups lengths)))))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
 ;;; donkey-describe-bindings-test.el ends here
