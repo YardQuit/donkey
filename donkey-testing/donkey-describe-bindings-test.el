@@ -617,4 +617,132 @@ the \\=`KEY\\=' markup, which carries the same face."
           (should (string-match-p "bookmarks" (buffer-string)))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
+;;; ---------------------------------------------------------------------------
+;;; The tutor's claims about native Emacs must stay true
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-tutor-claim-emacs-keys-still-work ()
+  "Every key the tutor promises is untouched must really be untouched.
+
+The tutor tells a new reader that these behave exactly as they always
+did.  That promise is only worth making if something checks it: a
+binding added to `donkey-normal-mode-map' in a hurry could quietly
+falsify a paragraph nobody thinks to re-read."
+  (unwind-protect
+      (with-temp-buffer
+        (text-mode)
+        (donkey-mode 1)
+        (donkey-normal-mode 1)
+        (dolist (pair '(("C-x C-s" save-buffer)
+                        ("C-x C-f" find-file)
+                        ("M-x"     execute-extended-command)
+                        ("C-h k"   describe-key)
+                        ("C-s"     isearch-forward)
+                        ("C-r"     isearch-backward)
+                        ("C-a"     move-beginning-of-line)
+                        ("C-e"     move-end-of-line)
+                        ("C-k"     kill-line)
+                        ("C-w"     kill-region)
+                        ("M-w"     kill-ring-save)
+                        ("C-y"     yank)
+                        ("C-SPC"   set-mark-command)
+                        ("M-f"     forward-word)
+                        ("M-b"     backward-word)
+                        ("M-^"     delete-indentation)
+                        ("TAB"     indent-for-tab-command)
+                        ("C-u"     universal-argument)
+                        ("<up>"    previous-line)
+                        ("<down>"  next-line)
+                        ("<home>"  move-beginning-of-line)
+                        ("<prior>" scroll-down-command)))
+          (should (eq (key-binding (kbd (car pair))) (cadr pair)))))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-tutor-claim-normal-state-costs-exactly-four-things ()
+  "The four differences the tutor names, and no fifth one.
+
+If a key is ever added to `donkey-normal-mode-map' that shadows a stock
+Emacs command, this fails -- and the tutor and README both need the new
+line.  `RET' is the one entry here with a command behind it; the rest
+are absences."
+  (unwind-protect
+      (with-temp-buffer
+        (text-mode)
+        (donkey-mode 1)
+        (donkey-normal-mode 1)
+        ;; 1. Letters run commands rather than typing.
+        (should (eq (lookup-key donkey-normal-mode-map [remap self-insert-command])
+                    'undefined))
+        ;; 2. Digits are not counts.
+        (dolist (d '("0" "3" "9"))
+          (should (eq (key-binding (kbd d)) 'undefined)))
+        ;; 3. RET is DONKEY's.
+        (should (eq (key-binding (kbd "RET")) #'donkey-enter-dwim))
+        ;; 4. Backspace and Delete do nothing.
+        (should (eq (key-binding [backspace]) #'ignore))
+        (should (eq (key-binding [delete]) #'ignore)))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-tutor-claim-no-fifth-shadowed-emacs-command ()
+  "Nothing outside the documented set shadows a real Emacs command.
+
+Resolves every leaf of `donkey-normal-mode-map' against what a plain
+`text-mode' buffer would do with the same keys.  Anything that differs,
+and whose Emacs meaning is a real command rather than self-insertion,
+must be one the tutor and README already name."
+  (let ((documented '("RET" "<backspace>" "<delete>"))
+        (found '()))
+    (cl-labels
+        ((walk (map prefix)
+           (map-keymap
+            (lambda (ev def)
+              (let ((seq (vconcat prefix (vector ev))))
+                (if (keymapp def)
+                    (walk def seq)
+                  (when def
+                    (let ((vanilla (with-temp-buffer
+                                     (text-mode)
+                                     (key-binding seq t))))
+                      (when (and vanilla
+                                 (not (numberp vanilla))
+                                 (not (memq vanilla
+                                            '(self-insert-command undefined
+                                              digit-argument negative-argument)))
+                                 (not (eq vanilla def)))
+                        (push (key-description seq) found)))))))
+            map)))
+      (walk donkey-normal-mode-map []))
+    ;; `key-binding' does not apply `function-key-map' translation, so the
+    ;; two function keys above never show up here -- they are checked by
+    ;; name in the test above instead.  This catches the ordinary ones.
+    (should (equal (sort found #'string<)
+                   (sort (seq-intersection documented found) #'string<)))))
+
+(ert-deftest donkey-tutor-claim-insert-state-changes-one-key ()
+  "INSERT state binds `C-g' and nothing else.
+
+The tutor says INSERT is Emacs with one key changed.  A second entry in
+this map would make that false."
+  (let ((bindings '()))
+    (map-keymap (lambda (ev def) (push (cons (key-description (vector ev)) def) bindings))
+                donkey-insert-mode-map)
+    (should (equal bindings '(("C-g" . donkey--exit-insert))))))
+
+(ert-deftest donkey-tutor-claim-dired-keys-survive ()
+  "The dired keys the tutor names by hand are really still dired's."
+  (skip-unless (require 'dired nil t))
+  (unwind-protect
+      (with-temp-buffer
+        (setq major-mode 'dired-mode)
+        (use-local-map dired-mode-map)
+        (donkey-mode 1)
+        (donkey-normal-mode 1)
+        (dolist (pair '(("n" dired-next-line)
+                        ("t" dired-toggle-marks)
+                        ("q" quit-window)
+                        ("^" dired-up-directory)
+                        ("+" dired-create-directory)))
+          (should (eq (key-binding (kbd (car pair))) (cadr pair)))))
+    (donkey-mode -1)))
+
 ;;; donkey-describe-bindings-test.el ends here

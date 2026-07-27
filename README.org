@@ -36,6 +36,74 @@ overlay state — just a minor-mode keymap that toggles on and off.
 - Cross-platform support (Linux/Wayland/X11, macOS, Windows)
 - Terminal mode (=emacs -nw=) support with DECSCUSR cursor sequences
 
+** What DONKEY takes from native Emacs
+
+The aim is as little friction with Emacs as possible. What DONKEY adds
+is meant to be an *addition*, not a replacement: your =C-x= and =C-c=
+prefixes, =M-x=, =C-h=, isearch, the arrow keys, every =M-= binding and
+every package you have bound work exactly as they always did, in both
+states.
+
+A modal editor cannot be free, though, and it is better to name the
+price than to let you discover it. This is the complete list.
+
+*** Insert state
+
+Exactly Emacs, with one key changed: =C-g= returns to Normal state
+instead of running =keyboard-quit=. It still deactivates the mark, and
+in the minibuffer or an excluded mode it hands off to the real
+=keyboard-quit=, so the escape hatch is intact where you need it.
+
+Two things =keyboard-quit= does that this does not: it does not signal
+a =quit= condition, and it does not stop a keyboard macro that is being
+recorded. Everything else you reach for =C-g= for is untouched —
+interrupting a running command is handled below the keymap, isearch has
+its own, and =C-x C-g= is a different key sequence.
+
+If smartparens is loaded, whatever key runs =sp-cancel= also returns to
+Normal state.
+
+*** Normal state
+
+| What                    | Native Emacs                    | In DONKEY               |
+|-------------------------+---------------------------------+-------------------------|
+| Printable characters    | insert themselves               | run commands            |
+| Digits =0=–=9=          | insert themselves               | unbound; use =C-u N=    |
+| =RET=                   | =newline=                       | nothing, in an editing buffer |
+| =BACKSPACE= / =DELETE=  | delete a character              | nothing                 |
+
+The first is the whole point of a modal editor rather than a cost. The
+others are worth knowing:
+
+- *No bare counts.* =3 j= is not "down three lines" the way it is in
+  vi — digits are not prefix arguments here. =C-u 3 j= is, and every
+  counted command takes it.
+- *=RET= does nothing* in a buffer you are editing, on purpose:
+  inserting a newline in Normal state is rarely what was meant. In
+  =dired=, =magit=, =org-agenda= and other non-editing modes it is
+  *not* inert — it hands the key back to whatever that mode had bound,
+  so =RET= still opens the file, visits the entry, follows the link.
+- *Backspace and Delete do nothing*, so a stray press cannot damage the
+  buffer from Normal state. Use =d= or =x=.
+
+Everything else falls through: =C-a=, =C-e=, =C-k=, =C-w=, =M-w=,
+=C-y=, =C-s=, =C-SPC=, =C-/=, =M-f=, =M-b=, =M-^=, =C-x= …, =C-c= …,
+=M-x=, =C-h= …, =TAB=, =C-u=, arrows, Home/End, PageUp/PageDown.
+
+*** In dired, magit and other special buffers
+
+DONKEY is on there too, and its single-letter commands take precedence
+over the major mode's. A major-mode key that DONKEY does *not* bind
+still works — suppressing self-insertion is done by remapping
+=self-insert-command= rather than by claiming each letter, so anything
+the mode bound to a real command survives. In =dired=, for example,
+=n=, =t=, =q=, =^= and =+= all still do what dired means by them, while
+=p=, =m=, =u=, =d=, =x=, =g=, =v=, =o=, =i=, =l= and =w= are DONKEY's.
+
+Modes where suppressing keys would break the underlying process —
+=eshell=, =term=, =vterm=, =comint= — stay in Insert passthrough
+entirely. See Excluded Modes.
+
 * Installation
 
 Donkey isn't on MELPA, so pick whichever of these fits your setup.
