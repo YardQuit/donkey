@@ -809,4 +809,166 @@ the Helix one by accident of layout and would have reordered the
 sentence if the two `keymap-set' calls were ever swapped."
   (should (equal (donkey--tutor-delete-keys) "d or x")))
 
+;;; ---------------------------------------------------------------------------
+;;; Lessons 9 and 10 teach what the code actually does
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-tutor-test--buffer (text &rest body)
+  "Run BODY over TEXT with DONKEY on and every relevant global bound.
+
+Used to check that the tutor's exercises really produce what the lesson
+says they do.  A tutor is practised in, so an instruction that does not
+work is worse than no instruction: the reader concludes the editor is
+broken, not the sentence."
+  (declare (indent 1))
+  `(unwind-protect
+       (with-temp-buffer
+         (donkey-mode 1)
+         (donkey-normal-mode 1)
+         (let ((transient-mark-mode t)
+               (kill-ring nil)
+               (kill-ring-yank-pointer nil)
+               (killed-rectangle nil)
+               (donkey--last-kill-rectangle-p nil)
+               (donkey--clipboard-warning-shown nil)
+               (this-command nil)
+               (last-command nil))
+           (insert ,text)
+           (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+             ,@body)))
+     (donkey-mode -1)))
+
+(defun donkey-tutor-test--row (n)
+  "Move point to the start of line N."
+  (goto-char (point-min))
+  (forward-line (1- n)))
+
+(ert-deftest donkey-tutor-lesson-9-teaches-rectangles ()
+  "The tutor covers `m v' at all.
+
+It did not mention rectangles anywhere -- not the key, not the word --
+despite `donkey-copy', `donkey-delete' and `donkey-yank' all having
+rectangle behaviour a reader would meet by accident."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should (string-match-p "Lesson 9 -- columns" (buffer-string)))
+          (should (string-match-p "RECTANGLE" (buffer-string)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-lesson-9-cut-and-restore-really-works ()
+  "The Lesson 9 exercise does what it says: cut a block, C-g, paste it back.
+
+The `C-g' step is in the lesson because the rectangle is STILL selected
+after the cut -- without it the paste hits the row-mismatch guard and
+the reader gets an error where the lesson promised a restored block.
+Found by running the sequence before writing it down."
+  (donkey-tutor-test--buffer "111 alpha\n222 beta\n333 gamma\n"
+    (donkey-tutor-test--row 1)
+    (rectangle-mark-mode 1)
+    (donkey-tutor-test--row 3)
+    (forward-char 3)
+    (donkey-delete 1)
+    (should (equal (buffer-string) " alpha\n beta\n gamma\n"))
+    ;; Still selected -- the reason the lesson says to press C-g.
+    (should (bound-and-true-p rectangle-mark-mode))
+    (ignore-error quit (keyboard-quit))
+    (should-not (bound-and-true-p rectangle-mark-mode))
+    (donkey-tutor-test--row 1)
+    (donkey-yank 1)
+    (should (equal (buffer-string) "111 alpha\n222 beta\n333 gamma\n"))))
+
+(ert-deftest donkey-tutor-lesson-10-first-exercise-really-works ()
+  "Bank a line, draw a rectangle, copy: rectangle wins and the bank stays."
+  (donkey-tutor-test--buffer "keep this banked\ncol one\ncol two\n"
+    (donkey-tutor-test--row 1)
+    (donkey-bank-selection)
+    (donkey-tutor-test--row 2)
+    (rectangle-mark-mode 1)
+    (donkey-tutor-test--row 3)
+    (forward-char 3)
+    (donkey-copy 1)
+    (should (equal killed-rectangle '("col" "col")))
+    ;; "the keep line is STILL highlighted.  Nothing was spent."
+    (should (= (length (donkey--banked-spans)) 1))
+    (should (equal (buffer-string) "keep this banked\ncol one\ncol two\n"))))
+
+(ert-deftest donkey-tutor-lesson-10-second-exercise-really-works ()
+  "With the bank still live, paste takes the bank and leaves the rectangle."
+  (donkey-tutor-test--buffer "keep this banked\ncol one\ncol two\n"
+    (kill-new "REPLACED\n")
+    (donkey-tutor-test--row 1)
+    (donkey-bank-selection)
+    (donkey-tutor-test--row 2)
+    (rectangle-mark-mode 1)
+    (donkey-tutor-test--row 3)
+    (forward-char 3)
+    (donkey-copy 1)
+    (ignore-error quit (keyboard-quit))
+    (donkey-yank 1)
+    (should (equal (buffer-string) "REPLACED\ncol one\ncol two\n"))
+    (should (= (length (donkey--banked-spans)) 0))
+    ;; The rectangle was left alone, ready for the third exercise.
+    (should (equal killed-rectangle '("col" "col")))))
+
+(ert-deftest donkey-tutor-lesson-5-teaches-the-sexp-marks ()
+  "Lesson 5 covers `m I' and `m A', not just `m i' and `m a'."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should (string-match-p "m I and m A" (buffer-string)))
+          (should (string-match-p "(defun f (a b) \\[1 2 3\\])" (buffer-string)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-lesson-5-sexp-exercise-really-works ()
+  "The `m I'/`m A' exercise produces exactly what the lesson claims.
+
+Checked in `text-mode', which is what the tutor buffer actually uses --
+the syntax table is what these two commands read, so verifying in
+`emacs-lisp-mode' would have proved nothing about the tutor."
+  (donkey-tutor-test--buffer "(defun f (a b) [1 2 3])"
+    (text-mode)
+    (goto-char 19)                      ; on the "2"
+    (donkey-mark-sexp-inner 1)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "1 2 3")))
+  (donkey-tutor-test--buffer "(defun f (a b) [1 2 3])"
+    (text-mode)
+    (goto-char 19)
+    (donkey-mark-sexp-outer 1)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "[1 2 3]")))
+  ;; "Counts go outward here too, and cross bracket types on the way out."
+  (donkey-tutor-test--buffer "(defun f (a b) [1 2 3])"
+    (text-mode)
+    (goto-char 19)
+    (donkey-mark-sexp-inner 2)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "defun f (a b) [1 2 3]"))))
+
+(ert-deftest donkey-tutor-lesson-10-rule-table-columns-line-up ()
+  "The rule table's right-hand column starts at the same offset on every row.
+
+The keys are substituted at render time and vary in width, so the table
+was written with the FIXED text on the left for exactly this reason --
+an earlier draft put the keys first and rendered ragged."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-min))
+          (should (search-forward "THE BANK IS THE FALLBACK" nil t))
+          (forward-line 2)
+          (let (offsets)
+            (dotimes (_ 4)
+              (let ((line (buffer-substring-no-properties
+                           (line-beginning-position) (line-end-position))))
+                (should (string-match "\\`    \\(with [a-z ]+?\\)  +[^ ]" line))
+                (push (match-end 0) offsets))
+              (forward-line 1))
+            (should (= 1 (length (delete-dups offsets)))))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
 ;;; donkey-describe-bindings-test.el ends here
