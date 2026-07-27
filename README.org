@@ -121,7 +121,7 @@ process interaction.
   Press =C-g= to return to Normal.
 - The modeline shows the current state: =DONKEY[N]= (Normal) or
   =DONKEY[I]= (Insert).
-- New to DONKEY? Run =M-x donkey-tutor= — see Tutor below.
+- New to DONKEY? Press =g ?= (or =M-x donkey-tutor=) — see Tutor below.
 
 * Default Keybindings
 
@@ -252,6 +252,7 @@ out of reach of everything but =undo=.
 | =W= | =forward-sexp=   | Move forward by sexp             |
 | =B= | =backward-sexp=  | Move backward by sexp            |
 | =S= | =donkey-jump-back= | Jump to previous cursor position |
+| =g ?= | =donkey-tutor= | Open the learn-by-doing tutor |
 
 ** Mark Objects (=m= prefix)
 
@@ -978,6 +979,13 @@ previously recorded cursor positions in the current buffer. Positions
 are tracked automatically via =post-command-hook= whenever the cursor
 moves.
 
+It exists mainly to *undo navigation mistakes*. A big jump is easy to
+mis-key — =g e= when you meant =g l= — and =S= makes that a single
+keystroke to put right. Other uses suggest themselves, but it is a
+recovery key rather than a filing system, and it is not a substitute for
+Emacs' own bookmarks: positions are recorded as you move, so nothing in
+the ring is a place you *chose* to remember.
+
 - Ring size controlled by =donkey-position-ring-max= (default: 10)
 - Ring is buffer-local — each buffer keeps its own history
 - Independent of the mark ring and region
@@ -1006,7 +1014,7 @@ changed at any time, not just before =donkey.el= loads.
 
 * Tutor
 
-=M-x donkey-tutor= opens a learn-by-doing buffer, the way =C-h t= and
+=g ?= (or =M-x donkey-tutor=) opens a learn-by-doing buffer, the way =C-h t= and
 vimtutor do: the text holding the instructions is the text you practise
 on, and changing it is the point. Lines beginning with =>>= are things to
 do; everything else is explanation.
@@ -1014,7 +1022,7 @@ do; everything else is explanation.
 Eight lessons, ending with the two things that are DONKEY's own —
 banking, and counts that mean the same thing everywhere:
 
-1. Moving around
+1. Moving around (including =S= for undoing a mis-keyed jump)
 2. Counts
 3. Typing
 4. Deleting and changing

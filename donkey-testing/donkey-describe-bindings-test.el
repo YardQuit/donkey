@@ -527,8 +527,11 @@ buffer's active keymaps, so running it before `donkey-mode' was enabled
 rendered every binding as an M-x invocation -- silently, and worst for
 exactly the commands a new reader most needs named.
 
-`donkey-tutor' itself is the one command deliberately shown that way: it
-has no key binding, so M-x is genuinely how it is run."
+Now that `donkey-tutor' is bound to \\=`g ?\\=' there is nothing left that
+resolves to M-x at all: it was the one command deliberately shown that
+way while it had no key.  An M-x appearing here again means either a
+command lost its binding or the substitution moved back ahead of
+`donkey-mode'."
   (unwind-protect
       (progn
         (donkey-tutor)
@@ -537,7 +540,7 @@ has no key binding, so M-x is genuinely how it is run."
           (let ((unresolved '()))
             (while (re-search-forward "M-x \\(donkey-[a-z-]+\\)" nil t)
               (push (match-string 1) unresolved))
-            (should (equal unresolved '("donkey-tutor"))))))
+            (should (equal unresolved '())))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 (ert-deftest donkey-tutor-returns-to-an-existing-buffer ()
@@ -573,5 +576,45 @@ go unnoticed until a reader reached the lesson naming it."
       (let ((sym (intern (match-string 1 donkey--tutor-content))))
         (unless (commandp sym) (push sym missing))))
     (should (equal missing '()))))
+
+(ert-deftest donkey-tutor-is-bound-in-normal-state ()
+  "The tutor is reachable without knowing its name.
+
+Under `g' rather than on a letter of its own: the letters vi uses for
+motions are all still free in this map, and spending one on a command
+read once would take a key a motion will want later."
+  (should (eq (lookup-key donkey-normal-mode-map (kbd "g ?")) 'donkey-tutor)))
+
+(ert-deftest donkey-tutor-names-every-key-with-the-same-markup ()
+  "Every key the tutor names carries `help-key-binding', none is bare text.
+
+Regression: keys written literally -- C-g, g g, the C-u N part of a count
+-- rendered as plain text while substituted bindings rendered as faced
+chips, so the same buffer showed two kinds of key.  Literal ones now use
+the \\=`KEY\\=' markup, which carries the same face."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-min))
+          ;; Any of these appearing WITHOUT the face means a bare mention
+          ;; slipped back in.
+          (dolist (key '("C-g" "C-u 3" "C-u 2" "C-u 5"))
+            (goto-char (point-min))
+            (while (search-forward key nil t)
+              (should (eq (get-text-property (match-beginning 0) 'face)
+                          'help-key-binding))))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-teaches-jump-back-as-a-recovery-key ()
+  "The `S' lesson is present and framed as undoing a mis-keyed jump."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should (string-match-p "recovery key rather than a filing system"
+                                  (buffer-string)))
+          (should (string-match-p "bookmarks" (buffer-string)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 ;;; donkey-describe-bindings-test.el ends here

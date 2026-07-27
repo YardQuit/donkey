@@ -220,6 +220,15 @@ since the last command.  Independent of the mark ring and region."
 Press repeatedly to cycle through the last `donkey-position-ring-max'
 recorded positions in this buffer.
 
+Intended mainly for undoing navigation mistakes: a big jump is easy to
+mis-key, and this makes one cheap to take back -- reaching for `g l' and
+slipping to `g e' lands you at the end of the buffer rather than the end
+of the line, and one keystroke puts it right.
+Other uses suggest themselves, but it is a recovery key rather than a
+filing system, and no substitute for Emacs' own bookmarks: positions are
+recorded automatically as you move, so nothing here is a place you chose
+to remember.
+
 Positions outside the accessible portion are skipped rather than jumped
 to.  Marker positions are absolute and narrowing does not move them, so
 a ring recorded before \\[narrow-to-region] (or `org-narrow-to-subtree',
@@ -2877,7 +2886,7 @@ explanation.
 DONKEY has two states.  In NORMAL state the letter keys are commands; in
 INSERT state they type.  The modeline shows which: DONKEY[N] or DONKEY[I].
 If a key ever does something you did not expect, you are probably in the
-other state -- press C-g to get back to NORMAL.
+other state -- press \\`C-g' to get back to NORMAL.
 
 To stop, kill this buffer.
 
@@ -2897,9 +2906,21 @@ Movement sits on the home row:
 Bigger jumps:
 
     \\[forward-word] next word     \\[backward-word] previous word
-    g g  buffer start   \\[end-of-buffer] buffer end
+    \\[beginning-of-buffer] buffer start   \\[end-of-buffer] buffer end
 
->> Press g g to jump to the top of this buffer, then come back here.
+>> Press \\[beginning-of-buffer] to jump to the top of this buffer, then come back here.
+
+Big jumps are easy to get wrong, so they are cheap to undo.  \\[donkey-jump-back]
+returns to where you were before the last one -- reach for \\`g l' to get to
+the end of the LINE, slip and hit \\`g e' instead, and you are at the end of
+the BUFFER.  One keystroke puts it right.
+
+>> Press \\[end-of-buffer] to shoot to the end of this buffer, then \\[donkey-jump-back] to come
+   straight back to this line.
+
+Press it again to keep walking back through earlier positions.  It is a
+recovery key rather than a filing system: for places you mean to return to
+deliberately, Emacs' own bookmarks are the right tool.
 
 
 Lesson 2 -- counts
@@ -2908,14 +2929,15 @@ Lesson 2 -- counts
 Nearly every DONKEY command takes a count, and it always means the same
 thing: how many.  Give it as C-u N before the key.
 
->> Press C-u 3 j and watch the cursor move three lines in one go.
+>> Press \\`C-u 3' \\[next-line] and watch the cursor move three lines in one go.
 
->> Press C-u 5 \\[forward-word] to skip five words along the ---> line.
+>> Press \\`C-u 5' \\[forward-word] to skip five words along the ---> line.
 
    ---> one two three four five six seven eight nine ten
 
 Counts work the same way on the editing commands you are about to meet,
-so C-u 3 \\[donkey-delete] deletes three characters and C-u 2 \\[donkey-mark-word] selects two words.
+so \\`C-u 3' \\[donkey-delete] deletes three characters and \\`C-u 2' \\[donkey-mark-word]
+selects two words.
 
 
 Lesson 3 -- typing
@@ -2929,7 +2951,7 @@ and Emacs behaves exactly as it always does.
     \\[donkey-open-below] open a line below       \\[donkey-open-above] open a line above
 
 >> Put the cursor on the ---> line, press \\[donkey-insert-here], type the missing word, then
-   press C-g to return to NORMAL.
+   press \\`C-g' to return to NORMAL.
 
    ---> The quick brown fox jumps over the lazy .
 
@@ -2944,8 +2966,8 @@ Lesson 4 -- deleting and changing
 
    ---> Thiis liine haas extraa letterss in itt.
 
->> Put the cursor on the word \"wrong\" below, press C-u 5 \\[donkey-change], type
-   \"right\", and press C-g.
+>> Put the cursor on the word \"wrong\" below, press \\`C-u 5' \\[donkey-change], type
+   \"right\", and press \\`C-g'.
 
    ---> This word is wrong and needs replacing.
 
@@ -2967,15 +2989,15 @@ Rather than counting characters, select the thing you mean:
 You can also select by delimiter.  \\[donkey-mark-inner] asks for a character and selects
 what is INSIDE the nearest pair; \\[donkey-mark-outer] includes the delimiters too.
 
->> Put the cursor between the parentheses below and press \\[donkey-mark-inner] then ( --
-   the text inside is selected.  Try \\[donkey-mark-outer] then ( to include the brackets.
+>> Put the cursor between the parentheses below and press \\[donkey-mark-inner] then \\`(' --
+   the text inside is selected.  Try \\[donkey-mark-outer] then \\`(' to include the brackets.
 
    ---> call(this argument here)
 
-A count means levels out, so C-u 2 \\[donkey-mark-inner] ( from the inner pair selects the
+A count means levels out, so \\`C-u 2' \\[donkey-mark-inner] \\`(' from the inner pair selects
 outer one.
 
->> Put the cursor on \"deep\" below and press C-u 2 \\[donkey-mark-inner] then (.
+>> Put the cursor on \"deep\" below and press \\`C-u 2' \\[donkey-mark-inner] then \\`('.
 
    ---> outer (middle (deep) middle) outer
 
@@ -3033,7 +3055,7 @@ Lesson 8 -- copy and paste
 
 A count on \\[donkey-yank] pastes that many copies.
 
->> Copy the word \"echo\" below with \\[donkey-mark-word] then \\[donkey-copy], then press C-u 3 \\[donkey-yank] at the
+>> Copy the word \"echo\" below with \\[donkey-mark-word] then \\[donkey-copy], then press \\`C-u 3' \\[donkey-yank] at the
    end of the line.
 
    ---> echo
@@ -3198,6 +3220,15 @@ outcome than retyping a lesson."
 ;; both editors already use it for the start of the buffer.)
 (keymap-set donkey-normal-mode-map "G" #'end-of-buffer)
 (keymap-set donkey-normal-mode-map "g g" #'beginning-of-buffer)
+
+;; Under `g' rather than on a letter of its own.  The letters vi uses for
+;; motions -- f, t, F, T, e, E, n, N -- are all still free in this map, and
+;; taking one for a command a reader runs once would spend a key that a
+;; motion will want later.  `g t' is free too, but meant `beginning-of-buffer'
+;; in 1.0.1, and silently repurposing a binding someone may still have in
+;; their fingers is worse than an obscure one.  `?' already opens the
+;; bindings list, so `g ?' reads as the guided version of the same question.
+(keymap-set donkey-normal-mode-map "g ?" #'donkey-tutor)
 (keymap-set donkey-normal-mode-map "g h" #'beginning-of-line)
 (keymap-set donkey-normal-mode-map "g l" #'move-end-of-line)
 (keymap-set donkey-normal-mode-map "g Q" #'fill-paragraph)
