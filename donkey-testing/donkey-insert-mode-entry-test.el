@@ -1,5 +1,7 @@
 ;;; donkey-insert-mode-entry-test.el --- Tests for DONKEY commands entering INSERT state -*- lexical-binding: t; -*-
 
+;;; Code:
+
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
@@ -23,7 +25,7 @@
       (should (= (point) 3)))))
 
 (ert-deftest donkey-insert-here-deactivates-active-region ()
-  "When mark-active and a region is active, deactivates the mark."
+  "When `mark-active' and a region is active, deactivates the mark."
   (let (deactivated)
     (with-temp-buffer
       (insert "hello world\n")
@@ -38,7 +40,7 @@
       (should deactivated))))
 
 (ert-deftest donkey-insert-here-skips-deactivate-without-region ()
-  "When no region is active, deactivate-mark is not called."
+  "When no region is active, the function `deactivate-mark' is not called."
   (let (deactivated)
     (with-temp-buffer
       (insert "hello\n")
@@ -71,7 +73,7 @@
       (should (= (point) 1)))))
 
 (ert-deftest donkey-insert-here-call-interactively ()
-  "Can be called via call-interactively without error."
+  "Can be called via `call-interactively' without error."
   (let (entered)
     (with-temp-buffer
       (insert "hello\n")
@@ -99,7 +101,7 @@
       (should (= (point) 2)))))
 
 (ert-deftest donkey-insert-after-forward-char-before-enter-insert ()
-  "forward-char executes before donkey-enter-insert."
+  "`forward-char' executes before donkey-enter-insert."
   (let (order)
     (with-temp-buffer
       (insert "ab\n")
@@ -127,7 +129,9 @@
     (should (= (point) 7))))
 
 (ert-deftest donkey-insert-after-at-end-of-buffer-graceful ()
-  "At point-max, forward-char's end-of-buffer error is caught and
+  "Inserting after point at `point-max' still enters Insert state.
+
+At point-max, forward-char's end-of-buffer error is caught and
 donkey-enter-insert still runs."
   (let (entered)
     (with-temp-buffer
@@ -173,7 +177,7 @@ donkey-enter-insert still runs."
       (should (string= (buffer-string) original-text)))))
 
 (ert-deftest donkey-insert-after-exactly-one-forward-char ()
-  "forward-char is called exactly once with arg 1."
+  "`forward-char' is called exactly once with arg 1."
   (let (forward-args)
     (with-temp-buffer
       (insert "hello\n")
@@ -190,7 +194,7 @@ donkey-enter-insert still runs."
     (should (eq (car forward-args) 1))))
 
 (ert-deftest donkey-insert-after-call-interactively ()
-  "Can be called via call-interactively."
+  "Can be called via `call-interactively'."
   (let (entered)
     (with-temp-buffer
       (insert "hello\n")
@@ -226,14 +230,14 @@ donkey-enter-insert still runs."
       (should deactivated))))
 
 (ert-deftest donkey-insert-after-skips-deactivate-when-no-region ()
-  "When no region is active, does not call deactivate-mark.
+  "When no region is active, the function `deactivate-mark' is not called.
 
-Regression test: donkey-insert-after previously called plain
-`deactivate-mark' unconditionally, inconsistent with its sibling
+Regression test: donkey-insert-after previously called the plain
+function `deactivate-mark' unconditionally, inconsistent with its sibling
 Insert-entry commands (donkey-insert-here, -beginning-of-line,
 -end-of-line, donkey-open-below/-above), all of which use
 `donkey--deactivate-region-if-active' and so leave an EMPTY active
-region alone. Confirmed live: pushing an empty active region (mark ==
+region alone.  Confirmed live: pushing an empty active region (mark ==
 point) then calling donkey-insert-after left `mark-active' nil
 afterward, unlike every sibling command in the same category."
   (let (deactivated)
@@ -264,7 +268,7 @@ afterward, unlike every sibling command in the same category."
       (should (= (point) 1)))))
 
 (ert-deftest donkey-insert-beginning-of-line-call-order ()
-  "beginning-of-line executes before donkey-enter-insert."
+  "Point moves to beginning-of-line before Insert state is entered."
   (let (order)
     (with-temp-buffer
       (insert "hello\n")
@@ -337,7 +341,7 @@ afterward, unlike every sibling command in the same category."
       (should (string= (buffer-string) original-text)))))
 
 (ert-deftest donkey-insert-beginning-of-line-call-interactively ()
-  "Can be called via call-interactively."
+  "Can be called via `call-interactively'."
   (let (entered)
     (with-temp-buffer
       (insert "hello world\n")
@@ -349,7 +353,7 @@ afterward, unlike every sibling command in the same category."
       (should (= (point) 1)))))
 
 (ert-deftest donkey-insert-beginning-of-line-ignores-prefix-arg ()
-  "Ignores current-prefix-arg."
+  "Ignores `current-prefix-arg'."
   (with-temp-buffer
     (insert "hello world\n")
     (goto-char 6)
@@ -376,7 +380,7 @@ afterward, unlike every sibling command in the same category."
       (should (= (point) 12)))))
 
 (ert-deftest donkey-insert-end-of-line-call-order ()
-  "move-end-of-line executes before donkey-enter-insert."
+  "`move-end-of-line' executes before donkey-enter-insert."
   (let (order)
     (with-temp-buffer
       (insert "hello\n")
@@ -438,7 +442,7 @@ afterward, unlike every sibling command in the same category."
     (should (= (point) 8))))
 
 (ert-deftest donkey-insert-end-of-line-skips-trailing-whitespace ()
-  "move-end-of-line moves past trailing whitespace to the newline position."
+  "`move-end-of-line' moves past trailing whitespace to the newline position."
   (with-temp-buffer
     (insert "hello   \n")
     (goto-char 1)
@@ -448,7 +452,7 @@ afterward, unlike every sibling command in the same category."
     (should (= (point) 9))))
 
 (ert-deftest donkey-insert-end-of-line-with-tabs ()
-  "move-end-of-line handles tabs correctly."
+  "`move-end-of-line' handles tabs correctly."
   (with-temp-buffer
     (insert "\thello\n")
     (goto-char 1)
@@ -469,7 +473,7 @@ afterward, unlike every sibling command in the same category."
       (should (string= (buffer-string) original-text)))))
 
 (ert-deftest donkey-insert-end-of-line-call-interactively ()
-  "Can be called via call-interactively."
+  "Can be called via `call-interactively'."
   (let (entered)
     (with-temp-buffer
       (insert "hello world\n")
@@ -481,7 +485,7 @@ afterward, unlike every sibling command in the same category."
       (should (= (point) 12)))))
 
 (ert-deftest donkey-insert-end-of-line-ignores-prefix-arg ()
-  "Ignores current-prefix-arg."
+  "Ignores `current-prefix-arg'."
   (with-temp-buffer
     (insert "hello world\n")
     (goto-char 1)
@@ -509,7 +513,7 @@ afterward, unlike every sibling command in the same category."
       (should (= (buffer-size) 7)))))
 
 (ert-deftest donkey-open-above-call-order ()
-  "Executes bol, newline, forward-line -1, indent, then enter-insert."
+  "Executes bol, newline, `forward-line' -1, indent, then enter-insert."
   (let (order)
     (with-temp-buffer
       (insert "hello\n")
@@ -566,7 +570,7 @@ afterward, unlike every sibling command in the same category."
     (should deactivated)))
 
 (ert-deftest donkey-open-above-skips-deactivate-when-no-region ()
-  "When no region active, does not call deactivate-mark."
+  "When no region is active, the function `deactivate-mark' is not called."
   (let (deactivated)
     (with-temp-buffer
       (insert "hello\n")
@@ -630,7 +634,7 @@ afterward, unlike every sibling command in the same category."
     (should (string= (buffer-substring 8 14) "second"))))
 
 (ert-deftest donkey-open-above-forward-line-called-with-minus-one ()
-  "forward-line is called with argument -1 to move up after inserting."
+  "`forward-line' is called with argument -1 to move up after inserting."
   (let (forward-arg)
     (with-temp-buffer
       (insert "hello\n")
@@ -650,7 +654,7 @@ afterward, unlike every sibling command in the same category."
     (should (eq forward-arg -1))))
 
 (ert-deftest donkey-open-above-call-interactively ()
-  "Can be called via call-interactively."
+  "Can be called via `call-interactively'."
   (let (entered)
     (with-temp-buffer
       (insert "hello\n")
@@ -723,7 +727,7 @@ afterward, unlike every sibling command in the same category."
     (should deactivated)))
 
 (ert-deftest donkey-open-below-skips-deactivate-when-no-region ()
-  "When no region active, does not call deactivate-mark."
+  "When no region is active, the function `deactivate-mark' is not called."
   (let (deactivated)
     (with-temp-buffer
       (insert "hello\n")
@@ -771,7 +775,7 @@ afterward, unlike every sibling command in the same category."
     (should (string= (buffer-substring 8 14) "second"))))
 
 (ert-deftest donkey-open-below-call-interactively ()
-  "Can be called via call-interactively."
+  "Can be called via `call-interactively'."
   (let (entered)
     (with-temp-buffer
       (insert "hello\n")
@@ -816,7 +820,9 @@ matching `donkey-delete' test."
     (should (= (point) 3))))
 
 (ert-deftest donkey-change-no-region-empty-buffer-still-enters-insert ()
-  "Regression test: an empty buffer has nothing to delete, but `c' must
+  "Change in an empty buffer still enters Insert state.
+
+Regression test: an empty buffer has nothing to delete, but `c' must
 still enter INSERT state rather than aborting in Normal state.
 
 `delete-char' signals `end-of-buffer' here.  That used to propagate
@@ -836,7 +842,9 @@ on DONKEY[N]."
       (should (string= (buffer-string) "")))))
 
 (ert-deftest donkey-change-no-region-at-end-of-buffer-still-enters-insert ()
-  "Point at `point-max' with no region: nothing is deleted, but INSERT
+  "Change at `point-max' still enters Insert state.
+
+Point at `point-max' with no region: nothing is deleted, but INSERT
 state is still entered.  See
 `donkey-change-no-region-empty-buffer-still-enters-insert'."
   (let (entered)
@@ -854,7 +862,9 @@ state is still entered.  See
       (should (string= (buffer-string) "hello\n")))))
 
 (ert-deftest donkey-change-no-region-mid-buffer-still-deletes ()
-  "The end-of-buffer guard must not suppress the ordinary delete: with a
+  "Change mid-buffer still deletes the character at point.
+
+The end-of-buffer guard must not suppress the ordinary delete: with a
 character actually present at point, `c' still removes exactly it."
   (let (entered)
     (with-temp-buffer
@@ -892,7 +902,7 @@ character actually present at point, `c' still removes exactly it."
       (should (= (cadr deleted-bounds) 6)))))
 
 (ert-deftest donkey-change-region-skips-delete-char ()
-  "With an active region, delete-char is not called."
+  "With an active region, `delete-char' is not called."
   (let (delete-char-called)
     (with-temp-buffer
       (insert "hello\n")
@@ -911,7 +921,7 @@ character actually present at point, `c' still removes exactly it."
       (should-not delete-char-called))))
 
 (ert-deftest donkey-change-region-point-before-mark ()
-  "Region with point before mark: delete-region receives (mark, point)."
+  "Region with point before mark: `delete-region' receives (mark, point)."
   (let (deleted-bounds)
     (with-temp-buffer
       (insert "hello world\n")
@@ -929,7 +939,9 @@ character actually present at point, `c' still removes exactly it."
       (should (= (cadr deleted-bounds) 1)))))
 
 (ert-deftest donkey-change-rectangle-mode-calls-string-rectangle ()
-  "With region active and rectangle-mark-mode enabled, delegates to
+  "Change over a rectangle delegates to `string-rectangle'.
+
+With region active and `rectangle-mark-mode' enabled, delegates to
 `string-rectangle' via `call-interactively'."
   (let (called-cmd)
     (with-temp-buffer
@@ -947,7 +959,7 @@ character actually present at point, `c' still removes exactly it."
       (should (eq called-cmd 'string-rectangle)))))
 
 (ert-deftest donkey-change-rectangle-mode-skips-delete-region ()
-  "In rectangle mode, delete-region is not called."
+  "In rectangle mode, `delete-region' is not called."
   (let (delete-region-called)
     (with-temp-buffer
       (insert "hello\n")
@@ -966,8 +978,10 @@ character actually present at point, `c' still removes exactly it."
       (should-not delete-region-called))))
 
 (ert-deftest donkey-change-rectangle-mode-falls-back-when-disabled ()
-  "When rectangle-mark-mode is nil and region is active, falls back to
-delete-region rather than string-rectangle."
+  "Change over a plain region falls back to `delete-region'.
+
+When `rectangle-mark-mode' is nil and region is active, falls back to
+`delete-region' rather than `string-rectangle'."
   (let (delete-called ci-called)
     (with-temp-buffer
       (insert "hello\n")
@@ -987,7 +1001,9 @@ delete-region rather than string-rectangle."
       (should-not ci-called))))
 
 (ert-deftest donkey-change-rectangle-mode-stays-in-normal-state ()
-  "Regression test: under `rectangle-mark-mode', `c' must end in NORMAL
+  "Change over a rectangle ends in Normal state.
+
+Regression test: under `rectangle-mark-mode', `c' must end in NORMAL
 state, not INSERT.
 
 `string-rectangle' prompts for the replacement text itself and applies
@@ -1010,7 +1026,9 @@ replacement string and RET, pressing `j' then `l' typed a literal
     (should-not (bound-and-true-p donkey-insert-mode))))
 
 (ert-deftest donkey-change-plain-region-still-enters-insert-state ()
-  "The rectangle special case must not change the ordinary path: a plain
+  "Change over a plain region still enters Insert state.
+
+The rectangle special case must not change the ordinary path: a plain
 \(non-rectangle) active region still deletes and enters INSERT, since
 there the user does still have to type the replacement."
   (with-temp-buffer
@@ -1104,7 +1122,9 @@ there the user does still have to type the replacement."
       (should-not self-insert-called))))
 
 (ert-deftest donkey-wrap-region-rectangle-mark-mode-wraps-each-line ()
-  "Regression test: with `rectangle-mark-mode' active, wraps each line
+  "Wrapping a rectangle wraps each of its lines.
+
+Regression test: with `rectangle-mark-mode' active, wraps each line
 of the rectangle at its own start/end column instead of delegating to
 `self-insert-command' or `undefined'.
 
@@ -1130,7 +1150,9 @@ of doing nothing."
       (should (string= (buffer-string) "(a)aa\n(b)bb\n(c)cc\n")))))
 
 (ert-deftest donkey-wrap-region-rectangle-mark-mode-symmetric-delimiter ()
-  "A symmetric delimiter (not a recognized pair in
+  "A symmetric delimiter wraps a rectangle with the same character.
+
+A symmetric delimiter (not a recognized pair in
 `donkey-mark-pair-delimiters', e.g. `\"') wraps each rectangle line
 with the SAME character on both sides."
   (let ((transient-mark-mode t))
@@ -1146,7 +1168,9 @@ with the SAME character on both sides."
       (should (string= (buffer-string) "\"a\"aa\n\"b\"bb\n")))))
 
 (ert-deftest donkey-wrap-region-rectangle-mark-mode-pads-short-lines ()
-  "A line shorter than the rectangle's columns is padded with spaces up
+  "Rectangle wrapping pads lines shorter than the rectangle.
+
+A line shorter than the rectangle's columns is padded with spaces up
 to each column before wrapping, same as `string-rectangle-line' and
 other rectangle commands do for short lines, rather than bunching both
 delimiters together at end of line."
@@ -1164,7 +1188,9 @@ delimiters together at end of line."
       (should (string= (buffer-string) "aa(aa)\nbb(  )\ncc(cc)\n")))))
 
 (ert-deftest donkey-wrap-region-rectangle-mark-mode-stays-active ()
-  "Rectangle wrapping does not deactivate the mark or exit
+  "Rectangle wrapping leaves the rectangle selection active.
+
+It does not deactivate the mark or exit
 `rectangle-mark-mode', matching the linear case's own
 \"does-not-deactivate-mark-itself\" behavior."
   (let ((transient-mark-mode t))
@@ -1181,7 +1207,9 @@ delimiters together at end of line."
       (should (use-region-p)))))
 
 (ert-deftest donkey-wrap-close-char-uses-mark-pair-delimiters ()
-  "`donkey--wrap-close-char' resolves the close side of a recognized
+  "`donkey--wrap-close-char' resolves the close side of a pair.
+
+It resolves the close side of a recognized
 `donkey-mark-pair-delimiters' entry, falling back to OPEN-CHAR itself
 when it is not a recognized pair (symmetric delimiters, or any
 character a user has not added to `donkey-mark-pair-delimiters')."
@@ -1191,7 +1219,9 @@ character a user has not added to `donkey-mark-pair-delimiters')."
   (should (equal (donkey--wrap-close-char ?!) ?!)))
 
 (ert-deftest donkey-wrap-region-with-region-enters-insert-inserts-then-exits ()
-  "With an active region, enters Insert, self-inserts, then exits back
+  "Wrapping enters Insert, self-inserts, then exits to Normal.
+
+With an active region, enters Insert, self-inserts, then exits back
 to Normal, in that order."
   (let (calls)
     (with-temp-buffer
@@ -1211,9 +1241,11 @@ to Normal, in that order."
       (should (equal (nreverse calls) '(insert-mode self-insert exit-insert))))))
 
 (ert-deftest donkey-wrap-region-does-not-deactivate-mark-itself ()
-  "Does not call `deactivate-mark' before self-inserting -- the region
-must stay active for packages hooking `self-insert-command' (such as
-Smartparens' region-wrap) to see it."
+  "Wrapping does not deactivate the mark itself.
+
+It does not call the function `deactivate-mark' before self-inserting --
+the region must stay active for packages hooking
+`self-insert-command' (such as Smartparens' region-wrap) to see it."
   (let (deactivated)
     (with-temp-buffer
       (insert "hello\n")
@@ -1228,7 +1260,9 @@ Smartparens' region-wrap) to see it."
       (should-not deactivated))))
 
 (ert-deftest donkey-wrap-region-with-real-region-inserts-character-at-point ()
-  "End-to-end with a real (non-mocked) self-insert-command: the pressed
+  "Wrapping inserts the pressed character at point.
+
+End-to-end with a real (non-mocked) self-insert-command: the pressed
 character lands in the buffer at point, same as ordinary self-insert."
   (with-temp-buffer
     (let ((transient-mark-mode t)
@@ -1242,7 +1276,9 @@ character lands in the buffer at point, same as ordinary self-insert."
       (should (string= (buffer-string) "hello( world")))))
 
 (ert-deftest donkey-wrap-region-wraps-region-with-electric-pair-mode ()
-  "With Emacs's built-in `electric-pair-mode', the selection is really
+  "With `electric-pair-mode', the region is really wrapped.
+
+With Emacs's built-in `electric-pair-mode', the selection is really
 WRAPPED rather than the delimiter merely inserted at point.
 
 `donkey-wrap-region' deliberately keeps the region active across its
@@ -1307,7 +1343,9 @@ by the delimiter.  Confirmed live in `emacs -nw' with
       (should-not (bound-and-true-p donkey-insert-mode)))))
 
 (ert-deftest donkey-wrap-region-returns-to-normal-when-insertion-errors ()
-  "Regression test: DONKEY must end up back in Normal state even when the
+  "Wrapping returns to Normal state even when the insertion errors.
+
+Regression test: DONKEY must end up back in Normal state even when the
 insertion itself signals.
 
 `donkey-wrap-region' is the one command that enters Insert state
@@ -1335,7 +1373,9 @@ guaranteed."
       (should-not (bound-and-true-p donkey-insert-mode)))))
 
 (ert-deftest donkey-wrap-region-bound-for-each-default-delimiter ()
-  "Each default `donkey-wrap-delimiters' character is bound in Normal
+  "Every default wrap delimiter is bound in Normal state.
+
+Each default `donkey-wrap-delimiters' character is bound in Normal
 state to `donkey-wrap-region'."
   (dolist (ch donkey-wrap-delimiters)
     (should (eq (lookup-key donkey-normal-mode-map (char-to-string ch))

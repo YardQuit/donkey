@@ -1,5 +1,7 @@
 ;;; donkey-editing-test.el --- Tests for DONKEY delete/yank/indent/comment commands -*- lexical-binding: t; -*-
 
+;;; Code:
+
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
@@ -11,8 +13,8 @@
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-copy-no-region-copies-single-char ()
-  "Without an active region, copies the character at point via
-kill-ring-save with an explicit (point . point+1) range."
+  "Without an active region, copies the character at point.
+Uses `kill-ring-save' with an explicit (point . point+1) range."
   (let (copied-bounds)
     (with-temp-buffer
       (insert "hello\n")
@@ -25,16 +27,16 @@ kill-ring-save with an explicit (point . point+1) range."
       (should (equal copied-bounds '(3 4))))))
 
 (ert-deftest donkey-copy-no-region-does-not-use-stale-mark ()
-  "Regression test: without an ACTIVE region, donkey-copy must copy
-only the character at point, never the raw mark position.
+  "Without an ACTIVE region, only the character at point is copied.
+Regression test: never the raw mark position.
 
 kill-ring-save's own interactive spec reads region-beginning/
 region-end, which use wherever the mark last happened to be
 regardless of whether the region is actually active -- a mark left
 over from an earlier, unrelated command (e.g. a stale
-donkey-mark-inner selection, or any prior push-mark) would silently
+donkey-mark-inner selection, or any prior `push-mark') would silently
 get copied instead of the single character at point.  Confirmed live
-in emacs -nw: with mark left at position 10 and point moved to
+in Emacs -nw: with mark left at position 10 and point moved to
 position 20 (region inactive), a real 'y' keypress copied
 \"jklmnopqrs\" (mark to point) instead of the single character under
 the cursor."
@@ -51,15 +53,15 @@ the cursor."
       (should (equal copied-bounds '(20 21))))))
 
 (ert-deftest donkey-copy-no-region-at-end-of-buffer-copies-nothing ()
-  "Regression test: at `point-max' with no region there is no character
-to copy, so the `kill-ring' must be left alone entirely.
+  "At `point-max' with no region, the `kill-ring' is left alone.
+Regression test: there is no character to copy there.
 
 Copying the empty range there instead (the original behavior) silently
 pushed an empty string, displacing whatever was previously copied as
 the entry a following \"p\" pastes -- so one stray \"y\" past the last
 character made the next paste insert nothing, with no error to explain
 it.  Confirmed live in `emacs -nw': with \"IMPORTANT\" freshly copied,
-pressing \"y\" at `point-max' left the newest kill-ring entry as \"\".
+pressing \"y\" at `point-max' left the newest `kill-ring' entry as \"\".
 
 Must still not signal: erroring on a stray copy would be its own
 annoyance, so this reports via `message' instead."
@@ -73,8 +75,8 @@ annoyance, so this reports via `message' instead."
       (should-not kill-ring-save-called))))
 
 (ert-deftest donkey-copy-no-region-at-end-of-buffer-preserves-kill-ring ()
-  "End to end: a previously copied entry survives a stray `y' at
-`point-max', so a following paste still yields that entry."
+  "A previously copied entry survives a stray `y' at `point-max'.
+End to end: a following paste still yields that entry."
   (let ((kill-ring nil)
         (kill-ring-yank-pointer nil))
     (kill-new "IMPORTANT")
@@ -86,8 +88,9 @@ annoyance, so this reports via `message' instead."
       (should (= (length kill-ring) 1)))))
 
 (ert-deftest donkey-copy-no-region-before-end-still-copies-char ()
-  "The end-of-buffer guard must not suppress the ordinary case: with a
-character present at point, `y' still copies exactly that character."
+  "The end-of-buffer guard must not suppress the ordinary case.
+With a character present at point, `y' still copies exactly that
+character."
   (let ((kill-ring nil)
         (kill-ring-yank-pointer nil))
     (with-temp-buffer
@@ -97,8 +100,8 @@ character present at point, `y' still copies exactly that character."
       (should (equal (car kill-ring) "h")))))
 
 (ert-deftest donkey-copy-region-copies-region ()
-  "With an active region (not rectangle), copies from region-beginning
-to region-end."
+  "An active linear region is copied whole.
+From `region-beginning' to `region-end', rectangles excepted."
   (let (copied-bounds)
     (with-temp-buffer
       (insert "hello world\n")
@@ -113,8 +116,8 @@ to region-end."
       (should (equal copied-bounds '(1 6))))))
 
 (ert-deftest donkey-copy-region-deactivates-mark ()
-  "After copying a region, the mark is deactivated -- the selection
-does not linger once yanked."
+  "After copying a region, the mark is deactivated.
+The selection does not linger once yanked."
   (let (deactivated)
     (with-temp-buffer
       (insert "hello world\n")
@@ -129,8 +132,8 @@ does not linger once yanked."
       (should deactivated))))
 
 (ert-deftest donkey-copy-rectangle-mode-calls-copy-rectangle-as-kill ()
-  "With region active and rectangle-mark-mode enabled, delegates to
-copy-rectangle-as-kill via call-interactively."
+  "A live rectangle selection is copied as a rectangle.
+Delegates to `copy-rectangle-as-kill' via `call-interactively'."
   (let (called-cmd donkey--last-kill-rectangle-p)
     (with-temp-buffer
       (insert "hello\n")
@@ -145,7 +148,7 @@ copy-rectangle-as-kill via call-interactively."
     (should (eq called-cmd 'copy-rectangle-as-kill))))
 
 (ert-deftest donkey-copy-rectangle-mode-falls-back-when-disabled ()
-  "When rectangle-mark-mode is nil, falls back to plain kill-ring-save."
+  "When `rectangle-mark-mode' is nil, falls back to plain `kill-ring-save'."
   (let (copy-called ci-called)
     (with-temp-buffer
       (insert "hello\n")
@@ -192,7 +195,7 @@ implementation."
     (should (= (point) 3))))
 
 (ert-deftest donkey-delete-no-region-does-not-enter-insert ()
-  "donkey-delete does not enter insert mode (unlike donkey-change)."
+  "`donkey-delete' does not enter insert mode (unlike `donkey-change')."
   (let (entered)
     (with-temp-buffer
       (insert "hello\n")
@@ -277,7 +280,7 @@ gets killed."
       (should (equal (sort (copy-sequence killed-bounds) #'<) '(1 6))))))
 
 (ert-deftest donkey-delete-region-skips-delete-char ()
-  "With an active region, delete-char is not called."
+  "With an active region, `delete-char' is not called."
   (let (delete-char-called)
     (with-temp-buffer
       (insert "hello\n")
@@ -294,7 +297,7 @@ gets killed."
       (should-not delete-char-called))))
 
 (ert-deftest donkey-delete-region-does-not-enter-insert ()
-  "donkey-delete with region does not enter insert mode."
+  "`donkey-delete' with region does not enter insert mode."
   (let (entered)
     (with-temp-buffer
       (insert "hello\n")
@@ -311,8 +314,8 @@ gets killed."
       (should-not entered))))
 
 (ert-deftest donkey-delete-rectangle-mode-calls-kill-rectangle ()
-  "With region active and rectangle-mark-mode enabled, delegates to
-`kill-rectangle' via `call-interactively'."
+  "A live rectangle selection is cut as a rectangle.
+Delegates to `kill-rectangle' via `call-interactively'."
   (let (called-cmd donkey--last-kill-rectangle-p)
     (with-temp-buffer
       (insert "hello\n")
@@ -327,7 +330,7 @@ gets killed."
     (should (eq called-cmd 'kill-rectangle))))
 
 (ert-deftest donkey-delete-rectangle-mode-falls-back-when-disabled ()
-  "When rectangle-mark-mode is nil, falls back to kill-region."
+  "When `rectangle-mark-mode' is nil, falls back to `kill-region'."
   (let (kill-called ci-called)
     (with-temp-buffer
       (insert "hello\n")
@@ -399,9 +402,10 @@ gets killed."
     (donkey--clear-last-kill-rectangle-flag)
     (should-not donkey--last-kill-rectangle-p)))
 
-(ert-deftest donkey-kill-new-advice-clears-last-kill-rectangle-flag ()
-  "Regression test: `kill-new' -- the function ANY kill-ring push funnels
-through, including ones with no Donkey wrapper at all (e.g. `kill-line'
+(ert-deftest donkey-kill-new-advice-clears-last-kill-rectangle-p ()
+  "`kill-new' clears the rectangle flag, whoever calls it.
+Regression test: every `kill-ring' push funnels through it, including
+ones with no Donkey wrapper at all (e.g. `kill-line'
 bound directly to \"D\", or any stock kill command reached via Insert
 state's passthrough) -- must clear a stale rectangle-freshness flag, so
 a later `donkey-yank' doesn't paste an old rectangle copy instead of
@@ -412,10 +416,11 @@ the more recent, ordinary kill."
     (kill-new "some text")
     (should-not donkey--last-kill-rectangle-p)))
 
-(ert-deftest donkey-kill-append-advice-clears-last-kill-rectangle-flag ()
-  "Same as `donkey-kill-new-advice-clears-last-kill-rectangle-flag', for
-`kill-append' (used when consecutive kill commands append to the same
-kill-ring entry instead of pushing a new one)."
+(ert-deftest donkey-kill-append-advice-clears-last-kill-rectangle-p ()
+  "`kill-append' clears the rectangle flag too.
+As for `kill-new', but on the path taken when consecutive kill commands
+append to the same
+`kill-ring' entry instead of pushing a new one)."
   (let ((donkey--last-kill-rectangle-p t)
         (kill-ring '("existing"))
         (kill-ring-yank-pointer nil))
@@ -430,8 +435,8 @@ kill-ring entry instead of pushing a new one)."
     (should donkey--last-kill-rectangle-p)))
 
 (ert-deftest donkey-copy-rectangle-as-kill-advice-sets-flag-directly ()
-  "Regression test: calling `copy-rectangle-as-kill' any way OTHER than
-through `donkey-copy' -- directly via `M-x', or from any third-party
+  "The rectangle flag is set however `copy-rectangle-as-kill' is reached.
+Regression test: directly via `\\[execute-extended-command]', or from any third-party
 code -- must still set `donkey--last-kill-rectangle-p', or
 `donkey-yank' would treat the freshly populated `killed-rectangle' as
 stale and, outside `rectangle-mark-mode', crash into
@@ -445,8 +450,8 @@ kill ring itself."
     (should donkey--last-kill-rectangle-p)))
 
 (ert-deftest donkey-kill-rectangle-advice-sets-flag-directly ()
-  "Same as `donkey-copy-rectangle-as-kill-advice-sets-flag-directly', for
-`kill-rectangle'."
+  "`kill-rectangle' sets the rectangle flag however it is reached.
+As for `copy-rectangle-as-kill'."
   (let (donkey--last-kill-rectangle-p)
     (with-temp-buffer
       (insert "hello\n")
@@ -458,8 +463,8 @@ kill ring itself."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-rectangle-top-left-returns-first-row-start ()
-  "Returns the buffer position of the rectangle's top-left corner,
-regardless of which diagonal corners point/mark actually sit at."
+  "Returns the buffer position of the rectangle's top-left corner.
+Whichever diagonal corners point and mark actually sit at."
   (with-temp-buffer
     (insert "aaXXbb\nccXXdd\neeXXff\n")
     (goto-char (point-min))
@@ -471,8 +476,8 @@ regardless of which diagonal corners point/mark actually sit at."
       (should (= (donkey--rectangle-top-left start (point)) start)))))
 
 (ert-deftest donkey-replace-rectangle-selection-replaces-matching-rows ()
-  "Integration test: replaces a same-row-count rectangle selection with
-`killed-rectangle', using `delete-rectangle' (not `kill-rectangle') so
+  "A same-row-count rectangle selection is replaced by `killed-rectangle'.
+Integration test: uses `delete-rectangle' (not `kill-rectangle') so
 the source content survives the destination's own deletion."
   (with-temp-buffer
     (insert ";;aaa\n;;bbb\n;;ccc\n,,ddd\n,,eee\n,,fff\n")
@@ -489,8 +494,9 @@ the source content survives the destination's own deletion."
       (should (equal killed-rectangle '(";;" ";;" ";;"))))))
 
 (ert-deftest donkey-replace-rectangle-selection-refuses-row-count-mismatch ()
-  "Refuses via `user-error', without touching the buffer at all, when
-the selection's row count doesn't match `killed-rectangle's row count."
+  "A row-count mismatch is refused without touching the buffer.
+Signals a `user-error' when the selection and `killed-rectangle' differ
+in height."
   (with-temp-buffer
     (insert ";;aaa\n;;bbb\n;;ccc\n,,ddd\n,,eee\n,,fff\n")
     (goto-char (point-min))
@@ -509,7 +515,7 @@ the selection's row count doesn't match `killed-rectangle's row count."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-yank-no-region-calls-clipboard-yank ()
-  "Without an active region, calls clipboard-yank directly."
+  "Without an active region, calls `clipboard-yank' directly."
   (let (yanked)
     (with-temp-buffer
       (insert "hello\n")
@@ -522,7 +528,7 @@ the selection's row count doesn't match `killed-rectangle's row count."
     (should yanked)))
 
 (ert-deftest donkey-yank-no-region-skips-delete-active-region ()
-  "Without an active region, delete-active-region is not called."
+  "Without an active region, the function `delete-active-region' is not called."
   (let (deleted)
     (with-temp-buffer
       (insert "hello\n")
@@ -537,8 +543,9 @@ the selection's row count doesn't match `killed-rectangle's row count."
     (should-not deleted)))
 
 (ert-deftest donkey-yank-region-deletes-then-yanks ()
-  "With an active region, calls delete-active-region then clipboard-yank,
-in that order."
+  "An active region is removed before the paste lands.
+Calls the function `delete-active-region' then `clipboard-yank', in that
+order."
   (let (order)
     (with-temp-buffer
       (insert "hello\n")
@@ -556,7 +563,7 @@ in that order."
     (should (= (length order) 2))))
 
 (ert-deftest donkey-yank-no-region-inserts-clipboard-content ()
-  "Without region, clipboard-yank inserts clipboard text at point."
+  "Without region, `clipboard-yank' inserts clipboard text at point."
   (with-temp-buffer
     (insert "hello\n")
     (goto-char 1)
@@ -583,7 +590,7 @@ in that order."
     (should (string= (buffer-substring 1 4) "hey"))))
 
 (ert-deftest donkey-yank-empty-buffer-no-region ()
-  "Empty buffer, no region: clipboard-yank inserts at point-min."
+  "Empty buffer, no region: `clipboard-yank' inserts at point-min."
   (with-temp-buffer
     (cl-letf (((symbol-function 'use-region-p)
                (lambda () nil))
@@ -626,7 +633,7 @@ in that order."
       (should yanked))))
 
 (ert-deftest donkey-yank-ignores-prefix-arg ()
-  "clipboard-yank is called regardless of prefix arg."
+  "`clipboard-yank' is called regardless of prefix arg."
   (let (yanked)
     (with-temp-buffer
       (insert "hello\n")
@@ -640,8 +647,8 @@ in that order."
       (should yanked))))
 
 (ert-deftest donkey-yank-rectangle-mode-falls-through-to-undefined ()
-  "Regression test: with rectangle-mark-mode active, must not delete the
-region and then paste linearly.  `donkey--delete-active-region-safe'
+  "A live rectangle is never deleted and then pasted back linearly.
+Regression test: `donkey--delete-active-region-safe'
 correctly deletes the whole rectangle (via `region-extract-function',
 which rect.el advises to respect `rectangle-mark-mode'), but that
 deletion deactivates the mark, which auto-disables
@@ -673,7 +680,7 @@ dedicated tests for that path."
     (should-not yanked)))
 
 (ert-deftest donkey-yank-rectangle-mode-falls-back-when-disabled ()
-  "When rectangle-mark-mode is nil, yanks normally as before."
+  "When `rectangle-mark-mode' is nil, yanks normally as before."
   (let (called-cmd deleted yanked donkey--last-kill-rectangle-p)
     (with-temp-buffer
       (insert "hello\n")
@@ -693,7 +700,8 @@ dedicated tests for that path."
     (should yanked)))
 
 (ert-deftest donkey-yank-rectangle-mode-with-flag-calls-replace-function ()
-  "With rectangle-mark-mode active and the flag set, must delegate to
+  "A live rectangle with a rectangle to paste replaces it as a rectangle.
+Delegates to
 `donkey--replace-rectangle-selection-with-killed-rectangle' instead of
 falling through to `undefined'."
   (let ((donkey--last-kill-rectangle-p t)
@@ -713,7 +721,9 @@ falling through to `undefined'."
     (should-not called-cmd)))
 
 (ert-deftest donkey-yank-pastes-rectangle-when-flag-set ()
-  "Regression test: after `donkey-copy'/`donkey-delete' kill a rectangle
+  "`donkey-yank' pastes a rectangle when the rectangle-kill flag is set.
+
+Regression test: after `donkey-copy'/`donkey-delete' kill a rectangle
 elsewhere (rectangle-mark-mode no longer active here), `donkey-yank'
 must paste it back via `yank-rectangle' instead of pulling from the
 clipboard/kill ring -- otherwise there is no way to paste a
@@ -735,7 +745,9 @@ itself."
     (should-not clipboard-yanked)))
 
 (ert-deftest donkey-yank-rectangle-flag-deletes-active-region-first ()
-  "With an active (non-rectangle) region and the flag set, deletes the
+  "A rectangle yank over an active region deletes that region first.
+
+With an active (non-rectangle) region and the flag set, deletes the
 region before pasting the rectangle, same as the ordinary yank path."
   (let ((donkey--last-kill-rectangle-p t)
         deleted rectangle-yanked)
@@ -754,8 +766,10 @@ region before pasting the rectangle, same as the ordinary yank path."
     (should rectangle-yanked)))
 
 (ert-deftest donkey-yank-does-not-paste-rectangle-when-flag-nil ()
-  "With the flag nil (no rectangle kill since the last ordinary kill),
-yanks normally via clipboard-yank, not yank-rectangle."
+  "`donkey-yank' pastes normally when the rectangle-kill flag is nil.
+
+With the flag nil (no rectangle kill since the last ordinary kill),
+yanks normally via `clipboard-yank', not `yank-rectangle'."
   (let (donkey--last-kill-rectangle-p
         rectangle-yanked clipboard-yanked)
     (with-temp-buffer
@@ -776,7 +790,7 @@ yanks normally via clipboard-yank, not yank-rectangle."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-yank-pop-no-region-calls-yank-pop ()
-  "Without an active region, calls yank-pop directly."
+  "Without an active region, calls `yank-pop' directly."
   (let (popped)
     (with-temp-buffer
       (insert "hello\n")
@@ -789,8 +803,10 @@ yanks normally via clipboard-yank, not yank-rectangle."
     (should popped)))
 
 (ert-deftest donkey-yank-pop-region-deletes-then-pops ()
-  "With an active region, calls delete-active-region then yank-pop,
-in that order."
+  "`donkey-yank-pop' deletes an active region before popping.
+
+With an active region, calls the function `delete-active-region' then
+`yank-pop', in that order."
   (let (order)
     (with-temp-buffer
       (insert "hello\n")
@@ -808,7 +824,7 @@ in that order."
     (should (= (length order) 2))))
 
 (ert-deftest donkey-yank-pop-no-region-inserts-content ()
-  "Without region, yank-pop inserts content at point."
+  "Without region, `yank-pop' inserts content at point."
   (with-temp-buffer
     (insert "hello\n")
     (goto-char 1)
@@ -835,7 +851,7 @@ in that order."
     (should (string= (buffer-substring 1 4) "hey"))))
 
 (ert-deftest donkey-yank-pop-empty-buffer-no-region ()
-  "Empty buffer, no region: yank-pop inserts at point-min."
+  "Empty buffer, no region: `yank-pop' inserts at point-min."
   (with-temp-buffer
     (cl-letf (((symbol-function 'use-region-p)
                (lambda () nil))
@@ -884,7 +900,9 @@ is what this passes."
       (should (equal popped-with 4)))))
 
 (ert-deftest donkey-yank-pop-rectangle-mode-falls-through-to-undefined ()
-  "Regression test: same guard as `donkey-yank', for the same reason --
+  "`donkey-yank-pop' falls through to undefined in `rectangle-mark-mode'.
+
+Regression test: same guard as `donkey-yank', for the same reason --
 see `donkey-yank-rectangle-mode-falls-through-to-undefined'."
   (let (called-cmd deleted popped)
     (with-temp-buffer
@@ -905,7 +923,7 @@ see `donkey-yank-rectangle-mode-falls-through-to-undefined'."
     (should-not popped)))
 
 (ert-deftest donkey-yank-pop-rectangle-mode-falls-back-when-disabled ()
-  "When rectangle-mark-mode is nil, pops normally as before."
+  "When `rectangle-mark-mode' is nil, pops normally as before."
   (let (called-cmd deleted popped)
     (with-temp-buffer
       (insert "hello\n")
@@ -945,8 +963,10 @@ pop through regardless."
     (should-not popped)))
 
 (ert-deftest donkey-yank-pop-pops-normally-after-non-rectangle-yank ()
-  "Even with last-command `donkey-yank', a nil flag (the previous
-donkey-yank was an ordinary clipboard/kill-ring paste) must still pop
+  "`donkey-yank-pop' pops normally after an ordinary `donkey-yank'.
+
+Even with `last-command' `donkey-yank', a nil flag (the previous
+donkey-yank was an ordinary clipboard/`kill-ring' paste) must still pop
 normally."
   (let (donkey--last-kill-rectangle-p
         (last-command 'donkey-yank)
@@ -961,9 +981,11 @@ normally."
     (should popped)))
 
 (ert-deftest donkey-yank-pop-pops-normally-when-last-command-is-not-donkey-yank ()
-  "Even with the flag set, if the immediately preceding command wasn't
+  "`donkey-yank-pop' pops normally when `last-command' is not `donkey-yank'.
+
+Even with the flag set, if the immediately preceding command wasn't
 donkey-yank (e.g. the rectangle copy happened long ago and other
-commands ran since), must still fall through to plain yank-pop rather
+commands ran since), must still fall through to plain `yank-pop' rather
 than signalling the rectangle-specific error."
   (let ((donkey--last-kill-rectangle-p t)
         (last-command 'some-other-command)
@@ -982,7 +1004,7 @@ than signalling the rectangle-specific error."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-indent-region-or-line-use-region-p-truthy-takes-region-path ()
-  "When use-region-p is true, calls indent-region with region bounds."
+  "When `use-region-p' is true, calls `indent-region' with region bounds."
   (let ((indented-bounds nil))
     (with-temp-buffer
       (insert "line1\nline2\nline3\n")
@@ -998,7 +1020,7 @@ than signalling the rectangle-specific error."
     (should (= (cadr indented-bounds) 12))))
 
 (ert-deftest donkey-indent-region-or-line-use-region-p-falsy-takes-line-path ()
-  "When use-region-p is false, calls indent-region with line bounds."
+  "When `use-region-p' is false, calls `indent-region' with line bounds."
   (let ((indented-bounds nil))
     (with-temp-buffer
       (insert "hello\n")
@@ -1090,7 +1112,7 @@ than signalling the rectangle-specific error."
     (should (= (cadr indented-bounds) 12))))
 
 (ert-deftest donkey-indent-region-or-line-indents-whole-buffer-once ()
-  "indent-region is called exactly once."
+  "`indent-region' is called exactly once."
   (let ((call-count 0))
     (with-temp-buffer
       (insert "test\n")
@@ -1104,7 +1126,7 @@ than signalling the rectangle-specific error."
     (should (= call-count 1))))
 
 (ert-deftest donkey-indent-region-or-line-preserves-buffer-text ()
-  "After indent, buffer text is unchanged (mocked indent-region does nothing)."
+  "After indent, buffer text is unchanged (mocked `indent-region' does nothing)."
   (let ((original-text "original text\n"))
     (with-temp-buffer
       (insert original-text)
@@ -1117,7 +1139,7 @@ than signalling the rectangle-specific error."
       (should (string= (buffer-string) original-text)))))
 
 (ert-deftest donkey-indent-region-or-line-call-interactively ()
-  "Can be called interactively via call-interactively."
+  "Can be called interactively via `call-interactively'."
   (with-temp-buffer
     (insert "test\n")
     (goto-char 1)
@@ -1132,14 +1154,14 @@ than signalling the rectangle-specific error."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-in-org-src-block-p-returns-t-in-src-block ()
-  "In org-mode with a src-block element at point, returns non-nil."
+  "In `org-mode' with a src-block element at point, returns non-nil."
   (cl-letf (((symbol-function 'org-element-at-point)
              (lambda () '(src-block (:language "python" :begin 1 :end 50)))))
     (let ((major-mode 'org-mode))
       (should (donkey--in-org-src-block-p)))))
 
 (ert-deftest donkey-in-org-src-block-p-returns-false-in-paragraph ()
-  "In org-mode with a non-src-block element at point, returns nil."
+  "In `org-mode' with a non-src-block element at point, returns nil."
   (cl-letf (((symbol-function 'org-element-at-point)
              (lambda () '(paragraph (:begin 1 :end 10)))))
     (let ((major-mode 'org-mode))
@@ -1152,14 +1174,16 @@ than signalling the rectangle-specific error."
       (should-not (donkey--in-org-src-block-p)))))
 
 (ert-deftest donkey-in-org-src-block-p-returns-false-in-non-org-mode ()
-  "When not in org-mode, returns nil regardless of org functions."
+  "When not in `org-mode', returns nil regardless of org functions."
   (cl-letf (((symbol-function 'org-element-at-point)
              (lambda () '(src-block (:language "python" :begin 1 :end 50)))))
     (let ((major-mode 'python-mode))
       (should-not (donkey--in-org-src-block-p)))))
 
 (ert-deftest donkey-in-org-src-block-p-non-list-element ()
-  "When `org-element-at-point' returns a non-list, non-nil value, returns
+  "A non-list org element yields nil rather than a wrong-type-argument.
+
+When `org-element-at-point' returns a non-list, non-nil value, returns
 nil instead of signaling wrong-type-argument."
   (cl-letf (((symbol-function 'org-element-at-point)
              (lambda () "not-a-list")))
@@ -1171,7 +1195,7 @@ nil instead of signaling wrong-type-argument."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-comment-dwim-outside-org-comments-current-line ()
-  "Outside org-mode, comments the current line."
+  "Outside `org-mode', comments the current line."
   (let (called-bounds)
     (cl-letf (((symbol-function 'comment-or-uncomment-region)
                (lambda (beg end) (setq called-bounds (list beg end)))))
@@ -1197,7 +1221,9 @@ nil instead of signaling wrong-type-argument."
     (should (= (cadr bounds) 1))))
 
 (ert-deftest donkey-comment-dwim-outside-org-with-region ()
-  "With active region outside org, comments from region start's line
+  "Outside Org, a region is commented on whole-line boundaries.
+
+With active region outside org, comments from region start's line
 start to region end's line start (or next line if not at bol)."
   (let (called-bounds)
     (cl-letf (((symbol-function 'comment-or-uncomment-region)
@@ -1267,8 +1293,10 @@ start to region end's line start (or next line if not at bol)."
                       calls))))
 
 (ert-deftest donkey-comment-dwim-in-org-src-block-with-region ()
-  "Multiple lines in org src-block with active region: both org-edit-special
-and comment-or-uncomment-region are called."
+  "A region inside an Org src block routes through the edit buffer.
+
+Multiple lines in org src-block with active region: both org-edit-special
+and `comment-or-uncomment-region' are called."
   (let (org-edit-called comment-called)
     (cl-letf (((symbol-function 'org-element-at-point)
                (lambda () '(src-block (:language "python" :begin 1 :end 50))))
@@ -1313,13 +1341,15 @@ and comment-or-uncomment-region are called."
     (should deactivated)))
 
 (ert-deftest donkey-comment-dwim-in-org-src-block-error-handling ()
-  "If org-edit-special raises an error, condition-case catches it and
+  "An error from `org-edit-special' is caught and reported, not propagated.
+
+If org-edit-special raises an error, `condition-case' catches it and
 displays a message instead of propagating."
   (let (messages caught-error-p)
     (cl-letf (((symbol-function 'org-element-at-point)
                (lambda () '(src-block (:language "python" :begin 1 :end 50))))
               ((symbol-function 'org-edit-special)
-               (lambda () (interactive) (error "mock error")))
+               (lambda () (interactive) (error "Mock error")))
               ((symbol-function 'message)
                (lambda (fmt &rest args)
                  (push (apply #'format fmt args) messages))))
@@ -1331,18 +1361,20 @@ displays a message instead of propagating."
               (donkey-comment-dwim)
             (error (setq caught-error-p t))))))
     (should messages)
-    (should (string-match-p "donkey-comment-dwim (org-src): mock error"
+    (should (string-match-p "donkey-comment-dwim (org-src): Mock error"
                             (car messages)))
     (should-not caught-error-p)))
 
 (ert-deftest donkey-comment-dwim-in-org-src-block-exits-edit-buffer-on-comment-error ()
-  "Regression test: when `comment-or-uncomment-region' errors AFTER
+  "A commenting error still exits the Org src edit buffer.
+
+Regression test: when `comment-or-uncomment-region' errors AFTER
 `org-edit-special' already succeeded (e.g. the src block's language,
 such as `fundamental-mode', has no comment syntax defined),
 `org-edit-src-exit' still runs -- returning to the Org buffer instead
 of stranding the user in the temporary edit buffer/window.
 
-Confirmed live in `emacs -nw': pressing the comment-dwim key on a
+Confirmed live in `emacs -nw': pressing the `comment-dwim' key on a
 `#+begin_src fundamental' block opened the `*Org Src ...*' edit
 buffer/window, `comment-or-uncomment-region' signalled \"No comment
 syntax is defined\", and without this fix the edit buffer/window was
@@ -1365,7 +1397,7 @@ left open rather than being cleaned up by `org-edit-src-exit'."
     (should org-exit-called)))
 
 (ert-deftest donkey-comment-dwim-org-src-takes-priority ()
-  "When in org-mode on a src-block, the org delegation path is taken."
+  "When in `org-mode' on a src-block, the org delegation path is taken."
   (let (call-order)
     (cl-letf (((symbol-function 'org-element-at-point)
                (lambda () '(src-block (:language "python" :begin 1 :end 50))))
@@ -1412,7 +1444,9 @@ left open rather than being cleaned up by `org-edit-src-exit'."
                                "#+end_src\n"))))))
 
 (ert-deftest donkey-comment-dwim-real-org-src-region-overflows-block-start ()
-  "Regression test: a region starting OUTSIDE the src block (in ordinary
+  "A region overflowing the src block's start is clamped to the block.
+
+Regression test: a region starting OUTSIDE the src block (in ordinary
 Org prose above it) and ending inside must comment only the in-block
 part of the selection.
 
@@ -1440,7 +1474,9 @@ leaving `line_a'..`line_b' correct only by coincidence of the shift."
                                "#+end_src\n"))))))
 
 (ert-deftest donkey-comment-dwim-real-org-src-region-overflows-block-end ()
-  "Mirror of the previous test: a region running PAST the block's end
+  "A region overflowing the src block's end is clamped to the block.
+
+Mirror of the previous test: a region running PAST the block's end
 clamps at its last line instead of commenting outside it.
 
 Point (not mark) must be the in-block end of the region here: the
@@ -1464,7 +1500,9 @@ ordinary non-org branch instead and is not this code path at all."
                                "#+end_src\n\nOutro.\n"))))))
 
 (ert-deftest donkey-comment-dwim-real-org-src-no-region-single-line ()
-  "With no region, only the line point is on gets commented, and the
+  "With no region, only the current src-block line is commented.
+
+With no region, only the line point is on gets commented, and the
 surrounding block lines are untouched."
   (with-temp-buffer
     (org-mode)
@@ -1490,7 +1528,7 @@ surrounding block lines are untouched."
 (ert-deftest donkey-banked-spans-is-the-public-name-for-the-same-spans ()
   "`donkey-banked-spans' reports what `donkey--banked-spans' does.
 It exists so other packages have a name that is not free to change: csvdt
-reads banked lines through it. Nil rather than an empty list when nothing
+reads banked lines through it.  Nil rather than an empty list when nothing
 is banked, since callers test it for truth."
   (with-temp-buffer
     (donkey--test-lines-buffer 4)
@@ -1586,7 +1624,9 @@ looks collapsed.  The overlays evaporate instead."
     (should (null (donkey--banked-spans)))))
 
 (ert-deftest donkey-bank-selection-toggles-off-on-same-line ()
-  "Regression test: banking twice on one line unbanks just that line,
+  "Banking a line twice unbanks only that line.
+
+Regression test: banking twice on one line unbanks just that line,
 leaving any adjacent banked line alone.
 
 Overlays are stored one per line for exactly this reason.  When
@@ -1618,7 +1658,9 @@ second reported \"Unbanked this line (0 total)\"."
       (should-not (use-region-p)))))
 
 (ert-deftest donkey-copy-banked-lines-concatenates-in-buffer-order ()
-  "`donkey-copy' copies every banked line as one kill, in buffer order,
+  "Banked lines are copied as one kill, in buffer order.
+
+`donkey-copy' copies every banked line as one kill, in buffer order,
 skipping the lines between them."
   (let ((kill-ring nil) (kill-ring-yank-pointer nil))
     (with-temp-buffer
@@ -1676,7 +1718,9 @@ They are stored as separate per-line overlays, so this checks that
       (should (equal (car kill-ring) "r0\nr1\n")))))
 
 (ert-deftest donkey-copy-without-banked-lines-is-unchanged ()
-  "With nothing banked, `donkey-copy' keeps its original character/region
+  "With nothing banked, `donkey-copy' behaves exactly as before.
+
+With nothing banked, `donkey-copy' keeps its original character/region
 behavior -- the banked path must not hijack the ordinary case."
   (let ((kill-ring nil) (kill-ring-yank-pointer nil))
     (with-temp-buffer
@@ -2450,11 +2494,6 @@ so leaving it on leaks into every later test in the process.  See
            ,@body))
      (donkey-mode -1)))
 
-(defun donkey-test--row (n)
-  "Move to the start of row N."
-  (goto-char (point-min))
-  (forward-line (1- n)))
-
 (ert-deftest donkey-yank-replaces-banked-lines ()
   "Banked lines are a selection, so a paste replaces them.
 
@@ -2553,7 +2592,7 @@ selected rows vanished with the kill ring still empty afterwards."
 (ert-deftest donkey-yank-count-inserts-that-many-copies ()
   "A count on `p' inserts that many copies, as it does in vi.
 
-Emacs reads a prefix argument on `C-y' as WHICH kill-ring entry to pull
+Emacs reads a prefix argument on `C-y' as WHICH `kill-ring' entry to pull
 instead.  Nothing is given up by taking the vi reading here: `C-y' is
 untouched in INSERT state, so Emacs' own meaning is still available on
 the key it belongs to."
@@ -2952,7 +2991,8 @@ buffer and could not have caught the flag being cleared.  Here the two
 differ visibly -- rectangular gives AAAXX/BBBYY/CCCZZ, linear gives
 AAA/BBB/CCCXX -- which is what makes it a real check on
 `donkey--last-kill-rectangle-p' surviving the copy."
-  (donkey-test--with-clipboard-spy _sent
+  (donkey-test--with-clipboard-spy sent
+    (ignore sent)
     (goto-char (point-max))
     (insert "XX\nYY\nZZ\n")
     (goto-char (point-min))

@@ -1,5 +1,7 @@
 ;;; donkey-state-management-test.el --- Tests for DONKEY Normal/Insert state management -*- lexical-binding: t; -*-
 
+;;; Code:
+
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
@@ -21,8 +23,9 @@
 ;;; ---------------------------------------------------------------------------
 
 (defmacro donkey--with-test-buffer (&rest body)
-  "Create a fresh buffer in `fundamental-mode', enable DONKEY, and
-evaluate BODY with point at the start.
+  "Evaluate BODY in a fresh DONKEY-enabled buffer with point at the start.
+
+The buffer is created in `fundamental-mode'.
 
 `donkey-mode' is a GLOBAL minor mode: turning it on for the duration
 of BODY and never back off would leak into every other test that
@@ -47,24 +50,28 @@ runs next."
      (donkey-mode -1)))
 
 (ert-deftest donkey--with-test-buffer-turns-donkey-mode-back-off ()
-  "Regression test: `donkey--with-test-buffer' must leave `donkey-mode'
+  "The test macro turns `donkey-mode' back off.
+
+Regression test: `donkey--with-test-buffer' must leave `donkey-mode'
 off afterward, whether BODY completes normally or signals an error.
 
 Before this macro wrapped its body in `unwind-protect', `donkey-mode'
 \(a GLOBAL minor mode\) stayed on for the rest of the batch Emacs
 process once any of the 31+ tests using this macro ran -- confirmed
-via a full suite run where `donkey-mode' was still `t' after
+via a full suite run where `donkey-mode' was still non-nil after
 `ert-run-tests-batch' completed, regardless of file or test order."
   (donkey-mode -1)
   (donkey--with-test-buffer nil)
   (should-not donkey-mode)
   (should-error
-   (donkey--with-test-buffer (error "deliberate test failure")))
+   (donkey--with-test-buffer (error "Deliberate test failure")))
   (should-not donkey-mode))
 
 (defun donkey--simulate-cg ()
-  "Simulate pressing C-g. Mocks `this-single-command-keys' so
-pre-command-hook functions can see it."
+  "Simulate pressing \\=`C-g\\='.
+
+Mocks `this-single-command-keys' so `pre-command-hook' functions can
+see it."
   (let ((this-command nil)
         (this-original-command nil)
         (last-command-event 7))
@@ -100,8 +107,10 @@ pre-command-hook functions can see it."
       (should (equal (donkey-indicator) " DONKEY[N]")))))
 
 (ert-deftest donkey-state-indicator-insert-mode-active ()
-  "When donkey-insert-mode is non-nil and donkey-normal-mode is nil,
-returns \" DONKEY[I]\"."
+  "The Insert-state indicator reads \" DONKEY[I]\".
+
+This holds when donkey-insert-mode is non-nil and donkey-normal-mode is
+nil."
   (with-temp-buffer
     (let ((donkey-normal-mode nil)
           (donkey-insert-mode t))
@@ -158,7 +167,9 @@ returns \" DONKEY[I]\"."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-minibuffer-nested-activation-restores-outer-state ()
-  "Nested/recursive minibuffer activations must not clobber each other's
+  "Nested minibuffer activations each restore their own outer state.
+
+Nested/recursive minibuffer activations must not clobber each other's
 saved state.  Regression test: the pre-state used to be a single global
 slot, so an inner minibuffer's setup/exit would overwrite and then clear
 the outer minibuffer's saved state, leaving the original buffer's DONKEY
@@ -192,7 +203,9 @@ state unrestored once the outer minibuffer finally exited."
       (when (buffer-live-p buf) (kill-buffer buf)))))
 
 (ert-deftest donkey-minibuffer-exit-skips-restore-when-donkey-mode-off ()
-  "Does not resurrect Normal/Insert state on minibuffer exit when
+  "Minibuffer exit skips the restore when `donkey-mode' is off.
+
+It does not resurrect Normal/Insert state on minibuffer exit when
 donkey-mode has been globally disabled in the meantime, but still pops
 the stack so it does not leak.  Regression test: `donkey-mode' being
 disabled mid-minibuffer-session (e.g. via a keybinding, from a
@@ -225,14 +238,18 @@ class `donkey--exit-insert' has its own `donkey-mode' guard for."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-excluded-mode-p-exact-match ()
-  "Returns non-nil for a major mode listed exactly in
+  "An exactly listed major mode is excluded.
+
+Returns non-nil for a major mode listed exactly in
 `donkey-excluded-modes'."
   (with-temp-buffer
     (let ((major-mode 'comint-mode))
       (should (donkey--excluded-mode-p)))))
 
 (ert-deftest donkey-excluded-mode-p-derived-mode ()
-  "Returns non-nil for a major mode derived from one listed in
+  "A mode derived from a listed mode is excluded too.
+
+Returns non-nil for a major mode derived from one listed in
 `donkey-excluded-modes' (e.g. `shell-mode' from `comint-mode'), even
 though it is not an exact `member' match.  Regression test: two of the
 three call sites used to check membership only and would miss this."
@@ -242,7 +259,9 @@ three call sites used to check membership only and would miss this."
       (should (donkey--excluded-mode-p)))))
 
 (ert-deftest donkey-excluded-mode-p-not-excluded ()
-  "Returns nil for a major mode neither listed in nor derived from one
+  "An unrelated major mode is not excluded.
+
+Returns nil for a major mode neither listed in nor derived from one
 in `donkey-excluded-modes'."
   (with-temp-buffer
     (let ((major-mode 'text-mode))
@@ -253,8 +272,9 @@ in `donkey-excluded-modes'."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-handle-non-editing-buffer-enters-insert-when-excluded ()
-  "When major-mode is excluded and donkey-normal-mode is active, forces
-insert mode."
+  "An excluded buffer in Normal state is forced into Insert state.
+
+This is the `donkey--handle-non-editing-buffer' path."
   (let (entered)
     (with-temp-buffer
       (let ((major-mode 'comint-mode)
@@ -276,8 +296,9 @@ insert mode."
       (should-not entered))))
 
 (ert-deftest donkey-handle-non-editing-buffer-skips-when-normal-mode-inactive ()
-  "When major-mode is excluded but donkey-normal-mode is not active, does
-nothing (nothing to correct)."
+  "An excluded buffer already out of Normal state is left alone.
+
+There is nothing to correct."
   (let (entered)
     (with-temp-buffer
       (let ((major-mode 'comint-mode)
@@ -288,8 +309,9 @@ nothing (nothing to correct)."
       (should-not entered))))
 
 (ert-deftest donkey-check-post-command-non-editing-enters-insert-when-excluded ()
-  "When donkey-normal-mode is active in an excluded major mode, forces
-insert mode."
+  "The post-command check forces Insert state in an excluded mode.
+
+This fires when donkey-normal-mode is active in an excluded major mode."
   (let (entered)
     (with-temp-buffer
       (let ((major-mode 'term-mode)
@@ -326,7 +348,7 @@ insert mode."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-state-exit-insert-deactivates-mark ()
-  "Calls deactivate-mark before entering normal mode."
+  "The function `deactivate-mark' is called before entering Normal state."
   (let (deactivated)
     (with-temp-buffer
       (let ((donkey-insert-mode t)
@@ -356,8 +378,10 @@ insert mode."
     (should called)))
 
 (ert-deftest donkey-state-exit-insert-force-enables-normal-if-still-off ()
-  "If donkey-enter-normal doesn't activate normal mode, force-enables it
-via (donkey-normal-mode 1)."
+  "Normal state is force-enabled if it is still off.
+
+If donkey-enter-normal doesn't activate normal mode, the fallback
+\(donkey-normal-mode 1) runs."
   (let (force-arg)
     (with-temp-buffer
       (let ((donkey-insert-mode t)
@@ -374,8 +398,10 @@ via (donkey-normal-mode 1)."
     (should (eq force-arg 1))))
 
 (ert-deftest donkey-state-exit-insert-skips-force-when-normal-active ()
-  "When donkey-enter-normal successfully enables normal mode, the
-fallback (donkey-normal-mode 1) is not called."
+  "The force-enable fallback is skipped when Normal state is active.
+
+When donkey-enter-normal successfully enables normal mode, the
+fallback \(donkey-normal-mode 1) is not called."
   (let (force-called)
     (with-temp-buffer
       (let ((donkey-insert-mode t)
@@ -392,7 +418,7 @@ fallback (donkey-normal-mode 1) is not called."
     (should-not force-called)))
 
 (ert-deftest donkey-state-exit-insert-minibuffer-delegates-to-keyboard-quit ()
-  "In the minibuffer, delegates to keyboard-quit and skips all other steps."
+  "In the minibuffer, delegates to `keyboard-quit' and skips all other steps."
   (let (quit-called deactivated entered-normal)
     (cl-letf (((symbol-function 'minibufferp)
                (lambda () t))
@@ -408,8 +434,9 @@ fallback (donkey-normal-mode 1) is not called."
     (should-not entered-normal)))
 
 (ert-deftest donkey-state-exit-insert-insert-mode-inactive-delegates-to-keyboard-quit ()
-  "When donkey-insert-mode is not actually active, delegates to
-keyboard-quit and skips all other steps.  Regression test:
+  "With Insert state inactive, the command delegates to `keyboard-quit'.
+
+It skips all other steps.  Regression test:  Regression test:
 `donkey-setup-smartparens' binds this command directly into
 Smartparens' own keymaps (independent of DONKEY's lifecycle), so a
 stray key press routed there after disabling `donkey-mode' (which
@@ -433,7 +460,9 @@ turns off `donkey-insert-mode' in every buffer) must not resurrect
     (should-not entered-normal)))
 
 (ert-deftest donkey-state-exit-insert-standalone-usage-without-donkey-mode-still-transitions ()
-  "donkey-insert-mode/donkey-normal-mode are usable standalone, without
+  "The state commands work standalone, without the global mode.
+
+donkey-insert-mode/donkey-normal-mode are usable without
 ever enabling the global `donkey-mode'.  Regression test: checking
 `donkey-mode' here (instead of the buffer-local `donkey-insert-mode')
 would make `C-g' always fall through to `keyboard-quit' for that
@@ -457,8 +486,10 @@ transitioning to Normal state."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-state-intercept-quit-triggers-on-c-g-in-insert-mode ()
-  "When in insert mode (not minibuffer) and C-g ([7]) is pressed,
-intercepts: sets this-command to ignore, deactivates mark, enters
+  "\\=`C-g\\=' in Insert state is intercepted.
+
+When in insert mode (not minibuffer) and \\=`C-g\\=' ([7]) is pressed,
+it intercepts: sets `this-command' to ignore, deactivates mark, enters
 normal mode."
   (let (cmd-set deactivated entered-normal)
     (with-temp-buffer
@@ -520,7 +551,9 @@ normal mode."
     (should-not entered-normal)))
 
 (ert-deftest donkey-state-intercept-quit-skips-in-excluded-mode ()
-  "In excluded-mode buffers, does not intercept.  Regression test: the
+  "The interception is skipped in excluded-mode buffers.
+
+Regression test: the
 raw key must fall through to the direct `C-g' binding instead, so
 `keyboard-quit' (called from `donkey--exit-insert' there) runs as an
 ordinary command rather than signalling `quit' from inside this
@@ -545,7 +578,7 @@ permanently removing this function from the hook after just one
     (should-not entered-normal)))
 
 (ert-deftest donkey-state-intercept-quit-skips-non-c-g-key ()
-  "Keys other than C-g ([7]) are not intercepted."
+  "Keys other than \\=`C-g\\=' ([7]) are not intercepted."
   (let (deactivated entered-normal)
     (with-temp-buffer
       (let ((donkey-insert-mode t)
@@ -564,8 +597,10 @@ permanently removing this function from the hook after just one
     (should-not entered-normal)))
 
 (ert-deftest donkey-intercept-sp-cancel-command ()
-  "Triggers when C-g resolves to sp-cancel (smartparens race-condition fix),
-even without the real raw-key check firing."
+  "Interception triggers when \\=`C-g\\=' resolves to sp-cancel.
+
+This is the smartparens race-condition fix, and holds even without the
+real raw-key check firing."
   (skip-unless (featurep 'smartparens))
   (require 'smartparens)
   (donkey--with-test-buffer
@@ -578,7 +613,7 @@ even without the real raw-key check firing."
      (should (bound-and-true-p donkey-normal-mode)))))
 
 (ert-deftest donkey-intercept-prevents-overlapping-handlers ()
-  "When interceptor fires, it should set this-command to ignore."
+  "When interceptor fires, it should set `this-command' to ignore."
   (donkey--with-test-buffer
    (donkey-enter-insert)
    (let ((this-command 'sp-cancel))
@@ -590,8 +625,10 @@ even without the real raw-key check firing."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-state-on-normal-entry-saves-and-deactivates-input-method ()
-  "When donkey-normal-mode is active and an input method is active, saves
-the method name and deactivates it."
+  "Entering Normal state saves and deactivates the input method.
+
+This happens when donkey-normal-mode is active and an input method is
+active."
   (let (deactivated)
     (with-temp-buffer
       (let ((donkey-normal-mode t)
@@ -630,8 +667,9 @@ the method name and deactivates it."
     (should-not deactivated)))
 
 (ert-deftest donkey-state-on-insert-entry-restores-saved-input-method ()
-  "When entering insert mode with a saved method and none currently active,
-restores the saved method."
+  "Entering Insert state restores the saved input method.
+
+This holds when there is a saved method and none currently active."
   (let (restored)
     (with-temp-buffer
       (let ((donkey-insert-mode t)
@@ -667,8 +705,9 @@ restores the saved method."
     (should-not activated)))
 
 (ert-deftest donkey-state-on-input-method-activate-blocks-in-normal-mode ()
-  "When input method activates while in normal mode, saves the method and
-deactivates it."
+  "Activating an input method in Normal state is blocked.
+
+The method name is saved and the method deactivated."
   (let (deactivated)
     (with-temp-buffer
       (let ((donkey-normal-mode t)
@@ -694,8 +733,10 @@ deactivates it."
     (should-not deactivated)))
 
 (ert-deftest donkey-state-on-input-method-activate-suppresses-recursion ()
-  "During deactivation, input-method-activate-hook is let-bound to nil,
-preventing recursive hook invocation."
+  "The activate hook is suppressed during deactivation.
+
+`input-method-activate-hook' is let-bound to nil, preventing recursive
+hook invocation."
   (let (hook-during-deactivate)
     (with-temp-buffer
       (let ((donkey-normal-mode t)
@@ -710,8 +751,9 @@ preventing recursive hook invocation."
     (should-not hook-during-deactivate)))
 
 (ert-deftest donkey-state-on-input-method-deactivate-clears-saved-in-insert-mode ()
-  "When the input method deactivates while donkey-insert-mode is active,
-clears the saved value so it won't be resurrected later."
+  "Deactivating in Insert state clears the saved input method.
+
+The saved value is cleared so it won't be resurrected later."
   (with-temp-buffer
     (let ((donkey-insert-mode t)
           (donkey--saved-input-method "swedish-postfix"))
@@ -719,9 +761,11 @@ clears the saved value so it won't be resurrected later."
       (should-not donkey--saved-input-method))))
 
 (ert-deftest donkey-state-on-input-method-deactivate-skips-when-not-insert-mode ()
-  "When donkey-insert-mode is not active (e.g. this is
-donkey--on-normal-entry's own save-and-deactivate step), leaves the
-saved value untouched."
+  "Deactivating outside Insert state leaves the saved value alone.
+
+When donkey-insert-mode is not active (e.g. this is
+donkey--on-normal-entry's own save-and-deactivate step), the saved
+value is untouched."
   (with-temp-buffer
     (let ((donkey-insert-mode nil)
           (donkey--saved-input-method "swedish-postfix"))
@@ -729,7 +773,9 @@ saved value untouched."
       (should (equal donkey--saved-input-method "swedish-postfix")))))
 
 (ert-deftest donkey-input-method-manual-deactivation-is-not-resurrected ()
-  "Regression test: manually deactivating an input method while remaining
+  "A manually deactivated input method is not resurrected.
+
+Regression test: manually deactivating an input method while remaining
 in Insert state used to leave the stale saved value in place, so the
 next Normal-to-Insert cycle silently reactivated the very input method
 the user had just turned off."
@@ -761,7 +807,9 @@ the user had just turned off."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-disable-input-method-clears-saved-value-in-normal-state ()
-  "Regression test: `deactivate-input-method' alone is a no-op in Normal
+  "Disabling the input method clears the saved value in Normal state.
+
+Regression test: `deactivate-input-method' alone is a no-op in Normal
 state, since Donkey already deactivated the live input method on entry
 and `current-input-method' is already nil -- so it never clears the
 buffer-local `donkey--saved-input-method' stash, and the next
@@ -779,8 +827,10 @@ unconditionally, regardless of `current-input-method''s live state."
       (should-not deactivate-called))))
 
 (ert-deftest donkey-disable-input-method-deactivates-live-method ()
-  "When an input method is actually active (e.g. called from Insert
-state), also deactivates it, not just the saved stash."
+  "Disabling the input method deactivates a live method too.
+
+When an input method is actually active (e.g. called from Insert
+state), it is deactivated, not just the saved stash."
   (with-temp-buffer
     (let ((donkey--saved-input-method nil)
           (current-input-method "swedish-postfix")
@@ -795,7 +845,9 @@ state), also deactivates it, not just the saved stash."
       (should-not donkey--saved-input-method))))
 
 (ert-deftest donkey-disable-input-method-prevents-resurrection-on-insert-entry ()
-  "End-to-end regression: after `donkey-disable-input-method' in Normal
+  "A disabled input method is not resurrected on Insert entry.
+
+End-to-end regression: after `donkey-disable-input-method' in Normal
 state, re-entering Insert state must not reactivate the input method."
   (with-temp-buffer
     (fundamental-mode)
@@ -824,7 +876,7 @@ state, re-entering Insert state must not reactivate the input method."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-cg-exits-insert-to-normal ()
-  "C-g in insert mode (no overlays, no mark) should enter normal mode."
+  "\\=`C-g\\=' in insert mode (no overlays, no mark) should enter normal mode."
   (donkey--with-test-buffer
    (donkey-enter-insert)
    (should (bound-and-true-p donkey-insert-mode))
@@ -834,7 +886,7 @@ state, re-entering Insert state must not reactivate the input method."
    (should-not (bound-and-true-p donkey-insert-mode))))
 
 (ert-deftest donkey-cg-normal-mode-lighter ()
-  "Modeline lighter should show DONKEY[N] after C-g from insert."
+  "Modeline lighter should show DONKEY[N] after \\=`C-g\\=' from insert."
   (donkey--with-test-buffer
    (donkey-enter-insert)
    (should (string-match-p "DONKEY\\[I\\]" (donkey-indicator)))
@@ -843,7 +895,7 @@ state, re-entering Insert state must not reactivate the input method."
    (should-not (string-match-p "DONKEY\\[I\\]" (donkey-indicator)))))
 
 (ert-deftest donkey-cg-cursor-shape ()
-  "Cursor should change from bar to box after C-g from insert."
+  "Cursor should change from bar to box after \\=`C-g\\=' from insert."
   (donkey--with-test-buffer
    (donkey-enter-insert)
    (should (eq cursor-type (default-value 'donkey-cursor-insert)))
@@ -855,7 +907,7 @@ state, re-entering Insert state must not reactivate the input method."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-cg-inside-sp-pair ()
-  "C-g inside a smartparens pair should enter normal mode on first press."
+  "\\=`C-g\\=' inside a smartparens pair should enter normal mode on first press."
   (skip-unless (featurep 'smartparens))
   (require 'smartparens)
   (donkey--with-test-buffer
@@ -867,8 +919,9 @@ state, re-entering Insert state must not reactivate the input method."
    (should (bound-and-true-p donkey-normal-mode))))
 
 (ert-deftest donkey-cg-no-sp-post-command-error ()
-  "After C-g with smartparens overlays active, no error should be signaled
-in post-command-hook."
+  "\\=`C-g\\=' with smartparens overlays signals no post-command error.
+
+No error should be signaled in `post-command-hook'."
   (skip-unless (featurep 'smartparens))
   (require 'smartparens)
   (donkey--with-test-buffer
@@ -882,16 +935,19 @@ in post-command-hook."
      (should (null errors)))))
 
 (ert-deftest donkey-setup-smartparens-binds-c-g ()
-  "donkey-setup-smartparens binds C-g to donkey--exit-insert in each
-smartparens keymap it finds bound."
+  "Smartparens setup binds \\=`C-g\\=' in every keymap it finds.
+
+It binds \\=`C-g\\=' to donkey--exit-insert in each smartparens keymap
+found bound."
   (skip-unless (featurep 'smartparens))
   (require 'smartparens)
   (donkey-setup-smartparens)
   (should (eq (keymap-lookup smartparens-mode-map "C-g") #'donkey--exit-insert)))
 
 (ert-deftest donkey-setup-smartparens-no-error-without-keymaps ()
-  "donkey-setup-smartparens does not error when the relevant keymap
-variables are unbound."
+  "Smartparens setup does not error without the keymaps.
+
+It is a no-op when the relevant keymap variables are unbound."
   (cl-letf (((symbol-function 'boundp) (lambda (_sym) nil)))
     (should-not (condition-case nil
                     (progn (donkey-setup-smartparens) nil)
@@ -902,7 +958,7 @@ variables are unbound."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-cg-with-active-region ()
-  "C-g with active region should enter normal mode and deactivate mark."
+  "\\=`C-g\\=' with active region should enter normal mode and deactivate mark."
   (donkey--with-test-buffer
    (donkey-enter-insert)
    (set-mark (point))
@@ -918,7 +974,7 @@ variables are unbound."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-cg-in-minibuffer-does-not-transition ()
-  "C-g in the minibuffer should NOT trigger DONKEY state transition."
+  "\\=`C-g\\=' in the minibuffer should NOT trigger DONKEY state transition."
   (donkey--with-test-buffer
    (donkey-enter-insert)
    (should (bound-and-true-p donkey-insert-mode))
@@ -931,7 +987,7 @@ variables are unbound."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-cg-normal-keymap-active ()
-  "After C-g transition, normal-mode-map bindings should be active."
+  "After \\=`C-g\\=' transition, normal-mode-map bindings should be active."
   (donkey--with-test-buffer
    (donkey-enter-insert)
    (donkey--simulate-cg)
@@ -940,7 +996,7 @@ variables are unbound."
                #'backward-char))))
 
 (ert-deftest donkey-cg-insert-keymap-disabled ()
-  "After C-g transition, donkey-insert-mode-map should NOT be active."
+  "After \\=`C-g\\=' transition, donkey-insert-mode-map should NOT be active."
   (donkey--with-test-buffer
    (donkey-enter-insert)
    (donkey--simulate-cg)
@@ -948,7 +1004,7 @@ variables are unbound."
    (should-not (memq donkey-insert-mode-map (current-active-maps)))))
 
 (ert-deftest donkey-cg-normal-mode-hook-runs ()
-  "`donkey-normal-mode-hook' should fire after C-g transition."
+  "`donkey-normal-mode-hook' should fire after \\=`C-g\\=' transition."
   (donkey--with-test-buffer
    (let ((hook-fired nil))
      (add-hook 'donkey-normal-mode-hook
@@ -964,8 +1020,10 @@ variables are unbound."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-cg-in-excluded-mode ()
-  "In excluded modes, DONKEY should start in insert state.  C-g should
-delegate to `keyboard-quit' rather than flip to normal mode, since a
+  "\\=`C-g\\=' in an excluded mode delegates to `keyboard-quit'.
+
+In excluded modes, DONKEY should start in insert state, and \\=`C-g\\='
+should delegate rather than flip to normal mode, since a
 flip would just get reverted immediately and silently swallow the quit.
 
 Simulates the real command loop rather than using
@@ -1051,7 +1109,7 @@ command loop would set it."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-cg-guard-prevents-double-execution ()
-  "The guard should prevent double-execution when C-g is pressed rapidly."
+  "The guard should prevent double-execution when \\=`C-g\\=' is pressed rapidly."
   (donkey--with-test-buffer
    (donkey-enter-insert)
    (donkey--simulate-cg)
@@ -1061,7 +1119,7 @@ command loop would set it."
    (should-not donkey--just-exited-from-insert)))
 
 (ert-deftest donkey-cg-double-cg-stays-in-normal ()
-  "Pressing C-g twice should remain in normal mode, not crash."
+  "Pressing \\=`C-g\\=' twice should remain in normal mode, not crash."
   (donkey--with-test-buffer
    (donkey-enter-insert)
    (donkey--simulate-cg)
@@ -1074,7 +1132,7 @@ command loop would set it."
      (should (bound-and-true-p donkey-normal-mode)))))
 
 (ert-deftest donkey-cg-then-insert-then-cg ()
-  "C-g -> insert -> C-g cycle should work cleanly."
+  "\\=`C-g\\=' -> insert -> \\=`C-g\\=' cycle should work cleanly."
   (donkey--with-test-buffer
    (donkey-enter-insert)
    (donkey--simulate-cg)
@@ -1088,13 +1146,15 @@ command loop would set it."
    (should (bound-and-true-p donkey-normal-mode))))
 
 (ert-deftest donkey-reset-exit-guard-is-buffer-local-to-originating-buffer ()
-  "The exit-insert guard must only reset once the ORIGINATING buffer is
+  "The exit-insert guard resets only in its originating buffer.
+
+It must only reset once the ORIGINATING buffer is
 current again for its next command, not whichever buffer happens to run
 the next command.  Regression test: `donkey--reset-exit-guard' used to
 be registered on the global `pre-command-hook', so if a different
 buffer became current before the originating buffer's next real
 command, the guard reset there instead, then self-removed — leaving
-the originating buffer's guard stuck `t' forever and silently
+the originating buffer's guard stuck non-nil forever and silently
 disabling the `C-g' interception fallback for it."
   (let ((buf-a (generate-new-buffer "donkey-guard-buf-a"))
         (buf-b (generate-new-buffer "donkey-guard-buf-b")))
@@ -1203,7 +1263,9 @@ disabling the `C-g' interception fallback for it."
      (should (overlay-start ov)))))
 
 (ert-deftest donkey-clear-overlays-removes-tracked-pair-overlay-from-sp-list ()
-  "Strategy 3 removes an overlay tracked in `sp-pair-overlay-list' via
+  "A tracked pair overlay is removed through Smartparens itself.
+
+Strategy 3 removes an overlay tracked in `sp-pair-overlay-list' via
 `sp--remove-overlay' instead of a raw `delete-overlay'.
 
 Regression test: raw `delete-overlay' on an overlay Smartparens still
@@ -1212,7 +1274,7 @@ reference there.  `overlay-start'/`overlay-end' on a deleted overlay
 return nil, so the next command then crashed
 `sp--pair-overlay-post-command-handler' (still buffer-locally
 registered, since only `sp--remove-overlay' also unregisters it) with
-\(wrong-type-argument number-or-marker-p nil) -- reproduced live in a
+\(wrong-type-argument `number-or-marker-p' nil) -- reproduced live in a
 real `emacs -nw' session."
   (skip-unless (and (featurep 'smartparens)
                      (boundp 'sp-pair-overlay-keymap)
@@ -1255,8 +1317,9 @@ real `emacs -nw' session."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-cg-without-smartparens ()
-  "C-g should enter normal mode even when smartparens is not loaded. Only
-runs in environments where smartparens is absent."
+  "\\=`C-g\\=' enters Normal state even without smartparens.
+
+Only runs in environments where smartparens is absent."
   (skip-unless (not (featurep 'smartparens)))
   (donkey--with-test-buffer
    (should-not (featurep 'smartparens))
@@ -1265,8 +1328,9 @@ runs in environments where smartparens is absent."
    (should (bound-and-true-p donkey-normal-mode))))
 
 (ert-deftest donkey-cg-no-sp-functions-bound-check ()
-  "donkey-setup-smartparens binds C-g without erroring, whether
-smartparens is absent or present."
+  "Smartparens setup binds \\=`C-g\\=' without erroring.
+
+This holds whether smartparens is absent or present."
   (should (fboundp 'donkey--exit-insert))
   (when (and (featurep 'smartparens)
              (boundp 'smartparens-mode-map))
@@ -1280,8 +1344,10 @@ smartparens is absent or present."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-mode-enable-registers-hooks ()
-  "Enabling donkey-mode adds its after-change-major-mode-hook and
-post-command-hook functions."
+  "Enabling `donkey-mode' registers its hook functions.
+
+It adds its `after-change-major-mode-hook' and `post-command-hook'
+functions."
   (unwind-protect
       (progn
         (donkey-mode 1)
@@ -1301,7 +1367,9 @@ post-command-hook functions."
   (should-not (memq #'donkey--update-cursor-passive post-command-hook)))
 
 (ert-deftest donkey-mode-update-cursor-on-post-command-hook-resyncs-on-window-switch ()
-  "Regression test: `donkey--update-cursor-passive' must run on the
+  "The cursor resyncs on a window switch.
+
+Regression test: `donkey--update-cursor-passive' must run on the
 global `post-command-hook', not only on `donkey-normal-mode-hook'/
 `donkey-insert-mode-hook'.
 
@@ -1310,7 +1378,7 @@ toggles.  Switching the selected window between two buffers that
 already each have an established (but different) DONKEY state -- via
 `other-window', `switch-to-buffer', etc. -- never toggles either
 buffer's mode, so without this hook the terminal's cursor shape would
-never resync to the newly-selected buffer's actual state. Confirmed
+never resync to the newly-selected buffer's actual state.  Confirmed
 live in `emacs -nw': `other-window' between a Normal-state buffer and
 an Insert-state buffer sent no DECSCUSR sequence at all until this was
 added."
@@ -1325,7 +1393,9 @@ added."
     (donkey-mode -1)))
 
 (ert-deftest donkey-update-cursor-passive-skips-unmanaged-buffer ()
-  "Regression test: `donkey--update-cursor-passive' must NOT reset
+  "The passive cursor update skips an unmanaged buffer.
+
+Regression test: `donkey--update-cursor-passive' must NOT reset
 `cursor-type' in a buffer where neither `donkey-normal-mode' nor
 `donkey-insert-mode' is active.
 
@@ -1345,7 +1415,9 @@ active\" branch."
     (should (eq cursor-type 'hbar))))
 
 (ert-deftest donkey-update-cursor-non-passive-still-resets-unmanaged-buffer ()
-  "Without PASSIVE, `donkey--update-cursor' still resets `cursor-type'
+  "The non-passive cursor update still resets an unmanaged buffer.
+
+Without PASSIVE, `donkey--update-cursor' still resets `cursor-type'
 to the default when neither mode is active.
 
 Regression guard for the opposite failure mode: a buffer's own
@@ -1353,7 +1425,7 @@ Normal/Insert -> disabled transition (e.g. standalone
 `donkey-normal-mode' disabled without ever entering Insert, with no
 global `donkey-mode' to fall back on its own explicit per-buffer
 reset) relies on exactly this to restore the cursor -- `passive'
-must only suppress the reset for the global post-command-hook poll,
+must only suppress the reset for the global `post-command-hook' poll,
 never for the mode-hook-triggered call."
   (with-temp-buffer
     (setq-local cursor-type 'hbar)
@@ -1361,7 +1433,9 @@ never for the mode-hook-triggered call."
     (should-not (local-variable-p 'cursor-type))))
 
 (ert-deftest donkey-mode-check-post-command-non-editing-not-registered-before-enable ()
-  "`donkey--check-post-command-non-editing' must not be a permanent,
+  "The non-editing post-command check is not registered before enable.
+
+`donkey--check-post-command-non-editing' must not be a permanent,
 unconditional global hook.  Regression test: it used to be added once
 at load time regardless of whether `donkey-mode' was ever enabled, and
 was never removed by `donkey-mode's disable branch — a hook lifecycle
@@ -1542,7 +1616,7 @@ invites the reader to press `C-g\=' and conclude the key is broken."
   "The lighter is an `:eval\=' form, so it follows a mode change.
 
 A buffer can become excluded without any DONKEY transition firing --
-`M-x eshell-mode\=' in an ordinary buffer does it -- so a lighter fixed
+`M-x `eshell-mode'\=' in an ordinary buffer does it -- so a lighter fixed
 at the moment Insert state was entered would then be wrong with nothing
 to correct it."
   (unwind-protect

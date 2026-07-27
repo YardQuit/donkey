@@ -1,5 +1,7 @@
 ;;; donkey-marking-test.el --- Tests for DONKEY mark/selection commands -*- lexical-binding: t; -*-
 
+;;; Code:
+
 (require 'ert)
 (require 'cl-lib)
 (require 'rect)
@@ -28,7 +30,9 @@
     (should-not (bound-and-true-p rectangle-mark-mode))))
 
 (defmacro donkey--test-clears-stale-rectangle-mode (test-name command-form)
-  "Define an ERT test asserting COMMAND-FORM clears a pre-existing
+  "Define ERT test TEST-NAME asserting COMMAND-FORM clears a stale rectangle.
+
+COMMAND-FORM must clear a pre-existing
 active `rectangle-mark-mode' selection.
 
 Regression tests for the bug found live: `m v' on one line, then a
@@ -93,12 +97,14 @@ change at all."
   (progn (goto-char 2) (donkey-set-mark)))
 
 (ert-deftest donkey-set-mark-activates-mark-at-point ()
-  "Sets the mark at point and activates the region, like plain
+  "The mark is set at point and the region activated.
+
+This is like plain
 `set-mark-command' with no prefix argument.
 
 Checks `mark-active' directly rather than `use-region-p': the mark and
-point are still at the SAME position right after `donkey-set-mark'
-(point has not moved to select anything yet), so the region is
+point are still at the SAME position right after
+`donkey-set-mark' (point has not moved to select anything yet), so the region is
 genuinely empty and `use-region-p' correctly reports nil for that per
 its own documented, deliberate exclusion of empty regions."
   (let ((transient-mark-mode t))
@@ -110,7 +116,9 @@ its own documented, deliberate exclusion of empty regions."
       (should (= (mark) 6)))))
 
 (ert-deftest donkey-set-mark-delegates-to-set-mark-command ()
-  "Delegates to `set-mark-command' via `call-interactively', so
+  "`donkey-set-mark' delegates to `set-mark-command'.
+
+It goes through `call-interactively', so
 prefix-argument behaviors (e.g. popping the mark ring with `C-u')
 keep working exactly as they do for the underlying command."
   (let (called-with-prefix)
@@ -122,7 +130,9 @@ keep working exactly as they do for the underlying command."
     (should (equal called-with-prefix '(4)))))
 
 (ert-deftest donkey-mark-paragraph-clears-stale-rectangle-mode-and-selects-correctly ()
-  "End-to-end regression test matching the exact live repro: a stale
+  "A stale rectangle does not corrupt a new paragraph selection.
+
+End-to-end regression test matching the exact live repro: a stale
 rectangle selection from an unrelated `m v' session must not corrupt
 the NEW multi-line selection `donkey-mark-paragraph' creates, and
 `donkey-delete' run right after must delete the whole paragraph, not a
@@ -379,7 +389,7 @@ Return list (POINT MARK TEXT) describing the resulting region."
   (should (equal (nth 2 (donkey-test--symbol-result "foobar,." 4)) "foobar")))
 
 (ert-deftest donkey-mark-symbol-internal-comma-period ()
-  "Internal ,/. are preserved within the symbol."
+  "Internal comma and period characters are preserved within the symbol."
   (should (equal (nth 2 (donkey-test--symbol-result "word,.word" 6)) "word,.word")))
 
 (ert-deftest donkey-mark-symbol-internal-from-left ()
@@ -484,8 +494,9 @@ line under an expression is an ordinary place to press this."
   (should (equal (nth 2 (donkey-test--symbol-result "foobar, rest" 3)) "foobar")))
 
 (ert-deftest donkey-mark-symbol-adjacent-via-comma ()
-  "Two symbols separated only by comma: foo,bar.
-mark-sexp should treat them as one unit."
+  "Two symbols separated only by a comma count as one symbol.
+
+Given foo,bar, `mark-sexp' should treat them as one unit."
   (should (equal (nth 2 (donkey-test--symbol-result "foo,bar" 2)) "foo,bar")))
 
 ;;; ---------------------------------------------------------------------------
@@ -875,8 +886,8 @@ buffer, and rejecting it is the whole reason that guard exists."
 (ert-deftest donkey-mark-paragraph-empty-buffer ()
   "An empty buffer has no paragraph, and this reports so.
 
-Was \"Empty buffer marks empty region\", and asserted only `(should
-(mark))' -- true of a mark that had been pushed and then went nowhere.
+Was \"Empty buffer marks empty region\", and asserted only
+`(should (mark))' -- true of a mark that had been pushed and then went nowhere.
 It passed while the command announced \"Paragraph marked\" over a buffer
 with nothing in it and no region active, which is what a test written
 from the implementation rather than the purpose will do."
@@ -1059,8 +1070,9 @@ from the implementation rather than the purpose will do."
                    "escaped"))))
 
 (ert-deftest donkey-mark-inner-curly-single-quote ()
-  "Marks content inside curly single quotes (U+2018/U+2019), a default
-delimiter pair, excluding the quotes."
+  "Content inside curly single quotes is marked, quotes excluded.
+
+U+2018/U+2019 is a default delimiter pair."
   (with-temp-buffer
     (insert (concat (string ?‘) "quoted" (string ?’)))
     (goto-char 1)
@@ -1069,7 +1081,9 @@ delimiter pair, excluding the quotes."
                    "quoted"))))
 
 (ert-deftest donkey-mark-inner-curly-single-quote-distinct-open-close ()
-  "Regression test: `donkey-mark-pair-delimiters' previously mapped
+  "Curly single quotes pair a distinct opener with a distinct closer.
+
+Regression test: `donkey-mark-pair-delimiters' previously mapped
 U+2019 (closing curly single quote) to itself for BOTH the open and
 close side, instead of pairing U+2018 (opening) with U+2019 (closing).
 That made the opening quote unrecognized as an opener (falling through
@@ -1081,7 +1095,9 @@ found nothing at all."
   (should (equal (assq ?’ donkey-mark-pair-delimiters) nil)))
 
 (ert-deftest donkey-mark-inner-curly-single-quote-from-closing-quote ()
-  "Point on the CLOSING curly single quote falls through to the
+  "Marking works from the closing curly single quote too.
+
+Point on the CLOSING curly single quote falls through to the
 `read-char' prompt (same as any other asymmetric closing delimiter,
 e.g. `)'), and searching backward for the real opener (U+2018) then
 correctly finds the pair."
@@ -1095,8 +1111,9 @@ correctly finds the pair."
                    "quoted"))))
 
 (ert-deftest donkey-mark-inner-curly-double-quote ()
-  "Marks content inside curly double quotes (U+201C/U+201D), a default
-delimiter pair, excluding the quotes."
+  "Content inside curly double quotes is marked, quotes excluded.
+
+U+201C/U+201D is a default delimiter pair."
   (with-temp-buffer
     (insert (concat (string ?“) "quoted" (string ?”)))
     (goto-char 1)
@@ -1105,7 +1122,9 @@ delimiter pair, excluding the quotes."
                    "quoted"))))
 
 (ert-deftest donkey-mark-inner-case-sensitive-delimiter ()
-  "Regression test: matching a delimiter pair must be case-sensitive,
+  "Delimiter matching is case-sensitive.
+
+Regression test: matching a delimiter pair must be case-sensitive,
 regardless of the buffer's own `case-fold-search' setting.
 
 Without binding `case-fold-search' to nil, `search-forward'/
@@ -1150,7 +1169,9 @@ uppercase `X') before this fix."
                    "inner"))))
 
 (ert-deftest donkey-mark-inner-nested-same-type-from-outer-open ()
-  "Regression test: point on the OUTER opening delimiter of a
+  "Marking from an outer opening delimiter spans the whole nest.
+
+Regression test: point on the OUTER opening delimiter of a
 same-type nested pair (e.g. the outer `{' of \"{{inner}}\") must select
 the content up to the OUTER closing delimiter, not the nearest one.
 
@@ -1174,7 +1195,9 @@ selecting the correct \"{inner}\"."
                          expected)))))))
 
 (ert-deftest donkey-mark-inner-nested-same-type-from-outer-close ()
-  "Same regression as `donkey-mark-inner-nested-same-type-from-outer-open',
+  "Marking from an outer closing delimiter spans the whole nest.
+
+Same regression as `donkey-mark-inner-nested-same-type-from-outer-open',
 but with point on the OUTER closing delimiter instead (exercising the
 nesting-aware backward scan, `donkey--mark-pair-scan-backward')."
   (dolist (case '(("{{inner}}" . "{inner}")
@@ -1190,7 +1213,9 @@ nesting-aware backward scan, `donkey--mark-pair-scan-backward')."
                          expected)))))))
 
 (ert-deftest donkey-mark-inner-nested-same-type-with-content-around-inner-pair ()
-  "Nesting-aware scan still finds the correct enclosing pair when the
+  "The nesting scan handles content around an inner pair.
+
+It still finds the correct enclosing pair when the
 nested same-type pair is surrounded by other text, not just adjacent
 delimiters -- e.g. \"(a(b)c)\" from the outer `(' must select
 \"a(b)c\", not stop at the inner pair's `)' and produce \"a(b\"."
@@ -1202,8 +1227,9 @@ delimiters -- e.g. \"(a(b)c)\" from the outer `(' must select
                    "a(b)c"))))
 
 (ert-deftest donkey-mark-inner-nested-same-type-triple-nesting ()
-  "Nesting-aware scan correctly resolves three levels of the same
-delimiter, both from the outermost pair and from a middle pair."
+  "The nesting scan resolves three levels of the same delimiter.
+
+This holds both from the outermost pair and from a middle pair."
   (with-temp-buffer
     (insert "(a(b(c)d)e)")
     (goto-char (point-min))
@@ -1217,7 +1243,9 @@ delimiter, both from the outermost pair and from a middle pair."
                    "b(c)d"))))
 
 (ert-deftest donkey-mark-inner-nested-mixed-delimiter-types-unaffected ()
-  "Nesting-depth counting only tracks the SAME open/close characters
+  "A different bracket type nested inside does not confuse the scan.
+
+Nesting-depth counting only tracks the SAME open/close characters
 being searched for, so a different bracket type nested inside (e.g.
 `[...]' inside `(...)') does not confuse the scan -- it is simply
 ignored, exactly as a plain (non-nesting) search already treated any
@@ -1248,9 +1276,11 @@ than silently matching the wrong (inner) close."
                    "line1\nline2"))))
 
 (ert-deftest donkey-mark-inner-symmetric-delimiter-at-point-always-tries-forward-first ()
-  "Design contract: point on any occurrence of a symmetric delimiter
-(open-char equals close-char, e.g. a quote) is always assumed to be an
-OPENING delimiter first, searching forward -- exactly as if the user
+  "A symmetric delimiter at point always searches forward first.
+
+Design contract: point on any occurrence of a symmetric
+delimiter (open-char equals close-char, e.g. a quote) is always assumed
+to be an OPENING delimiter first, searching forward -- exactly as if the user
 had just typed it there.  This holds even when the forward match
 belongs to a different, unrelated pair rather than the one enclosing
 point: with point on the closing quote of \"hello\" in
@@ -1269,8 +1299,10 @@ only applies when the forward search finds nothing at all."
                    " bar "))))
 
 (ert-deftest donkey-mark-inner-symmetric-delimiter-falls-back-when-no-forward-match ()
-  "When the forward search for a symmetric delimiter's close finds
-nothing at all, falls back to searching backward instead of erroring
+  "A symmetric delimiter falls back to a backward search.
+
+When the forward search for a symmetric delimiter's close finds
+nothing at all, it falls back to searching backward instead of erroring
 -- treating point as the pair's CLOSING occurrence and finding its
 matching opener.  With only one quote pair in the buffer and point on
 its closing quote, there is nothing left to match searching forward,
@@ -1285,7 +1317,9 @@ so this must fall back rather than fail."
                    "hello"))))
 
 (ert-deftest donkey-mark-inner-symmetric-delimiter-three-in-a-row-middle-pairs-forward ()
-  "With three occurrences of the same symmetric delimiter and point on
+  "The middle of three symmetric delimiters pairs forward.
+
+With three occurrences of the same symmetric delimiter and point on
 the middle one, forward search succeeds (finds the third), so it
 pairs with the third rather than falling back to the first."
   (with-temp-buffer
@@ -1298,7 +1332,9 @@ pairs with the third rather than falling back to the first."
                    "cee"))))
 
 (ert-deftest donkey-mark-inner-symmetric-delimiter-three-in-a-row-last-falls-back ()
-  "With three occurrences of the same symmetric delimiter and point on
+  "The last of three symmetric delimiters falls back.
+
+With three occurrences of the same symmetric delimiter and point on
 the last one, forward search finds nothing, so it falls back to
 pairing with the middle occurrence."
   (with-temp-buffer
@@ -1311,7 +1347,9 @@ pairing with the middle occurrence."
                    "cee"))))
 
 (ert-deftest donkey-mark-inner-asymmetric-delimiter-unclosed-does-not-fall-back ()
-  "Asymmetric delimiters (open-char distinct from close-char, e.g. `('
+  "An unclosed asymmetric delimiter does not fall back.
+
+Asymmetric delimiters (open-char distinct from close-char, e.g. `('
 and `)') never get the backward-search fallback: point on an opening
 delimiter with no closing match ahead is an unclosed pair, plain and
 simple, not an ambiguous opener/closer situation -- searching backward
@@ -1340,7 +1378,7 @@ for another `(' would not find a `)' anyway, so it stays an error."
     (should (< (region-beginning) (region-end)))))
 
 (ert-deftest donkey-mark-inner-unsupported-delimiter-errors ()
-  "An unsupported delimiter character (from the read-char prompt) signals an error."
+  "An unsupported delimiter character (from the `read-char' prompt) signals an error."
   (with-temp-buffer
     (insert "!bang!")
     (goto-char 1)
@@ -1348,18 +1386,21 @@ for another `(' would not find a `)' anyway, so it stays an error."
       (should-error (donkey-mark-inner) :type 'error))))
 
 (ert-deftest donkey-mark-inner-no-match-either-way-leaves-point-untouched ()
-  "Regression test: point outside any matching pair, with several
+  "Failing to find a pair either way leaves point untouched.
+
+Regression test: point outside any matching pair, with several
 unrelated same-type pairs earlier in the buffer, signals an error
 without moving point.
 
-`donkey--mark-pair-scan-backward' walks past those earlier pairs
-(correctly counting nesting depth as it goes) before it runs out of
+`donkey--mark-pair-scan-backward' walks past those earlier
+pairs (correctly counting nesting depth as it goes) before it runs out of
 buffer and fails -- each intermediate match genuinely moves point, so
 without `save-excursion' wrapping the scan, the signalled error still
 left point sitting at the last delimiter the scan happened to pass
 through (here, the very first `(' in the buffer) instead of where the
 command was actually invoked from.  Confirmed live: point after the
-last `)' on \";; To (create a (file), visit) it with 'C-x C-f' ...\",
+last `)' on the line
+\";; To (create a (file), visit) it with '\\=`C-x\\=' \\=`C-f\\='' ...\",
 pressing `m i (' silently landed on the first `(' with the error
 message easy to miss, instead of just staying put."
   (with-temp-buffer
@@ -1377,8 +1418,9 @@ message easy to miss, instead of just staying put."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-mark-pair-delimiters-customization-adds-new-pair ()
-  "Adding a pair to `donkey-mark-pair-delimiters' makes it recognized
-without prompting via `read-char'."
+  "A pair added to `donkey-mark-pair-delimiters' is auto-recognized.
+
+It is recognized without prompting via `read-char'."
   (let ((donkey-mark-pair-delimiters
          (cons (cons ?# ?#) donkey-mark-pair-delimiters)))
     (with-temp-buffer
@@ -1389,7 +1431,9 @@ without prompting via `read-char'."
                      "comment")))))
 
 (ert-deftest donkey-mark-pair-delimiters-customization-asymmetric-pair-from-close-char ()
-  "A custom ASYMMETRIC pair added via `donkey-mark-pair-delimiters'
+  "A custom asymmetric pair is recognized from its close character.
+
+Such a pair added via `donkey-mark-pair-delimiters'
 \(as one would in config.el, e.g. `(add-to-list \\='donkey-mark-pair-delimiters
 \\='(?# . ?%))' for a hypothetical `#comment%' marker style) is
 recognized from its CLOSE character too, not just its OPEN character --
@@ -1407,8 +1451,9 @@ built-in `(...)' pair applies equally to user-added pairs."
                      "comment")))))
 
 (ert-deftest donkey-mark-pair-delimiters-customization-removes-pair ()
-  "Removing a pair from `donkey-mark-pair-delimiters' makes it fall
-through to the `read-char' prompt instead of being auto-recognized."
+  "A pair removed from `donkey-mark-pair-delimiters' is no longer auto-detected.
+
+It falls through to the `read-char' prompt instead."
   (let* ((donkey-mark-pair-delimiters
           (assq-delete-all ?~ (copy-alist donkey-mark-pair-delimiters)))
          (prompted nil))
@@ -1421,13 +1466,17 @@ through to the `read-char' prompt instead of being auto-recognized."
       (should prompted))))
 
 (ert-deftest donkey-mark-pair-delimiters-prompt-reflects-customization ()
-  "The `read-char' prompt string is built from the current value of
-`donkey-mark-pair-delimiters', so it stays in sync with customization."
+  "The `read-char' prompt reflects the current customization.
+
+The prompt string is built from the current value of
+`donkey-mark-pair-delimiters', so it stays in sync."
   (let ((donkey-mark-pair-delimiters '((?# . ?#))))
     (should (equal (donkey--mark-pair-prompt) "Char (#): "))))
 
 (ert-deftest donkey-mark-pair-delimiters-unsupported-error-reflects-customization ()
-  "The \"unsupported delimiter\" error message lists the characters
+  "The unsupported-delimiter error reflects the current customization.
+
+Its message lists the characters
 from the current value of `donkey-mark-pair-delimiters'."
   (let ((donkey-mark-pair-delimiters '((?# . ?#))))
     (should-error (donkey--mark-pair-unsupported-error ?!) :type 'error)
@@ -1628,7 +1677,9 @@ from the current value of `donkey-mark-pair-delimiters'."
                    "{line1\nline2}"))))
 
 (ert-deftest donkey-mark-outer-symmetric-delimiter-at-point-always-tries-forward-first ()
-  "Design contract: forward search wins when it finds anything, even a
+  "A symmetric delimiter at point always searches forward first.
+
+Design contract: forward search wins when it finds anything, even a
 different, unrelated pair.  See
 `donkey-mark-inner-symmetric-delimiter-at-point-always-tries-forward-first'."
   (with-temp-buffer
@@ -1641,7 +1692,9 @@ different, unrelated pair.  See
                    "\" bar \""))))
 
 (ert-deftest donkey-mark-outer-symmetric-delimiter-falls-back-when-no-forward-match ()
-  "Falls back to a backward search when nothing is found forward.  See
+  "A symmetric delimiter falls back to a backward search.
+
+It falls back when nothing is found forward.  See
 `donkey-mark-inner-symmetric-delimiter-falls-back-when-no-forward-match'."
   (with-temp-buffer
     (insert "foo \"hello\" bar")
@@ -1669,7 +1722,7 @@ different, unrelated pair.  See
     (should (< (region-beginning) (region-end)))))
 
 (ert-deftest donkey-mark-outer-unsupported-delimiter-errors ()
-  "An unsupported delimiter character (from the read-char prompt) signals an error."
+  "An unsupported delimiter character (from the `read-char' prompt) signals an error."
   (with-temp-buffer
     (insert "!bang!")
     (goto-char 1)
@@ -2049,7 +2102,9 @@ different, unrelated pair.  See
       (should (= (point) (1+ initial-pos))))))
 
 (ert-deftest donkey-rectangle-mark-mode-does-not-widen-existing-region ()
-  "Regression test: converting an already-active region (e.g. from
+  "Starting a rectangle over an existing region does not widen it.
+
+Regression test: converting an already-active region (e.g. from
 `donkey-mark-inner') into a rectangle must use its own existing
 corners, not widen it by one extra column.  `transient-mark-mode' is
 bound to t here because `region-active-p'/`mark-active' only mean
@@ -2070,8 +2125,10 @@ otherwise make the region look inactive regardless of `activate-mark'."
                        "hello")))))
 
 (ert-deftest donkey-rectangle-mark-mode-still-widens-fresh-selection ()
-  "Starting rectangle-mark-mode with no pre-existing region still gets
-its initial one-column widening."
+  "A fresh rectangle selection still gets its one-column widening.
+
+Starting `rectangle-mark-mode' with no pre-existing region still gets
+its initial widening."
   (with-temp-buffer
     (let ((transient-mark-mode t))
       (insert "AAAA\nBBBB\nCCCC\n")
@@ -2091,7 +2148,7 @@ its initial one-column widening."
     (should (< (mark) (point)))))
 
 (ert-deftest donkey-rectangle-mark-mode-toggles-off ()
-  "Calling the command again while active disables rectangle-mark-mode."
+  "Calling the command again while active disables `rectangle-mark-mode'."
   (with-temp-buffer
     (insert "hello\nworld")
     (goto-char 1)
@@ -2102,7 +2159,7 @@ its initial one-column widening."
     (should-not (region-active-p))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-empty ()
-  "In an empty buffer, right-char has nowhere to go but does not error."
+  "In an empty buffer, `right-char' has nowhere to go but does not error."
   (with-temp-buffer
     (should (equal (buffer-string) ""))
     (donkey-rectangle-mark-mode)
@@ -2118,7 +2175,7 @@ its initial one-column widening."
     (should (<= (point) (point-max)))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-at-buffer-end ()
-  "At buffer end, right-char has nowhere to go but does not error.
+  "At buffer end, `right-char' has nowhere to go but does not error.
 
 Regression test: `right-char' signals `end-of-buffer' with nothing
 left to widen the rectangle into.  Confirmed live in `emacs -nw':
@@ -2134,7 +2191,7 @@ valid, if zero-width, initial rectangle selection)."
     (should (= (mark) (point-max)))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-single-character ()
-  "On a single character, right-char has one column to move into."
+  "On a single character, `right-char' has one column to move into."
   (with-temp-buffer
     (insert "x")
     (goto-char 1)
@@ -2213,7 +2270,7 @@ valid, if zero-width, initial rectangle selection)."
       (should (string= original (buffer-string))))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-with-prefix-arg ()
-  "Command works when current-prefix-arg is set."
+  "Command works when `current-prefix-arg' is set."
   (with-temp-buffer
     (insert "hello")
     (goto-char 1)
@@ -2222,8 +2279,9 @@ valid, if zero-width, initial rectangle selection)."
       (should (bound-and-true-p rectangle-mark-mode)))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-empty-at-start ()
-  "Empty buffer with point at min: right-char has nowhere to go but
-does not error."
+  "An empty buffer at `point-min' does not error.
+
+Here `right-char' has nowhere to go, but must not signal."
   (with-temp-buffer
     (goto-char (point-min))
     (donkey-rectangle-mark-mode)
@@ -2240,7 +2298,9 @@ does not error."
 ;;; for any pair, without needing a dedicated regression test per delimiter.
 
 (ert-deftest donkey-mark-inner-all-default-delimiters-from-open-char ()
-  "For every default (OPEN . CLOSE) pair, point on the OPEN character
+  "Every default pair is auto-detected from its open character.
+
+For every default (OPEN . CLOSE) pair, point on the OPEN character
 auto-detects the delimiter (no `read-char' prompt needed) and selects
 the content up to the next CLOSE occurrence."
   (dolist (pair donkey-mark-pair-delimiters)
@@ -2256,7 +2316,9 @@ the content up to the next CLOSE occurrence."
                          "quoted")))))))
 
 (ert-deftest donkey-mark-inner-all-default-delimiters-from-close-char ()
-  "For every default (OPEN . CLOSE) pair, point on the CLOSE character
+  "Every default pair is auto-detected from its close character.
+
+For every default (OPEN . CLOSE) pair, point on the CLOSE character
 auto-detects the delimiter (no `read-char' prompt needed) and selects
 the content between the delimiters -- via the forward-then-backward
 fallback when OPEN and CLOSE are the same character, or by resolving
@@ -2275,7 +2337,9 @@ they differ, e.g. standing on a closing parenthesis."
                          "quoted")))))))
 
 (ert-deftest donkey-mark-inner-all-default-delimiters-from-inside-with-manual-char ()
-  "For every default (OPEN . CLOSE) pair, point somewhere INSIDE the
+  "Every default pair is found from inside via the manual prompt.
+
+For every default (OPEN . CLOSE) pair, point somewhere INSIDE the
 pair (on neither delimiter) always falls through to the `read-char'
 prompt; answering with OPEN correctly finds the enclosing pair."
   (dolist (pair donkey-mark-pair-delimiters)

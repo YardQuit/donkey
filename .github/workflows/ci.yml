@@ -84,7 +84,8 @@ jobs:
         run: |
           set -euo pipefail
           output=$(emacs -Q --batch \
-            --eval "(progn (require 'checkdoc) (checkdoc-file \"donkey.el\"))" 2>&1)
+            --eval "(progn (require 'checkdoc) (checkdoc-file \"donkey.el\"))" \
+            --eval "(dolist (f (file-expand-wildcards \"donkey-testing/*.el\")) (checkdoc-file f))" 2>&1)
           if [ -n "$output" ]; then
             echo "$output"
             echo "::error::checkdoc reported issues"
