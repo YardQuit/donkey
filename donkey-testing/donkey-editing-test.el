@@ -2433,14 +2433,22 @@ governed by the count."
 ;;; ---------------------------------------------------------------------------
 
 (defmacro donkey-test--paste-buffer (&rest body)
-  "Run BODY in a five-row DONKEY buffer with an isolated kill ring."
-  `(with-temp-buffer
-     (donkey-mode 1)
-     (let ((transient-mark-mode t)
-           (kill-ring nil)
-           (kill-ring-yank-pointer nil))
-       (insert "AAA one\nBBB two\nCCC three\nDDD four\nEEE five\n")
-       ,@body)))
+  "Run BODY in a five-row DONKEY buffer with an isolated kill ring.
+
+`donkey-mode' turned back off afterwards -- it is a GLOBAL minor mode,
+so leaving it on leaks into every later test in the process.  See
+`donkey--with-test-buffer', which documents the same hazard."
+  `(unwind-protect
+       (with-temp-buffer
+         (donkey-mode 1)
+         (let ((transient-mark-mode t)
+               (kill-ring nil)
+               (kill-ring-yank-pointer nil)
+               (donkey--clipboard-warning-shown nil)
+               (this-command nil) (last-command nil))
+           (insert "AAA one\nBBB two\nCCC three\nDDD four\nEEE five\n")
+           ,@body))
+     (donkey-mode -1)))
 
 (defun donkey-test--row (n)
   "Move to the start of row N."
@@ -2746,6 +2754,127 @@ cannot drift apart."
                  (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
         (donkey-copy))
       (should (equal shown "Copied 2 lines")))))
+
+;;; ---------------------------------------------------------------------------
+;;; Banks survive narrowing when y/d/p spend them
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-test--hidden-bank (&rest body)
+  "Bank AAA and DDD, hide AAA by narrowing, then run BODY.
+
+`donkey-mode' is turned back off in an `unwind-protect', exactly as
+`donkey--with-test-buffer' does and for the reason its docstring gives:
+it is a GLOBAL minor mode, so enabling it installs
+`after-change-major-mode-hook' process-wide.  Leaving it on made a much
+later test find DONKEY already active in a buffer it had just created,
+where `g' is a prefix rather than `revert-buffer'.
+
+The other bindings are the globals a paste touches: the one-shot
+clipboard-tip flag, `kill-ring-yank-pointer' (which `kill-new' sets even
+when only `kill-ring' is bound, leaving it aimed at a discarded list),
+and `this-command', which `yank' sets and which batch has no command loop
+to reset."
+  `(unwind-protect
+       (with-temp-buffer
+         (donkey-mode 1)
+         (let ((transient-mark-mode t)
+               (kill-ring nil)
+               (kill-ring-yank-pointer nil)
+               (donkey--clipboard-warning-shown nil)
+               (this-command nil)
+               (last-command nil))
+           (insert "AAA one\nBBB two\nCCC three\nDDD four\nEEE five\n")
+           (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+             (goto-char (point-min))
+             (donkey-bank-selection)
+             (goto-char (point-min))
+             (search-forward "DDD")
+             (beginning-of-line)
+             (donkey-bank-selection)
+             (narrow-to-region
+              (save-excursion (goto-char (point-min)) (forward-line 1) (point))
+              (save-excursion (goto-char (point-min)) (forward-line 4) (point)))
+             ,@body)))
+     (donkey-mode -1)))
+
+(ert-deftest donkey-copy-does-not-discard-a-bank-it-could-not-see ()
+  "`y' spends only the banks it acted on, not every bank in the buffer.
+
+Regression: it copied the visible bank -- correctly -- and then cleared
+the whole list, throwing away a bank the narrowing had hidden without
+ever copying it.  `donkey--banked-spans' promises in its own docstring
+that filtered-out overlays \"survive untouched and count again once the
+buffer is widened\"; clearing the list broke that promise."
+  (donkey-test--hidden-bank
+   (donkey-copy)
+   (should (equal (car kill-ring) "DDD four\n"))
+   (widen)
+   (should (= 1 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-delete-does-not-discard-a-bank-it-could-not-see ()
+  "`d' spends only what it deleted."
+  (donkey-test--hidden-bank
+   (donkey-delete)
+   (widen)
+   (should (= 1 (donkey--banked-line-count)))
+   (should (string-match-p "AAA one" (buffer-string)))))
+
+(ert-deftest donkey-yank-does-not-discard-a-bank-it-could-not-see ()
+  "`p' spends only what it replaced."
+  (donkey-test--hidden-bank
+   (kill-new "ZZZ\n")
+   (donkey-yank)
+   (widen)
+   (should (= 1 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-clear-banked-selection-still-discards-everything ()
+  "`m DEL' is the explicit discard-everything command and stays that way.
+
+The contrast with `y'/`d'/`p' is the point: those spend what they used,
+this one is named for clearing the lot and does."
+  (donkey-test--hidden-bank
+   (donkey-clear-banked-selection)
+   (widen)
+   (should (= 0 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-banked-consumers-still-spend-everything-unnarrowed ()
+  "With nothing hidden, all of it is still spent."
+  (dolist (op (list (lambda () (donkey-copy))
+                    (lambda () (donkey-delete))
+                    (lambda () (kill-new "Z\n") (donkey-yank))))
+    (unwind-protect
+        (with-temp-buffer
+          (donkey-mode 1)
+          (let ((transient-mark-mode t)
+                (kill-ring nil)
+                (kill-ring-yank-pointer nil)
+                (donkey--clipboard-warning-shown nil)
+                (this-command nil)
+                (last-command nil))
+            (insert "AAA\nBBB\nCCC\nDDD\n")
+            (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+              (goto-char (point-min))
+              (donkey-bank-selection)
+              (goto-char (point-min))
+              (forward-line 2)
+              (donkey-bank-selection)
+              (funcall op)
+              (should (= 0 (donkey--banked-line-count))))))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-map-line-spans-terminates-on-a-stale-span ()
+  "A span reaching past `point-max' stops rather than spinning.
+
+`donkey--whole-line-span' returns the position it was given once point
+is at `point-max', so the walk cannot advance -- and jumping to END does
+not help, because `goto-char' clamps there too.  A hung Emacs is a far
+worse failure than a span walked one line short, so the loop stops."
+  (with-temp-buffer
+    (insert "AAA\nBBB\n")
+    (let ((calls 0))
+      ;; deliberately past the end
+      (donkey--map-line-spans 1 500 (lambda (_span) (cl-incf calls)))
+      (should (< calls 100)))))
 
 (provide 'donkey-editing-test)
 

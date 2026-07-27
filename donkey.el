@@ -2580,11 +2580,22 @@ treating BEG..END as one range, is what keeps banking per-line
 throughout -- see `donkey--bank-span' for why that matters."
   (declare (indent 2))
   (save-excursion
-    (goto-char beg)
-    (while (< (point) end)
-      (let ((line-span (donkey--whole-line-span (point) (point))))
-        (funcall fn line-span)
-        (goto-char (cdr line-span))))))
+    (goto-char (min beg (point-max)))
+    ;; END clamped and an explicit stop, so this cannot spin.  A span
+    ;; reaching past `point-max' -- a stale one computed before the buffer
+    ;; shrank, say -- leaves `donkey--whole-line-span' returning the
+    ;; position it was given, and the loop would never advance.  Clamping
+    ;; alone does not fix it either: `goto-char' clamps too, so jumping to
+    ;; END would leave point short of it and the condition still true.  A
+    ;; hung Emacs is a far worse failure than a span walked one line short.
+    (let ((limit (min end (point-max)))
+          (done nil))
+      (while (and (not done) (< (point) limit))
+        (let ((line-span (donkey--whole-line-span (point) (point))))
+          (funcall fn line-span)
+          (if (> (cdr line-span) (point))
+              (goto-char (cdr line-span))
+            (setq done t)))))))
 
 (defun donkey--span-lines-banked-p (beg end)
   "Return non-nil if EVERY whole line in BEG..END is already banked.
@@ -2669,6 +2680,25 @@ text, so a banked blank line still counts as a line."
   (apply #'+ (mapcar (lambda (span) (count-lines (car span) (cdr span)))
                      spans)))
 
+(defun donkey--consume-banked-spans (spans)
+  "Unbank only the lines in SPANS, leaving every other bank alone.
+
+What `y', `d' and `p' spend when they act on a bank -- as against
+`donkey-clear-banked-selection', which is the explicit \"discard
+everything\" command and says so in its name.
+
+The difference only shows under narrowing, and it showed as silent loss.
+`donkey--banked-spans' filters to the accessible portion and promises
+that the rest \"survive untouched and count again once the buffer is
+widened\"; clearing the whole list broke that promise.  Banking two lines,
+narrowing past one of them and pressing `y' copied the visible line --
+correctly -- and threw the hidden one away without ever copying it.
+
+SPANS comes from `donkey--effective-line-spans', so it is exactly what
+was acted on, region included."
+  (dolist (span spans)
+    (donkey--unbank-span (car span) (cdr span))))
+
 (defun donkey--copy-banked-selection ()
   "Copy every banked line (plus any active region's lines) as one kill."
   (let* ((spans (donkey--effective-line-spans))
@@ -2677,7 +2707,7 @@ text, so a banked blank line still counts as a line."
                             (buffer-substring (car span) (cdr span)))
                           spans "")))
     (kill-new text)
-    (donkey-clear-banked-selection)
+    (donkey--consume-banked-spans spans)
     (deactivate-mark)
     (message "Copied %d line%s" lines (if (= 1 lines) "" "s"))))
 
@@ -2709,7 +2739,7 @@ Consumes the bank, the way `donkey-copy' and `donkey-delete' do."
          (target (car (car spans))))
     (dolist (span (reverse spans))
       (delete-region (car span) (cdr span)))
-    (donkey-clear-banked-selection)
+    (donkey--consume-banked-spans spans)
     (deactivate-mark)
     (goto-char target)
     (donkey--paste-times (or count 1) #'donkey--clipboard-yank)
@@ -2726,9 +2756,11 @@ earlier ones are still being removed."
                             (buffer-substring (car span) (cdr span)))
                           spans "")))
     (kill-new text)
+    ;; BEFORE the deletions, not after: they shrink the buffer, and spans
+    ;; computed against the old text then point past `point-max'.
+    (donkey--consume-banked-spans spans)
     (dolist (span (reverse spans))
       (delete-region (car span) (cdr span)))
-    (donkey-clear-banked-selection)
     (deactivate-mark)
     (message "Deleted %d line%s" lines (if (= 1 lines) "" "s"))))
 
