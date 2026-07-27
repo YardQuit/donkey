@@ -1215,8 +1215,29 @@ Only for a live visual-line session.  A character-wise region made with
 With lines banked via `donkey-bank-selection', copies all of them
 \\(plus any active region's lines) as a single kill instead.
 
+A visual-line selection made with `V' is widened to whole lines before
+being copied.  The highlight stops at the end of the last line, so the
+newline ending it never looks selected -- but it IS copied, and the kill
+pastes back as a complete line instead of splicing onto whatever line
+\"p\" lands in.  The extra newline is the point, not a stray: see
+`donkey--visual-line-region-bounds' for why the widening lives here
+rather than in the selection.
+
 With `rectangle-mark-mode' active, copies the rectangle instead of a
-linear region.
+linear region.  That goes to `killed-rectangle' ONLY: the kill ring and
+the system clipboard are deliberately left alone, so a rectangle copied
+here cannot be pasted into another application -- \"p\" pastes it back
+within Emacs and nothing else will.
+
+Deliberate, and matching stock: `copy-rectangle-as-kill' and
+`kill-rectangle' both behave this way, and a rectangle has no meaning
+outside a buffer that could survive the trip through a flat clipboard.
+Recorded here, and pinned by a test, because it reads like an oversight
+every time someone looks: a copy that does not reach the clipboard has
+been raised, investigated and set aside more than once.  Change it only
+on purpose -- and note that `kill-new' is advised to clear
+`donkey--last-kill-rectangle-p', so pushing the text onto the kill ring
+would break the rectangle round trip unless the flag is restored.
 
 `kill-ring-save' (Emacs's own copy command) isn't used directly here:
 its interactive spec reads `region-beginning'/`region-end', which use
@@ -1266,9 +1287,18 @@ kill ring's newest entry for the same reason spelled out above."
 With lines banked via `donkey-bank-selection', kills all of them (plus
 any active region's lines) as a single kill instead.
 
+A visual-line selection made with `V' is widened to whole lines before
+being killed.  The highlight stops at the end of the last line, so the
+newline ending it never looks selected -- but it IS deleted, so `V d'
+removes those lines outright rather than emptying them and leaving the
+blanks behind.  Taking one character more than was highlighted is
+deliberate, not an off-by-one: see `donkey--visual-line-region-bounds'.
+
 With `rectangle-mark-mode' active, kills the rectangle via
 `kill-rectangle' -- see `donkey--last-kill-rectangle-p' for how
-`donkey-yank' later knows to paste it back as a rectangle.
+`donkey-yank' later knows to paste it back as a rectangle.  Like
+`donkey-copy', that reaches `killed-rectangle' only and never the system
+clipboard; see there for why that is deliberate.
 
 COUNT deletes that many characters when no region is active.
 A count larger than the text remaining stops at the end rather than
@@ -1513,7 +1543,16 @@ for a selection that was never a visual-line session to begin with.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled before starting the new
-session."
+session.
+
+What is highlighted is one character short of what `y' and `d' take.
+The selection stops at the end of the last line, so the newline ending it
+is NOT shown as selected -- but `donkey-copy' and `donkey-delete' widen a
+live session to whole lines before acting, so the line break goes with
+it: `d' removes the line outright rather than emptying it, and `y' gives
+a kill that pastes back as a complete line.  The highlight is left alone
+deliberately; see `donkey--visual-line-region-bounds' for why the
+widening lives in the two commands rather than in the selection."
   (interactive)
   (if (donkey--visual-line-session-active-p)
       (progn

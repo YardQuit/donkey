@@ -167,6 +167,13 @@ line it lands in. This matches what banking (=m l=) has always done. A
 character-wise region made with =v= is unaffected — it still means
 exactly the characters it covers.
 
+The highlight does not show that trailing newline: it stops at the end
+of the last line, so a =V= selection always looks one character shorter
+than what =y= and =d= actually take. That is deliberate — the
+highlight ends where the text does, and =J=/=K= count lines from where
+point sits — and only the two commands widen. Worth knowing before
+reporting it: the newline goes along even though nothing marks it.
+
 ** Insert Mode Entry
 
 | Key | Command                         | Description                         |
