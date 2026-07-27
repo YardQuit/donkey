@@ -3083,6 +3083,94 @@ says the change was deliberate."
        (donkey-bank-selection))
      (should (string-suffix-p "-- navigate, then y/d/p" shown)))))
 
+;;; ---------------------------------------------------------------------------
+;;; donkey-join-line
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-join-line-pulls-the-following-line-up ()
+  "Joining absorbs the line BELOW point, the direction vi and Helix use.
+
+The old `C-j' binding ran `join-line' with no argument, which joins with
+the PREVIOUS line -- while the README had always described the key as
+\"Join line with next\".  The documentation promised the modal reading
+and the key delivered the Emacs one."
+  (with-temp-buffer
+    (insert "alpha\n    beta\ngamma\n")
+    (goto-char (point-min))
+    (donkey-join-line 1)
+    (should (equal (buffer-string) "alpha beta\ngamma\n"))))
+
+(ert-deftest donkey-join-line-fixes-up-whitespace ()
+  "Leading indentation on the absorbed line collapses to a single space."
+  (with-temp-buffer
+    (insert "one\n\t\t   two\n")
+    (goto-char (point-min))
+    (donkey-join-line 1)
+    (should (equal (buffer-string) "one two\n"))))
+
+(ert-deftest donkey-join-line-count-joins-that-many-lines ()
+  "A count collapses that many following lines into this one."
+  (with-temp-buffer
+    (insert "a\nb\nc\nd\ne\n")
+    (goto-char (point-min))
+    (donkey-join-line 3)
+    (should (equal (buffer-string) "a b c d\ne\n"))))
+
+(ert-deftest donkey-join-line-zero-or-negative-count-joins-nothing ()
+  "A count below 1 does nothing rather than reversing direction.
+
+`join-line' reads any nil-or-non-positive argument as \"join to the
+PREVIOUS line\", so passing a user's zero straight through would have
+silently flipped the direction of a command they asked to do less of."
+  (dolist (n '(0 -1 -5))
+    (with-temp-buffer
+      (insert "alpha\nbeta\ngamma\n")
+      (goto-char (point-min))
+      (forward-line 1)
+      (donkey-join-line n)
+      (should (equal (buffer-string) "alpha\nbeta\ngamma\n")))))
+
+(ert-deftest donkey-join-line-at-last-line-is-harmless ()
+  "Nothing below to pull up, and no error."
+  (with-temp-buffer
+    (insert "only line\n")
+    (goto-char (point-min))
+    (should (progn (donkey-join-line 1) t))))
+
+(ert-deftest donkey-join-line-is-bound-to-g-j ()
+  "The command lives at `g j'."
+  (should (eq (lookup-key donkey-normal-mode-map (kbd "g j"))
+              #'donkey-join-line)))
+
+(ert-deftest donkey-normal-state-leaves-c-j-alone ()
+  "`C-j' is not bound in Normal state, so `*scratch*' keeps its eval key.
+
+`C-j' looks free and is not: globally `electric-newline-and-maybe-indent',
+and `eval-print-last-sexp' in `lisp-interaction-mode'.  A minor-mode map
+outranks the major mode, so binding it here cost the scratch buffer its
+evaluate-and-print key -- the one stock Emacs command Normal state took
+away that a user would actually miss."
+  (should-not (lookup-key donkey-normal-mode-map (kbd "C-j"))))
+
+(ert-deftest donkey-normal-state-keeps-eval-print-last-sexp-in-scratch ()
+  "The end-to-end version of the above, through real key lookup."
+  (unwind-protect
+      (with-temp-buffer
+        (lisp-interaction-mode)
+        (donkey-mode 1)
+        (donkey-normal-mode 1)
+        (should (eq (key-binding (kbd "C-j")) #'eval-print-last-sexp)))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-join-line-does-not-shadow-emacs-own-direction ()
+  "`M-^' still joins the other way, and is still reachable from Normal state."
+  (unwind-protect
+      (with-temp-buffer
+        (donkey-mode 1)
+        (donkey-normal-mode 1)
+        (should (eq (key-binding (kbd "M-^")) #'delete-indentation)))
+    (donkey-mode -1)))
+
 (provide 'donkey-editing-test)
 
 ;;; donkey-editing-test.el ends here

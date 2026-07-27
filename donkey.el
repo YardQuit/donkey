@@ -1387,6 +1387,39 @@ those up to 1 instead meant \"delete zero characters\" removed one, and
     ;; buffer, which \\[end-of-buffer] lands on directly.
     (message "End of buffer -- nothing to delete")))))
 
+(defun donkey-join-line (&optional count)
+  "Pull the FOLLOWING line up onto this one, fixing up whitespace.
+
+The direction every modal editor uses: vi's `J' and Helix's `J' both
+absorb the line below the one point is on, which is the direction you
+want when you are sitting on a line deciding to take in what comes
+next.  Emacs\\='s own `\\[delete-indentation]' goes the other way,
+pulling the CURRENT line up onto the previous one, and is untouched --
+every `M-' key falls through in Normal state, so both directions are
+available.
+
+This is a fix as well as a move.  Joining was on `C-j' and ran
+`join-line' with no argument -- the Emacs direction -- while the README
+had always described it as \"Join line with next\".  The documentation
+promised the modal reading and the key delivered the Emacs one.
+
+Off `C-j' because that key is not free in Emacs the way it looks: it is
+globally `electric-newline-and-maybe-indent', and in `*scratch*' and
+any `lisp-interaction-mode' buffer it is `eval-print-last-sexp'.  A
+minor-mode map outranks the major mode, so binding it here cost the
+scratch buffer its evaluate-and-print key -- the only stock Emacs
+command Normal state took away that a user would actually miss.
+
+COUNT joins that many following lines, so `C-u 3 g j' collapses three
+lines into this one.  A COUNT below 1 joins nothing:
+`join-line' reads any nil-or-non-positive argument as \"join to the
+PREVIOUS line\" instead, which would silently reverse the direction of
+a command the user asked to do less of."
+  (interactive "p")
+  (let ((n (or count 1)))
+    (dotimes (_ (max 0 n))
+      (join-line 1))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Wrap Region Commands
 ;;; ---------------------------------------------------------------------------
@@ -3328,7 +3361,9 @@ outcome than retyping a lesson."
 (keymap-set donkey-normal-mode-map "d" #'donkey-delete)
 (keymap-set donkey-normal-mode-map "x" #'donkey-delete)
 (keymap-set donkey-normal-mode-map "C" #'donkey-comment-dwim)
-(keymap-set donkey-normal-mode-map "C-j" #'join-line)
+;; Joining lives at "g j", NOT on "C-j" -- see `donkey-join-line' for why
+;; that key was never free: it is `eval-print-last-sexp' in `*scratch*',
+;; and a minor-mode map outranks the major mode.
 
 ;; Yank/Paste
 (keymap-set donkey-normal-mode-map "P" #'donkey-yank-pop)
@@ -3398,6 +3433,7 @@ outcome than retyping a lesson."
 ;; bindings list, so `g ?' reads as the guided version of the same question.
 (keymap-set donkey-normal-mode-map "g ?" #'donkey-tutor)
 (keymap-set donkey-normal-mode-map "g h" #'beginning-of-line)
+(keymap-set donkey-normal-mode-map "g j" #'donkey-join-line)
 (keymap-set donkey-normal-mode-map "g l" #'move-end-of-line)
 (keymap-set donkey-normal-mode-map "g Q" #'fill-paragraph)
 (keymap-set donkey-normal-mode-map "g q" #'fill-region)
