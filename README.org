@@ -210,8 +210,23 @@ next navigation keypress self-insert.
 | =x=   | =donkey-delete=                | Delete char or region (Vim)      |
 | =D=   | =kill-line=                  | Kill to end of line              |
 | =C=   | =donkey-comment-dwim=          | Comment/uncomment line or region |
-| =C-j= | =join-line=                  | Join line with next              |
+| =g j= | =donkey-join-line=             | Pull the following line up       |
 | =>=   | =donkey-indent-region-or-line= | Indent region or line            |
+
+=g j= absorbs the line *below* the one you are on, the direction vi's
+=J= and Helix's =J= both use. =C-u 3 g j= collapses three lines into
+this one. Emacs' own =M-^= goes the other way — pulling the current
+line up onto the previous one — and is untouched, since every =M-= key
+falls through in Normal state.
+
+This moved off =C-j=, and changed direction with it. =C-j= looks free
+but is not: globally it is =electric-newline-and-maybe-indent=,
+and in =*scratch*= or any =lisp-interaction-mode= buffer it is
+=eval-print-last-sexp=. A minor-mode keymap outranks the major mode, so
+binding it here quietly cost the scratch buffer its evaluate-and-print
+key. The old binding also ran =join-line= with no argument, which joins
+with the *previous* line — the opposite of what this table had always
+described.
 
 ** Yank and Paste
 
@@ -427,6 +442,7 @@ Notes:
 | =g e= | =end-of-buffer=          | Go to end of buffer               |
 | =G=   | =end-of-buffer=          | Go to end of buffer (Vim)         |
 | =g h= | =beginning-of-line=      | Go to beginning of line     |
+| =g j= | =donkey-join-line=       | Pull the following line up  |
 | =g l= | =move-end-of-line=       | Go to end of line           |
 | =g q= | =fill-region=            | Fill region                 |
 | =g Q= | =fill-paragraph=         | Fill paragraph              |
