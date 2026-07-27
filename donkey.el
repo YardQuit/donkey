@@ -253,14 +253,22 @@ matches what pressing again will actually cycle through."
      ((null visible)
       (user-error "No recorded position in the visible portion"))
      (t
-      (let ((ring-len (length visible)))
-        (setq donkey--position-index (1+ donkey--position-index))
-        (when (>= donkey--position-index ring-len)
-          (setq donkey--position-index 0))
-        (goto-char (nth donkey--position-index visible))
+      ;; The counter is used BEFORE it is advanced.  Advancing first made
+      ;; the very first press skip the most recent entry and land on the
+      ;; one before it -- so the key meant for taking a jump back always
+      ;; overshot by exactly one recorded position.  Since a position is
+      ;; recorded on every movement, that is one LINE out after `j'/`k'
+      ;; and one CHARACTER out after `h'/`l', which is why it read as a
+      ;; near miss rather than as landing somewhere unrelated.  Confirmed
+      ;; live: from line 5, `G' then `S' arrived at line 4.
+      (let* ((ring-len (length visible))
+             (idx (if (>= donkey--position-index ring-len)
+                      0
+                    donkey--position-index)))
+        (goto-char (nth idx visible))
+        (setq donkey--position-index (1+ idx))
         (setq donkey--last-tracked-state (cons (current-buffer) (point)))
-        (message "Position %d/%d"
-                 (1+ donkey--position-index) ring-len))))))
+        (message "Position %d/%d" (1+ idx) ring-len))))))
 
 (defun donkey-goto-line ()
   "Prompt for a line number and move point to the start of that line.
