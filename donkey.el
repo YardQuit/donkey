@@ -2481,7 +2481,19 @@ matching how `forward-sexp' reads its argument."
 (defun donkey-set-mark ()
   "Call `set-mark-command', disabling a stale `rectangle-mark-mode' first.
 
-See `donkey--ensure-non-rectangle-selection' for why."
+See `donkey--ensure-non-rectangle-selection' for why.
+
+This does NOT toggle, unlike its two neighbours `donkey-visual-line-toggle'
+\(\"V\") and `donkey-rectangle-mark-mode' (\"m v\"), which both cancel the
+selection they started when pressed again.  `set-mark-command' re-anchors:
+a second press drops a fresh mark at point and carries on selecting from
+there, so the previous selection is discarded but the buffer is still in
+a selecting state.  \\[keyboard-quit] is what lets go.
+
+Left as stock behaviour deliberately -- \"v\" is `set-mark-command' and
+nothing else, so `C-u v' still pops the mark ring and anything built on
+`set-mark-command' keeps working.  Documented in the tutor and the README
+rather than papered over here."
   (interactive)
   (donkey--ensure-non-rectangle-selection)
   (call-interactively #'set-mark-command))
@@ -3202,6 +3214,11 @@ INSERT state they type.  The modeline shows which: DONKEY[N] or DONKEY[I].
 If a key ever does something you did not expect, you are probably in the
 other state -- press \\`C-g' to get back to NORMAL.
 
+\\`C-g' also cancels a selection, and it is worth pressing at the end of
+any lesson that made one.  A selection left active changes what the next
+lesson's keys do: several of them act on the selection when there is one
+and on the character or line at point when there is not.
+
 You may also see DONKEY[E] one day, in a terminal or shell buffer.  That
 is INSERT state with NORMAL state permanently out of reach, so none of
 what follows applies there and \\`C-g' quits rather than switching state.
@@ -3329,10 +3346,14 @@ Lesson 5 -- selecting things
 ----------------------------
 
 \\[donkey-set-mark] drops a mark and starts a selection that grows as you move: press
-it, move, and everything between is selected.  Press it again to let go.
+it, move, and everything between is selected.  \\`C-g' lets go.
+
+Pressing \\[donkey-set-mark] a second time does not let go.  It drops a fresh mark
+where you are standing and starts a new selection from there, so the
+one you had is gone but you are still selecting.
 
 >> Put the cursor at the start of the ---> line, press \\[donkey-set-mark], then move
-   right with \\[forward-char] and down with \\[next-line].  Press \\[donkey-set-mark] again to drop the
+   right with \\[forward-char] and down with \\[next-line].  Press \\`C-g' to drop the
    selection.
 
    ---> Select part of this line by hand before meeting the shortcuts.
@@ -3348,6 +3369,28 @@ mean:
    whole sentence is selected, however long it is.
 
    ---> Selecting by meaning beats counting characters.  It also reads better.
+
+A word stops at a hyphen or underscore; a symbol runs straight through
+one.  On a name held together by them the two select very different
+things, which is why both keys exist.
+
+>> Put the cursor on the \"m\" of \"mail\" in the ---> line and press \\[donkey-mark-word]:
+   only that one word is selected.  Press \\`C-g', then press \\[donkey-mark-symbol]
+   from the same spot: the whole name is selected, hyphen, underscore
+   and all.
+
+   ---> Call send-mail_to when the queue drains.
+
+Which characters hold a name together is the major mode's decision, not
+DONKEY's.  Hyphen and underscore usually do.  Period and comma do in
+some code modes -- in Emacs Lisp, \\[donkey-mark-symbol] on \"foo.bar\" takes the whole
+of it -- and not in others.  One part is DONKEY's own: a period or comma
+at the END is always left out, so \\[donkey-mark-symbol] on the last name in a
+sentence gives you the name without the full stop.
+
+This buffer is plain text, where neither counts, so there is nothing
+here to try that on.  It is worth knowing before the first time you
+press \\[donkey-mark-symbol] in code and wonder why the answer differs.
 
 A selection is something to act ON, so the editing keys from Lesson 4
 follow straight on from it: \\[donkey-change] changes what is selected rather than the
