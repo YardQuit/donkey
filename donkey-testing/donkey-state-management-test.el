@@ -1510,6 +1510,74 @@ interception is the backup for when something else has taken the key."
                       (default-value 'pre-command-hook))))
     (donkey-mode -1)))
 
+(ert-deftest donkey-indicator-says-E-in-an-excluded-mode ()
+  "An excluded buffer reports DONKEY[E], not DONKEY[I].
+
+Insert state is the truthful answer there -- keys really do pass
+through -- but it is a misleading one, because NORMAL state cannot be
+reached from those buffers by any key.  A lighter that says Insert
+invites the reader to press `C-g\=' and conclude the key is broken."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (dolist (mode '(comint-mode term-mode vterm-mode eshell-mode))
+          (with-temp-buffer
+            (setq major-mode mode)
+            (donkey--ensure-default-state)
+            (should (bound-and-true-p donkey-insert-mode))
+            (should (equal (donkey-indicator) " DONKEY[E]")))))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-indicator-says-I-outside-excluded-modes ()
+  "An ordinary buffer in Insert state still reports DONKEY[I]."
+  (unwind-protect
+      (with-temp-buffer
+        (text-mode)
+        (donkey-mode 1)
+        (donkey-enter-insert)
+        (should (equal (donkey-indicator) " DONKEY[I]")))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-insert-lighter-is-computed-not-stored ()
+  "The lighter is an `:eval\=' form, so it follows a mode change.
+
+A buffer can become excluded without any DONKEY transition firing --
+`M-x eshell-mode\=' in an ordinary buffer does it -- so a lighter fixed
+at the moment Insert state was entered would then be wrong with nothing
+to correct it."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (let* ((entry (assq 'donkey-insert-mode minor-mode-alist))
+               (form (cadr (cadr entry))))
+          ;; it really is an :eval construct, not a constant string
+          (should (eq (car (cadr entry)) :eval))
+          (with-temp-buffer
+            (text-mode)
+            (donkey-enter-insert)
+            (should (equal (eval form t) " DONKEY[I]"))
+            ;; the major mode changes underneath the state
+            (setq major-mode 'eshell-mode)
+            (should (equal (eval form t) " DONKEY[E]")))))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-indicator-says-E-for-a-derived-excluded-mode ()
+  "Derivation counts: a mode derived from `comint-mode\=' reports E too.
+
+`donkey--excluded-mode-p\=' uses `derived-mode-p\=', which is why listing
+`comint-mode\=' alone covers its dozens of derivatives."
+  (unwind-protect
+      (progn
+        (require 'comint)
+        (eval '(define-derived-mode donkey-test--shellish-mode comint-mode "Shellish") t)
+        (donkey-mode 1)
+        (with-temp-buffer
+          (donkey-test--shellish-mode)
+          (donkey--ensure-default-state)
+          (should (bound-and-true-p donkey-insert-mode))
+          (should (equal (donkey-indicator) " DONKEY[E]"))))
+    (donkey-mode -1)))
+
 (provide 'donkey-state-management-test)
 
 ;;; donkey-state-management-test.el ends here

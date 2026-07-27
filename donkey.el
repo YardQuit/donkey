@@ -3471,7 +3471,10 @@ In dired and other special buffers DONKEY is on too, and its letters win
 where they collide -- but a key the mode bound that DONKEY does not use
 still works.  In dired, \\`n', \\`t', \\`q', \\`^' and \\`+' are still dired's.
 Terminals and shells (eshell, term, vterm) stay in INSERT throughout, so
-nothing is suppressed underneath a running process.
+nothing is suppressed underneath a running process.  Their modeline says
+DONKEY[E] rather than DONKEY[I]: still INSERT, but NORMAL state cannot
+be reached there at all, so \\`C-g' quits the way stock Emacs does instead
+of switching state.
 
 
 That is the working set
@@ -3750,9 +3753,25 @@ versa."
   "DONKEY Insert state - passthrough to standard Emacs input.
 
 All keys fall through to the major mode and global keymap.
-\\[donkey--exit-insert] returns to Normal state."
+\\[donkey--exit-insert] returns to Normal state.
+
+The lighter reads \" DONKEY[E]\" instead of \" DONKEY[I]\" in a
+`donkey-excluded-modes' buffer.  Insert state is the truthful answer
+there -- keys really do pass through -- but it is a misleading one: it
+suggests \\[donkey--exit-insert] would get you to Normal state, and in these buffers
+nothing does.  Normal state is refused permanently, by
+`donkey--ensure-default-state' on entry and
+`donkey--handle-non-editing-buffer' for anything that gets in another
+way, so a reader pressing \\[donkey--exit-insert] and watching the lighter not change had
+no way to tell a deliberate refusal from a broken key.
+
+Computed on redisplay rather than stored, because a buffer can change
+major mode underneath the state -- `M-x shell-mode' in an ordinary
+buffer makes it excluded without any DONKEY transition firing.
+`donkey--excluded-mode-p' costs about a microsecond, which is nothing
+beside the redisplay it is part of."
   :group 'donkey
-  :lighter " DONKEY[I]"
+  :lighter (:eval (if (donkey--excluded-mode-p) " DONKEY[E]" " DONKEY[I]"))
   :keymap donkey-insert-mode-map
   (when donkey-insert-mode
     (when (bound-and-true-p donkey-normal-mode)
@@ -4383,12 +4402,20 @@ Returns non-nil if DONKEY was enabled."
 (defun donkey-indicator ()
   "Return state indicator string for modeline.
 
-Returns ' DONKEY[N]' for Normal, ' DONKEY[I]' for Insert, empty string
-otherwise.  Useful if you build your own mode-line and want to
-include the DONKEY state."
+Returns ' DONKEY[N]' for Normal, ' DONKEY[I]' for Insert, ' DONKEY[E]'
+for Insert in a `donkey-excluded-modes' buffer, and the empty string
+otherwise.  Useful if you build your own mode-line and want to include
+the DONKEY state.
+
+The E case is still Insert state; it is reported separately because
+Normal state cannot be reached from those buffers at all, and a lighter
+that says Insert invites a reader to press \\[donkey--exit-insert] and conclude the key
+is broken when nothing happens.  Kept in step with
+`donkey-insert-mode's own lighter, which makes the same distinction."
   (cond
    ((bound-and-true-p donkey-normal-mode) " DONKEY[N]")
-   ((bound-and-true-p donkey-insert-mode) " DONKEY[I]")
+   ((bound-and-true-p donkey-insert-mode)
+    (if (donkey--excluded-mode-p) " DONKEY[E]" " DONKEY[I]"))
    (t "")))
 
 ;;; ---------------------------------------------------------------------------
