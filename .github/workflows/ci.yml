@@ -55,6 +55,51 @@ jobs:
           emacs -Q --batch -L . -L donkey-testing $test_args \
             -f ert-run-tests-batch-and-exit
 
+  isolated:
+    name: Tests (each file alone)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+
+      # The suite above loads every file into one Emacs, so a test can pass
+      # on state an earlier file left behind and nothing says so.  That is
+      # not hypothetical: `donkey--mark-extending-p' compared `last-command'
+      # with `this-command' and nothing else, and outside the command loop
+      # BOTH are nil -- so a Lisp call with a mark already set was read as a
+      # repeat and extended instead of marking.  Any earlier test leaves
+      # `last-command' non-nil and hides it, so the combined run was green
+      # for as long as the bug existed.  Running each file into its own
+      # Emacs is what makes that visible.
+      #
+      # One version is enough.  What this job tests is independence between
+      # files, which is a property of the tests rather than of Emacs, and
+      # the matrix above already covers the versions.
+      #
+      # Every file is run before failing, rather than stopping at the first,
+      # so one broken file does not hide the others.
+      - name: Run each test file in a fresh Emacs
+        run: |
+          set -uo pipefail
+          failed=""
+          for f in donkey-testing/*-test.el; do
+            echo "=== $f ==="
+            if ! emacs -Q --batch -L . -L donkey-testing \
+                 -l "$f" -f ert-run-tests-batch-and-exit; then
+              failed="$failed $f"
+            fi
+          done
+          if [ -n "$failed" ]; then
+            for f in $failed; do
+              echo "::error file=$f::fails when run on its own"
+            done
+            exit 1
+          fi
+          echo "every test file passes in isolation"
+
   lint:
     name: Byte-compile, checkdoc, package-lint
     runs-on: ubuntu-latest
