@@ -3491,8 +3491,10 @@ a table, or the leading characters of a block of lines.
    ---> 333 gamma
 
 The selection is released by the cut, so you can put the cursor back on
-the first line and press \\[donkey-yank] straight away -- the block goes back where it
-came from.
+the first line and press \\[donkey-yank-rectangle] straight away -- the block goes
+back where it came from.  A rectangle has its own paste key:
+\\[donkey-yank] pastes ordinary text, \\[donkey-yank-rectangle] pastes columns,
+and neither has to guess which you meant.
 
 \\[donkey-change] on a rectangle replaces the block on EVERY line it spans, in one
 go.  It asks for the replacement in the minibuffer -- \"String rectangle:\"
@@ -3574,11 +3576,11 @@ on both at once, so DONKEY has one rule:
     with a rectangle drawn    \\[donkey-copy] and DONKEY-DELETE-KEYS take the rectangle; banks stay
     with no rectangle drawn   \\[donkey-copy] and DONKEY-DELETE-KEYS take the banked lines
     with lines banked         \\[donkey-yank] replaces the banked lines
-    with nothing banked       \\[donkey-yank] pastes the rectangle
 
-A drawn rectangle is on screen and a copied one is not, which is why the
-rule points in opposite directions for copying and pasting: each time it
-picks whichever selection you can actually see.
+The rule is only needed for TAKING, because only \\[donkey-copy] and
+DONKEY-DELETE-KEYS can be pointed at either kind of selection.  Pasting
+needs no rule: \\[donkey-yank] is text and \\[donkey-yank-rectangle] is columns, and
+they read from different stores.
 
 First give \\[donkey-yank] something to paste.  A rectangle never reaches the kill
 ring, so a rectangle copy on its own leaves \\[donkey-yank] with nothing to insert
@@ -3596,16 +3598,20 @@ and it says so.
    is copied -- and the \"keep\" line is STILL highlighted.  Nothing was
    spent.
 
->> Press \\`C-g' to drop the rectangle, then \\[donkey-yank].  The banked line is replaced
-   by the copied line, and the rectangle is left alone: the bank was the
-   selection still on screen, so it won.
+   Copying a rectangle also drops it, the way copying any selection
+   does, so there is no rectangle on screen by the time you press the
+   next key.  Nothing has to be dismissed first.
 
->> Press \\[donkey-yank] once more.  Nothing is banked now, so this time the rectangle
-   is what lands.
+>> Press \\[donkey-yank].  The banked line is replaced by the copied line: the
+   bank was the selection still on screen, so it won.
 
-Nothing is ever thrown away by the rule.  Take the rectangle and your
-banks are still waiting; take the banks and the rectangle is still in its
-store.  \\[donkey-clear-banked-selection] is the only key that discards banks.
+>> Press \\[donkey-yank-rectangle].  The rectangle lands, exactly as it would have
+   before that paste, or an hour later.  It is in its own store, and
+   nothing you do to the kill ring reaches it.
+
+Nothing is ever thrown away.  Take the rectangle and your banks are
+still waiting; take the banks and the rectangle is still in its store.
+\\[donkey-clear-banked-selection] is the only key that discards banks.
 
 
 Your Emacs still works
