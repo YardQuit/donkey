@@ -420,7 +420,7 @@ an empty buffer, or one holding only blank lines and whitespace. A blank
 line *between* paragraphs is not such a case: =m p= marks the paragraph
 above it, as it always has.
 
-=donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ’ “ ” = * ~ | \ / : + _ $=
+=donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ‘ ’ “ ” = * ~ | \ / : + _ $=
 by default -- an alist of (OPEN . CLOSE) pairs in =donkey-mark-pair-delimiters=
 (a Customization Group variable). For symmetric delimiters (e.g. straight
 or curly single quotes, where the same character both opens and closes a

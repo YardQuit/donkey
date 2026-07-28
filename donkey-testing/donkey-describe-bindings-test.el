@@ -1879,4 +1879,86 @@ the shorter, wronger wording fails here."
             (should (string-match-p "WITHOUT using them" text)))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
+
+(ert-deftest donkey-readme-binding-tables-match-the-keymap ()
+  "Every \"| =KEY= | =donkey-command= |\" row in README.org is true.
+
+The README's binding tables are the first thing a reader trusts and the
+last thing anyone re-checks.  Rows go stale silently: a rebinding
+changes the keymap, the table keeps its old row, and nothing disagrees
+until someone presses the key.
+
+Checked in both directions -- see
+`donkey-every-bound-command-appears-in-the-readme' for the other half."
+  (let (mismatches)
+    (with-temp-buffer
+      (insert-file-contents (expand-file-name "README.org" donkey-test--source-dir))
+      (goto-char (point-min))
+      (while (re-search-forward
+              "^| =\\([^=]+\\)= *| =\\(donkey-[a-z0-9---]+\\)= *|" nil t)
+        (let* ((key (match-string 1))
+               (claimed (intern (match-string 2)))
+               (actual (ignore-errors (lookup-key donkey-normal-mode-map (kbd key)))))
+          (cond
+           ((not (fboundp claimed))
+            (push (format "%s claims %s, which does not exist" key claimed) mismatches))
+           ((null actual)
+            (push (format "%s claims %s, but the key is unbound" key claimed) mismatches))
+           ((not (eq actual claimed))
+            (push (format "%s claims %s, but is bound to %s" key claimed actual)
+                  mismatches))))))
+    (should (equal mismatches nil))))
+
+(ert-deftest donkey-every-bound-command-appears-in-the-readme ()
+  "Every DONKEY command bound in Normal state is named in README.org.
+
+The other direction: a new binding that never reaches the README is
+undiscoverable except by reading the source.  Names are matched as text
+rather than in a table, so prose mentions count -- the point is that the
+command is documented somewhere, not that it sits in a particular row."
+  (let ((readme (with-temp-buffer
+                  (insert-file-contents
+                   (expand-file-name "README.org" donkey-test--source-dir))
+                  (buffer-string)))
+        undocumented)
+    (dolist (map (list donkey-normal-mode-map
+                       (lookup-key donkey-normal-mode-map "m")))
+      (when (keymapp map)
+        (map-keymap
+         (lambda (_ev def)
+           (when (and (symbolp def) (commandp def)
+                      (string-prefix-p "donkey-" (symbol-name def))
+                      (not (string-match-p (regexp-quote (symbol-name def)) readme)))
+             (push (symbol-name def) undocumented)))
+         map)))
+    (should (equal (delete-dups undocumented) nil))))
+
+(ert-deftest donkey-readme-lists-every-default-mark-pair-delimiter ()
+  "The README's delimiter list covers all of `donkey-mark-pair-delimiters'.
+
+Found by audit: U+2018, the OPENING curly single quote, was a working
+default that the README did not mention -- it listed the closing U+2019
+alone, so the pair looked symmetric when it is not.  A reader with point
+on the opener had no reason to think \\=`m i\\=' would do anything.
+
+The OPENING character of each pair is what is checked.  Asymmetric
+brackets are listed by their opener alone -- \"( [ { <\" -- and the
+closers are rightly left implied; requiring both would fail on a list
+that is perfectly clear.  U+2018 was a real gap precisely because the
+README had the pair the wrong way round, listing only the closer."
+  (let ((documented
+         (with-temp-buffer
+           (insert-file-contents (expand-file-name "README.org" donkey-test--source-dir))
+           (goto-char (point-min))
+           (if (re-search-forward
+                "=donkey-mark-inner=/=donkey-mark-outer= support \\(.*\\)$" nil t)
+               (match-string 1)
+             "")))
+        missing)
+    (dolist (pair donkey-mark-pair-delimiters)
+      (let ((open (car pair)))
+        (unless (string-match-p (regexp-quote (char-to-string open)) documented)
+          (push (format "%c (U+%04X)" open open) missing))))
+    (should (equal (delete-dups missing) nil))))
+
 ;;; donkey-describe-bindings-test.el ends here
