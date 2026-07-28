@@ -134,7 +134,7 @@ The selection does not linger once yanked."
 (ert-deftest donkey-copy-rectangle-mode-calls-copy-rectangle-as-kill ()
   "A live rectangle selection is copied as a rectangle.
 Delegates to `copy-rectangle-as-kill' via `call-interactively'."
-  (let (called-cmd donkey--last-kill-rectangle-p)
+  (let (called-cmd)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -316,7 +316,7 @@ gets killed."
 (ert-deftest donkey-delete-rectangle-mode-calls-kill-rectangle ()
   "A live rectangle selection is cut as a rectangle.
 Delegates to `kill-rectangle' via `call-interactively'."
-  (let (called-cmd donkey--last-kill-rectangle-p)
+  (let (called-cmd)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -393,73 +393,7 @@ Delegates to `kill-rectangle' via `call-interactively'."
     (should (= (buffer-size) 7))))
 
 ;;; ---------------------------------------------------------------------------
-;;; donkey--last-kill-rectangle-p / kill-new / kill-append advice
-;;; ---------------------------------------------------------------------------
-
-(ert-deftest donkey-clear-last-kill-rectangle-flag-sets-nil ()
-  "Directly clears the flag regardless of prior value."
-  (let ((donkey--last-kill-rectangle-p t))
-    (donkey--clear-last-kill-rectangle-flag)
-    (should-not donkey--last-kill-rectangle-p)))
-
-(ert-deftest donkey-kill-new-advice-clears-last-kill-rectangle-p ()
-  "`kill-new' clears the rectangle flag, whoever calls it.
-Regression test: every `kill-ring' push funnels through it, including
-ones with no Donkey wrapper at all (e.g. `kill-line'
-bound directly to \"D\", or any stock kill command reached via Insert
-state's passthrough) -- must clear a stale rectangle-freshness flag, so
-a later `donkey-yank' doesn't paste an old rectangle copy instead of
-the more recent, ordinary kill."
-  (let ((donkey--last-kill-rectangle-p t)
-        (kill-ring nil)
-        (kill-ring-yank-pointer nil))
-    (kill-new "some text")
-    (should-not donkey--last-kill-rectangle-p)))
-
-(ert-deftest donkey-kill-append-advice-clears-last-kill-rectangle-p ()
-  "`kill-append' clears the rectangle flag too.
-As for `kill-new', but on the path taken when consecutive kill commands
-append to the same
-`kill-ring' entry instead of pushing a new one)."
-  (let ((donkey--last-kill-rectangle-p t)
-        (kill-ring '("existing"))
-        (kill-ring-yank-pointer nil))
-    (setq kill-ring-yank-pointer kill-ring)
-    (kill-append " more" nil)
-    (should-not donkey--last-kill-rectangle-p)))
-
-(ert-deftest donkey-set-last-kill-rectangle-flag-sets-t ()
-  "Directly sets the flag regardless of prior value."
-  (let (donkey--last-kill-rectangle-p)
-    (donkey--set-last-kill-rectangle-flag)
-    (should donkey--last-kill-rectangle-p)))
-
-(ert-deftest donkey-copy-rectangle-as-kill-advice-sets-flag-directly ()
-  "The rectangle flag is set however `copy-rectangle-as-kill' is reached.
-Regression test: directly via `\\[execute-extended-command]', or from any third-party
-code -- must still set `donkey--last-kill-rectangle-p', or
-`donkey-yank' would treat the freshly populated `killed-rectangle' as
-stale and, outside `rectangle-mark-mode', crash into
-`donkey--clipboard-yank's kill-ring/clipboard fallback with a raw
-\"Kill ring is empty\" error, since a rectangle copy never touches the
-kill ring itself."
-  (let (donkey--last-kill-rectangle-p)
-    (with-temp-buffer
-      (insert "hello\n")
-      (copy-rectangle-as-kill 1 3))
-    (should donkey--last-kill-rectangle-p)))
-
-(ert-deftest donkey-kill-rectangle-advice-sets-flag-directly ()
-  "`kill-rectangle' sets the rectangle flag however it is reached.
-As for `copy-rectangle-as-kill'."
-  (let (donkey--last-kill-rectangle-p)
-    (with-temp-buffer
-      (insert "hello\n")
-      (kill-rectangle 1 3))
-    (should donkey--last-kill-rectangle-p)))
-
-;;; ---------------------------------------------------------------------------
-;;; donkey--replace-rectangle-selection-with-killed-rectangle
+;;; donkey-copy / donkey-delete rectangle handling
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-rectangle-top-left-returns-first-row-start ()
@@ -657,11 +591,11 @@ immediately after would land on only one row, silently leaving every
 other row of the just-deleted rectangle with nothing to replace it.
 Must call `undefined' instead, same as `donkey-wrap-region' does.
 
-Explicitly binds `donkey--last-kill-rectangle-p' to nil: with it set,
+Explicitly starts with no pending rectangle: with one present,
 `donkey-yank' instead delegates to
 `donkey--replace-rectangle-selection-with-killed-rectangle' -- see the
 dedicated tests for that path."
-  (let (called-cmd deleted yanked donkey--last-kill-rectangle-p)
+  (let (called-cmd deleted yanked)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -681,7 +615,7 @@ dedicated tests for that path."
 
 (ert-deftest donkey-yank-rectangle-mode-falls-back-when-disabled ()
   "When `rectangle-mark-mode' is nil, yanks normally as before."
-  (let (called-cmd deleted yanked donkey--last-kill-rectangle-p)
+  (let (called-cmd deleted yanked)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -699,78 +633,12 @@ dedicated tests for that path."
     (should deleted)
     (should yanked)))
 
-(ert-deftest donkey-yank-rectangle-mode-with-flag-calls-replace-function ()
-  "A live rectangle with a rectangle to paste replaces it as a rectangle.
-Delegates to
-`donkey--replace-rectangle-selection-with-killed-rectangle' instead of
-falling through to `undefined'."
-  (let ((donkey--last-kill-rectangle-p t)
-        replace-called called-cmd)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 3)
-      (cl-letf (((symbol-function
-                  'donkey--replace-rectangle-selection-with-killed-rectangle)
-                 (lambda () (setq replace-called t)))
-                ((symbol-function 'call-interactively)
-                 (lambda (cmd) (setq called-cmd cmd))))
-        (let ((rectangle-mark-mode t))
-          (donkey-yank))))
-    (should replace-called)
-    (should-not called-cmd)))
-
-(ert-deftest donkey-yank-pastes-rectangle-when-flag-set ()
-  "`donkey-yank' pastes a rectangle when the rectangle-kill flag is set.
-
-Regression test: after `donkey-copy'/`donkey-delete' kill a rectangle
-elsewhere (rectangle-mark-mode no longer active here), `donkey-yank'
-must paste it back via `yank-rectangle' instead of pulling from the
-clipboard/kill ring -- otherwise there is no way to paste a
-rectangle-copied selection anywhere outside of `rectangle-mark-mode'
-itself."
-  (let ((donkey--last-kill-rectangle-p t)
-        rectangle-yanked clipboard-yanked)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
-                ((symbol-function 'yank-rectangle)
-                 (lambda () (setq rectangle-yanked t)))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (setq clipboard-yanked t))))
-        (let (rectangle-mark-mode)
-          (donkey-yank))))
-    (should rectangle-yanked)
-    (should-not clipboard-yanked)))
-
-(ert-deftest donkey-yank-rectangle-flag-deletes-active-region-first ()
-  "A rectangle yank over an active region deletes that region first.
-
-With an active (non-rectangle) region and the flag set, deletes the
-region before pasting the rectangle, same as the ordinary yank path."
-  (let ((donkey--last-kill-rectangle-p t)
-        deleted rectangle-yanked)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 4)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (setq deleted t)))
-                ((symbol-function 'yank-rectangle)
-                 (lambda () (setq rectangle-yanked t))))
-        (let (rectangle-mark-mode)
-          (donkey-yank))))
-    (should deleted)
-    (should rectangle-yanked)))
-
 (ert-deftest donkey-yank-does-not-paste-rectangle-when-flag-nil ()
   "`donkey-yank' pastes normally when the rectangle-kill flag is nil.
 
 With the flag nil (no rectangle kill since the last ordinary kill),
 yanks normally via `clipboard-yank', not `yank-rectangle'."
-  (let (donkey--last-kill-rectangle-p
+  (let (
         rectangle-yanked clipboard-yanked)
     (with-temp-buffer
       (insert "hello\n")
@@ -784,220 +652,6 @@ yanks normally via `clipboard-yank', not `yank-rectangle'."
           (donkey-yank))))
     (should-not rectangle-yanked)
     (should clipboard-yanked)))
-
-;;; ---------------------------------------------------------------------------
-;;; donkey-yank-pop
-;;; ---------------------------------------------------------------------------
-
-(ert-deftest donkey-yank-pop-no-region-calls-yank-pop ()
-  "Without an active region, calls `yank-pop' directly."
-  (let (popped)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () nil))
-                ((symbol-function 'yank-pop)
-                 (lambda (&optional _n) (setq popped t))))
-        (donkey-yank-pop)))
-    (should popped)))
-
-(ert-deftest donkey-yank-pop-region-deletes-then-pops ()
-  "`donkey-yank-pop' deletes an active region before popping.
-
-With an active region, calls the function `delete-active-region' then
-`yank-pop', in that order."
-  (let (order)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 4)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () t))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (push 'delete order)))
-                ((symbol-function 'yank-pop)
-                 (lambda (&optional _n) (push 'pop order))))
-        (donkey-yank-pop)))
-    (should (eq (nth 0 order) 'pop))
-    (should (eq (nth 1 order) 'delete))
-    (should (= (length order) 2))))
-
-(ert-deftest donkey-yank-pop-no-region-inserts-content ()
-  "Without region, `yank-pop' inserts content at point."
-  (with-temp-buffer
-    (insert "hello\n")
-    (goto-char 1)
-    (cl-letf (((symbol-function 'use-region-p)
-               (lambda () nil))
-              ((symbol-function 'yank-pop)
-               (lambda (&optional _n) (insert "world"))))
-      (donkey-yank-pop))
-    (should (string= (buffer-substring 1 6) "world"))))
-
-(ert-deftest donkey-yank-pop-region-replaces-with-content ()
-  "With region, deletes region then yank-pops content."
-  (with-temp-buffer
-    (insert "hello world\n")
-    (goto-char 6)
-    (push-mark 1)
-    (cl-letf (((symbol-function 'use-region-p)
-               (lambda () t))
-              ((symbol-function 'delete-active-region)
-               (lambda () (delete-region 1 6)))
-              ((symbol-function 'yank-pop)
-               (lambda (&optional _n) (insert "hey"))))
-      (donkey-yank-pop))
-    (should (string= (buffer-substring 1 4) "hey"))))
-
-(ert-deftest donkey-yank-pop-empty-buffer-no-region ()
-  "Empty buffer, no region: `yank-pop' inserts at point-min."
-  (with-temp-buffer
-    (cl-letf (((symbol-function 'use-region-p)
-               (lambda () nil))
-              ((symbol-function 'yank-pop)
-               (lambda (&optional _n) (insert "text"))))
-      (donkey-yank-pop))
-    (should (= (buffer-size) 4))
-    (should (string= (buffer-string) "text"))))
-
-(ert-deftest donkey-yank-pop-call-interactively-with-region ()
-  "Can be called interactively with a region."
-  (let (deleted popped)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 4)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () t))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (setq deleted t)))
-                ((symbol-function 'yank-pop)
-                 (lambda (&optional _n) (setq popped t))))
-        (call-interactively #'donkey-yank-pop))
-      (should deleted)
-      (should popped))))
-
-(ert-deftest donkey-yank-pop-passes-the-prefix-arg-through ()
-  "A prefix arg reaches `yank-pop' as the number of entries to reach back.
-
-Renamed from `donkey-yank-pop-ignores-prefix-arg', whose point was that a
-prefix arg does not PREVENT the pop -- it was ignored only because the
-command took no argument to receive it.  It does now: `yank-pop's own ARG
-already means how many entries to reach back, so \\[universal-argument] 3 P
-takes the third one down.  Bare \\[universal-argument] means FOUR, which
-is what this passes."
-  (let (popped-with)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (let ((current-prefix-arg '(4)))
-        (cl-letf (((symbol-function 'use-region-p)
-                   (lambda () nil))
-                  ((symbol-function 'yank-pop)
-                   (lambda (&optional n) (setq popped-with n))))
-          (call-interactively #'donkey-yank-pop)))
-      (should (equal popped-with 4)))))
-
-(ert-deftest donkey-yank-pop-rectangle-mode-falls-through-to-undefined ()
-  "`donkey-yank-pop' falls through to undefined in `rectangle-mark-mode'.
-
-Regression test: same guard as `donkey-yank', for the same reason --
-see `donkey-yank-rectangle-mode-falls-through-to-undefined'."
-  (let (called-cmd deleted popped)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 3)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-                ((symbol-function 'call-interactively)
-                 (lambda (cmd) (setq called-cmd cmd)))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (setq deleted t)))
-                ((symbol-function 'yank-pop)
-                 (lambda (&optional _n) (setq popped t))))
-        (let ((rectangle-mark-mode t))
-          (donkey-yank-pop))))
-    (should (eq called-cmd 'undefined))
-    (should-not deleted)
-    (should-not popped)))
-
-(ert-deftest donkey-yank-pop-rectangle-mode-falls-back-when-disabled ()
-  "When `rectangle-mark-mode' is nil, pops normally as before."
-  (let (called-cmd deleted popped)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 3)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-                ((symbol-function 'call-interactively)
-                 (lambda (cmd) (setq called-cmd cmd)))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (setq deleted t)))
-                ((symbol-function 'yank-pop)
-                 (lambda (&optional _n) (setq popped t))))
-        (let ((rectangle-mark-mode nil))
-          (donkey-yank-pop))))
-    (should-not called-cmd)
-    (should deleted)
-    (should popped)))
-
-(ert-deftest donkey-yank-pop-signals-error-right-after-rectangle-paste ()
-  "Regression test: `yank-rectangle' (unlike `yank'/`clipboard-yank')
-never sets `this-command' to `yank', so calling `donkey-yank-pop'
-immediately after a rectangle paste must not delegate to `yank-pop' --
-which would otherwise fail confusingly deep inside its own
-`yank-from-kill-ring'/`read-from-kill-ring' fallback path.  Signals a
-clear `user-error' instead, since `killed-rectangle' has no history to
-pop through regardless."
-  (let ((donkey--last-kill-rectangle-p t)
-        (last-command 'donkey-yank)
-        popped)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
-                ((symbol-function 'yank-pop)
-                 (lambda (&optional _n) (setq popped t))))
-        (should-error (donkey-yank-pop) :type 'user-error)))
-    (should-not popped)))
-
-(ert-deftest donkey-yank-pop-pops-normally-after-non-rectangle-yank ()
-  "`donkey-yank-pop' pops normally after an ordinary `donkey-yank'.
-
-Even with `last-command' `donkey-yank', a nil flag (the previous
-donkey-yank was an ordinary clipboard/`kill-ring' paste) must still pop
-normally."
-  (let (donkey--last-kill-rectangle-p
-        (last-command 'donkey-yank)
-        popped)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
-                ((symbol-function 'yank-pop)
-                 (lambda (&optional _n) (setq popped t))))
-        (donkey-yank-pop)))
-    (should popped)))
-
-(ert-deftest donkey-yank-pop-pops-normally-when-last-command-is-not-donkey-yank ()
-  "`donkey-yank-pop' pops normally when `last-command' is not `donkey-yank'.
-
-Even with the flag set, if the immediately preceding command wasn't
-donkey-yank (e.g. the rectangle copy happened long ago and other
-commands ran since), must still fall through to plain `yank-pop' rather
-than signalling the rectangle-specific error."
-  (let ((donkey--last-kill-rectangle-p t)
-        (last-command 'some-other-command)
-        popped)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
-                ((symbol-function 'yank-pop)
-                 (lambda (&optional _n) (setq popped t))))
-        (donkey-yank-pop)))
-    (should popped)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-indent-region-or-line
@@ -2575,20 +2229,6 @@ selected rows vanished with the kill ring still empty afterwards."
        (donkey-yank))
      (should (equal shown "Nothing to paste")))))
 
-(ert-deftest donkey-yank-pop-with-nothing-to-paste-leaves-the-region-alone ()
-  "`P' has the same delete-then-fail shape, and the same guard."
-  (donkey-test--paste-buffer
-   (donkey-test--row 1)
-   (push-mark (save-excursion (donkey-test--row 3) (point)) t t)
-   (donkey-yank-pop)
-   (should (equal (buffer-string)
-                  "AAA one\nBBB two\nCCC three\nDDD four\nEEE five\n"))
-   (should (region-active-p))))
-
-;;; ---------------------------------------------------------------------------
-;;; Counts on paste
-;;; ---------------------------------------------------------------------------
-
 (ert-deftest donkey-yank-count-inserts-that-many-copies ()
   "A count on `p' inserts that many copies, as it does in vi.
 
@@ -2660,80 +2300,16 @@ A paste has no backward direction for a negative count to mean, unlike
    (donkey-yank 2)
    (should (equal (buffer-string) "ZZ\nZZ\nBBB two\nDDD four\nEEE five\n"))))
 
-(ert-deftest donkey-yank-pop-count-reaches-further-back ()
-  "`P' hands its count to `yank-pop', which counts entries back.
-
-No reinterpretation needed, unlike `p': reaching back through the ring is
-what popping IS, in vi and in Emacs alike."
-  (donkey-test--paste-buffer
-   (kill-new "one") (kill-new "two") (kill-new "three")
-   (goto-char (point-min))
-   (donkey-yank)
-   (setq last-command 'yank this-command 'yank-pop)
-   (donkey-yank-pop 2)
-   (should (equal (buffer-substring-no-properties (point-min) 4) "one"))))
-
-(ert-deftest donkey-yank-rectangle-count-widens-rather-than-stacking ()
-  "A count on a blockwise paste repeats each row, giving a wider block.
-
-Regression: routing the rectangle path through `donkey--paste-times'
-called `yank-rectangle' N times, and each call pastes wherever the last
-one left point -- partway down and across the previous block -- so two
-copies of a three-row block came out as a staircase.  A rectangle is a
-block of columns; repeating it means a wider block, which is also what a
-count on a blockwise paste does in vi."
-  (with-temp-buffer
-    (donkey-mode 1)
-    ;; `donkey--last-kill-rectangle-p' is deliberately global, not
-    ;; buffer-local, so a rectangle copied here would otherwise be seen by
-    ;; every later test in the run -- which is exactly what happened: three
-    ;; `donkey-yank-region-*' tests started taking the rectangle branch.
-    (let ((transient-mark-mode t) (kill-ring nil) (killed-rectangle nil)
-          (donkey--last-kill-rectangle-p nil))
-      (insert "AAA one\nBBB two\nCCC three\nDDD four\n")
-      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
-        (goto-char (point-min))
-        (push-mark 20 t t)
-        (rectangle-mark-mode 1)
-        (donkey-copy)
-        (deactivate-mark)
-        (goto-char (point-max))
-        (donkey-yank 2))
-      (should (equal (buffer-string)
-                     "AAA one\nBBB two\nCCC three\nDDD four\nAAAAAA\nBBBBBB\nCCCCCC")))))
-
-(ert-deftest donkey-yank-rectangle-count-of-one-is-a-plain-paste ()
-  "Without a count the block is pasted once, exactly as before."
-  (with-temp-buffer
-    (donkey-mode 1)
-    ;; `donkey--last-kill-rectangle-p' is deliberately global, not
-    ;; buffer-local, so a rectangle copied here would otherwise be seen by
-    ;; every later test in the run -- which is exactly what happened: three
-    ;; `donkey-yank-region-*' tests started taking the rectangle branch.
-    (let ((transient-mark-mode t) (kill-ring nil) (killed-rectangle nil)
-          (donkey--last-kill-rectangle-p nil))
-      (insert "AAA one\nBBB two\nCCC three\nDDD four\n")
-      (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
-        (goto-char (point-min))
-        (push-mark 20 t t)
-        (rectangle-mark-mode 1)
-        (donkey-copy)
-        (deactivate-mark)
-        (goto-char (point-max))
-        (donkey-yank))
-      (should (equal (buffer-string)
-                     "AAA one\nBBB two\nCCC three\nDDD four\nAAA\nBBB\nCCC")))))
-
 (ert-deftest donkey-yank-rectangle-count-of-zero-pastes-nothing ()
   "A count below 1 pastes nothing here too."
   (with-temp-buffer
     (donkey-mode 1)
-    ;; `donkey--last-kill-rectangle-p' is deliberately global, not
+    ;; `killed-rectangle' is deliberately global, not
     ;; buffer-local, so a rectangle copied here would otherwise be seen by
     ;; every later test in the run -- which is exactly what happened: three
     ;; `donkey-yank-region-*' tests started taking the rectangle branch.
     (let ((transient-mark-mode t) (kill-ring nil) (killed-rectangle nil)
-          (donkey--last-kill-rectangle-p nil))
+          )
       (insert "AAA one\nBBB two\nCCC three\nDDD four\n")
       (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
         (goto-char (point-min))
@@ -2933,7 +2509,6 @@ window system, so binding it records exactly what would have left Emacs."
                  (kill-ring nil)
                  (kill-ring-yank-pointer nil)
                  (killed-rectangle nil)
-                 (donkey--last-kill-rectangle-p nil)
                  (donkey--clipboard-warning-shown nil)
                  (this-command nil)
                  (last-command nil)
@@ -2956,7 +2531,7 @@ survive the trip through a flat clipboard, and stock
 If this test ever fails because someone made the copy reach the
 clipboard, that is a decision to take on purpose, not a bug to fix in
 passing -- and note that `kill-new' is advised to clear
-`donkey--last-kill-rectangle-p', so pushing the text onto the kill ring
+`kill-ring', so pushing the text there as well
 breaks the rectangle round trip unless the flag is restored."
   (donkey-test--with-clipboard-spy sent
     (goto-char (point-min))
@@ -2977,35 +2552,6 @@ breaks the rectangle round trip unless the flag is restored."
     (should (equal killed-rectangle '("AAA" "BBB" "CCC")))
     (should (null kill-ring))
     (should (null sent))))
-
-(ert-deftest donkey-rectangle-copy-still-round-trips-inside-emacs ()
-  "What a rectangle copy IS for: pasting it back with `p'.
-
-The clipboard is not involved, so this is the whole of what the copy
-buys -- if it ever stops working, the copy is doing nothing at all.
-
-Pasted into the MIDDLE of existing lines, deliberately.  At `point-max' a
-rectangular paste and a linear one produce identical text, so a test
-there passes either way: this test originally sat at the end of the
-buffer and could not have caught the flag being cleared.  Here the two
-differ visibly -- rectangular gives AAAXX/BBBYY/CCCZZ, linear gives
-AAA/BBB/CCCXX -- which is what makes it a real check on
-`donkey--last-kill-rectangle-p' surviving the copy."
-  (donkey-test--with-clipboard-spy sent
-    (ignore sent)
-    (goto-char (point-max))
-    (insert "XX\nYY\nZZ\n")
-    (goto-char (point-min))
-    (push-mark 20 t t)
-    (rectangle-mark-mode 1)
-    (donkey-copy)
-    (deactivate-mark)
-    (goto-char (point-min))
-    (search-forward "XX")
-    (beginning-of-line)
-    (donkey-yank)
-    (should (equal (buffer-string)
-                   "AAA one\nBBB two\nCCC three\nAAAXX\nBBBYY\nCCCZZ\n"))))
 
 (ert-deftest donkey-ordinary-and-banked-copies-do-reach-the-clipboard ()
   "The contrast that makes the rectangle case a deliberate exception.
@@ -3219,9 +2765,9 @@ away that a user would actually miss."
   "Run BODY over a four-line buffer with DONKEY on and messages silenced.
 
 Binds every global a rectangle or a paste touches, including
-`killed-rectangle' and `donkey--last-kill-rectangle-p'.  `donkey-mode'
-goes back off in an `unwind-protect': it is a GLOBAL minor mode, so
-leaving it on leaks into every later test."
+`killed-rectangle'.  `donkey-mode' goes back off in an
+`unwind-protect': it is a GLOBAL minor mode, so leaving it on leaks
+into every later test."
   `(unwind-protect
        (with-temp-buffer
          (donkey-mode 1)
@@ -3229,7 +2775,6 @@ leaving it on leaks into every later test."
                (kill-ring nil)
                (kill-ring-yank-pointer nil)
                (killed-rectangle nil)
-               (donkey--last-kill-rectangle-p nil)
                (donkey--clipboard-warning-shown nil)
                (this-command nil)
                (last-command nil))
@@ -3290,43 +2835,6 @@ rectangle never covered."
    (should (equal killed-rectangle '("BBB" "CCC")))
    (should (= (length (donkey--banked-spans)) 1))))
 
-(ert-deftest donkey-yank-takes-the-bank-over-a-pending-rectangle ()
-  "`p' replaces banked lines even when `killed-rectangle' is set.
-
-Regression: the rectangle branch came first, so the rectangle landed at
-point and the banks sat highlighted, having had no effect on anything.
-`killed-rectangle' is not on screen and the banks are, so the banks are
-the live selection here."
-  (donkey-test--bank-and-rectangle
-   (donkey-test--draw-rectangle 2 3 3)
-   (donkey-copy 1)
-   (deactivate-mark)
-   (should donkey--last-kill-rectangle-p)
-   (kill-new "ZZZ\n")
-   ;; `kill-new' is advised to clear the flag, so put it back: this is
-   ;; the state reached by copying a rectangle and then having anything
-   ;; older already on the kill ring.
-   (setq donkey--last-kill-rectangle-p t)
-   (donkey-test--row 1)
-   (donkey-bank-selection)
-   (donkey-test--row 4)
-   (donkey-yank 1)
-   (should (equal (buffer-string) "ZZZ\nBBB two\nCCC three\nDDD four\n"))
-   (should (= (length (donkey--banked-spans)) 0))))
-
-(ert-deftest donkey-yank-pastes-the-rectangle-when-no-bank-claims-it ()
-  "With no banks, a pending rectangle still pastes as a rectangle."
-  (donkey-test--bank-and-rectangle
-   (donkey-test--draw-rectangle 2 3 3)
-   (donkey-copy 1)
-   (deactivate-mark)
-   (donkey-test--row 4)
-   (donkey-yank 1)
-   ;; The rectangle's second row lands on the buffer's empty final line,
-   ;; so it ends there rather than adding a newline of its own.
-   (should (equal (buffer-string)
-                  "AAA one\nBBB two\nCCC three\nBBBDDD four\nCCC"))))
-
 (ert-deftest donkey-yank-over-a-bank-with-nothing-to-paste-keeps-the-bank ()
   "A paste with an empty kill ring reports, and does not eat the bank.
 
@@ -3340,20 +2848,6 @@ which is exactly the round trip it exists for."
    (let ((interprogram-paste-function (lambda () nil)))
      (donkey-yank 1))
    (should (equal (buffer-string) "AAA one\nBBB two\nCCC three\nDDD four\n"))
-   (should (= (length (donkey--banked-spans)) 1))))
-
-(ert-deftest donkey-rectangle-still-wins-for-yank-when-drawn-live ()
-  "A live rectangle outranks a bank for `p' too, same rule both ways."
-  (donkey-test--bank-and-rectangle
-   (donkey-test--draw-rectangle 2 3 3)
-   (donkey-copy 1)
-   (deactivate-mark)
-   (donkey-test--row 1)
-   (donkey-bank-selection)
-   (donkey-test--draw-rectangle 3 4 3)
-   (donkey-yank 1)
-   ;; The rectangle replaced the drawn rectangle, and the bank survived.
-   (should (equal (buffer-string) "AAA one\nBBB two\nBBB three\nCCC four\n"))
    (should (= (length (donkey--banked-spans)) 1))))
 
 (ert-deftest donkey-bank-and-rectangle-precedence-is-the-same-in-all-three ()
@@ -3373,9 +2867,8 @@ The inconsistency was the actual defect; this pins the single rule."
   ;; p: a bank beats a rectangle that is only in `killed-rectangle'.
   (donkey-test--bank-and-rectangle
    (setq killed-rectangle '("XX" "YY")
-         donkey--last-kill-rectangle-p t)
+         )
    (kill-new "ZZZ\n")
-   (setq donkey--last-kill-rectangle-p t)
    (donkey-test--row 1)
    (donkey-bank-selection)
    (donkey-test--row 4)
@@ -3468,5 +2961,225 @@ Pinned as a family so the next one added is measured against them."
       (donkey-mode -1))))
 
 (provide 'donkey-editing-test)
+
+;;; ---------------------------------------------------------------------------
+;;; donkey-yank / donkey-yank-rectangle -- the two-key split
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-test--with-clipboard (clipboard &rest body)
+  "Run BODY with a system clipboard simulated as read AND write.
+
+CLIPBOARD non-nil gives a working clipboard, nil a session without one.
+Both halves matter.  Stubbing only the read side models a session where
+copies go nowhere, which no real Emacs behaves like, and it produced a
+result that looked like a defect until the write side was added.
+
+The read/write pair is also the only way the bug this split fixes is
+visible at all: `current-kill' calls `kill-new' to import the clipboard
+during a PASTE, and it was that import -- not any kill -- that used to
+retire a pending rectangle.  With no clipboard there is no import, so
+`--batch' saw the old code behave correctly and the suite stayed green
+while real sessions did not."
+  (declare (indent 1))
+  `(let ((donkey-test--clip nil))
+     (let ((interprogram-cut-function
+            (if ,clipboard (lambda (text) (setq donkey-test--clip text)) #'ignore))
+           (interprogram-paste-function
+            (if ,clipboard (lambda () donkey-test--clip) (lambda () nil))))
+       ,@body)))
+
+(defvar donkey-test--clip nil
+  "Stand-in for the system clipboard in `donkey-test--with-clipboard'.")
+
+(ert-deftest donkey-yank-never-reaches-for-the-rectangle-store ()
+  "`p' pastes linear text even when `killed-rectangle' is full.
+
+The everyday case, and the one that rules out the obvious simplification
+of dropping the flag and having \"p\" check `killed-rectangle' directly.
+`killed-rectangle' is never cleared by anything -- `rect.el' only ever
+assigns it -- so one rectangle copy anywhere in a session would make
+\"p\" unable to paste ordinary text again for the rest of that session.
+Confirmed by building that version: after a rectangle copy, copying a
+line and pressing \"p\" pasted the rectangle."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--draw-rectangle 1 2 3)
+   (donkey-copy 1)
+   (deactivate-mark)
+   (should killed-rectangle)
+   ;; An ordinary copy afterwards is what "p" must honour.
+   (donkey-test--row 3)
+   (donkey-visual-line-toggle)
+   (donkey-copy 1)
+   (donkey-test--row 4)
+   (end-of-line)
+   (donkey-yank 1)
+   (should (string-match-p "CCC three" (buffer-string)))
+   (should-not (string-match-p "AAA\nBBB" (buffer-string)))))
+
+(ert-deftest donkey-yank-rectangle-pastes-from-the-rectangle-store ()
+  "`P' pastes `killed-rectangle', at point, as a block."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--draw-rectangle 1 2 3)
+   (donkey-copy 1)
+   (deactivate-mark)
+   (goto-char (point-max))
+   (donkey-yank-rectangle 1)
+   (should (equal (buffer-string)
+                  "AAA one\nBBB two\nCCC three\nDDD four\nAAA\nBBB"))))
+
+(ert-deftest donkey-yank-rectangle-reports-when-there-is-nothing-to-paste ()
+  "`P' with an empty `killed-rectangle' reports instead of signalling.
+
+Reaching for a paste with nothing to paste is an ordinary mistake, and
+`donkey-yank' answers it the same way."
+  (let (messages)
+    (donkey-test--bank-and-rectangle
+     (cl-letf (((symbol-function 'message)
+                (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+       (should-not killed-rectangle)
+       (donkey-yank-rectangle 1))
+     (should (equal (buffer-string) "AAA one\nBBB two\nCCC three\nDDD four\n")))
+    (should (member "No rectangle to paste" messages))))
+
+(ert-deftest donkey-yank-rectangle-deletes-an-ordinary-region-first ()
+  "`P' over a plain region replaces it, as any paste over a selection does."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--draw-rectangle 1 2 3)
+   (donkey-copy 1)
+   (deactivate-mark)
+   (donkey-test--row 4)
+   (push-mark (line-end-position) t t)
+   (donkey-yank-rectangle 1)
+   (should-not (string-match-p "DDD four" (buffer-string)))))
+
+(ert-deftest donkey-yank-rectangle-over-a-live-rectangle-replaces-it ()
+  "`P' inside `rectangle-mark-mode' delegates to the row-checked replace.
+
+Not the at-point path: replacing a drawn rectangle has to refuse a
+mismatched row count rather than paste half of it."
+  (let (replace-called)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 3)
+      (let ((killed-rectangle '("xx")))
+        (cl-letf (((symbol-function
+                    'donkey--replace-rectangle-selection-with-killed-rectangle)
+                   (lambda () (setq replace-called t))))
+          (let ((rectangle-mark-mode t))
+            (donkey-yank-rectangle 1)))))
+    (should replace-called)))
+
+(ert-deftest donkey-yank-in-rectangle-mode-falls-through-to-undefined ()
+  "`p' inside `rectangle-mark-mode' is undefined, and says so with `P'.
+
+Linear clipboard text has no rectangular shape.  Pasting it anyway
+deletes every row of the selection and replaces only one, because the
+deletion deactivates the mark and `rectangle-mark-mode' auto-disables
+with it."
+  (let (called-cmd)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 3)
+      (cl-letf (((symbol-function 'call-interactively)
+                 (lambda (cmd) (setq called-cmd cmd))))
+        (let ((rectangle-mark-mode t))
+          (donkey-yank 1))))
+    (should (eq called-cmd 'undefined))))
+
+(ert-deftest donkey-yank-rectangle-count-widens-rather-than-stacking ()
+  "A count on `P' repeats each ROW, giving a wider block.
+
+Calling `yank-rectangle' N times pastes the second block wherever the
+first left point -- partway down and across it -- so two copies of a
+three-row block came out as a staircase."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--draw-rectangle 1 2 3)
+   (donkey-copy 1)
+   (deactivate-mark)
+   (goto-char (point-max))
+   (donkey-yank-rectangle 2)
+   (should (equal (buffer-string)
+                  "AAA one\nBBB two\nCCC three\nDDD four\nAAAAAA\nBBBBBB"))))
+
+(ert-deftest donkey-yank-takes-the-bank-and-leaves-the-rectangle-alone ()
+  "`p' replaces banked lines, and the rectangle store is untouched.
+
+The live-selection rule still applies to taking: banks are on screen,
+`killed-rectangle' is not.  What changed is that the rectangle is no
+longer competing for this key at all."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--draw-rectangle 1 2 3)
+   (donkey-copy 1)
+   (deactivate-mark)
+   (donkey-test--row 3)
+   (donkey-visual-line-toggle)
+   (donkey-copy 1)
+   (deactivate-mark)
+   (donkey-test--row 4)
+   (donkey-bank-selection)
+   (donkey-yank 1)
+   (should (= (length (donkey--banked-spans)) 0))
+   (should (equal killed-rectangle '("AAA" "BBB")))))
+
+;;; --- regression guards for the environment-dependence this split removed ---
+
+(ert-deftest donkey-paste-keys-agree-with-and-without-a-clipboard ()
+  "The same keys give the same buffer whether or not a clipboard exists.
+
+THE regression guard for this design.  \"p\" used to decide between the
+kill ring and `killed-rectangle' by tracking which had been written more
+recently, in a flag maintained by advice on `kill-new'.  But
+`current-kill' calls `kill-new' to import the system clipboard, so a
+PASTE reached that advice and retired the pending rectangle -- in
+graphical sessions only.  The identical key sequence produced different
+buffers on a GUI and in a terminal, and the tutor could not state which.
+
+Asserted as equality between the two runs rather than against a literal,
+so it keeps meaning what it means if the fixture text ever changes."
+  (let (results)
+    (dolist (clipboard '(nil t))
+      (donkey-test--with-clipboard clipboard
+        (donkey-test--bank-and-rectangle
+         (donkey-test--row 3)
+         (donkey-visual-line-toggle)
+         (donkey-copy 1)
+         (deactivate-mark)
+         (donkey-test--row 1)
+         (donkey-bank-selection)
+         (donkey-test--draw-rectangle 2 3 3)
+         (donkey-copy 1)
+         (deactivate-mark)
+         (donkey-yank 1)
+         (goto-char (point-max))
+         (donkey-yank-rectangle 1)
+         (push (buffer-string) results))))
+    (should (= 2 (length results)))
+    (should (equal (nth 0 results) (nth 1 results)))))
+
+(ert-deftest donkey-rectangle-survives-any-number-of-ordinary-kills ()
+  "A copied rectangle stays pasteable no matter what else is killed.
+
+Under the flag, every `kill-new' retired it: an ordinary copy, a paste
+that imported the clipboard, or any package calling `kill-new' at all.
+`killed-rectangle' is its own store and nothing but another rectangle
+command writes it, so \"P\" keeps working."
+  (donkey-test--with-clipboard t
+    (donkey-test--bank-and-rectangle
+     (donkey-test--draw-rectangle 1 2 3)
+     (donkey-copy 1)
+     (deactivate-mark)
+     ;; Plenty of unrelated kill-ring traffic.
+     (dotimes (_ 3)
+       (donkey-test--row 3)
+       (donkey-visual-line-toggle)
+       (donkey-copy 1)
+       (deactivate-mark)
+       (goto-char (point-max))
+       (donkey-yank 1))
+     (goto-char (point-max))
+     (donkey-yank-rectangle 1)
+     (should (string-match-p "AAA\nBBB" (buffer-string))))))
 
 ;;; donkey-editing-test.el ends here

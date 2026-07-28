@@ -1082,10 +1082,10 @@ negative count to mean, so there is nothing for it to do but nothing."
 (defun donkey-yank (&optional count)
   "Paste clipboard content, replacing the active region if present.
 
-Linear text only. A rectangle is a block of columns and lives in its
+Linear text only.  A rectangle is a block of columns and lives in its
 own store, `kill-rectangle'; \\[donkey-yang-rectangle] is the key that
 pastes it.
-Splitting the two is deliberate. \"p\" used to decide for you, by
+Splitting the two is deliberate.  \"p\" used to decide for you, by
 tracking which of the two stores had been written more recently -- but
 Emacs give a rectangle no way to say so. The kill ring is untyped text
 and `killed-rectangle' is a separate variable that is only ever
@@ -1134,23 +1134,23 @@ which is what asking to replace it with nothing means."
       (message "Nothing to paste"))
      (t
       (donkey--delete-active-region-safe)
-      (donkey--paste-time n #'donkey--clipboard-yank)))))
+      (donkey--paste-times n #'donkey--clipboard-yank)))))
 
 (defun donkey-yank-rectangle (&optional count)
-  "Paste `killed-rectangle' as a block of columns
+  "Paste `killed-rectangle' as a block of columns.
 
 The rectangle counterpart of \\[donkey-yank], which pastes linear
-text. Nothing is guessed: this key always means the rectangle store,
+text.  Nothing is guessed: this key always means the rectangle store,
 and \\[donkey-yank] always means the kill ring or system clipboard.
 
 With `rectangle-mark-mode' active, replaces the selected rectangle via
 `donkey--replace-rectangle-relection-with-killed-rectangel', which
 refuses the paste when the row counts differ rather than risk a
-silent, lossy, mismatched replace. Otherwise the block lands at point,
+silent, lossy, mismatched replace.  Otherwise the block lands at point,
 deleting an ordinary active region first the way any paste offer a
 selection does.
 
-Reports rather than signals when 'killed-rectangle' is empty. Reaching
+Reports rather than signals when `killed-rectangle' is empty.  Reaching
 for paste with nothing to paste path says so the same way.
 
 COUNT repeats each ROW sideways rather than stacking copies -- see
@@ -1230,7 +1230,7 @@ oversight every time someone looks: a copy that does not reach the
 clipboard has been raised, investigated and set aside more than once.
 Change it only on purpose -- and note that a rectangle is pasted by
 its own key, \\[donkey-yank-rectangle], so pushing the text onto the
-kill-ring as well would put the same copy in two stores that are
+`kill-ring' as well would put the same copy in two stores that are
 emptied independently.
 
 `kill-ring-save' (Emacs's own copy command) isn't used directly here:
@@ -1292,7 +1292,7 @@ deliberate, not an off-by-one: see `donkey--visual-line-region-bounds'.
 
 With `rectangle-mark-mode' active, kills the rectangle via
 `kill-rectangle', which fills `killed-rectangle' -- the store
-\\[donkey-yank-rectangle] pastes from. Like `donkey-copy', that
+\\[donkey-yank-rectangle] pastes from.  Like `donkey-copy', that
 reaches `killed-rectangle' only and never the system clipboard; see
 there for why that is deliberate.
 

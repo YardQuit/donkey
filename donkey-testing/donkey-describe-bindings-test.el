@@ -895,7 +895,6 @@ broken, not the sentence."
                (kill-ring nil)
                (kill-ring-yank-pointer nil)
                (killed-rectangle nil)
-               (donkey--last-kill-rectangle-p nil)
                (donkey--clipboard-warning-shown nil)
                (this-command nil)
                (last-command nil))
@@ -938,7 +937,7 @@ around that false reading before running the keys showed otherwise."
          (donkey-mode 1)
          ;; BOUND, not assigned.  These are globals, and the exercises set
          ;; them: an earlier version used `setq' and left
-         ;; `donkey--last-kill-rectangle-p' non-nil for the rest of the
+         ;; `killed-rectangle' non-empty for the rest of the
          ;; run, which sent twenty later `donkey-yank' tests down the
          ;; rectangle branch.  Every file still passed in isolation, so
          ;; only the combined run showed it.
@@ -946,7 +945,6 @@ around that false reading before running the keys showed otherwise."
                (kill-ring nil)
                (kill-ring-yank-pointer nil)
                (killed-rectangle nil)
-               (donkey--last-kill-rectangle-p nil)
                (donkey--clipboard-warning-shown nil)
                (this-command nil)
                (last-command nil))
@@ -1293,7 +1291,8 @@ cut releases the selection and no `C-g' is wanted."
    (should-not (use-region-p))
    (donkey-tutor-test--goline "--->  alpha")
    (search-forward "---> ")
-   (donkey-tutor-test--keys "p")
+   ;; "P", not "p": the block goes back through the rectangle key now.
+   (donkey-tutor-test--keys "P")
    (donkey-tutor-test--goline "---> 111 alpha")
    (should (equal (donkey-tutor-test--line) "   ---> 111 alpha"))))
 
@@ -1303,7 +1302,13 @@ cut releases the selection and no `C-g' is wanted."
 The third step needs the first: a rectangle copy never reaches the kill
 ring, so without an ordinary copy beforehand a paste over a bank reports
 \"Nothing to paste\" and the banked line is left alone -- which is what
-the lesson used to instruct the reader to do."
+the lesson used to instruct the reader to do.
+
+Two corrections came out of running it.  Copying the rectangle releases
+it, so the quit key the lesson used to call for was doing nothing.  And
+the rectangle comes back through \"P\" rather than a second \"p\": the two
+keys read different stores, which is what makes the last step give the
+same answer whether or not the session has a system clipboard."
   (donkey-tutor-test--live
    ;; 1. an ordinary whole-line copy, so there is something to paste
    (donkey-tutor-test--goline "---> col two")
@@ -1317,17 +1322,18 @@ the lesson used to instruct the reader to do."
    (donkey-tutor-test--keys "m v j l l y")
    (should (equal killed-rectangle '("col" "col")))
    (should (= (length (donkey--banked-spans)) 1))
-   ;; 3. C-g then paste: the bank wins and the rectangle is untouched
-   (donkey-tutor-test--keys "C-g")
+   ;; 3. paste: the bank wins and the rectangle is untouched.  No C-g --
+   ;; the copy in step 2 already released the rectangle.
+   (should-not (bound-and-true-p rectangle-mark-mode))
    (donkey-tutor-test--keys "p")
    (should (= (length (donkey--banked-spans)) 0))
    (should (equal killed-rectangle '("col" "col")))
    (should-not (save-excursion (goto-char (point-min))
                                (search-forward "keep this banked" nil t)))
-   ;; 4. paste again with nothing banked: now the rectangle lands
+   ;; 4. "P" brings the rectangle back, from its own store
    (donkey-tutor-test--goline "---> col one")
    (search-forward "---> ")
-   (donkey-tutor-test--keys "p")
+   (donkey-tutor-test--keys "P")
    (donkey-tutor-test--goline "---> colcol one")
    (should (equal (donkey-tutor-test--line) "   ---> colcol one"))))
 

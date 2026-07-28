@@ -2436,7 +2436,7 @@ an earlier session survived underneath the whole-buffer selection."
 
 Regression: the stale rectangle made `donkey-delete' kill one empty
 string per line, leaving the text completely untouched with no error,
-and setting `donkey--last-kill-rectangle-p' so the next paste would have
+and leaving that emptiness in `killed-rectangle' so a rectangle paste would have
 inserted that emptiness."
   (let ((transient-mark-mode t) (kill-ring nil) kill-ring-yank-pointer)
     (with-temp-buffer

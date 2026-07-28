@@ -334,7 +334,7 @@ described.
 | Key | Command          | Description                                 |
 |-----+------------------+---------------------------------------------|
 | =p= | =donkey-yank=      | Yank from clipboard, replacing region or banked lines |
-| =P= | =donkey-yank-pop=  | Replace last yank with next kill-ring entry |
+| =P= | =donkey-yank-rectangle= | Paste =killed-rectangle= as a block of columns |
 | =y= | =donkey-copy=      | Copy region (or char at point) to kill ring |
 
 =C-u 3 p= pastes three copies — the vi reading of a count on a paste,
@@ -350,11 +350,9 @@ as wide. That is what a count on a blockwise paste does in vi, and it is
 the only reading that makes sense — pasting the block twice in sequence
 would drop the second copy partway down and across the first.
 
-=C-u 3 P= is different, and deliberately so: =P= hands its count straight
-to =yank-pop=, where it already means how many entries to reach back. So
-=C-u 3 P= takes the third one down. Reaching back through the ring is
-what popping *is*, in vi and in Emacs alike, so it needs no
-reinterpretation.
+Stepping back through earlier copies is Emacs' own =M-y= (=yank-pop=),
+which DONKEY does not rebind — it works in both states, on the key it
+has always been on.
 
 =p= replaces whatever is selected — an active region, banked lines, or
 both together — exactly as =y= and =d= act on them, and spends the bank
@@ -505,12 +503,25 @@ looking at wins, and the bank is the fallback.*
 | =y= / =d= with a rectangle drawn       | the rectangle; banks survive |
 | =y= / =d= with no rectangle drawn      | the banks                  |
 | =p= with lines banked                  | the banks                  |
-| =p= with a rectangle drawn, or no bank | the rectangle              |
 
-The reasoning is that a drawn rectangle is on screen and =killed-rectangle=
-is not, so whichever one you can currently see is the better guess at
-what you meant. Nothing is discarded either way — take the rectangle
+The reasoning is that a drawn rectangle is on screen and the bank is
+the fallback, so whichever one you can currently see is the better guess
+at what you meant. Nothing is discarded either way — take the rectangle
 and your banks are still waiting afterwards.
+
+Pasting needs no such rule. =p= reads the kill ring and system
+clipboard; =P= reads =killed-rectangle=. They are separate stores and
+each key names one of them, so nothing has to be inferred.
+
+This used to be one key. =p= decided by tracking which store had been
+written more recently, in a flag, because Emacs gives a rectangle no way
+to say so itself — the kill ring is untyped text and =killed-rectangle=
+is a separate variable that is only ever written, never cleared. The
+flag went stale in ways a reader could not predict: importing the system
+clipboard during a paste counts as a kill in Emacs, so a paste could
+retire the pending rectangle in a graphical session and not in a
+terminal one. Two keys need no bookkeeping and behave identically
+everywhere.
 
 The three commands used to disagree, each silently: =y= and =d= took
 the banks and ignored a rectangle you were looking at, while =p= took a
@@ -1045,9 +1056,10 @@ Run =M-x donkey-debug-platform= for a detailed report of:
 
 * Clipboard Integration
 
-DONKEY's =donkey-yank= and =donkey-yank-pop= commands integrate with the
-system clipboard, falling back to the kill ring when no clipboard tools
-are available.
+DONKEY's =donkey-yank= command integrates with the system clipboard,
+falling back to the kill ring when no clipboard tools are available.
+=donkey-yank-rectangle= does not: a rectangle has no shape a flat
+clipboard could carry, so it round-trips inside Emacs only.
 
 ** Detection
 
