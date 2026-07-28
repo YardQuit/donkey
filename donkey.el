@@ -76,14 +76,49 @@ explicitly if desired."
   :type '(repeat symbol)
   :group 'donkey)
 
+;; Coerced rather than trusted, for the same reason
+;; `donkey--position-ring-limit' exists.  `donkey--excluded-mode-p' is
+;; reached from `post-command-hook' via
+;; `donkey--check-post-command-non-editing', and Emacs REMOVES a hook
+;; function that signals -- silently, and for the rest of the session.
+;; Repairing the variable afterwards does not bring it back; only
+;; toggling `donkey-mode' off and on does.
+;;
+;; The misconfiguration is a plausible one rather than a perverse one.
+;; These variables hold LISTS of modes, and
+;;
+;;   (setq donkey-excluded-modes 'dired-mode)
+;;
+;; -- one missing pair of parentheses -- is the obvious slip.  Confirmed
+;; by driving real keys: the FIRST keypress after it logged "Error in
+;; post-command-hook" and took away the catch-all that guarantees Normal
+;; state can never be active in an excluded buffer.  Nothing on screen
+;; connects the two, and the guarantee is gone for the session.
+;;
+;; A bare symbol is read as the one-element list it was meant to be,
+;; rather than discarded: that is what the user asked for, and refusing
+;; it would trade a crash for a silent no-op.
+(defun donkey--mode-list (value)
+  "Return VALUE as a list of major modes, never signalling.
+
+A list is returned unchanged, a bare symbol is taken as a one-element
+list, and anything else reads as the empty list."
+  (cond ((listp value) value)
+        ((symbolp value) (list value))
+        (t nil)))
+
 (defun donkey--major-mode-in-p (mode-list)
   "Return non-nil if the current major mode is in MODE-LIST.
 
 Checks both exact membership and derivation via `derived-mode-p', so a
 concrete mode (e.g. `shell-mode', derived from `comint-mode') is
-caught even when only its parent mode is listed."
-  (or (memq major-mode mode-list)
-      (apply #'derived-mode-p mode-list)))
+caught even when only its parent mode is listed.
+
+MODE-LIST is read through `donkey--mode-list', so a mis-set user
+option cannot signal from here."
+  (let ((modes (donkey--mode-list mode-list)))
+    (or (memq major-mode modes)
+        (apply #'derived-mode-p modes))))
 
 (defun donkey--excluded-mode-p ()
   "Return non-nil if the current major mode is in `donkey-excluded-modes'."
@@ -1160,12 +1195,17 @@ silent, lossy, mismatched replace.  Otherwise the block lands at point,
 deleting an ordinary active region first the way any paste over a
 selection does.
 
-Reports rather than signals when `killed-rectangle' is empty.  Reaching
-for paste with nothing to paste path says so the same way.
+Reports rather than signals when `killed-rectangle' is empty, the way
+\\[donkey-yank] does when there is nothing on the kill ring.
+
+Banked lines are not a selection here.  \\[donkey-yank] replaces them,
+because linear text can stand in for whole lines; a block of columns
+cannot, so this key leaves the bank alone and lands at point.
 
 COUNT repeats each ROW sideways rather than stacking copies -- see
 `donkey--yank-rectangle-times' for why a blockwise count has to mean a
-wider block."
+wider block.  A COUNT below 1 inserts nothing, as it does for
+\\[donkey-yank]."
   (interactive "p")
   (cond
    ((null killed-rectangle)
@@ -3510,10 +3550,10 @@ buffer until you confirm.
    ---> 888 green
    ---> 999 blue
 
-\\[donkey-rectangle-mark-mode] on its own selects one column on one line, so pressing \\[donkey-change] right
-after it changes a single character -- correct, but rarely what you
-wanted.  \\[next-line] gives the block its rows and \\[forward-char] its width, and both
-have to happen before \\[donkey-change].
+\\[donkey-rectangle-mark-mode] on its own selects one CHARACTER on one line, so pressing \\[donkey-change]
+right after it changes that single character -- correct, but rarely
+what you wanted.  \\[next-line] gives the block its rows and \\[forward-char] its width, and
+both have to happen before \\[donkey-change].
 
 >> Put the cursor on the first \"5\" below, press \\[donkey-rectangle-mark-mode], and press \\[donkey-change]
    immediately -- no \\[next-line], no \\[forward-char].  One character goes.  That is
@@ -3525,8 +3565,14 @@ The block does not have to cover any text at all.  A rectangle with NO
 width INSERTS instead of replacing, which is how the same text goes at
 the front, or the end, of a run of lines at once.
 
-\\[donkey-rectangle-mark-mode] always starts one column wide, so for a prefix take that
+\\[donkey-rectangle-mark-mode] always starts one character wide, so for a prefix take that
 width straight back off with \\[backward-char] before going down.
+
+A rectangle measures COLUMNS, though, and one character is not always
+one column.  On a TAB it is eight, and on a wide character -- CJK, say
+-- it is two, so \\[donkey-rectangle-mark-mode] followed by \\[donkey-change] on a tab-indented line
+replaces the whole indent rather than one space of it.  Start from a
+character you can see if you want to change just it.
 
 >> Put the cursor on the \"r\" of \"red\" below, press \\[donkey-rectangle-mark-mode] then \\[backward-char],
    then \\[next-line] twice.  Press \\[donkey-change], type \"// \" and press RET.  Nothing is
