@@ -3162,6 +3162,194 @@ point across the buffer as a means of computing the span, so without
             (should (equal (list (nth 0 case) count (point) (region-active-p))
                            (list (nth 0 case) count origin nil)))))))))
 
+;;; ---------------------------------------------------------------------------
+;;; Repeating a mark key extends the selection
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-mark-test--keys (text keys &rest body)
+  "Run KEYS in a displayed DONKEY buffer of TEXT, then BODY.
+
+Real keys through `execute-kbd-macro', because the whole property under
+test is `last-command': calling the commands directly leaves it set to
+whatever ran before and the extension never triggers.  The buffer is
+switched to rather than merely made current, since the command loop
+acts on the SELECTED WINDOW's buffer -- keys sent to an undisplayed
+`with-temp-buffer' land in whatever window is showing instead.
+
+`prefix-arg' and `current-prefix-arg' are bound because KEYS may carry
+a \\[universal-argument]: `execute-kbd-macro' leaves the prefix set
+GLOBALLY afterwards, and the next test to call a command found itself
+running it prefixed.  It cost a run of
+`donkey-set-mark-activates-mark-at-point' -- a prefixed
+`set-mark-command' pops the mark ring instead of setting the mark --
+failing only when this file ran before it, which is to say only in the
+full suite."
+  (declare (indent 2))
+  `(unwind-protect
+       (progn
+         (when (get-buffer "*donkey-mark-test*") (kill-buffer "*donkey-mark-test*"))
+         (donkey-mode 1)
+         (let ((transient-mark-mode t)
+               (prefix-arg nil) (current-prefix-arg nil)
+               (this-command nil) (last-command nil))
+           (switch-to-buffer (get-buffer-create "*donkey-mark-test*"))
+           (fundamental-mode)
+           (erase-buffer)
+           (insert ,text)
+           (goto-char (point-min))
+           (donkey-enter-normal)
+           (execute-kbd-macro (kbd ,keys))
+           ,@body))
+     (when (get-buffer "*donkey-mark-test*") (kill-buffer "*donkey-mark-test*"))
+     (donkey-mode -1)))
+
+(defun donkey-mark-test--selection ()
+  "Return the active region's text, or nil."
+  (and (region-active-p)
+       (buffer-substring-no-properties (region-beginning) (region-end))))
+
+(ert-deftest donkey-every-mark-key-grows-on-a-second-press ()
+  "`m w', `m W', `m s' and `m p' all extend, not just `m s'.
+
+Regression test: `mark-end-of-sentence' has no ALLOW-EXTEND parameter
+and always extends, while `mark-word', `mark-paragraph' and `mark-sexp'
+take one that Emacs passes only when calling them interactively.
+Reached from Lisp with a single argument, the extension is off -- so
+`m s' grew and the rest did not, which read as a decision and was not
+one."
+  (dolist (case '(("m w" "alpha beta gamma delta"        "alpha beta")
+                  ("m W" "a-one b-two c-three"           "a-one b-two")
+                  ("m s" "One thing.  Two thing."        "One thing.  Two thing.")
+                  ;; The blank line between the two paragraphs is part of
+                  ;; the selection, as it has to be -- a region spanning
+                  ;; both cannot skip what separates them.
+                  ("m p" "Alpha.\n\nBeta.\n"             "Alpha.\n\nBeta.\n")))
+    (cl-destructuring-bind (key text expected) case
+      (donkey-mark-test--keys text (concat key " " key)
+        (should (equal (cons key (donkey-mark-test--selection))
+                       (cons key expected)))))))
+
+(ert-deftest donkey-repeating-a-mark-key-equals-a-count ()
+  "Pressing a mark key N times reaches what a count of N reaches.
+
+Two mechanisms for one idea, so they have to agree or one of them is
+lying.  Checked at two and three, for each of the four keys."
+  (dolist (case '(("m w" "alpha beta gamma delta")
+                  ("m W" "a-one b-two c-three d-four")
+                  ("m s" "One thing.  Two thing.  Three thing.")
+                  ("m p" "Alpha.\n\nBeta.\n\nGamma.\n")))
+    (cl-destructuring-bind (key text) case
+      (dolist (n '(2 3))
+        (let ((repeated
+               (donkey-mark-test--keys
+                   text (mapconcat #'identity (make-list n key) " ")
+                 (donkey-mark-test--selection)))
+              (counted
+               (donkey-mark-test--keys text (format "C-u %d %s" n key)
+                 (donkey-mark-test--selection))))
+          (should (equal (list key n repeated) (list key n counted))))))))
+
+(ert-deftest donkey-a-key-in-between-ends-a-mark-run ()
+  "Any other key between two presses starts a fresh selection.
+
+The rule is `last-command', so a motion in the middle breaks the run.
+Pinned because the obvious alternative -- extending whenever a region
+is active, which is what Emacs' own ALLOW-EXTEND branch also does --
+would make this pass while changing what the key means."
+  (dolist (case '(("m w" "alpha beta gamma"      "alpha")
+                  ("m W" "a-one b-two"           "a-one")
+                  ("m s" "One thing.  Two thing." "One thing.")))
+    (cl-destructuring-bind (key text expected) case
+      (donkey-mark-test--keys text (format "%s l %s" key key)
+        (should (equal (cons key (donkey-mark-test--selection))
+                       (cons key expected)))))))
+
+(ert-deftest donkey-a-live-selection-is-not-extended-by-a-mark-key ()
+  "`v' and some motions, then `m w', still marks the word at point.
+
+Emacs' own rule extends ANY active region, not just a repeat of the
+same command.  Adopting it would have grown this selection instead --
+a change to a flow that was never in question.  DONKEY uses the
+narrower test, and this is what says so."
+  (donkey-mark-test--keys "alpha beta gamma" "v l l l m w"
+    (should (equal (donkey-mark-test--selection) "alpha"))))
+
+(ert-deftest donkey-mark-extension-stops-at-the-buffer-end ()
+  "Extending past the last object marks what there is and stops.
+
+No error: that is what every counted command in DONKEY does when it
+runs out of buffer, and a run of presses is the same idea."
+  (dolist (case '(("m w" "alpha beta"    "alpha beta")
+                  ("m W" "a-one b-two"   "a-one b-two")
+                  ("m s" "One thing."    "One thing.")))
+    (cl-destructuring-bind (key text expected) case
+      (donkey-mark-test--keys text (mapconcat #'identity (make-list 6 key) " ")
+        (should (equal (cons key (donkey-mark-test--selection))
+                       (cons key expected)))))))
+
+(ert-deftest donkey-mark-commands-agree-about-which-end-holds-the-mark ()
+  "The four object marks leave point at the START, as native does.
+
+Regression test: `m p' used to leave point at the END, alone in
+inverting `mark-paragraph', which finishes with `backward-paragraph'
+and leaves point where the selection begins.  Being the odd one out
+cost something concrete -- the first attempt at extending it handed
+native's ALLOW-EXTEND branch a mark-at-start region, and since native
+grows by pushing the MARK forward it collapsed the selection onto the
+paragraph's first character.
+
+`m i' and `m a' are still the other way round.  They have no native
+counterpart to agree with and are asserted here as they are, so that
+changing them is a decision someone makes rather than something that
+drifts."
+  (dolist (case '(("m w" "alpha beta gamma"     start)
+                  ("m W" "a-one b-two"          start)
+                  ("m s" "One thing.  Two."     start)
+                  ("m p" "Alpha.\n\nBeta.\n"    start)
+                  ("m i" "(abc)"                end)
+                  ("m a" "(abc)"                end)))
+    (cl-destructuring-bind (key text where) case
+      (donkey-mark-test--keys text key
+        (should (equal (cons key (if (= (point) (region-beginning)) 'start 'end))
+                       (cons key where)))))))
+
+;;; ---------------------------------------------------------------------------
+;;; donkey-mark-sentence at the end of the buffer
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-mark-sentence-answers-the-same-with-or-without-a-final-newline ()
+  "The refusal past the last sentence must not depend on a trailing newline.
+
+Regression test: `forward-sentence' signals `end-of-buffer' at
+point-max when there is no newline to land on, and the general handler
+turned that into \"No sentence at or before point\" -- false, and
+contradicting a screen showing three.  With a trailing newline the
+forward step succeeded and the accurate \"No sentence after point\"
+came out instead, so which message a reader saw depended on something
+invisible.
+
+A buffer with no sentence in it at all still gets the at-or-before
+message, because there the forward step signals for the other reason
+and that message is the true one.  Both halves are asserted here: the
+fix is to tell the two cases apart, not to widen one message over the
+other."
+  (dolist (case '((""                     "No sentence at or before point")
+                  ("\n\n\n"               "No sentence at or before point")
+                  ("   "                  "No sentence at or before point")
+                  ("One.  Two."           "No sentence after point")
+                  ("One.  Two.\n"         "No sentence after point")
+                  ("  One."               "No sentence after point")))
+    (cl-destructuring-bind (text expected) case
+      (with-temp-buffer
+        (let ((transient-mark-mode t))
+          (insert text)
+          (goto-char (point-max))
+          (should (equal (cons text
+                               (condition-case e
+                                   (progn (donkey-mark-sentence 1) 'no-error)
+                                 (user-error (error-message-string e))))
+                         (cons text expected))))))))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here
