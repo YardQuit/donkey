@@ -1850,4 +1850,33 @@ loosening the check -- an unknown symbol should still fail."
             (push (format "line %d: %s" (line-number-at-pos) sym) unresolved)))))
     (should (equal unresolved nil))))
 
+
+(ert-deftest donkey-tutor-lesson-10-does-not-claim-m-del-alone-discards-banks ()
+  "Lesson 10 says acting on banks spends them, and names the real exception.
+
+The lesson used to close \"m DEL is the only key that discards banks\",
+which is false: `donkey-copy', `donkey-delete' and `donkey-yank' all
+consume the bank as they act on it.  Driven with real keys, a bank of
+two lines goes to zero after any of the three.
+
+The distinction the sentence was reaching for is real -- \\[donkey-clear-banked-selection]
+discards WITHOUT using them, the others spend them by using them -- but a
+reader takes \"only key\" literally, and the README had said the accurate
+version all along.
+
+Pinned as prose because the behaviour is already covered from four
+directions and was never in doubt; what drifted was the sentence.  This
+asserts the claim is gone and the correction is present, so restoring
+the shorter, wronger wording fails here."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((text (buffer-string)))
+            (should-not (string-match-p "only key that discards" text))
+            (should (string-match-p "Acting on banked lines does spend them" text))
+            ;; and it still names the key that clears without using
+            (should (string-match-p "WITHOUT using them" text)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
 ;;; donkey-describe-bindings-test.el ends here
