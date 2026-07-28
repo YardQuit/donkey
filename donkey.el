@@ -2251,27 +2251,69 @@ one before marking it."
   (and (char-after)
        (member (char-syntax (char-after)) '(?\w ?_))))
 
+;; One rule for the whole mark family, rather than four.
+;;
+;; `m s' grew on a second press and the others did not, which read as a
+;; decision and was not one.  `mark-end-of-sentence' has no ALLOW-EXTEND
+;; parameter -- it always extends -- while `mark-word', `mark-paragraph'
+;; and `mark-sexp' take one that is non-nil only when Emacs calls them
+;; interactively.  Reached from Lisp with a single argument, as these
+;; commands did, the extension is simply switched off.  So DONKEY was
+;; not adding the behaviour to `m s'; it was removing it from the rest.
+;;
+;; Native's own test is wider than this one:
+;;
+;;   (or (and (eq last-command this-command) (mark t))
+;;       (and transient-mark-mode mark-active))
+;;
+;; -- the second arm extends ANY active region, so `v' and a few motions
+;; followed by `m w' would grow that selection instead of marking a
+;; word.  That is a change to a flow nobody asked about, and it is not
+;; what `m s' does today: `m s l m s' starts over.  Matching `m s'
+;; exactly keeps the family uniform without disturbing `v'.
+(defun donkey--mark-extending-p ()
+  "Return non-nil when a mark command should grow its selection.
+
+True when the command now running is the one that ran last and it left
+a mark behind -- the same test `mark-end-of-sentence' applies, which is
+why `m s' has grown on a second press since before there was a rule.
+Any other key in between ends the run."
+  (and (eq last-command this-command)
+       (mark t)
+       t))
+
 (defun donkey-mark-word (&optional count)
   "Select the entire word at or adjacent to point.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
+Pressing the key again immediately EXTENDS the selection by another
+word rather than re-marking the same one, and keeps extending until
+the buffer runs out.  See `donkey--mark-extending-p'.
+
 COUNT marks that many words.  A negative COUNT marks that many words
 before the one point normalises onto, and a COUNT of zero marks nothing,
 matching how `mark-word' itself reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (unless (donkey--point-on-word-or-symbol-char-p)
-    (backward-word 1))
-  ;; See `donkey-mark-symbol' for why this is a `user-error' rather than
-  ;; letting `beginning-of-thing' signal a bare `error': a buffer with
-  ;; no word before point at all (empty, or nothing but whitespace and
-  ;; punctuation) is a normal thing to press this on by accident.
-  (unless (thing-at-point 'word)
-    (user-error "No word at or before point"))
-  (beginning-of-thing 'word)
-  (mark-word (or count 1))
+  (let ((extend (donkey--mark-extending-p)))
+    (unless extend
+      (unless (donkey--point-on-word-or-symbol-char-p)
+        (backward-word 1))
+      ;; See `donkey-mark-symbol' for why this is a `user-error' rather
+      ;; than letting `beginning-of-thing' signal a bare `error': a
+      ;; buffer with no word before point at all (empty, or nothing but
+      ;; whitespace and punctuation) is a normal thing to press this on
+      ;; by accident.
+      (unless (thing-at-point 'word)
+        (user-error "No word at or before point"))
+      (beginning-of-thing 'word))
+    ;; The normalisation above is skipped when extending: it walks point
+    ;; back to the START of the word already selected, and `mark-word'
+    ;; measures its extension from there, so running it would grow the
+    ;; region by nothing and then by one word from the wrong end.
+    (mark-word (or count 1) extend))
   (message "Word marked"))
 
 (defun donkey-mark-sentence (&optional count)
@@ -2408,10 +2450,24 @@ marks nothing, matching how `forward-paragraph' reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (let ((n (or count 1)))
-    (backward-paragraph 1)
-    (push-mark (point) nil t)
-    (forward-paragraph n)
-    (activate-mark)
+    (if (donkey--mark-extending-p)
+        ;; Grown by moving POINT, not the mark.  This command leaves
+        ;; mark at the START and point at the end, which is the opposite
+        ;; of `donkey-mark-symbol' and of what `mark-paragraph's own
+        ;; ALLOW-EXTEND branch assumes -- native grows by pushing the
+        ;; MARK forward, so handing it this region collapsed it onto the
+        ;; paragraph's first character and the blank-region guard below
+        ;; then reported "No paragraph at or before point".  Confirmed
+        ;; by pressing the key twice.  Which end holds the mark is per
+        ;; command here, so each one extends the end it actually owns.
+        (progn
+          (goto-char (max (point) (mark)))
+          (forward-paragraph n)
+          (activate-mark))
+      (backward-paragraph 1)
+      (push-mark (point) nil t)
+      (forward-paragraph n)
+      (activate-mark))
     (when (and (/= n 0)
                (string-match-p "\\`[[:space:]\n]*\\'"
                                (buffer-substring-no-properties (region-beginning)
@@ -2433,35 +2489,50 @@ before the one point normalises onto, and a COUNT of zero marks nothing,
 matching how `forward-sexp' reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (unless (donkey--point-on-word-or-symbol-char-p)
-    (condition-case nil
-        (backward-sexp 1)
-      (scan-error nil)))
-  ;; `beginning-of-thing' signals a bare `error' when there is no symbol
-  ;; to be found, which pops the debugger for anyone running with
-  ;; `debug-on-error' on.  Reaching it is ordinary, not exceptional:
-  ;; `backward-sexp' above lands on whatever sexp precedes point, which
-  ;; on a blank line in code is typically a bracket rather than a symbol
-  ;; -- confirmed with point on the trailing empty line of "(foo bar)".
-  (unless (thing-at-point 'symbol)
-    (user-error "No symbol at or before point"))
-  (beginning-of-thing 'symbol)
-  (let ((n (or count 1)))
-    (forward-sexp n)
-    ;; Only a forward run leaves point at the far END of the selection,
-    ;; where a trailing "," or "." is the thing to drop.  A negative
-    ;; count leaves point at the region's START instead, and backing up
-    ;; over punctuation there would reach into the symbol before it.
-    (when (> n 0)
-      (while (memq (char-before) '(?, ?.))
-        (backward-char 1)))
-    (push-mark (point) t)
-    ;; Back over the same number of symbols the first step covered.
-    ;; Going back one regardless left the region holding only the LAST
-    ;; symbol of a counted run -- a count of 2 over "foo-a bar-b" marked
-    ;; just "bar-b".
-    (backward-sexp n))
-  (activate-mark)
+  (if (donkey--mark-extending-p)
+      ;; Grown by moving the MARK, which is where this command leaves the
+      ;; far end of its selection -- it finishes with `backward-sexp', so
+      ;; point sits at the START.  The same shape as `mark-word's own
+      ;; extend branch, and the punctuation trim has to run again because
+      ;; the new end is a new symbol with its own possible trailing "."
+      (let ((n (or count 1)))
+        (set-mark (save-excursion
+                    (goto-char (mark))
+                    (forward-sexp n)
+                    (when (> n 0)
+                      (while (memq (char-before) '(?, ?.))
+                        (backward-char 1)))
+                    (point))))
+    (unless (donkey--point-on-word-or-symbol-char-p)
+      (condition-case nil
+          (backward-sexp 1)
+        (scan-error nil)))
+    ;; `beginning-of-thing' signals a bare `error' when there is no
+    ;; symbol to be found, which pops the debugger for anyone running
+    ;; with `debug-on-error' on.  Reaching it is ordinary, not
+    ;; exceptional: `backward-sexp' above lands on whatever sexp precedes
+    ;; point, which on a blank line in code is typically a bracket rather
+    ;; than a symbol -- confirmed with point on the trailing empty line
+    ;; of "(foo bar)".
+    (unless (thing-at-point 'symbol)
+      (user-error "No symbol at or before point"))
+    (beginning-of-thing 'symbol)
+    (let ((n (or count 1)))
+      (forward-sexp n)
+      ;; Only a forward run leaves point at the far END of the selection,
+      ;; where a trailing "," or "." is the thing to drop.  A negative
+      ;; count leaves point at the region's START instead, and backing up
+      ;; over punctuation there would reach into the symbol before it.
+      (when (> n 0)
+        (while (memq (char-before) '(?, ?.))
+          (backward-char 1)))
+      (push-mark (point) t)
+      ;; Back over the same number of symbols the first step covered.
+      ;; Going back one regardless left the region holding only the LAST
+      ;; symbol of a counted run -- a count of 2 over "foo-a bar-b"
+      ;; marked just "bar-b".
+      (backward-sexp n))
+    (activate-mark))
   (message "Symbol marked"))
 
 ;; The non-toggling behavior is left as stock deliberately: "v" is
@@ -3350,10 +3421,16 @@ mean:
     \\[donkey-mark-sentence] a sentence    \\[donkey-mark-paragraph] a paragraph
     \\[donkey-mark-whole-buffer] the whole buffer
 
->> Put the cursor anywhere in the ---> sentence and press \\[donkey-mark-sentence].  The
-   whole sentence is selected, however long it is.
+>> Put the cursor anywhere in the first ---> sentence and press \\[donkey-mark-sentence].  The
+   whole sentence is selected, however long it is.  Press \\[donkey-mark-sentence] again:
+   the selection GROWS to take the second sentence as well.
 
    ---> Selecting by meaning beats counting characters.  It also reads better.
+
+All four of these grow on a second press, and keep growing until the
+buffer runs out.  A count says the same thing in one go, so \\[donkey-mark-word] \\[donkey-mark-word]
+and \\`C-u 2' \\[donkey-mark-word] agree.  Any other key in between ends the run, and
+the next press starts a fresh selection.
 
 A word stops at a hyphen or underscore; a symbol runs straight through
 one.  On a name held together by them the two select very different
