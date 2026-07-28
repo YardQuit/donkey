@@ -2444,6 +2444,11 @@ what is under point would reject work this command does correctly.  A
 COUNT of zero is exempt -- it is documented to mark nothing, and the
 nothing came from the count rather than from the buffer.
 
+Point is left at the START of the selection and the mark at its end,
+which is where `mark-paragraph' leaves them and where
+`donkey-mark-word', `donkey-mark-symbol' and `donkey-mark-sentence'
+leave them.
+
 COUNT marks that many paragraphs.  A negative COUNT marks that many
 paragraphs before the one point normalises onto, and a COUNT of zero
 marks nothing, matching how `forward-paragraph' reads its argument."
@@ -2451,22 +2456,27 @@ marks nothing, matching how `forward-paragraph' reads its argument."
   (donkey--ensure-non-rectangle-selection)
   (let ((n (or count 1)))
     (if (donkey--mark-extending-p)
-        ;; Grown by moving POINT, not the mark.  This command leaves
-        ;; mark at the START and point at the end, which is the opposite
-        ;; of `donkey-mark-symbol' and of what `mark-paragraph's own
-        ;; ALLOW-EXTEND branch assumes -- native grows by pushing the
-        ;; MARK forward, so handing it this region collapsed it onto the
-        ;; paragraph's first character and the blank-region guard below
-        ;; then reported "No paragraph at or before point".  Confirmed
-        ;; by pressing the key twice.  Which end holds the mark is per
-        ;; command here, so each one extends the end it actually owns.
-        (progn
-          (goto-char (max (point) (mark)))
-          (forward-paragraph n)
-          (activate-mark))
+        ;; Grown by moving the MARK, which is the end this command owns
+        ;; -- the same shape as `donkey-mark-symbol' and as
+        ;; `mark-paragraph's own ALLOW-EXTEND branch.
+        (set-mark (save-excursion
+                    (goto-char (mark))
+                    (forward-paragraph n)
+                    (point)))
+      ;; Point ends at the START, mark at the end.  It used to be the
+      ;; other way round, which made this the only mark command that
+      ;; inverted native: `mark-paragraph' finishes with
+      ;; `backward-paragraph' and leaves point where the selection
+      ;; begins.  Being the odd one out cost something concrete -- the
+      ;; first attempt at extending here handed native's ALLOW-EXTEND
+      ;; branch a mark-at-start region, and since native grows by
+      ;; pushing the MARK forward it collapsed the selection onto the
+      ;; paragraph's first character.
       (backward-paragraph 1)
-      (push-mark (point) nil t)
-      (forward-paragraph n)
+      (let ((start (point)))
+        (forward-paragraph n)
+        (push-mark (point) nil t)
+        (goto-char start))
       (activate-mark))
     (when (and (/= n 0)
                (string-match-p "\\`[[:space:]\n]*\\'"
