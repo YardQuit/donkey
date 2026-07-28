@@ -263,6 +263,16 @@ where the one value a user can get wrong is made safe."
         (setq donkey--position-index 0))
       (setq donkey--last-tracked-state (cons (current-buffer) now-pt)))))
 
+;; Why narrowed-out positions are skipped:
+;;
+;; Marker positions are absolute and narrowing does not move them, so a ring
+;; recorded before `narrow-to-region' (or `org-narrow-to-subtree', which Org
+;; users press constantly) mostly holds positions the buffer is no longer
+;; showing.  `goto-char' silently CLAMPS to the narrowing edge rather than
+;; signalling, so those entries used to land point on the first or last
+;; visible character while still reporting "Position 2/3" -- a claimed jump
+;; to a recorded position that was really just a jump to the boundary.
+;; `donkey--banked-spans' filters the same way and for the same reason.
 (defun donkey-jump-back ()
   "Rotate to the next stored position in the ring and jump there.
 
@@ -279,16 +289,8 @@ recorded automatically as you move, so nothing here is a place you chose
 to remember.
 
 Positions outside the accessible portion are skipped rather than jumped
-to.  Marker positions are absolute and narrowing does not move them, so
-a ring recorded before \\[narrow-to-region] (or `org-narrow-to-subtree',
-which Org users press constantly) mostly holds positions the buffer is
-no longer showing.  `goto-char' silently CLAMPS to the narrowing edge
-rather than signalling, so those entries used to land point on the first
-or last visible character while still reporting \"Position 2/3\" -- a
-claimed jump to a recorded position that was really just a jump to the
-boundary.  `donkey--banked-spans' filters the same way and for the same
-reason.  The count in the message is of the visible entries too, so it
-matches what pressing again will actually cycle through."
+to, and the count in the message is of the visible entries, so it matches
+what pressing again will cycle through."
   (interactive)
   (let ((visible (seq-filter (lambda (m)
                                (let ((pos (marker-position m)))
@@ -417,6 +419,18 @@ nothing meaningful to deselect."
   (indent-according-to-mode)
   (donkey-enter-insert))
 
+;; Two notes on the choices here:
+;;
+;; Nothing has been decided about what changing a multi-line BANK ought to
+;; do, and guessing at it silently would be worse than the present split, so
+;; "c" leaves banks alone while "y", "d" and "p" spend them.  A known
+;; difference rather than a discovery.
+;;
+;; The end-of-buffer guard exists because `delete-char' signals there, which
+;; would abort before the state transition and leave Normal state active --
+;; pressing "change" and silently staying in Normal, with only an "End of
+;; buffer" message to explain it.  Caught the same way `donkey-insert-after'
+;; catches it for its own `forward-char'.
 (defun donkey-change (&optional count)
   "Delete the active region (or the character at point) and enter INSERT state.
 
@@ -445,18 +459,10 @@ because you asked to replace what is on it.
 Banked lines are not honoured either.  With lines banked via
 `donkey-bank-selection' and no active region, this changes the character
 at point and leaves the banks standing -- `y', `d' and `p' all act on
-the bank instead.  Nothing has been decided about what changing a
-multi-line bank ought to do, and guessing at it silently would be worse
-than the present split; recorded here so the difference is a known one
-rather than a discovery.
+the bank instead.
 
-Entering INSERT state in the other cases is the whole point of this
-command, so it happens even when there is nothing to delete: at the
-very end of the buffer `delete-char' signals `end-of-buffer', which
-would otherwise abort before the state transition and leave Normal
-state active -- pressing \"change\" and silently staying in Normal,
-with only an \"End of buffer\" message to explain it.  Caught here the
-same way `donkey-insert-after' catches it for its own `forward-char'.
+INSERT state is entered even when there is nothing to delete, such as at
+the very end of the buffer.
 
 COUNT changes that many characters when no region is active.  A negative
 COUNT changes that many characters before point and a COUNT of zero
@@ -1079,21 +1085,25 @@ negative count to mean, so there is nothing for it to do but nothing."
   (dotimes (_ (max 0 n))
     (funcall inserter)))
 
+;; Why pasting takes two keys rather than one:
+;;
+;; "p" used to decide for you, by tracking which of the two stores had been
+;; written more recently -- but Emacs gives a rectangle no way to say so.
+;; The kill ring is untyped text and `killed-rectangle' is a separate
+;; variable that is only ever written, never cleared, so the answer had to
+;; be carried in a flag alongside them, maintained by advice on `kill-new'.
+;;
+;; That flag went stale in ways no reader could predict.  `current-kill'
+;; calls `kill-new' to import the system clipboard, so a PASTE reached the
+;; advice and retired the pending rectangle -- in graphical sessions only.
+;; The same keys gave different buffers on a GUI and in a terminal, and the
+;; tutor could not state which.  Two keys need no such bookkeeping.
 (defun donkey-yank (&optional count)
   "Paste clipboard content, replacing the active region if present.
 
 Linear text only.  A rectangle is a block of columns and lives in its
-own store, `kill-rectangle'; \\[donkey-yang-rectangle] is the key that
+own store, `killed-rectangle'; \\[donkey-yank-rectangle] is the key that
 pastes it.
-Splitting the two is deliberate.  \"p\" used to decide for you, by
-tracking which of the two stores had been written more recently -- but
-Emacs give a rectangle no way to say so. The kill ring is untyped text
-and `killed-rectangle' is a separate variable that is only ever
-written, never cleared, so the answer had to be carried in a flag
-alongside them. That flag went stale in ways no reader could predict:
-importing the system clipboard during a paste counts as a kill, so a
-past could retire the pending rectangle in a graphical session and not
-in a terminal one. Two keys need no such bookkeeping.
 
 Falls back to the kill ring when the system clipboard is inaccessible,
 so behavior is the same across GUI and terminal Emacs on Linux
@@ -1107,18 +1117,18 @@ nothing to paste does not eat them.
 With `rectangle-mark-mode' active, falls through to `undefined' --
 there is no rectangular shape to give linear clipboard text, and
 pasting it anyway would delete every row of the selection and replace
-only one. \\[donkey-yank-rectangle] is what pastes over a rectangle
+only one.  \\[donkey-yank-rectangle] is what pastes over a rectangle
 selection.
 
 COUNT inserts that many copies, so \\[universal-argument] 3 p pastes
-three. That is what a count on a paste means in vi, and it is the
+three.  That is what a count on a paste means in vi, and it is the
 reading this keymap wants: `C-y' is untouched in INSERT state, so
 anyone reaching for Emacs\\=' own meaning -- a prefix argument
 selecting WHICH `kill-ring' entry to pull -- still has it here, on the
 key it belongs to.
 
 A COUNT below 1 inserts nothing, matching what zero and negative
-counts do for the other editing commands. Any selection is still
+counts do for the other editing commands.  Any selection is still
 replaced first: \\[universal-argument] 0 p over a region is a delete,
 which is what asking to replace it with nothing means."
   (interactive "p")
@@ -1144,10 +1154,10 @@ text.  Nothing is guessed: this key always means the rectangle store,
 and \\[donkey-yank] always means the kill ring or system clipboard.
 
 With `rectangle-mark-mode' active, replaces the selected rectangle via
-`donkey--replace-rectangle-relection-with-killed-rectangel', which
+`donkey--replace-rectangle-selection-with-killed-rectangle', which
 refuses the paste when the row counts differ rather than risk a
 silent, lossy, mismatched replace.  Otherwise the block lands at point,
-deleting an ordinary active region first the way any paste offer a
+deleting an ordinary active region first the way any paste over a
 selection does.
 
 Reports rather than signals when `killed-rectangle' is empty.  Reaching
@@ -1195,6 +1205,34 @@ Only for a live visual-line session.  A character-wise region made with
       (donkey--whole-line-span (region-beginning) (region-end))
     (cons (region-beginning) (region-end))))
 
+;; Why a rectangle copy never reaches the clipboard, and why `y' does not
+;; use `kill-ring-save':
+;;
+;; `copy-rectangle-as-kill' and `kill-rectangle' both leave the kill ring
+;; and the system clipboard alone, and a rectangle has no meaning outside a
+;; buffer that could survive the trip through a flat clipboard.  It reads
+;; like an oversight every time someone looks -- it has been raised,
+;; investigated and set aside more than once, and a test pins it.  Note also
+;; that a rectangle is pasted by its own key, "P", so pushing the text onto
+;; the kill ring as well would put one copy in two stores that are emptied
+;; independently.
+;;
+;; The rectangle branch used to go the other way: "y" over a rectangle you
+;; had just drawn copied whole banked lines and left `killed-rectangle'
+;; empty, so the rectangle was not there to paste afterwards either.
+;;
+;; `kill-ring-save' is not called directly because its interactive spec
+;; reads `region-beginning'/`region-end', which use wherever the mark last
+;; happened to be regardless of whether the region is ACTIVE.  A mark left
+;; over from an earlier command (a stale `donkey-mark-inner' selection, say)
+;; would then be copied instead of the single character at point.
+;;
+;; Copying nothing at `point-max', and at a count of zero, is for one
+;; reason: copying the empty range would push an empty string and displace
+;; the kill ring's newest entry, so one stray "y" past the last character
+;; would make the next paste insert nothing with no error to explain it.
+;; Confirmed live -- with "IMPORTANT" freshly copied, "y" at `point-max'
+;; left the newest entry as "".
 (defun donkey-copy (&optional count)
   "Copy the active region, or the character at point if no region is active.
 
@@ -1205,56 +1243,25 @@ A visual-line selection made with `V' is widened to whole lines before
 being copied.  The highlight stops at the end of the last line, so the
 newline ending it never looks selected -- but it IS copied, and the kill
 pastes back as a complete line instead of splicing onto whatever line
-\"p\" lands in.  The extra newline is the point, not a stray: see
-`donkey--visual-line-region-bounds' for why the widening lives here
-rather than in the selection.
+\"p\" lands in.  See `donkey--visual-line-region-bounds'.
 
 With `rectangle-mark-mode' active, copies the rectangle instead of a
 linear region -- and does so even when lines are banked, leaving every
 bank standing.  The live selection wins and the bank is the fallback;
-`donkey--live-rectangle-p' has the rule and why it was needed.  This
-used to go the other way: `y' over a rectangle you had just drawn
-copied whole banked lines and left `killed-rectangle' empty, so the
-rectangle was not there to paste afterwards either.
+see `donkey--live-rectangle-p'.
 
-That goes to `killed-rectangle' ONLY: the kill ring and
-the system clipboard are deliberately left alone, so a rectangle copied
-here cannot be pasted into another application -- \"p\" pastes it back
+A rectangle goes to `killed-rectangle' ONLY.  The kill ring and the
+system clipboard are left alone, so a rectangle copied here cannot be
+pasted into another application: \\[donkey-yank-rectangle] pastes it back
 within Emacs and nothing else will.
 
-Deliberate, and matching stock: `copy-rectangle-as-kill' and
-`kill-rectangle' both behave this way, and a rectangle has no meaning
-outside a buffer that could survive the trip through a flat clipboard.
-Recorded here, and pinned by a test, because it reads like an
-oversight every time someone looks: a copy that does not reach the
-clipboard has been raised, investigated and set aside more than once.
-Change it only on purpose -- and note that a rectangle is pasted by
-its own key, \\[donkey-yank-rectangle], so pushing the text onto the
-`kill-ring' as well would put the same copy in two stores that are
-emptied independently.
-
-`kill-ring-save' (Emacs's own copy command) isn't used directly here:
-its interactive spec reads `region-beginning'/`region-end', which use
-whatever position the mark last happened to be at, regardless of
-whether the region is actually ACTIVE -- a mark left over from an
-earlier, unrelated command (e.g. a stale `donkey-mark-inner'
-selection) would silently get copied instead of the single character
-at point.
-
-At the very end of the buffer there is no character to copy, so
-nothing is pushed onto the `kill-ring' at all.  Copying the empty
-range there instead would silently push an empty string, displacing
-whatever was previously copied as the entry a following \"p\" pastes
--- so one stray \"y\" past the last character would make the next
-paste insert nothing, with no error to explain it.  Confirmed live:
-with \"IMPORTANT\" freshly copied, pressing \"y\" at `point-max' left
-the kill ring's newest entry as \"\".
+At the very end of the buffer there is no character to copy, so nothing
+is pushed onto the `kill-ring' at all.
 
 COUNT copies that many characters when no region is active.  A negative
 COUNT copies that many characters before point, matching how
 `delete-char' and friends read a negative argument.  A COUNT of zero
-copies nothing at all -- pushing the empty range would displace the
-kill ring's newest entry for the same reason spelled out above."
+copies nothing at all."
   (interactive "p")
   (let* ((n (or count 1))
          (target (max (point-min) (min (point-max) (+ (point) n)))))
@@ -1277,6 +1284,15 @@ kill ring's newest entry for the same reason spelled out above."
      (message "End of buffer -- nothing to copy"))))
   (deactivate-mark))
 
+;; Two things this got wrong before:
+;;
+;; The bank used to outrank a drawn rectangle here, which was worse than the
+;; same mistake in `donkey-copy': drawing a rectangle over two rows and
+;; pressing "d" deleted three whole banked lines instead, taking text the
+;; rectangle never covered.
+;;
+;; Counts used to clamp up to 1, so "delete zero characters" removed one and
+;; "delete two backwards" removed one forwards.
 (defun donkey-delete (&optional count)
   "Delete character or region.
 
@@ -1298,16 +1314,12 @@ there for why that is deliberate.
 
 Banked lines do not override that: the rectangle is the live selection
 and wins, and the banks survive untouched.  See
-`donkey--live-rectangle-p'.  The old order was worse here than for
-`y' -- drawing a rectangle over two rows and pressing `d' deleted three
-whole banked lines instead, taking text the rectangle never covered.
+`donkey--live-rectangle-p'.
 
 COUNT deletes that many characters when no region is active.
 A count larger than the text remaining stops at the end rather than
 signalling.  A negative COUNT deletes that many characters before point
-and a COUNT of zero deletes none, matching `delete-char' -- clamping
-those up to 1 instead meant \"delete zero characters\" removed one, and
-\"delete two backwards\" removed one forwards."
+and a COUNT of zero deletes none, matching `delete-char'."
   (interactive "p")
   (let* ((n (or count 1))
          (target (max (point-min) (min (point-max) (+ (point) n)))))
@@ -1442,6 +1454,30 @@ instead of bunching both characters together at end of line."
        (insert (string open-char)))
      (region-beginning) (region-end))))
 
+;; Three things worth knowing before changing this:
+;;
+;; The rectangle branch exists because `self-insert-command' operates on
+;; `region-beginning'/`region-end' as a single linear span.  Run directly
+;; against a rectangle selection it inserts the delimiters at the
+;; rectangle's linear start/end buffer positions rather than on each covered
+;; line, corrupting the buffer instead of wrapping anything.
+;;
+;; `delete-selection-mode' does NOT eat the selection here, despite being
+;; active across the insertion: it acts from `pre-command-hook' on
+;; `this-command's `delete-selection' property, and `this-command' is this
+;; command, not the `self-insert-command' invoked from inside it.
+;;
+;; The return to Normal is in an `unwind-protect' because this is the one
+;; command that enters Insert state BEFORE doing its real work.  If
+;; `self-insert-command' signals, the transition back would be skipped and
+;; leave the buffer stuck in Insert.  A read-only buffer does exactly that --
+;; confirmed live: pressing a wrap delimiter over a region there reported
+;; "Buffer is read-only" and silently left the modeline on DONKEY[I], from a
+;; key pressed in Normal state.  The error still propagates after the
+;; cleanup runs.
+;;
+;; Wrapping with `electric-pair-mode' confirmed live: selecting "hello" and
+;; pressing "(" yields "(hello)".
 (defun donkey-wrap-region ()
   "Insert the pressed delimiter into the active region without deselecting.
 
@@ -1450,39 +1486,16 @@ active region, falls through to `undefined', same as any other
 suppressed key.
 
 With `rectangle-mark-mode' active, wraps each line of the rectangle at
-its own start/end column instead (see `donkey--wrap-rectangle-region')
-rather than running `self-insert-command': that operates on
-`region-beginning'/`region-end' as a single linear span, so run
-directly against a rectangle selection it would insert the delimiters
-at the rectangle's linear start/end buffer positions instead of on
-each covered line, corrupting the buffer rather than wrapping anything
-meaningful.
+its own start/end column instead; see `donkey--wrap-rectangle-region'.
 
 With an ordinary active region, enters Insert state without
-deactivating the mark, inserts the pressed character via
-`self-insert-command' -- letting whatever pairing package is active
-see the still-active region and wrap it.  Emacs's built-in
-`electric-pair-mode' is enough (confirmed live: with it on, selecting
-\"hello\" and pressing `(' yields \"(hello)\"); Smartparens'
-region-wrap works too.  With neither enabled the character is simply
-inserted at point, since nothing is listening.  Then returns to
-Normal state.
-
-Note that `delete-selection-mode' does NOT eat the selection here,
-despite it being active across the insertion: that mode acts from
-`pre-command-hook' on `this-command's `delete-selection' property, and
-`this-command' is this command, not the `self-insert-command' invoked
-from inside it.
-
-That return is in an `unwind-protect' because this is the one command
-that enters Insert state BEFORE doing its real work, rather than as
-the last step: if `self-insert-command' signals, the state transition
-back would otherwise be skipped and leave the buffer stuck in Insert.
-A read-only buffer does exactly that -- confirmed live: with a region
-active in a read-only buffer, pressing a wrap delimiter reported
-\"Buffer is read-only\" and silently left the modeline on DONKEY[I],
-from a key pressed in Normal state.  The error still propagates after
-the cleanup runs, so the user sees it and lands back in Normal."
+deactivating the mark and inserts the pressed character via
+`self-insert-command', letting whatever pairing package is active see
+the still-active region and wrap it.  Emacs's built-in
+`electric-pair-mode' is enough; Smartparens' region-wrap works too.
+With neither enabled the character is simply inserted at point, since
+nothing is listening.  Then returns to Normal state, even if the
+insertion signals."
   (interactive)
   (cond
    ((not (use-region-p))
@@ -1598,28 +1611,29 @@ the visual-line session's original anchor line instead of extending
                        (goto-char donkey-visual-anchor)
                        (line-end-position))))))
 
+;; Cancelling only a genuine session avoids reporting a misleading "Visual
+;; line: cancelled" for a selection that was never a visual-line session.
+;;
+;; The highlight is left one character short deliberately -- see
+;; `donkey--visual-line-region-bounds' for why the widening lives in
+;; `donkey-copy' and `donkey-delete' rather than in the selection itself.
 (defun donkey-visual-line-toggle ()
   "Start/cancel visual line selection.
 
 Only cancels when a visual-line session is genuinely active (see
-`donkey--visual-line-session-active-p'); pressing this with some
-OTHER active region (e.g. a `donkey-mark-inner' selection) starts a
-fresh visual-line session anchored at the current line instead of
-just clearing it and reporting a misleading \"Visual line: cancelled\"
-for a selection that was never a visual-line session to begin with.
+`donkey--visual-line-session-active-p').  Pressing this with some OTHER
+active region -- a `donkey-mark-inner' selection, say -- starts a fresh
+visual-line session anchored at the current line instead.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled before starting the new
-session.
+`rectangle-mark-mode' selection is disabled first.
 
 What is highlighted is one character short of what `y' and `d' take.
 The selection stops at the end of the last line, so the newline ending it
 is NOT shown as selected -- but `donkey-copy' and `donkey-delete' widen a
 live session to whole lines before acting, so the line break goes with
 it: `d' removes the line outright rather than emptying it, and `y' gives
-a kill that pastes back as a complete line.  The highlight is left alone
-deliberately; see `donkey--visual-line-region-bounds' for why the
-widening lives in the two commands rather than in the selection."
+a kill that pastes back as a complete line."
   (interactive)
   (if (donkey--visual-line-session-active-p)
       (progn
@@ -2391,6 +2405,10 @@ matching how `forward-sexp' reads its argument."
   (activate-mark)
   (message "Symbol marked"))
 
+;; The non-toggling behavior is left as stock deliberately: "v" is
+;; `set-mark-command' and nothing else, so `C-u v' still pops the mark ring
+;; and anything built on `set-mark-command' keeps working.  Documented in
+;; the tutor and the README rather than papered over here.
 (defun donkey-set-mark ()
   "Call `set-mark-command', disabling a stale `rectangle-mark-mode' first.
 
@@ -2401,32 +2419,27 @@ This does NOT toggle, unlike its two neighbours `donkey-visual-line-toggle'
 selection they started when pressed again.  `set-mark-command' re-anchors:
 a second press drops a fresh mark at point and carries on selecting from
 there, so the previous selection is discarded but the buffer is still in
-a selecting state.  \\[keyboard-quit] is what lets go.
-
-Left as stock behavior deliberately -- \"v\" is `set-mark-command' and
-nothing else, so `C-u v' still pops the mark ring and anything built on
-`set-mark-command' keeps working.  Documented in the tutor and the README
-rather than papered over here."
+a selecting state.  \\[keyboard-quit] is what lets go."
   (interactive)
   (donkey--ensure-non-rectangle-selection)
   (call-interactively #'set-mark-command))
 
+;; "%" was the one selection key bound straight to a stock command, so it
+;; was the one that did not clear a stale rectangle: one left active from an
+;; earlier `donkey-rectangle-mark-mode' session survived underneath the new
+;; whole-buffer selection, and `donkey-delete' then killed a zero-width
+;; rectangle -- one empty string per line -- leaving the buffer completely
+;; untouched with no error to explain it.  It also left that emptiness in
+;; `killed-rectangle', where "P" would have pasted it back.
+;;
+;; Invoked via `call-interactively', as `donkey-set-mark' does for
+;; `set-mark-command': `mark-whole-buffer' is declared `interactive-only', so
+;; calling it directly is a byte-compiler error here.
 (defun donkey-mark-whole-buffer ()
   "Select the whole buffer, clearing a stale rectangle selection first.
 
 See `donkey--ensure-non-rectangle-selection' for why every command that
-establishes a selection has to do this.  \"%\" was the one such key bound
-straight to a stock command, so it was the one that did not: a rectangle
-left active from an earlier `donkey-rectangle-mark-mode' session survived
-underneath the new whole-buffer selection, and `donkey-delete' then killed
-a zero-width rectangle -- one empty string per line -- leaving the buffer
-completely untouched, with no error to explain it.  It also left that
-emptiness in `killed-rectangle', where \\[donkey-yank-rectangle] would have
-pasted it back.
-
-Invoked via `call-interactively', as `donkey-set-mark' does for
-`set-mark-command': `mark-whole-buffer' is declared `interactive-only',
-so calling it directly is a byte-compiler error here."
+establishes a selection has to do this."
   (interactive)
   (donkey--ensure-non-rectangle-selection)
   (call-interactively #'mark-whole-buffer))
@@ -3698,20 +3711,19 @@ better than a sentence ending in nothing."
      ((null (cdr keys)) (car keys))
      (t (mapconcat #'identity keys "/")))))
 
+;; Progress is deliberately not saved to disk, as Emacs' own tutorial does:
+;; there is nothing here worth keeping once it has been read, and a stray
+;; file in the user's home directory is a worse outcome than retyping a
+;; lesson.
 (defun donkey-tutor ()
   "Open the DONKEY tutor: a buffer to learn DONKEY by editing it.
 
 The tutor is an ordinary editable buffer holding its own instructions,
-the way \\[help-with-tutorial] and vimtutor both work -- reading about a
-modal editor teaches very little, and the text being practised on may as
-well be the text doing the teaching.
+the way \\[help-with-tutorial] and vimtutor both work.
 
 Returns to an existing tutor buffer rather than rebuilding it, so the
 lesson survives being buried behind other windows; killing the buffer is
-what starts over.  Deliberately lighter than saving progress to disk, as
-Emacs' own tutorial does: there is nothing here worth keeping once it has
-been read, and a stray file in the user's home directory is a worse
-outcome than retyping a lesson."
+what starts over."
   (interactive)
   (let ((existing (get-buffer "*DONKEY Tutor*")))
     (if existing
