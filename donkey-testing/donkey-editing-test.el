@@ -1882,28 +1882,51 @@ quadratic time -- 0.01s for 200 lines, 0.22s for 1000 and 1.81s for 3000,
 a visible freeze for selecting a whole file and banking it.  Candidates
 now come from `overlays-in', which Emacs answers from its position index.
 
-Asserts the shape of the growth rather than any absolute timing, so it
-does not turn into a flaky benchmark on a loaded machine: 4x the lines
-must cost well under the ~16x a quadratic implementation needs."
+Asserts the SHAPE of the growth, never an absolute time, so it does not
+become a benchmark of whatever machine happens to run it.
+
+It was a flaky benchmark anyway, and measuring showed why.  It compared
+500 lines against 2000 -- 4x, where linear predicts 4 and quadratic 16 --
+and asserted a ratio below 8.  The real figure ranged 3.7 to 6.9 across
+trials, so the pass mark sat inside the noise: one run in twelve failed
+with nothing wrong, and it failed twice in this suite while passing five
+times in a row on its own.
+
+Three changes, each measured rather than guessed:
+
+  8x the lines, not 4x   linear predicts 8, quadratic 64.  The gap the
+                         test is trying to detect is now wide enough to
+                         see through the noise.
+  minimum of three runs  the minimum is the run least disturbed by
+                         scheduling; a mean carries every interruption.
+  `garbage-collect' first  so a collection triggered by the setup does
+                         not land inside the timed section.
+
+Together those give 12.9 to 13.6 over five trials -- a spread of 0.7,
+against 8 for linear and 64 for quadratic.  The threshold of 25 is
+roughly twice the observed figure and less than half the quadratic one,
+so both a false failure and a false pass need something to change by a
+factor of two."
   (let ((transient-mark-mode t))
-    (cl-flet ((bank-n (n)
-                (with-temp-buffer
-                  (dotimes (i n) (insert (format "line %d\n" i)))
-                  (goto-char (point-min))
-                  (push-mark (point) t t)
-                  (goto-char (point-max))
-                  (let ((start (float-time)))
-                    (donkey-bank-selection)
-                    (should (= n (donkey--banked-line-count)))
-                    (- (float-time) start)))))
-      ;; Warm up, so the first call's overheads do not land in the ratio.
+    (cl-flet* ((bank-n (n)
+                 (with-temp-buffer
+                   (dotimes (i n) (insert (format "line %d\n" i)))
+                   (goto-char (point-min))
+                   (push-mark (point) t t)
+                   (goto-char (point-max))
+                   (garbage-collect)
+                   (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+                     (let ((start (float-time)))
+                       (donkey-bank-selection)
+                       (should (= n (donkey--banked-line-count)))
+                       (- (float-time) start)))))
+               (best-of-3 (n) (min (bank-n n) (bank-n n) (bank-n n))))
+      ;; Warm up, so first-call overheads do not land in the ratio.
       (bank-n 200)
-      (let* ((small (max (bank-n 500) 0.001))
-             (large (bank-n 2000))
+      (let* ((small (max (best-of-3 500) 0.0005))
+             (large (best-of-3 4000))
              (ratio (/ large small)))
-        ;; Linear would be ~4; quadratic ~16.  8 leaves generous headroom
-        ;; either side of the boundary.
-        (should (< ratio 8))))))
+        (should (< ratio 25))))))
 
 (ert-deftest donkey-docstring-first-lines-are-complete-sentences ()
   "Every docstring in donkey.el opens with a one-line sentence.
