@@ -1005,70 +1005,6 @@ still empty afterwards."
       (progn (current-kill 0 t) nil)
     (error t)))
 
-(defvar donkey--last-kill-rectangle-p nil
-  "Non-nil if the most recent kill/copy was rectangle content.
-
-`killed-rectangle' (see `rect.el') is a single global slot, entirely
-separate from the kill ring/system clipboard, and it is never cleared
-by a later, ordinary non-rectangle kill -- its mere presence doesn't
-mean it's the freshest thing killed.  This flag tracks which store is
-actually current, so `donkey-yank' knows whether \"p\" should paste it
-back via `yank-rectangle' instead of the ordinary clipboard/`kill-ring'
-path.
-
-Not buffer-local: `killed-rectangle' itself isn't either, and a
-rectangle copied in one buffer is meant to be pastable in another, the
-same way the kill ring is shared across buffers.
-
-Set to t automatically by advising `kill-rectangle'/
-`copy-rectangle-as-kill' below -- the only two functions that ever
-populate `killed-rectangle' -- so this stays correct regardless of how
-the rectangle was killed/copied: via `donkey-copy'/`donkey-delete',
-directly through `M-x', or from any other code that calls those stock
-commands.  `donkey-copy'/`donkey-delete' rely on this advice rather
-than setting the flag themselves: the advice runs synchronously as
-part of the `call-interactively' that invokes it, so it has always
-already fired by the time either function's own body could set
-anything -- an explicit set there would just be a no-op re-set of the
-same value, never real defense-in-depth.
-
-Cleared back to nil automatically by advising `kill-new'/`kill-append'
--- the two functions ANY `kill-ring' push funnels through, including
-ones with no Donkey wrapper at all (e.g. `kill-line' bound directly to
-\"D\", or any stock kill command reached via Insert state's passthrough
-to standard Emacs keys) -- so a stale rectangle copy from earlier in
-the session doesn't get pasted in place of a more recent, ordinary
-kill.")
-
-(defun donkey--clear-last-kill-rectangle-flag (&rest _)
-  "Clear `donkey--last-kill-rectangle-p'.
-
-Advised onto `kill-new'/`kill-append', which populate the ordinary
-kill ring -- meaning whatever is in `killed-rectangle' is no longer
-the freshest kill."
-  (setq donkey--last-kill-rectangle-p nil))
-
-(advice-add 'kill-new :before #'donkey--clear-last-kill-rectangle-flag)
-(advice-add 'kill-append :before #'donkey--clear-last-kill-rectangle-flag)
-
-(defun donkey--set-last-kill-rectangle-flag (&rest _)
-  "Set `donkey--last-kill-rectangle-p' to t.
-
-Advised onto `kill-rectangle'/`copy-rectangle-as-kill' -- the only two
-functions that ever populate `killed-rectangle' -- so the flag stays
-correct no matter how the rectangle was killed/copied.  Without this,
-a rectangle killed/copied any way other than through `donkey-copy'/
-`donkey-delete' (e.g. `M-x copy-rectangle-as-kill' directly) would
-leave the flag at nil, and `donkey-yank' would then treat the freshly
-populated `killed-rectangle' as stale -- outside `rectangle-mark-mode'
-that means crashing straight into `donkey--clipboard-yank's own
-kill-ring/clipboard fallback with a raw \"Kill ring is empty\" error,
-since the kill ring itself was never touched by a rectangle kill/copy."
-  (setq donkey--last-kill-rectangle-p t))
-
-(advice-add 'kill-rectangle :after #'donkey--set-last-kill-rectangle-flag)
-(advice-add 'copy-rectangle-as-kill :after #'donkey--set-last-kill-rectangle-flag)
-
 (defun donkey--rectangle-top-left (start end)
   "Return the buffer position of the top-left corner of the rectangle.
 
@@ -1134,7 +1070,7 @@ N below 1 pastes nothing, matching `donkey--paste-times'."
 The whole of what a count means for a paste.  INSERTER is called
 repeatedly rather than its text being fetched once and inserted N times,
 so the clipboard fallback and the rectangle path each keep their own
-behaviour instead of being reimplemented here.
+behavior instead of being re-implemented here.
 
 A count below 1 inserts nothing, the way `donkey-copy' copies nothing and
 `donkey-delete' deletes nothing at zero.  Negative gets the same answer
@@ -1144,128 +1080,90 @@ negative count to mean, so there is nothing for it to do but nothing."
     (funcall inserter)))
 
 (defun donkey-yank (&optional count)
-  "Yank clipboard content, replacing the active region if present.
+  "Paste clipboard content, replacing the active region if present.
 
-Falls back to the kill ring when the system clipboard is
-inaccessible.  This provides consistent behavior across GUI and
-terminal Emacs on Linux (X11/Wayland), macOS, and Windows.
+Linear text only. A rectangle is a block of columns and lives in its
+own store, `kill-rectangle'; \\[donkey-yang-rectangle] is the key that
+pastes it.
+Splitting the two is deliberate. \"p\" used to decide for you, by
+tracking which of the two stores had been written more recently -- but
+Emacs give a rectangle no way to say so. The kill ring is untyped text
+and `killed-rectangle' is a separate variable that is only ever
+written, never cleared, so the answer had to be carried in a flag
+alongside them. That flag went stale in ways no reader could predict:
+importing the system clipboard during a paste counts as a kill, so a
+past could retire the pending rectangle in a graphical session and not
+in a terminal one. Two keys need no such bookkeeping.
 
-With `rectangle-mark-mode' active AND the most recent kill itself a
-rectangle (see `donkey--last-kill-rectangle-p'), replaces the active
-rectangle selection with `killed-rectangle' via
-`donkey--replace-rectangle-selection-with-killed-rectangle' -- which
-refuses the paste if the row counts don't match, rather than risk a
-silent, lossy, mismatched replace.  With `rectangle-mark-mode' active
-but no rectangle to paste, falls through to `undefined' instead, same
-as `donkey-wrap-region' does for that case: system clipboard content
-is inherently linear text, with no notion of a rectangular shape to
-paste it as.  Without this guard, `donkey--delete-active-region-safe'
-correctly deletes the whole rectangle first (via
-`region-extract-function', which `rect.el' advises to respect
-`rectangle-mark-mode'), but that deletion deactivates the mark, which
-`rectangle-mark-mode' itself is hooked to auto-disable on -- so by the
-time a plain linear yank ran, `rectangle-mark-mode' was already nil,
-and the paste landed only on whichever single row point ended up on,
-silently leaving every other row of the just-deleted rectangle with
-nothing to replace it.
+Falls back to the kill ring when the system clipboard is inaccessible,
+so behavior is the same across GUI and terminal Emacs on Linux
+\(X11/Wayland), macOS, and Windows.
 
-Outside of `rectangle-mark-mode', if the most recent kill was a
-rectangle, pastes it back via `yank-rectangle' at point instead of
-pulling from the clipboard/kill ring -- completing the round trip for
-`donkey-copy'/`donkey-delete's rectangle handling, which would
-otherwise populate `killed-rectangle' with no way to paste it back
-anywhere outside of `rectangle-mark-mode' itself.
+Banked lines are a selection, and a paste replaces a selection: with
+lines banked, they are replaced by what is pasted rather than the paste
+landing at point.  Checked before the lines are removed, so a paste with
+nothing to paste does not eat them.
 
-Banked lines outrank that pending rectangle, and are replaced from the
-kill ring as usual.  The rule is `donkey--live-rectangle-p's: the live
-selection wins, and here the banks are what is on screen while
-`killed-rectangle' is a leftover from an earlier copy.  It used to be
-the other way round -- the rectangle landed at point and the banks sat
-there highlighted, having had no effect on anything.  Note the kill
-ring may then hold something older than the rectangle, since a
-rectangle copy never touches it; that is the entry `p' has always
-pasted, and the rectangle is still one `m DEL' away from being
-reachable again.
+With `rectangle-mark-mode' active, falls through to `undefined' --
+there is no rectangular shape to give linear clipboard text, and
+pasting it anyway would delete every row of the selection and replace
+only one. \\[donkey-yank-rectangle] is what pastes over a rectangle
+selection.
 
 COUNT inserts that many copies, so \\[universal-argument] 3 p pastes
-three.  That is what a count on a paste means in vi, and it is the
-reading this keymap wants: `C-y' is untouched in INSERT state, so anyone
-reaching for Emacs\=' own meaning -- a prefix argument selecting WHICH
-`kill-ring' entry to pull -- still has it there, on the key it belongs
-to.
-Nothing is given up by making \"p\" read the vi way.
+three. That is what a count on a paste means in vi, and it is the
+reading this keymap wants: `C-y' is untouched in INSERT state, so
+anyone reaching for Emacs\\=' own meaning -- a prefix argument
+selecting WHICH `kill-ring' entry to pull -- still has it here, on the
+key it belongs to.
 
-A COUNT below 1 inserts nothing, matching what zero and negative counts
-do for the other editing commands.  Any selection is still replaced
-first: \\[universal-argument] 0 p over a region is a delete, which is
-what asking to replace it with nothing means."
+A COUNT below 1 inserts nothing, matching what zero and negative
+counts do for the other editing commands. Any selection is still
+replaced first: \\[universal-argument] 0 p over a region is a delete,
+which is what asking to replace it with nothing means."
   (interactive "p")
   (let ((n (or count 1)))
     (cond
      ((bound-and-true-p rectangle-mark-mode)
-      (if donkey--last-kill-rectangle-p
-          (donkey--replace-rectangle-selection-with-killed-rectangle)
-        (call-interactively #'undefined)))
-     ;; Before the pending-rectangle branch below: banked lines are on
-     ;; screen and `killed-rectangle' is not, so the bank is the live
-     ;; selection here.  See `donkey--live-rectangle-p' for the rule.
-     ;; The emptiness check is repeated inside rather than hoisted above
-     ;; this branch, because the rectangle branch pastes from
-     ;; `killed-rectangle' and has something to insert regardless of what
-     ;; the kill ring holds.  Checked BEFORE the banked lines are
-     ;; removed, so a paste with nothing to paste does not eat them.
+      (call-interactively #'undefined))
      ((donkey--banked-selection-p)
       (if (donkey--nothing-to-paste-p)
           (message "Nothing to paste")
         (donkey--replace-banked-selection-with-paste n)))
-     (donkey--last-kill-rectangle-p
-      (donkey--delete-active-region-safe)
-      (donkey--yank-rectangle-times n))
      ((donkey--nothing-to-paste-p)
       (message "Nothing to paste"))
      (t
       (donkey--delete-active-region-safe)
-      (donkey--paste-times n #'donkey--clipboard-yank)))))
+      (donkey--paste-time n #'donkey--clipboard-yank)))))
 
-(defun donkey-yank-pop (&optional count)
-  "Replace the last yanked text with the next `kill-ring' entry.
+(defun donkey-yank-rectangle (&optional count)
+  "Paste `killed-rectangle' as a block of columns
 
-Removes the active region first if one is present.  With
-`rectangle-mark-mode' active, falls through to `undefined' -- see
-`donkey-yank', which has the same guard for the same reason.
+The rectangle counterpart of \\[donkey-yank], which pastes linear
+text. Nothing is guessed: this key always means the rectangle store,
+and \\[donkey-yank] always means the kill ring or system clipboard.
 
-Right after a rectangle paste (`donkey-yank' having just called
-`yank-rectangle'), signals a clear `user-error' instead of delegating
-to `yank-pop'.  Unlike ordinary `yank'/`clipboard-yank', which set
-`this-command' to `yank' so a following `yank-pop' can detect it's
-continuing a yank, `yank-rectangle' does no such bookkeeping -- so
-`last-command' here is `donkey-yank', not `yank', and `yank-pop' would
-otherwise fall into its own `yank-from-kill-ring'/`read-from-kill-ring'
-path meant for popping without a preceding real yank, which has
-nothing to do with the rectangle just pasted and fails confusingly
-\(e.g. \"Kill ring is empty\" whenever the kill ring genuinely has
-nothing in it, since a rectangle kill never touches it\).
-`killed-rectangle' is a single slot with no history to begin with, so
-there is nothing meaningful to \"pop\" to regardless -- re-press `p'
-to paste the same rectangle again.
+With `rectangle-mark-mode' active, replaces the selected rectangle via
+`donkey--replace-rectangle-relection-with-killed-rectangel', which
+refuses the paste when the row counts differ rather than risk a
+silent, lossy, mismatched replace. Otherwise the block lands at point,
+deleting an ordinary active region first the way any paste offer a
+selection does.
 
-COUNT is handed to `yank-pop', where it already means how many entries to
-reach back -- so \\[universal-argument] 3 P takes the third one down.
-Unlike \"p\", this needs no reinterpretation: reaching back through the
-ring is what popping IS, in vi and in Emacs alike."
+Reports rather than signals when 'killed-rectangle' is empty. Reaching
+for paste with nothing to paste path says so the same way.
+
+COUNT repeats each ROW sideways rather than stacking copies -- see
+`donkey--yank-rectangle-times' for why a blockwise count has to mean a
+wider block."
   (interactive "p")
   (cond
+   ((null killed-rectangle)
+    (message "No rectangle to paste"))
    ((bound-and-true-p rectangle-mark-mode)
-    (call-interactively #'undefined))
-   ((and donkey--last-kill-rectangle-p (eq last-command 'donkey-yank))
-    (user-error "No further rectangle kills to cycle through; press `p' again to re-paste it"))
-   ;; Same guard as `donkey-yank', for the same shape of bug: the
-   ;; deletion below happens before `yank-pop' gets a chance to fail.
-   ((donkey--nothing-to-paste-p)
-    (message "Nothing to paste"))
-   (t
-    (donkey--delete-active-region-safe)
-    (yank-pop (or count 1)))))
+    (t
+     (donkey--delete-active-region-safe)
+     (dinkey--yank-rectangle-times (or count 1))))))
 
 (defun donkey--visual-line-region-bounds ()
   "Return the active region as (BEG . END), whole-lined for a `V' session.
@@ -2503,7 +2401,7 @@ a second press drops a fresh mark at point and carries on selecting from
 there, so the previous selection is discarded but the buffer is still in
 a selecting state.  \\[keyboard-quit] is what lets go.
 
-Left as stock behaviour deliberately -- \"v\" is `set-mark-command' and
+Left as stock behavior deliberately -- \"v\" is `set-mark-command' and
 nothing else, so `C-u v' still pops the mark ring and anything built on
 `set-mark-command' keeps working.  Documented in the tutor and the README
 rather than papered over here."
@@ -3883,7 +3781,7 @@ outcome than retyping a lesson."
 ;; and a minor-mode map outranks the major mode.
 
 ;; Yank/Paste
-(keymap-set donkey-normal-mode-map "P" #'donkey-yank-pop)
+(keymap-set donkey-normal-mode-map "P" #'donkey-yank-rectangle)
 (keymap-set donkey-normal-mode-map "p" #'donkey-yank)
 (keymap-set donkey-normal-mode-map "y" #'donkey-copy)
 
