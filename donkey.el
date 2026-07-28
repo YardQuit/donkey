@@ -3609,9 +3609,15 @@ and it says so.
    before that paste, or an hour later.  It is in its own store, and
    nothing you do to the kill ring reaches it.
 
-Nothing is ever thrown away.  Take the rectangle and your banks are
-still waiting; take the banks and the rectangle is still in its store.
-\\[donkey-clear-banked-selection] is the only key that discards banks.
+Neither store is ever emptied by work on the other.  Take the rectangle
+and your banks are still waiting; take the banks and the rectangle is
+still in its store.
+
+Acting on banked lines does spend them: \\[donkey-copy], DONKEY-DELETE-KEYS and
+\\[donkey-yank] each empty the bank as they use it, the way any selection is
+consumed by the command that acts on it.  \\[donkey-clear-banked-selection] is
+the one key that clears banks WITHOUT using them, and
+\\[donkey-unbank-line] drops a single line.
 
 
 Your Emacs still works
