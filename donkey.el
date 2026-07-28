@@ -2326,6 +2326,25 @@ an ALLOW-EXTEND argument that is nil when called from Lisp."
         ;; position within it.
         (forward-sentence 1)
         (backward-sentence 1))
+    ;; Before the general handler, which would otherwise catch this: the
+    ;; forward step signals `end-of-buffer' both for a buffer with no
+    ;; sentence in it at all AND for a real one whose last sentence has
+    ;; no newline after it, where point-max IS the trailing gap.  Those
+    ;; want different answers, and reporting "No sentence at or before
+    ;; point" for the second contradicts a screen that is showing three
+    ;; -- the same contradiction the count-overrun handler below was
+    ;; written to stop, reached by the other route.
+    ;;
+    ;; A trailing newline hides it, since the forward step then has
+    ;; somewhere to land and the trailing-gap guard at the end produces
+    ;; the accurate message.  So which of the two a reader saw depended
+    ;; on whether their file ended with a newline.
+    (end-of-buffer
+     (user-error
+      (if (string-match-p "[^[:space:]\n]"
+                          (buffer-substring-no-properties (point-min) origin))
+          "No sentence after point"
+        "No sentence at or before point")))
     (error (user-error "No sentence at or before point")))
   (condition-case nil
       (mark-end-of-sentence (max 1 (or count 1)))
