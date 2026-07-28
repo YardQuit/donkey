@@ -345,7 +345,7 @@ to. A count below 1 pastes nothing, matching zero and negative counts
 elsewhere.
 
 On a *rectangle*, a count widens the block rather than stacking copies:
-=C-u 2 p= repeats each row's text, so a three-row block comes back twice
+=C-u 2 P= repeats each row's text, so a three-row block comes back twice
 as wide. That is what a count on a blockwise paste does in vi, and it is
 the only reading that makes sense — pasting the block twice in sequence
 would drop the second copy partway down and across the first.
@@ -535,8 +535,8 @@ rectangle mode.
 
 One consequence worth knowing: when a bank claims =p=, the kill ring
 may hold something *older* than the rectangle, since a rectangle copy
-never touches the kill ring. That is the entry =p= has always pasted,
-and =m DEL= puts the rectangle back within reach.
+never touches the kill ring. That is the entry =p= pastes; the
+rectangle is reached with =P=, which the bank never claims.
 
 =m l= toggles, with or without a region:
 
@@ -616,7 +616,7 @@ characters and =C-u 2 m s= marks two sentences:
 | Keys        | Effect                                  |
 |-------------+-----------------------------------------|
 | =C-u 3 p=   | paste three copies                      |
-| =C-u 3 P=   | pop back to the third kill-ring entry   |
+| =C-u 2 P=   | paste the rectangle twice as wide       |
 | =C-u 3 J=   | down three lines, extending a visual selection |
 | =C-u 3 K=   | up three lines, extending a visual selection |
 | =C-u 3 x=   | delete three characters                 |
