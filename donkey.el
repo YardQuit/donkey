@@ -3651,6 +3651,17 @@ In NORMAL state, four things differ:
 >> Try it: press \\`C-x' \\`C-s' below, or \\[execute-extended-command] and then RET to abort.  Neither is
    DONKEY's, and both work from NORMAL state exactly as usual.
 
+Searching is Emacs' own and DONKEY leaves it alone: \\`C-s' forward,
+\\`C-r' back.  Replacing is DONKEY's, on \\[query-replace] and \\[replace-regexp].
+
+Worth knowing if you come from vi: \\`/' does nothing here and
+\\[donkey-describe-bindings] lists bindings, so the search key is \\`C-s' rather than
+either of them.
+
+\\[help-with-tutorial] opens Emacs' own tutorial, which teaches those and the rest
+of what DONKEY does not touch.  This one covers only what DONKEY
+changed.
+
 In dired and other special buffers DONKEY is on too, and its letters win
 where they collide -- but a key the mode bound that DONKEY does not use
 still works.  In dired, \\`n', \\`t', \\`q', \\`^' and \\`+' are still dired's.
