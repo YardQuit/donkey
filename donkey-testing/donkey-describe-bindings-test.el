@@ -1804,6 +1804,28 @@ reader."
             (should (= 1 (length (delete-dups lengths)))))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
+(ert-deftest donkey-tutor-does-not-claim-a-rectangle-starts-one-column-wide ()
+  "Lesson 9 says one CHARACTER, and names the column caveat.
+
+Regression test: the lesson said `m v' \"always starts one column
+wide\".  True of ordinary text and false wherever a character is not
+one column -- eight on a TAB, two on a wide character -- so a reader
+following it on tab-indented code replaced the whole indent.  The
+prose has to say character, and has to name the case where the two
+part company, or the exercise misleads exactly the readers who go on
+to use rectangles on real files."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((text (buffer-string)))
+            (should-not (string-match-p "starts one column wide" text))
+            (should (string-match-p "starts one character wide" text))
+            ;; The caveat itself, not merely the absence of the old claim.
+            (should (string-match-p "one character is not always" text))
+            (should (string-match-p "On a TAB it is eight" text)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
 
 (ert-deftest donkey-every-key-reference-in-the-source-resolves ()
   "Every \\[command] in donkey.el names a command that exists.

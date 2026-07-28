@@ -3108,6 +3108,50 @@ three-row block came out as a staircase."
    (should (equal (buffer-string)
                   "AAA one\nBBB two\nCCC three\nDDD four\nAAAAAA\nBBBBBB"))))
 
+(ert-deftest donkey-yank-rectangle-count-below-one-inserts-nothing ()
+  "A count below 1 on `P' inserts nothing, as it does on `p'.
+
+Zero and negative counts do nothing across the editing commands, and
+the two paste keys have no reason to differ.  Pinned because the
+docstring now says so: `donkey--yank-rectangle-times' takes the count
+apart itself, so this is not inherited from anything that would fail
+loudly if it changed."
+  (dolist (count '(0 -1 -2))
+    (donkey-test--bank-and-rectangle
+     (donkey-test--draw-rectangle 1 2 3)
+     (donkey-copy 1)
+     (deactivate-mark)
+     (goto-char (point-max))
+     (let ((before (buffer-string)))
+       (donkey-yank-rectangle count)
+       (should (equal (buffer-string) before))))))
+
+(ert-deftest donkey-yank-rectangle-leaves-banked-lines-alone ()
+  "`P' does not treat banked lines as a selection; `p' does.
+
+The asymmetry is deliberate and the README states it: linear text can
+stand in for whole lines, so `p' replaces them, while a block of
+columns cannot, so `P' lands at point and the bank keeps waiting.
+
+Pinned because the natural reading of \"banked lines are a selection,
+and a paste replaces a selection\" is that BOTH paste keys consume
+them.  If `P' is ever made to spend the bank, this fails and the
+README and the `donkey-yank-rectangle' docstring have to move with it."
+  (donkey-test--bank-and-rectangle
+   (donkey-test--draw-rectangle 1 2 3)
+   (donkey-copy 1)
+   (deactivate-mark)
+   (donkey-test--row 3)
+   (donkey-bank-selection)
+   (should (= 1 (length (donkey-banked-spans))))
+   (goto-char (point-max))
+   (donkey-yank-rectangle 1)
+   ;; The banked line is still there, still banked, and the block landed
+   ;; where point was rather than on top of it.
+   (should (string-match-p "CCC three" (buffer-string)))
+   (should (= 1 (length (donkey-banked-spans))))
+   (should (string-suffix-p "AAA\nBBB" (buffer-string)))))
+
 (ert-deftest donkey-yank-takes-the-bank-and-leaves-the-rectangle-alone ()
   "`p' replaces banked lines, and the rectangle store is untouched.
 

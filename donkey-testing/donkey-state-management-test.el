@@ -268,6 +268,88 @@ in `donkey-excluded-modes'."
       (should-not (donkey--excluded-mode-p)))))
 
 ;;; ---------------------------------------------------------------------------
+;;; donkey--mode-list (mis-set user options must not reach a command hook)
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-mode-list-coerces-without-signalling ()
+  "`donkey--mode-list' returns a list for anything it is given.
+
+A list passes through, a bare symbol becomes the one-element list it
+was meant to be, and a value that can be neither reads as empty.  Nil
+is a list already and must stay one, since an empty
+`donkey-excluded-modes' is an ordinary configuration rather than a
+mistake."
+  (should (equal (donkey--mode-list '(dired-mode)) '(dired-mode)))
+  (should (equal (donkey--mode-list 'dired-mode) '(dired-mode)))
+  (should (equal (donkey--mode-list nil) nil))
+  (should (equal (donkey--mode-list "dired-mode") nil))
+  (should (equal (donkey--mode-list 42) nil)))
+
+(ert-deftest donkey-excluded-mode-p-survives-a-mis-set-option ()
+  "`donkey--excluded-mode-p' never signals, whatever the option holds.
+
+`memq' and `derived-mode-p' both signal on a non-list, and this
+predicate is reached from `post-command-hook'."
+  (with-temp-buffer
+    (let ((major-mode 'text-mode))
+      (dolist (val '(dired-mode "dired-mode" 42 nil))
+        (let ((donkey-excluded-modes val))
+          (should-not (donkey--excluded-mode-p))))
+      ;; The bare symbol still has to WORK, not merely fail to signal.
+      (let ((donkey-excluded-modes 'text-mode))
+        (should (donkey--excluded-mode-p))))))
+
+(ert-deftest donkey-a-mis-set-mode-option-does-not-remove-the-post-command-guard ()
+  "A wrong-typed mode option must not cost DONKEY its excluded-buffer guard.
+
+`donkey--check-post-command-non-editing' is the catch-all that
+guarantees Normal state can never be active in an excluded buffer, and
+it runs on `post-command-hook' -- where Emacs REMOVES a function that
+signals, silently, for the rest of the session.  Repairing the variable
+afterwards does not bring it back; only toggling `donkey-mode' does.
+
+Regression test: reading `donkey-excluded-modes' straight through
+`memq' meant that
+
+  (setq donkey-excluded-modes \\='dired-mode)
+
+-- one missing pair of parentheses -- took the guarantee away on the
+NEXT keypress.  Verified by re-introducing the unguarded read: the hook
+is gone after a single key.
+
+Driven with real keys through `execute-kbd-macro', because only the
+real command loop removes a signalling hook function -- `run-hooks',
+which the other integration helpers in this file use, propagates the
+error instead and would never show the removal.  The buffer is
+switched to rather than merely made current for the same reason
+`donkey-tutor-test--live' switches: the command loop acts on the
+SELECTED WINDOW's buffer, so keys sent to an undisplayed
+`with-temp-buffer' land somewhere else entirely.
+
+Both options that reach `donkey--major-mode-in-p' are covered."
+  (dolist (var '(donkey-excluded-modes donkey-editing-modes))
+    (let ((orig (symbol-value var))
+          (buf (get-buffer-create "*donkey-mode-list-test*")))
+      (unwind-protect
+          (progn
+            (donkey-mode 1)
+            (switch-to-buffer buf)
+            (fundamental-mode)
+            (erase-buffer)
+            (insert "alpha beta\n")
+            (goto-char (point-min))
+            (donkey-enter-normal)
+            (should (memq #'donkey--check-post-command-non-editing
+                          post-command-hook))
+            (set var 'dired-mode)
+            (execute-kbd-macro (kbd "l"))
+            (should (memq #'donkey--check-post-command-non-editing
+                          post-command-hook)))
+        (set var orig)
+        (when (buffer-live-p buf) (kill-buffer buf))
+        (donkey-mode -1)))))
+
+;;; ---------------------------------------------------------------------------
 ;;; donkey--handle-non-editing-buffer / donkey--check-post-command-non-editing
 ;;; ---------------------------------------------------------------------------
 
