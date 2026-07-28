@@ -2181,6 +2181,34 @@ cannot drift apart: mid-line keeps its one column of width."
       (should (equal (rectangle--pos-cols (region-beginning) (region-end))
                      (cons 0 1))))))
 
+(ert-deftest donkey-rectangle-mark-mode-takes-one-character-not-one-column ()
+  "The initial widening is one CHARACTER, which is not always one column.
+
+The widening is `right-char', so what it takes is a character; a
+rectangle is measured in COLUMNS, and the two only coincide for
+ordinary text:
+
+  ordinary char   (0 . 1)
+  TAB             (0 . 8)
+  CJK wide char   (0 . 2)
+
+Not a defect -- a rectangle cannot take half a TAB, and refusing to
+start on one would be worse.  Pinned because the tutor used to promise
+\"one column wide\", which sent readers to replace a whole indent with
+`m v' then `c' and left nothing on screen to explain it.  Whichever way
+this behaviour is later changed, the prose has to move with it."
+  (dolist (case '(("abcdef\nabcdef\n" 1)
+                  ("\tabc\n\tabc\n"   8)
+                  ("一二三\n一二三\n"  2)))
+    (cl-destructuring-bind (text width) case
+      (with-temp-buffer
+        (let ((transient-mark-mode t))
+          (insert text)
+          (goto-char (point-min))
+          (donkey-rectangle-mark-mode)
+          (should (equal (rectangle--pos-cols (region-beginning) (region-end))
+                         (cons 0 width))))))))
+
 (ert-deftest donkey-rectangle-mark-mode-at-end-of-line-appends-via-change ()
   "End to end: a rectangle started at end of line appends to every row.
 
