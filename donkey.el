@@ -2277,8 +2277,20 @@ one before marking it."
 True when the command now running is the one that ran last and it left
 a mark behind -- the same test `mark-end-of-sentence' applies, which is
 why `m s' has grown on a second press since before there was a rule.
-Any other key in between ends the run."
-  (and (eq last-command this-command)
+Any other key in between ends the run.
+
+`this-command' is checked for being set at all before it is compared.
+Outside the command loop BOTH it and `last-command' are nil, so the
+comparison alone is true, and any Lisp caller with a mark already set
+got an extension where it asked for a fresh selection.  Reached by
+`donkey-mark-paragraph' with a stale `rectangle-mark-mode' mark: the
+extension grew from that mark instead of marking the paragraph under
+point, so a following `donkey-delete' took the wrong text.  It hid
+behind test order -- any earlier test leaves `last-command' non-nil,
+which makes the comparison false again, so it only showed when the
+marking tests ran first."
+  (and this-command
+       (eq last-command this-command)
        (mark t)
        t))
 
