@@ -656,14 +656,23 @@ forward and reports =No sentence after point= for anything ending behind
 where it started — so zero and negative counts have nothing they could
 mean but that error.
 
-**** Repeating =m s= extends the selection
+**** Repeating a mark key extends the selection
 
-Pressing =m s= a second time straight away *grows* the selection by
-another sentence instead of re-marking the same one, and keeps growing
-on each further press until the buffer runs out. It is inherited from
-Emacs' own =mark-end-of-sentence=, and it is worth knowing because the
-other mark commands do *not* work that way — =m w= twice marks the same
-word twice. So =m s m s m s= is another way to say =C-u 3 m s=.
+Pressing =m w=, =m W=, =m s= or =m p= a second time straight away
+*grows* the selection by another word, symbol, sentence or paragraph
+instead of re-marking the same one, and keeps growing on each further
+press until the buffer runs out. So =m s m s m s= is another way to say
+=C-u 3 m s=, and the same holds for the other three.
+
+Any other key in between ends the run — =m w l m w= marks a single word
+again rather than two. An active selection made some other way is left
+alone: =v=, a few motions, then =m w= still marks the word at the
+cursor. Emacs' own rule is wider than this and would extend that
+selection too; DONKEY uses the narrower one so =v= keeps working the way
+it reads.
+
+=m i= and =m a= are not in this: they count *levels*, and one more level
+out is not one more of the same thing. Use a count for those.
 
 =m i= and =m a= take a count for *every* pair in
 =donkey-mark-pair-delimiters=, but the two kinds count different things.
