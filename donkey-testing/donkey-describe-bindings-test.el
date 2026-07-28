@@ -6,6 +6,12 @@
 (require 'cl-lib)
 (require 'donkey)
 
+(defconst donkey-test--source-dir
+  (or (and load-file-name (file-name-directory (directory-file-name
+                                                (file-name-directory load-file-name))))
+      default-directory)
+  "Directory holding donkey.el, for tests that read the source as text.")
+
 ;; ---------------------------------------------------------------------------
 ;; Fixtures
 ;; ---------------------------------------------------------------------------
@@ -1417,7 +1423,14 @@ the syntax table is what these two commands read, so verifying in
 
 The keys are substituted at render time and vary in width, so the table
 was written with the FIXED text on the left for exactly this reason --
-an earlier draft put the keys first and rendered ragged."
+an earlier draft put the keys first and rendered ragged.
+
+Three rows, not four.  The fourth was \"with nothing banked, p pastes the
+rectangle\", which stopped being true when pasting split into two keys:
+\"p\" reads the kill ring and \"P\" reads `killed-rectangle', so there is
+nothing left for a rule to arbitrate on the pasting side.  The row count
+is asserted rather than inferred so that dropping another row silently
+fails here."
   (unwind-protect
       (progn
         (donkey-tutor)
@@ -1426,7 +1439,15 @@ an earlier draft put the keys first and rendered ragged."
           (should (search-forward "THE BANK IS THE FALLBACK" nil t))
           (forward-line 2)
           (let (offsets)
-            (dotimes (_ 4)
+            ;; The row AFTER the table must not match, or a fourth row
+            ;; could reappear without this noticing.
+            (should-not
+             (string-match "\\`    with [a-z ]+?  +[^ ]"
+                           (save-excursion
+                             (forward-line 3)
+                             (buffer-substring-no-properties
+                              (line-beginning-position) (line-end-position)))))
+            (dotimes (_ 3)
               (let ((line (buffer-substring-no-properties
                            (line-beginning-position) (line-end-position))))
                 (should (string-match "\\`    \\(with [a-z ]+?\\)  +[^ ]" line))
@@ -1781,6 +1802,81 @@ reader."
               (push (- (line-end-position) (line-beginning-position)) lengths)
               (forward-line 1))
             (should (= 1 (length (delete-dups lengths)))))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+
+(ert-deftest donkey-every-key-reference-in-the-source-resolves ()
+  "Every \\[command] in donkey.el names a command that exists.
+
+`substitute-command-keys' does not signal on an unknown command.  It
+renders the reference as the bare command name instead, so a typo
+becomes a key nobody can press, visible only to whoever opens that
+help buffer or tutor lesson.
+
+This is not hypothetical.  \\[donkey-yang-rectangle] shipped in
+`donkey-yank's docstring and survived two rounds of review, because
+nothing reads those references except a human eye on rendered output.
+Byte-compile does not look inside strings and checkdoc checks form, not
+whether the target exists."
+  (let (unresolved)
+    (with-temp-buffer
+      (insert-file-contents (expand-file-name "donkey.el" donkey-test--source-dir))
+      (goto-char (point-min))
+      (while (re-search-forward "\\\\\\\\\\[\\([a-zA-Z0-9---]+\\)\\]" nil t)
+        (let ((cmd (intern (match-string 1))))
+          (unless (fboundp cmd)
+            (push (format "line %d: %s" (line-number-at-pos) cmd) unresolved)))))
+    (should (equal unresolved nil))))
+
+(ert-deftest donkey-every-donkey-symbol-named-in-the-source-exists ()
+  "Every `donkey-...' quoted in a docstring or comment is a real symbol.
+
+The other half of the same problem: a quoted symbol that does not exist
+renders as a dead cross-reference in the help buffer, and
+`donkey--replace-rectangle-relection-with-killed-rectangel' sat in a
+docstring for two commits looking exactly like a working one.
+
+Faces and overlay properties are legitimate references that are neither
+`fboundp' nor `boundp', so they are allowed explicitly rather than by
+loosening the check -- an unknown symbol should still fail."
+  (let ((allowed '(donkey-banked))          ; overlay property
+        unresolved)
+    (with-temp-buffer
+      (insert-file-contents (expand-file-name "donkey.el" donkey-test--source-dir))
+      (goto-char (point-min))
+      (while (re-search-forward "`\\(donkey-[a-zA-Z0-9---]+\\)'" nil t)
+        (let ((sym (intern (match-string 1))))
+          (unless (or (fboundp sym) (boundp sym) (facep sym) (memq sym allowed))
+            (push (format "line %d: %s" (line-number-at-pos) sym) unresolved)))))
+    (should (equal unresolved nil))))
+
+
+(ert-deftest donkey-tutor-lesson-10-does-not-claim-m-del-alone-discards-banks ()
+  "Lesson 10 says acting on banks spends them, and names the real exception.
+
+The lesson used to close \"m DEL is the only key that discards banks\",
+which is false: `donkey-copy', `donkey-delete' and `donkey-yank' all
+consume the bank as they act on it.  Driven with real keys, a bank of
+two lines goes to zero after any of the three.
+
+The distinction the sentence was reaching for is real -- \\[donkey-clear-banked-selection]
+discards WITHOUT using them, the others spend them by using them -- but a
+reader takes \"only key\" literally, and the README had said the accurate
+version all along.
+
+Pinned as prose because the behaviour is already covered from four
+directions and was never in doubt; what drifted was the sentence.  This
+asserts the claim is gone and the correction is present, so restoring
+the shorter, wronger wording fails here."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((text (buffer-string)))
+            (should-not (string-match-p "only key that discards" text))
+            (should (string-match-p "Acting on banked lines does spend them" text))
+            ;; and it still names the key that clears without using
+            (should (string-match-p "WITHOUT using them" text)))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 ;;; donkey-describe-bindings-test.el ends here
