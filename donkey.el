@@ -1025,8 +1025,8 @@ rows of the pasted content or leave rows of the selection only
 partially overwritten, either way not what \"replace this rectangle
 with that one\" should ever silently do.
 
-Uses `delete-rectangle', not `kill-rectangle', to clear the
-destination: `kill-rectangle' would ALSO save what it deletes into the
+Uses `delete-rectangle', not `killed-rectangle', to clear the
+destination: `killed-rectangle' would ALSO save what it deletes into the
 very same `killed-rectangle' slot we're about to read from, clobbering
 the source rectangle before it's ever pasted back.  The top-left
 corner is captured before deleting -- deleting the rectangle only
@@ -1161,9 +1161,10 @@ wider block."
    ((null killed-rectangle)
     (message "No rectangle to paste"))
    ((bound-and-true-p rectangle-mark-mode)
-    (t
-     (donkey--delete-active-region-safe)
-     (dinkey--yank-rectangle-times (or count 1))))))
+    (donkey--replace-rectangle-selection-with-killed-rectangle))
+   (t
+    (donkey--delete-active-region-safe)
+    (donkey--yank-rectangle-times (or count 1)))))
 
 (defun donkey--visual-line-region-bounds ()
   "Return the active region as (BEG . END), whole-lined for a `V' session.
@@ -1224,12 +1225,13 @@ within Emacs and nothing else will.
 Deliberate, and matching stock: `copy-rectangle-as-kill' and
 `kill-rectangle' both behave this way, and a rectangle has no meaning
 outside a buffer that could survive the trip through a flat clipboard.
-Recorded here, and pinned by a test, because it reads like an oversight
-every time someone looks: a copy that does not reach the clipboard has
-been raised, investigated and set aside more than once.  Change it only
-on purpose -- and note that `kill-new' is advised to clear
-`donkey--last-kill-rectangle-p', so pushing the text onto the kill ring
-would break the rectangle round trip unless the flag is restored.
+Recorded here, and pinned by a test, because it reads like an
+oversight every time someone looks: a copy that does not reach the
+clipboard has been raised, investigated and set aside more than once.
+Change it only on purpose -- and note that a rectangle is pasted by
+its own key, \\[donkey-yank-rectangle], so pushing the text onto the
+kill-ring as well would put the same copy in two stores that are
+emptied independently.
 
 `kill-ring-save' (Emacs's own copy command) isn't used directly here:
 its interactive spec reads `region-beginning'/`region-end', which use
@@ -1289,10 +1291,10 @@ blanks behind.  Taking one character more than was highlighted is
 deliberate, not an off-by-one: see `donkey--visual-line-region-bounds'.
 
 With `rectangle-mark-mode' active, kills the rectangle via
-`kill-rectangle' -- see `donkey--last-kill-rectangle-p' for how
-`donkey-yank' later knows to paste it back as a rectangle.  Like
-`donkey-copy', that reaches `killed-rectangle' only and never the system
-clipboard; see there for why that is deliberate.
+`kill-rectangle', which fills `killed-rectangle' -- the store
+\\[donkey-yank-rectangle] pastes from. Like `donkey-copy', that
+reaches `killed-rectangle' only and never the system clipboard; see
+there for why that is deliberate.
 
 Banked lines do not override that: the rectangle is the live selection
 and wins, and the banks survive untouched.  See
@@ -2418,9 +2420,9 @@ straight to a stock command, so it was the one that did not: a rectangle
 left active from an earlier `donkey-rectangle-mark-mode' session survived
 underneath the new whole-buffer selection, and `donkey-delete' then killed
 a zero-width rectangle -- one empty string per line -- leaving the buffer
-completely untouched, with no error to explain it.  It also set
-`donkey--last-kill-rectangle-p', so the next \"p\" would have pasted that
-emptiness instead of the clipboard.
+completely untouched, with no error to explain it.  It also left that
+emptiness in `killed-rectangle', where \\[donkey-yank-rectangle] would have
+pasted it back.
 
 Invoked via `call-interactively', as `donkey-set-mark' does for
 `set-mark-command': `mark-whole-buffer' is declared `interactive-only',
@@ -3399,7 +3401,10 @@ here, so both directions are available.
 Lesson 7 -- copy and paste
 --------------------------
 
-    \\[donkey-copy] copy    DONKEY-DELETE-KEYS cut    \\[donkey-yank] paste    \\[donkey-yank-pop] paste the entry before
+    \\[donkey-copy] copy    DONKEY-DELETE-KEYS cut    \\[donkey-yank] paste    \\[donkey-yank-rectangle] paste a rectangle
+
+Emacs' own \\[yank-pop] still steps back through earlier copies after a
+paste, in both states.  DONKEY does not rebind it.
 
 A count on \\[donkey-yank] pastes that many copies.
 
