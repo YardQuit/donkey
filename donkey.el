@@ -99,7 +99,7 @@ explicitly if desired."
 ;; rather than discarded: that is what the user asked for, and refusing
 ;; it would trade a crash for a silent no-op.
 (defun donkey--mode-list (value)
-  "Return VALUE as a list of major modes, never signalling.
+  "Return VALUE as a list of major modes, never signaling.
 
 A list is returned unchanged, a bare symbol is taken as a one-element
 list, and anything else reads as the empty list."
@@ -223,13 +223,13 @@ interaction entirely."
 
 Zero switches position tracking off: nothing is retained, so
 `donkey-jump-back' has nowhere to go and says so.  Anything that is not
-a number is read the same way rather than signalling -- see
+a number is read the same way rather than signaling -- see
 `donkey--position-ring-limit' for why erroring there is not an option."
   :type 'integer
   :group 'donkey)
 
 (defun donkey--position-ring-limit ()
-  "Return `donkey-position-ring-max' as a usable count, never signalling.
+  "Return `donkey-position-ring-max' as a usable count, never signaling.
 
 `donkey--track-position' runs on `post-command-hook', where an error is
 not merely noisy: Emacs REMOVES the offending function from the hook and
@@ -316,7 +316,7 @@ where the one value a user can get wrong is made safe."
 ;; recorded before `narrow-to-region' (or `org-narrow-to-subtree', which Org
 ;; users press constantly) mostly holds positions the buffer is no longer
 ;; showing.  `goto-char' silently CLAMPS to the narrowing edge rather than
-;; signalling, so those entries used to land point on the first or last
+;; signaling, so those entries used to land point on the first or last
 ;; visible character while still reporting "Position 2/3" -- a claimed jump
 ;; to a recorded position that was really just a jump to the boundary.
 ;; `donkey--banked-spans' filters the same way and for the same reason.
@@ -503,7 +503,7 @@ Deliberate, and the one place the two line commands part company: `V d'
 takes the newline because you asked for the line to go, `V c' keeps it
 because you asked to replace what is on it.
 
-Banked lines are not honoured either.  With lines banked via
+Banked lines are not honored either.  With lines banked via
 `donkey-bank-selection' and no active region, this changes the character
 at point and leaves the banks standing -- `y', `d' and `p' all act on
 the bank instead.
@@ -1370,7 +1370,7 @@ and wins, and the banks survive untouched.  See
 
 COUNT deletes that many characters when no region is active.
 A count larger than the text remaining stops at the end rather than
-signalling.  A negative COUNT deletes that many characters before point
+signaling.  A negative COUNT deletes that many characters before point
 and a COUNT of zero deletes none, matching `delete-char'."
   (interactive "p")
   (let* ((n (or count 1))
@@ -1600,7 +1600,7 @@ would silently persist underneath a brand new, intended-to-be-linear
 selection, and the next `donkey-copy'/`donkey-delete'/`donkey-yank'
 would misinterpret the new selection as a rectangle instead of the
 intended linear span.  Confirmed live: after `m v' (rectangle-mark) on
-one line, then `m p' (mark-paragraph) elsewhere without cancelling the
+one line, then `m p' (mark-paragraph) elsewhere without canceling the
 rectangle first, pressing `d' silently killed a zero-width \"rectangle\"
 \(one empty string per line) instead of deleting the paragraph, with no
 error and no visible change to the buffer at all.
@@ -1665,7 +1665,7 @@ the visual-line session's original anchor line instead of extending
        ;; `org-narrow-to-subtree') leaves the anchor pointing at text the
        ;; buffer is no longer showing.  Both `goto-char' below and the
        ;; `set-mark' the J/K commands do afterwards silently CLAMP there
-       ;; rather than signalling, so the selection quietly re-anchored on
+       ;; rather than signaling, so the selection quietly re-anchored on
        ;; the narrowing edge while still presenting itself as the session
        ;; started higher up.  Rejecting it here makes `J'/`K' fall back to
        ;; the plain `forward-line' their docstrings describe.
@@ -1677,8 +1677,8 @@ the visual-line session's original anchor line instead of extending
                        (goto-char donkey-visual-anchor)
                        (line-end-position))))))
 
-;; Cancelling only a genuine session avoids reporting a misleading "Visual
-;; line: cancelled" for a selection that was never a visual-line session.
+;; Canceling only a genuine session avoids reporting a misleading "Visual
+;; line: canceled" for a selection that was never a visual-line session.
 ;;
 ;; The highlight is left one character short deliberately -- see
 ;; `donkey--visual-line-region-bounds' for why the widening lives in
@@ -1704,7 +1704,7 @@ a kill that pastes back as a complete line."
   (if (donkey--visual-line-session-active-p)
       (progn
         (deactivate-mark)
-        (message "Visual line: cancelled"))
+        (message "Visual line: canceled"))
     (donkey--ensure-non-rectangle-selection)
     (setq donkey-visual-anchor (line-beginning-position))
     (set-mark (line-beginning-position))
@@ -1969,7 +1969,7 @@ well outside any bracket on a line with several unrelated pairs, like
 after the last `)' on \";; To (create a (file), visit) it with...\".
 The nesting-aware backward scan there walks past several real `('/`)'
 occurrences (correctly counting depth as it goes) before ultimately
-running out of buffer and signalling `search-failed', converted to the
+running out of buffer and signaling `search-failed', converted to the
 error below -- but each of those intermediate matches really did move
 point, so without `save-excursion' the error would still leave point
 sitting at the last successfully-found delimiter (confusingly, on some
@@ -2285,7 +2285,7 @@ one before marking it."
 ;; and `mark-sexp' take one that is non-nil only when Emacs calls them
 ;; interactively.  Reached from Lisp with a single argument, as these
 ;; commands did, the extension is simply switched off.  So DONKEY was
-;; not adding the behaviour to `m s'; it was removing it from the rest.
+;; not adding the behavior to `m s'; it was removing it from the rest.
 ;;
 ;; Native's own test is wider than this one:
 ;;
@@ -2331,7 +2331,7 @@ word rather than re-marking the same one, and keeps extending until
 the buffer runs out.  See `donkey--mark-extending-p'.
 
 COUNT marks that many words.  A negative COUNT marks that many words
-before the one point normalises onto, and a COUNT of zero marks nothing,
+before the one point normalizes onto, and a COUNT of zero marks nothing,
 matching how `mark-word' itself reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
@@ -2347,7 +2347,7 @@ matching how `mark-word' itself reads its argument."
       (unless (thing-at-point 'word)
         (user-error "No word at or before point"))
       (beginning-of-thing 'word))
-    ;; The normalisation above is skipped when extending: it walks point
+    ;; The normalization above is skipped when extending: it walks point
     ;; back to the START of the word already selected, and `mark-word'
     ;; measures its extension from there, so running it would grow the
     ;; region by nothing and then by one word from the wrong end.
@@ -2376,7 +2376,7 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
 
 COUNT marks that many sentences.  Unlike the other mark commands a COUNT
 below 1 is treated as 1 here: this command is defined in terms of the
-sentence AHEAD of point -- it normalises forward and then reports \"No
+sentence AHEAD of point -- it normalizes forward and then reports \"No
 sentence after point\" for a selection that ends behind where it started
 -- so a zero or negative count has nothing it could mean but that error.
 A COUNT reaching past the last sentence marks what there is and stops,
@@ -2488,7 +2488,7 @@ which is where `mark-paragraph' leaves them and where
 leave them.
 
 COUNT marks that many paragraphs.  A negative COUNT marks that many
-paragraphs before the one point normalises onto, and a COUNT of zero
+paragraphs before the one point normalizes onto, and a COUNT of zero
 marks nothing, matching how `forward-paragraph' reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
@@ -2533,7 +2533,7 @@ See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
 COUNT marks that many symbols.  A negative COUNT marks that many symbols
-before the one point normalises onto, and a COUNT of zero marks nothing,
+before the one point normalizes onto, and a COUNT of zero marks nothing,
 matching how `forward-sexp' reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
@@ -2592,7 +2592,7 @@ matching how `forward-sexp' reads its argument."
 
 See `donkey--ensure-non-rectangle-selection' for why.
 
-This does NOT toggle, unlike its two neighbours `donkey-visual-line-toggle'
+This does NOT toggle, unlike its two neighbors `donkey-visual-line-toggle'
 \(\"V\") and `donkey-rectangle-mark-mode' (\"m v\"), which both cancel the
 selection they started when pressed again.  `set-mark-command' re-anchors:
 a second press drops a fresh mark at point and carries on selecting from
@@ -3307,7 +3307,7 @@ documentation."
 =============
 
 This is an ordinary, editable buffer, and the text you are reading is the
-text you will practise on.  Changing it is the point -- nothing here is
+text you will practice on.  Changing it is the point -- nothing here is
 precious, and \\[donkey-tutor] gives you a fresh copy whenever you want one.
 
 Lines beginning with \">>\" are things to DO.  Everything else is
@@ -3824,7 +3824,7 @@ enough to state in full.
 In INSERT state, one key changes: \\`C-g' returns to NORMAL state.  It still
 clears the selection, and in the minibuffer it still quits, so the escape
 hatch is where you expect it.  It stops a keyboard macro that is being
-recorded, too; the only errand of Emacs' own \\`C-g' it skips is signalling
+recorded, too; the only errand of Emacs' own \\`C-g' it skips is signaling
 a quit condition, which nothing in these lessons needs.
 
 In NORMAL state, four things differ:
@@ -4641,7 +4641,7 @@ permanently disabling this whole interception mechanism, in every
 buffer, after the very first `C-g' in an excluded-mode buffer.
 Skipping here lets the raw key fall through to the direct `C-g'
 binding instead, so `keyboard-quit' runs as an ordinary command
-instead of from inside a hook, where signalling `quit' is safe.
+instead of from inside a hook, where signaling `quit' is safe.
 
 The excluded-mode skip only closed the one path that was found.  Every
 OTHER way `donkey--exit-insert' can signal removes this function just
