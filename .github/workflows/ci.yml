@@ -100,6 +100,68 @@ jobs:
           fi
           echo "every test file passes in isolation"
 
+  smartparens:
+    name: Tests (with Smartparens)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+
+      # Four tests gate on `(featurep 'smartparens)' and had therefore
+      # never run anywhere -- not locally, not in CI.  Four tests that
+      # never execute are four tests the project does not actually have,
+      # and the integration they cover is one DONKEY advertises.
+      #
+      # Cloned rather than installed from MELPA, which keeps the job to
+      # two fixed git checkouts with no package archive, no refresh step
+      # and no network dependency beyond GitHub itself.  `dash' is
+      # Smartparens' only Package-Requires entry.
+      #
+      # Pinned to a tag rather than tracking master: this job exists to
+      # test DONKEY, and an upstream change breaking the build should be
+      # a deliberate bump here rather than a red run on an unrelated PR.
+      - name: Fetch Smartparens and dash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 1.11.0 \
+            https://github.com/Fuco1/smartparens.git /tmp/smartparens
+          git clone --depth 1 --branch 2.19.1 \
+            https://github.com/magnars/dash.el.git /tmp/dash
+
+      # `skip-unless' reports a skip, not a failure, so a suite where
+      # Smartparens failed to load would pass here while testing nothing.
+      # The count is asserted instead: with it present exactly two tests
+      # skip -- `donkey-cg-without-smartparens', which skips BECAUSE it
+      # is present, and the one needing `sp-overlay-keymap'.  Any more
+      # than that means the integration tests silently went back to
+      # skipping.
+      - name: Run the suite with Smartparens loaded
+        run: |
+          set -uo pipefail
+          test_args=""
+          for f in donkey-testing/*-test.el; do
+            test_args="$test_args -l $f"
+          done
+          # shellcheck disable=SC2086
+          emacs -Q --batch -L . -L donkey-testing -L /tmp/dash -L /tmp/smartparens \
+            --eval "(require 'smartparens)" $test_args \
+            -f ert-run-tests-batch-and-exit 2>&1 | tee /tmp/sp-run.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "::error::suite failed with Smartparens loaded"
+            exit 1
+          fi
+          skipped=$(grep -c '^  SKIPPED' /tmp/sp-run.log || true)
+          if [ "$skipped" -gt 2 ]; then
+            echo "::error::$skipped tests skipped with Smartparens loaded; expected 2"
+            grep '^  SKIPPED' /tmp/sp-run.log
+            exit 1
+          fi
+          echo "suite passes with Smartparens, $skipped skipped as expected"
+
   shuffled:
     name: Tests (shuffled order)
     runs-on: ubuntu-latest

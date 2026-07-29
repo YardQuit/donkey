@@ -1171,10 +1171,24 @@ This is not the major mode's syntax table deciding: =fundamental-mode=,
 punctuation and expression-prefix syntax across the three. Adding the
 pair to =electric-pair-pairs= is what changes it.
 
-Smartparens' own region-wrap works too, if you already use it, and
-covers whatever you have configured it to pair. With *no* pairing
-package enabled, every delimiter is simply inserted at point rather
-than wrapping the selection.
+Smartparens wraps all six out of the box, ='= and =`= included — it
+covers more than =electric-pair-mode= here. The pair definition is what
+decides, so excluding one stops that delimiter wrapping:
+
+#+begin_src emacs-lisp
+
+  ;; Now ' inserts rather than wraps, the same as under electric-pair-mode
+  (sp-local-pair 'text-mode "'" nil :actions nil)
+
+#+end_src
+
+Same outcome from opposite directions: =electric-pair-mode= never knew
+about the pair, Smartparens was told to leave it alone. Neither is
+DONKEY doing anything different — it self-inserts with the selection
+live and the pairing package decides the rest.
+
+With *no* pairing package enabled, every delimiter is simply inserted
+at point rather than wrapping the selection.
 
 Under the hood, =donkey-normal-mode-map= normally suppresses every
 printable key so it can't accidentally self-insert. These delimiters
