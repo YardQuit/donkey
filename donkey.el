@@ -1543,11 +1543,19 @@ its own start/end column instead; see `donkey--wrap-rectangle-region'.
 With an ordinary active region, enters Insert state without
 deactivating the mark and inserts the pressed character via
 `self-insert-command', letting whatever pairing package is active see
-the still-active region and wrap it.  Emacs's built-in
-`electric-pair-mode' is enough; Smartparens' region-wrap works too.
-With neither enabled the character is simply inserted at point, since
-nothing is listening.  Then returns to Normal state, even if the
-insertion signals."
+the still-active region and wrap it.  With none enabled the character
+is simply inserted at point, since nothing is listening.  Then returns
+to Normal state, even if the insertion signals.
+
+Which delimiters actually wrap is the pairing package's decision, not
+this command's, and `electric-pair-mode' does not cover all six
+defaults.  It wraps what its own rules treat as a pair -- `(', `[',
+`{' and `\"' -- and leaves `'' and ``' alone, inserting the character
+at the region's start with the region unwrapped.  Confirmed in
+`fundamental-mode', `text-mode' and `emacs-lisp-mode' alike, so it is
+not the major mode's syntax table deciding; adding them to
+`electric-pair-pairs' is what changes it.  Smartparens' region-wrap
+works too, and covers its own set."
   (interactive)
   (cond
    ((not (use-region-p))
