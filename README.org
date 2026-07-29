@@ -1144,8 +1144,8 @@ and pressing =(= yields =(word)=. This works without leaving Normal
 state stuck in Insert afterward.
 
 The actual wrapping is done by whichever pairing package you use, not
-by DONKEY itself. Emacs's built-in =electric-pair-mode= is enough —
-no third-party package required:
+by DONKEY itself. Emacs's built-in =electric-pair-mode= needs no
+third-party package:
 
 #+begin_src emacs-lisp
 
@@ -1153,8 +1153,27 @@ no third-party package required:
 
 #+end_src
 
-Smartparens' own region-wrap works too, if you already use it. With
-*neither* enabled, the delimiter is simply inserted at point rather
+It does not cover all six, though. It wraps what its own rules call a
+pair — =(=, =[=, ={= and ="= — and leaves ='= and =`= alone, inserting
+the character at the selection's start with the selection unwrapped:
+
+| Pressed on a selected =alpha= | With =electric-pair-mode= |
+|-------------------------------+---------------------------|
+| =(=                           | =(alpha)=                 |
+| =[=                           | =[alpha]=                 |
+| ={=                           | ={alpha}=                 |
+| ="=                           | ="alpha"=                 |
+| ='=                           | ='alpha= — not wrapped    |
+| =`=                           | =`alpha= — not wrapped    |
+
+This is not the major mode's syntax table deciding: =fundamental-mode=,
+=text-mode= and =emacs-lisp-mode= behave alike, though ='= has word,
+punctuation and expression-prefix syntax across the three. Adding the
+pair to =electric-pair-pairs= is what changes it.
+
+Smartparens' own region-wrap works too, if you already use it, and
+covers whatever you have configured it to pair. With *no* pairing
+package enabled, every delimiter is simply inserted at point rather
 than wrapping the selection.
 
 Under the hood, =donkey-normal-mode-map= normally suppresses every
