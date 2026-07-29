@@ -84,9 +84,21 @@ see it."
       (run-hooks 'post-command-hook))))
 
 (defun donkey--simulate-key (key)
-  "Simulate pressing KEY for testing guard reset behavior."
-  (let ((last-command-event (aref key 0))
-        (this-original-command this-command))
+  "Simulate pressing KEY for testing guard reset behavior.
+
+`this-command' is set from KEY's own binding.  It used to be inherited
+from whatever ran before, and the `call-interactively' below then ran
+THAT command instead of this key's -- so the helper did not simulate
+the key it was handed.  Harmless in ERT's fixed order, where the
+previous command happened to be inert; running the suite shuffled
+turned it into \"The mark is not set now, so there is no region\" from
+a region command left behind by an unrelated test.
+
+Bound rather than assigned, so the hooks below cannot leak a
+`this-command' into the next test either."
+  (let* ((last-command-event (aref key 0))
+         (this-command (or (key-binding key) this-command))
+         (this-original-command this-command))
     (cl-letf (((symbol-function 'this-single-command-keys)
                (lambda () key)))
       (run-hooks 'pre-command-hook)
@@ -1197,7 +1209,12 @@ command loop would set it."
    (donkey--simulate-cg)
    (should (bound-and-true-p donkey-normal-mode))
    (should donkey--just-exited-from-insert)
-   (donkey--simulate-key [104])
+   ;; `l' rather than `h': point is at `point-min' in this buffer, so
+   ;; `h' (`backward-char') signals `beginning-of-buffer'.  It did not
+   ;; show while `donkey--simulate-key' ran whatever `this-command'
+   ;; happened to hold instead of the key's own binding -- the key was
+   ;; never actually pressed, so it could not fail.
+   (donkey--simulate-key [108])
    (should-not donkey--just-exited-from-insert)))
 
 (ert-deftest donkey-cg-double-cg-stays-in-normal ()

@@ -450,175 +450,241 @@ in height."
 
 (ert-deftest donkey-yank-no-region-calls-clipboard-yank ()
   "Without an active region, calls `clipboard-yank' directly."
-  (let (yanked)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () nil))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (setq yanked t))))
-        (donkey-yank)))
-    (should yanked)))
+  ;; `kill-ring' is bound because `donkey-yank' checks there is
+  ;; something to paste BEFORE acting: with the ring empty it
+  ;; correctly does nothing and never reaches the mock below.  Left
+  ;; ambient this passed only when an earlier test had stocked the
+  ;; ring, which running the suite shuffled showed it relying on.
+  (let ((kill-ring (list "something")))
+    (let (yanked)
+      (with-temp-buffer
+        (insert "hello\n")
+        (goto-char 1)
+        (cl-letf (((symbol-function 'use-region-p)
+                   (lambda () nil))
+                  ((symbol-function 'clipboard-yank)
+                   (lambda () (setq yanked t))))
+          (donkey-yank)))
+      (should yanked))))
 
 (ert-deftest donkey-yank-no-region-skips-delete-active-region ()
   "Without an active region, the function `delete-active-region' is not called."
-  (let (deleted)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () nil))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (setq deleted t)))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () nil)))
-        (donkey-yank)))
-    (should-not deleted)))
+  ;; `kill-ring' is bound because `donkey-yank' checks there is
+  ;; something to paste BEFORE acting: with the ring empty it
+  ;; correctly does nothing and never reaches the mock below.  Left
+  ;; ambient this passed only when an earlier test had stocked the
+  ;; ring, which running the suite shuffled showed it relying on.
+  (let ((kill-ring (list "something")))
+    (let (deleted)
+      (with-temp-buffer
+        (insert "hello\n")
+        (goto-char 1)
+        (cl-letf (((symbol-function 'use-region-p)
+                   (lambda () nil))
+                  ((symbol-function 'delete-active-region)
+                   (lambda () (setq deleted t)))
+                  ((symbol-function 'clipboard-yank)
+                   (lambda () nil)))
+          (donkey-yank)))
+      (should-not deleted))))
 
 (ert-deftest donkey-yank-region-deletes-then-yanks ()
   "An active region is removed before the paste lands.
 Calls the function `delete-active-region' then `clipboard-yank', in that
 order."
-  (let (order)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 4)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () t))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (push 'delete order)))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (push 'yank order))))
-        (donkey-yank)))
-    (should (eq (nth 0 order) 'yank))
-    (should (eq (nth 1 order) 'delete))
-    (should (= (length order) 2))))
+  ;; `kill-ring' is bound because `donkey-yank' checks there is
+  ;; something to paste BEFORE acting: with the ring empty it
+  ;; correctly does nothing and never reaches the mock below.  Left
+  ;; ambient this passed only when an earlier test had stocked the
+  ;; ring, which running the suite shuffled showed it relying on.
+  (let ((kill-ring (list "something")))
+    (let (order)
+      (with-temp-buffer
+        (insert "hello\n")
+        (goto-char 1)
+        (push-mark 4)
+        (cl-letf (((symbol-function 'use-region-p)
+                   (lambda () t))
+                  ((symbol-function 'delete-active-region)
+                   (lambda () (push 'delete order)))
+                  ((symbol-function 'clipboard-yank)
+                   (lambda () (push 'yank order))))
+          (donkey-yank)))
+      (should (eq (nth 0 order) 'yank))
+      (should (eq (nth 1 order) 'delete))
+      (should (= (length order) 2)))))
 
 (ert-deftest donkey-yank-no-region-inserts-clipboard-content ()
   "Without region, `clipboard-yank' inserts clipboard text at point."
-  (with-temp-buffer
-    (insert "hello\n")
-    (goto-char 1)
-    (cl-letf (((symbol-function 'use-region-p)
-               (lambda () nil))
-              ((symbol-function 'clipboard-yank)
-               (lambda () (insert "world"))))
-      (donkey-yank))
-    (should (string= (buffer-substring 1 6) "world"))))
+  ;; `kill-ring' is bound because `donkey-yank' checks there is
+  ;; something to paste BEFORE acting: with the ring empty it
+  ;; correctly does nothing and never reaches the mock below.  Left
+  ;; ambient this passed only when an earlier test had stocked the
+  ;; ring, which running the suite shuffled showed it relying on.
+  (let ((kill-ring (list "something")))
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p)
+                 (lambda () nil))
+                ((symbol-function 'clipboard-yank)
+                 (lambda () (insert "world"))))
+        (donkey-yank))
+      (should (string= (buffer-substring 1 6) "world")))))
 
 (ert-deftest donkey-yank-region-replaces-with-clipboard-content ()
   "With region, deletes region then yanks clipboard content."
-  (with-temp-buffer
-    (insert "hello world\n")
-    (goto-char 6)
-    (push-mark 1)
-    (cl-letf (((symbol-function 'use-region-p)
-               (lambda () t))
-              ((symbol-function 'delete-active-region)
-               (lambda () (delete-region 1 6)))
-              ((symbol-function 'clipboard-yank)
-               (lambda () (insert "hey"))))
-      (donkey-yank))
-    (should (string= (buffer-substring 1 4) "hey"))))
-
-(ert-deftest donkey-yank-empty-buffer-no-region ()
-  "Empty buffer, no region: `clipboard-yank' inserts at point-min."
-  (with-temp-buffer
-    (cl-letf (((symbol-function 'use-region-p)
-               (lambda () nil))
-              ((symbol-function 'clipboard-yank)
-               (lambda () (insert "text"))))
-      (donkey-yank))
-    (should (= (buffer-size) 4))
-    (should (string= (buffer-string) "text"))))
-
-(ert-deftest donkey-yank-region-covers-entire-buffer ()
-  "Region covers entire buffer: cleared then replaced."
-  (with-temp-buffer
-    (insert "hello\n")
-    (goto-char (point-max))
-    (push-mark 1)
-    (cl-letf (((symbol-function 'use-region-p)
-               (lambda () t))
-              ((symbol-function 'delete-active-region)
-               (lambda () (delete-region 1 7)))
-              ((symbol-function 'clipboard-yank)
-               (lambda () (insert "world\n"))))
-      (donkey-yank))
-    (should (string= (buffer-string) "world\n"))))
-
-(ert-deftest donkey-yank-call-interactively-with-region ()
-  "Can be called interactively with a region."
-  (let (deleted yanked)
+  ;; `kill-ring' is bound because `donkey-yank' checks there is
+  ;; something to paste BEFORE acting: with the ring empty it
+  ;; correctly does nothing and never reaches the mock below.  Left
+  ;; ambient this passed only when an earlier test had stocked the
+  ;; ring, which running the suite shuffled showed it relying on.
+  (let ((kill-ring (list "something")))
     (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 4)
+      (insert "hello world\n")
+      (goto-char 6)
+      (push-mark 1)
       (cl-letf (((symbol-function 'use-region-p)
                  (lambda () t))
                 ((symbol-function 'delete-active-region)
-                 (lambda () (setq deleted t)))
+                 (lambda () (delete-region 1 6)))
                 ((symbol-function 'clipboard-yank)
-                 (lambda () (setq yanked t))))
-        (call-interactively #'donkey-yank))
-      (should deleted)
-      (should yanked))))
+                 (lambda () (insert "hey"))))
+        (donkey-yank))
+      (should (string= (buffer-substring 1 4) "hey")))))
+
+(ert-deftest donkey-yank-empty-buffer-no-region ()
+  "Empty buffer, no region: `clipboard-yank' inserts at point-min."
+  ;; `kill-ring' is bound because `donkey-yank' checks there is
+  ;; something to paste BEFORE acting: with the ring empty it
+  ;; correctly does nothing and never reaches the mock below.  Left
+  ;; ambient this passed only when an earlier test had stocked the
+  ;; ring, which running the suite shuffled showed it relying on.
+  (let ((kill-ring (list "something")))
+    (with-temp-buffer
+      (cl-letf (((symbol-function 'use-region-p)
+                 (lambda () nil))
+                ((symbol-function 'clipboard-yank)
+                 (lambda () (insert "text"))))
+        (donkey-yank))
+      (should (= (buffer-size) 4))
+      (should (string= (buffer-string) "text")))))
+
+(ert-deftest donkey-yank-region-covers-entire-buffer ()
+  "Region covers entire buffer: cleared then replaced."
+  ;; `kill-ring' is bound because `donkey-yank' checks there is
+  ;; something to paste BEFORE acting: with the ring empty it
+  ;; correctly does nothing and never reaches the mock below.  Left
+  ;; ambient this passed only when an earlier test had stocked the
+  ;; ring, which running the suite shuffled showed it relying on.
+  (let ((kill-ring (list "something")))
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char (point-max))
+      (push-mark 1)
+      (cl-letf (((symbol-function 'use-region-p)
+                 (lambda () t))
+                ((symbol-function 'delete-active-region)
+                 (lambda () (delete-region 1 7)))
+                ((symbol-function 'clipboard-yank)
+                 (lambda () (insert "world\n"))))
+        (donkey-yank))
+      (should (string= (buffer-string) "world\n")))))
+
+(ert-deftest donkey-yank-call-interactively-with-region ()
+  "Can be called interactively with a region."
+  ;; `kill-ring' is bound because `donkey-yank' checks there is
+  ;; something to paste BEFORE acting: with the ring empty it
+  ;; correctly does nothing and never reaches the mock below.  Left
+  ;; ambient this passed only when an earlier test had stocked the
+  ;; ring, which running the suite shuffled showed it relying on.
+  (let ((kill-ring (list "something")))
+    (let (deleted yanked)
+      (with-temp-buffer
+        (insert "hello\n")
+        (goto-char 1)
+        (push-mark 4)
+        (cl-letf (((symbol-function 'use-region-p)
+                   (lambda () t))
+                  ((symbol-function 'delete-active-region)
+                   (lambda () (setq deleted t)))
+                  ((symbol-function 'clipboard-yank)
+                   (lambda () (setq yanked t))))
+          (call-interactively #'donkey-yank))
+        (should deleted)
+        (should yanked)))))
 
 (ert-deftest donkey-yank-ignores-prefix-arg ()
   "`clipboard-yank' is called regardless of prefix arg."
-  (let (yanked)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (let ((current-prefix-arg '(4)))
-        (cl-letf (((symbol-function 'use-region-p)
-                   (lambda () nil))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () (setq yanked t))))
-          (call-interactively #'donkey-yank)))
-      (should yanked))))
+  ;; `kill-ring' is bound because `donkey-yank' checks there is
+  ;; something to paste BEFORE acting: with the ring empty it
+  ;; correctly does nothing and never reaches the mock below.  Left
+  ;; ambient this passed only when an earlier test had stocked the
+  ;; ring, which running the suite shuffled showed it relying on.
+  (let ((kill-ring (list "something")))
+    (let (yanked)
+      (with-temp-buffer
+        (insert "hello\n")
+        (goto-char 1)
+        (let ((current-prefix-arg '(4)))
+          (cl-letf (((symbol-function 'use-region-p)
+                     (lambda () nil))
+                    ((symbol-function 'clipboard-yank)
+                     (lambda () (setq yanked t))))
+            (call-interactively #'donkey-yank)))
+        (should yanked)))))
 
 (ert-deftest donkey-yank-outside-rectangle-mode-pastes-normally ()
   "Without `rectangle-mark-mode', \"p\" deletes the region and yanks."
-  (let (called-cmd deleted yanked)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 3)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-                ((symbol-function 'call-interactively)
-                 (lambda (cmd) (setq called-cmd cmd)))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (setq deleted t)))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (setq yanked t))))
-        (let ((rectangle-mark-mode nil))
-          (donkey-yank))))
-    (should-not called-cmd)
-    (should deleted)
-    (should yanked)))
+  ;; `kill-ring' is bound because `donkey-yank' checks there is
+  ;; something to paste BEFORE acting: with the ring empty it
+  ;; correctly does nothing and never reaches the mock below.  Left
+  ;; ambient this passed only when an earlier test had stocked the
+  ;; ring, which running the suite shuffled showed it relying on.
+  (let ((kill-ring (list "something")))
+    (let (called-cmd deleted yanked)
+      (with-temp-buffer
+        (insert "hello\n")
+        (goto-char 1)
+        (push-mark 3)
+        (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                  ((symbol-function 'call-interactively)
+                   (lambda (cmd) (setq called-cmd cmd)))
+                  ((symbol-function 'delete-active-region)
+                   (lambda () (setq deleted t)))
+                  ((symbol-function 'clipboard-yank)
+                   (lambda () (setq yanked t))))
+          (let ((rectangle-mark-mode nil))
+            (donkey-yank))))
+      (should-not called-cmd)
+      (should deleted)
+      (should yanked))))
 
 (ert-deftest donkey-yank-pastes-linear-text-not-a-rectangle ()
   "`donkey-yank' goes through `clipboard-yank', never `yank-rectangle'.
 
 The two stores are reached by two keys; \"p\" only ever names the kill
 ring and the system clipboard."
-  (let (
-        rectangle-yanked clipboard-yanked)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
-                ((symbol-function 'yank-rectangle)
-                 (lambda () (setq rectangle-yanked t)))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (setq clipboard-yanked t))))
-        (let (rectangle-mark-mode)
-          (donkey-yank))))
-    (should-not rectangle-yanked)
-    (should clipboard-yanked)))
+  ;; `kill-ring' is bound because `donkey-yank' checks there is
+  ;; something to paste BEFORE acting: with the ring empty it
+  ;; correctly does nothing and never reaches the mock below.  Left
+  ;; ambient this passed only when an earlier test had stocked the
+  ;; ring, which running the suite shuffled showed it relying on.
+  (let ((kill-ring (list "something")))
+    (let (
+          rectangle-yanked clipboard-yanked)
+      (with-temp-buffer
+        (insert "hello\n")
+        (goto-char 1)
+        (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                  ((symbol-function 'yank-rectangle)
+                   (lambda () (setq rectangle-yanked t)))
+                  ((symbol-function 'clipboard-yank)
+                   (lambda () (setq clipboard-yanked t))))
+          (let (rectangle-mark-mode)
+            (donkey-yank))))
+      (should-not rectangle-yanked)
+      (should clipboard-yanked))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-indent-region-or-line

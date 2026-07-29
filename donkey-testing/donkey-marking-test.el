@@ -2216,7 +2216,15 @@ The point of the guard.  With the rectangle collapsed to column 0 this
 inserted against the left margin instead, so the check is on the text,
 not on the columns -- a reader never sees a column number."
   (with-temp-buffer
-    (let ((transient-mark-mode t))
+    ;; `last-command' bound because `next-line' below reuses the GLOBAL
+    ;; `temporary-goal-column' whenever the previous command was itself a
+    ;; line motion.  Inherited from an earlier test, that walked the
+    ;; rectangle to the remembered column instead of keeping the one
+    ;; `end-of-line' put it on, and the appended text landed mid-word:
+    ;; "aa;" rather than "aaaaa;".  Only visible when the suite runs in
+    ;; an order where a line-motion test comes first.
+    (let ((transient-mark-mode t)
+          (last-command nil))
       (insert "aaaaa\nbbbbb\nccccc\n")
       (goto-char (point-min))
       (end-of-line)

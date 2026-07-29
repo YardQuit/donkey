@@ -100,6 +100,53 @@ jobs:
           fi
           echo "every test file passes in isolation"
 
+  shuffled:
+    name: Tests (shuffled order)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+
+      # The job above catches state leaking between FILES.  This catches it
+      # between tests: ERT runs in a fixed order, so a test that only passes
+      # because of what ran before it stays green forever.
+      #
+      # Eight tests were doing exactly that when this was first run against
+      # a suite that had been green for months -- an unbound `kill-ring', a
+      # `current-prefix-arg' left set by `execute-kbd-macro' after a counted
+      # key, a `temporary-goal-column' that walked a rectangle to the wrong
+      # column, a `this-command' that made a helper run some other command,
+      # and `donkey-mode' left on globally.  See donkey-shuffle.el.
+      #
+      # Fixed seeds rather than a random one, so this job cannot go red on a
+      # change that did not cause it.  A seed that fails here reproduces
+      # byte for byte locally, since the shuffle is a self-contained LCG.
+      # Add a seed when a new order is worth pinning.
+      - name: Run the suite in several shuffled orders
+        run: |
+          set -uo pipefail
+          test_args=""
+          for f in donkey-testing/*-test.el; do
+            test_args="$test_args -l $f"
+          done
+          failed=""
+          for seed in 1 2 3 4 5; do
+            # shellcheck disable=SC2086
+            if ! emacs -Q --batch -L . -L donkey-testing $test_args \
+                 -l donkey-testing/donkey-shuffle.el \
+                 --eval "(donkey-shuffle-run $seed)"; then
+              failed="$failed $seed"
+            fi
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::suite depends on test order; failing seeds:$failed"
+            exit 1
+          fi
+          echo "suite passes in every shuffled order tried"
+
   lint:
     name: Byte-compile, checkdoc, package-lint
     runs-on: ubuntu-latest
