@@ -3282,6 +3282,64 @@ narrower test, and this is what says so."
   (donkey-mark-test--keys "alpha beta gamma" "v l l l m w"
     (should (equal (donkey-mark-test--selection) "alpha"))))
 
+(ert-deftest donkey-mark-extending-p-is-nil-outside-the-command-loop ()
+  "A Lisp call is never a repeat, whatever mark happens to be set.
+
+Outside the command loop BOTH `last-command' and `this-command' are
+nil, so comparing them alone is TRUE -- and any caller reaching a mark
+command from Lisp with a mark already set got an extension where it
+asked for a fresh selection.  Guarding on `this-command' being set at
+all is the whole fix.
+
+The property is asserted directly because nothing else does.  The bug
+was caught originally by
+`donkey-mark-paragraph-clears-stale-rectangle-mode-and-selects-correctly',
+which fails only when this file runs FIRST -- it does not bind
+`last-command', so any earlier test hides the bug by leaving it
+non-nil.  Neither the combined suite nor any shuffled seed notices;
+only the per-file isolation job does, and only by accident.
+
+That protection is one hygiene fix away from vanishing.  Binding
+`last-command' in a test to make it order-independent is exactly the
+change this suite has had applied to it elsewhere, and doing it there
+would silently remove the only thing standing between this bug and a
+green CI run."
+  (with-temp-buffer
+    (insert "alpha beta gamma")
+    (goto-char (point-min))
+    (push-mark (point-max) t t)
+    (let ((this-command nil) (last-command nil))
+      (should-not (donkey--mark-extending-p)))
+    ;; And the same when only `last-command' is set, which is the
+    ;; ordinary case for a Lisp call made from inside some other command.
+    (let ((this-command nil) (last-command 'donkey-mark-word))
+      (should-not (donkey--mark-extending-p)))
+    ;; Through the keymap it must still say yes, or the fix has gone too
+    ;; far and repeating a key stops extending.
+    (let ((this-command 'donkey-mark-word) (last-command 'donkey-mark-word))
+      (should (donkey--mark-extending-p)))))
+
+(ert-deftest donkey-mark-word-from-lisp-marks-fresh-despite-a-stale-mark ()
+  "The predicate's consequence, end to end.
+
+`donkey-mark-word' called from Lisp with a mark left over from
+something else must mark the word at point, not grow from that mark.
+Asserted on the selected text rather than on the predicate, so it
+still means something if the internals are reorganised."
+  (with-temp-buffer
+    (let ((transient-mark-mode t))
+      (insert "alpha beta gamma")
+      ;; A stale mark at the far end, as `rectangle-mark-mode' or any
+      ;; abandoned selection would leave.
+      (goto-char (point-max))
+      (push-mark (point-min) t t)
+      (goto-char 7)                     ; inside "beta"
+      (let ((this-command nil) (last-command nil))
+        (donkey-mark-word 1))
+      (should (equal (buffer-substring-no-properties
+                      (region-beginning) (region-end))
+                     "beta")))))
+
 (ert-deftest donkey-mark-extension-stops-at-the-buffer-end ()
   "Extending past the last object marks what there is and stops.
 
