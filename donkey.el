@@ -1554,8 +1554,14 @@ defaults.  It wraps what its own rules treat as a pair -- `(', `[',
 at the region's start with the region unwrapped.  Confirmed in
 `fundamental-mode', `text-mode' and `emacs-lisp-mode' alike, so it is
 not the major mode's syntax table deciding; adding them to
-`electric-pair-pairs' is what changes it.  Smartparens' region-wrap
-works too, and covers its own set."
+`electric-pair-pairs' is what changes it.
+
+Smartparens wraps all six out of the box, `'' and ``' included.  It is
+the pair definition that decides, so excluding one -- `sp-local-pair'
+with `:actions' nil, say -- stops that delimiter wrapping and leaves
+the character inserted, exactly as `electric-pair-mode' does for the
+two it never knew about.  Same outcome from opposite directions, and
+neither is this command's doing."
   (interactive)
   (cond
    ((not (use-region-p))
