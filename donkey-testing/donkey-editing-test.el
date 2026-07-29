@@ -174,7 +174,7 @@ Delegates to `copy-rectangle-as-kill' via `call-interactively'."
 
 Asserts the effect rather than which primitive does it: deletion goes
 through `delete-region' so a count can clamp at `point-max' instead of
-signalling, and pinning `delete-char' here only tied the test to the
+signaling, and pinning `delete-char' here only tied the test to the
 implementation."
   (with-temp-buffer
     (insert "hello\n")
@@ -210,7 +210,7 @@ implementation."
     (should-not entered)))
 
 (ert-deftest donkey-delete-no-region-empty-buffer-reports ()
-  "Empty buffer, no region: reports rather than signalling.
+  "Empty buffer, no region: reports rather than signaling.
 
 Previously asserted the raw `end-of-buffer' signal, which documented the
 bug as if it were intended."
@@ -1895,8 +1895,8 @@ must survive it."
     (should (= 2 (donkey--banked-line-count)))
     (should (equal (donkey--banked-spans) (list (cons 1 4) (cons 13 16))))))
 
-(ert-deftest donkey-delete-at-point-max-reports-instead-of-signalling ()
-  "`d'/`x' at `point-max' reports rather than signalling `end-of-buffer'.
+(ert-deftest donkey-delete-at-point-max-reports-instead-of-signaling ()
+  "`d'/`x' at `point-max' reports rather than signaling `end-of-buffer'.
 
 Regression: `delete-char' signals a bare `end-of-buffer' there, which
 pops the debugger for anyone running with `debug-on-error' on.
@@ -1921,7 +1921,7 @@ position; `donkey-delete' was missed."
     (should (equal (buffer-string) "bc\n"))))
 
 (ert-deftest donkey-wrap-region-non-character-event-falls-through ()
-  "A non-character invoking event wraps nothing instead of signalling.
+  "A non-character invoking event wraps nothing instead of signaling.
 
 The delimiter comes from `last-command-event', so the command only means
 anything when that is a character.  Reached from
@@ -2035,11 +2035,11 @@ are free to wrap."
      )
     (should-not offenders)))
 
-(ert-deftest donkey-editing-commands-honour-a-count ()
+(ert-deftest donkey-editing-commands-honor-a-count ()
   "`d'/`x', `y' and `c' act on COUNT characters.
 
 Before this, a count was accepted and silently discarded: the stock keys
-bound alongside them honoured it -- `C-u 3 D' killed three lines, `C-u 3
+bound alongside them honored it -- `C-u 3 D' killed three lines, `C-u 3
 j' moved three -- while `C-u 3 x' deleted a single character with nothing
 to explain the difference."
   (with-temp-buffer
@@ -2059,7 +2059,7 @@ to explain the difference."
     (donkey-change 3)
     (should (equal (buffer-string) "defgh\n"))))
 
-(ert-deftest donkey-count-clamps-at-point-max-instead-of-signalling ()
+(ert-deftest donkey-count-clamps-at-point-max-instead-of-signaling ()
   "A count larger than the text left deletes what there is, quietly."
   (with-temp-buffer
     (insert "abc\n")
@@ -2276,7 +2276,7 @@ selected rows vanished with the kill ring still empty afterwards."
    (should (= 2 (donkey--banked-line-count)))))
 
 (ert-deftest donkey-yank-with-nothing-to-paste-reports ()
-  "It says so rather than failing silently or signalling."
+  "It says so rather than failing silently or signaling."
   (let (shown)
     (donkey-test--paste-buffer
      (donkey-test--row 1)
@@ -2689,7 +2689,7 @@ later tidy-up that routed `c' through
 
 Documented rather than fixed: nothing has been decided about what
 changing a multi-line bank should do.  Pinned so the split is a known
-one -- if `c' ever learns to honour banks, this test is the place that
+one -- if `c' ever learns to honor banks, this test is the place that
 says the change was deliberate."
   (donkey-test--change-buffer
    (goto-char (point-min))
@@ -3061,7 +3061,7 @@ line and pressing \"p\" pasted the rectangle."
    (donkey-copy 1)
    (deactivate-mark)
    (should killed-rectangle)
-   ;; An ordinary copy afterwards is what "p" must honour.
+   ;; An ordinary copy afterwards is what "p" must honor.
    (donkey-test--row 3)
    (donkey-visual-line-toggle)
    (donkey-copy 1)
@@ -3083,7 +3083,7 @@ line and pressing \"p\" pasted the rectangle."
                   "AAA one\nBBB two\nCCC three\nDDD four\nAAA\nBBB"))))
 
 (ert-deftest donkey-yank-rectangle-reports-when-there-is-nothing-to-paste ()
-  "`P' with an empty `killed-rectangle' reports instead of signalling.
+  "`P' with an empty `killed-rectangle' reports instead of signaling.
 
 Reaching for a paste with nothing to paste is an ordinary mistake, and
 `donkey-yank' answers it the same way."

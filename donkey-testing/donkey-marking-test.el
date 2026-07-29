@@ -36,7 +36,7 @@ COMMAND-FORM must clear a pre-existing
 active `rectangle-mark-mode' selection.
 
 Regression tests for the bug found live: `m v' on one line, then a
-mark command elsewhere (without cancelling the rectangle first) left
+mark command elsewhere (without canceling the rectangle first) left
 `rectangle-mark-mode' active underneath the new, intended-to-be-linear
 selection.  The next `donkey-copy'/`donkey-delete'/`donkey-yank' would
 then misinterpret it as a rectangle -- confirmed to silently kill a
@@ -476,7 +476,7 @@ line under an expression is an ordinary place to press this."
     (should-error (donkey-mark-symbol) :type 'user-error)))
 
 (ert-deftest donkey-mark-symbol-whitespace-only-buffer-signals-user-error ()
-  "A buffer with nothing to mark reports cleanly rather than signalling `error'."
+  "A buffer with nothing to mark reports cleanly rather than signaling `error'."
   (with-temp-buffer
     (insert "   ")
     (goto-char (point-min))
@@ -646,7 +646,7 @@ Given foo,bar, `mark-sexp' should treat them as one unit."
     (should (< (region-beginning) (region-end)))))
 
 (ert-deftest donkey-mark-sentence-empty-buffer ()
-  "Empty buffer reports a `user-error' rather than signalling.
+  "Empty buffer reports a `user-error' rather than signaling.
 
 Regression: the sentence motions raised a bare `end-of-buffer' here,
 which pops the debugger for anyone running with `debug-on-error' on.
@@ -2196,7 +2196,7 @@ Not a defect -- a rectangle cannot take half a TAB, and refusing to
 start on one would be worse.  Pinned because the tutor used to promise
 \"one column wide\", which sent readers to replace a whole indent with
 `m v' then `c' and left nothing on screen to explain it.  Whichever way
-this behaviour is later changed, the prose has to move with it."
+this behavior is later changed, the prose has to move with it."
   (dolist (case '(("abcdef\nabcdef\n" 1)
                   ("\tabc\n\tabc\n"   8)
                   ("一二三\n一二三\n"  2)))
@@ -2581,7 +2581,7 @@ it failed.  Interactively the moves between the two positions set
 
 Inherited from `mark-end-of-sentence', which extends rather than
 re-marks when `(eq last-command this-command)'.  The other mark commands
-do not do this -- `mark-word' gates the same behaviour behind an
+do not do this -- `mark-word' gates the same behavior behind an
 ALLOW-EXTEND argument that is nil when called from Lisp."
   (with-temp-buffer
     (insert "One two three.  Four five six.  Seven eight nine.")
@@ -2671,7 +2671,7 @@ Start, middle and end all have to agree; only the middle did before."
         (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                        (cdr probe)))))))
 
-(ert-deftest donkey-mark-commands-honour-a-count ()
+(ert-deftest donkey-mark-commands-honor-a-count ()
   "The mark commands select COUNT things."
   (with-temp-buffer
     (insert "alpha beta gamma delta\n")
@@ -2906,7 +2906,7 @@ symbol before it."
 (ert-deftest donkey-mark-sentence-treats-counts-below-one-as-one ()
   "Unlike the other mark commands, this one clamps a count below 1.
 
-It is defined in terms of the sentence AHEAD of point -- it normalises
+It is defined in terms of the sentence AHEAD of point -- it normalizes
 forward and rejects a selection ending behind where it started -- so a
 zero or negative count has nothing it could mean but that error."
   (let ((transient-mark-mode t))

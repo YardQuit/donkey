@@ -121,11 +121,11 @@ at point-min since `forward-line' -1 there has nowhere to go."
       (should (= (point) (point-max))))))
 
 (ert-deftest donkey-goto-line-fractional-input-rounds-instead-of-erroring ()
-  "A fractional line number is rounded instead of signalling an error.
+  "A fractional line number is rounded instead of signaling an error.
 
 Regression test: `read-number' happily returns a float (e.g. typing
 \"3.5\" at the prompt, an easy typo for \"35\" or \"3\"), which used to
-be passed straight to `forward-line' -- signalling a raw
+be passed straight to `forward-line' -- signaling a raw
 `wrong-type-argument' error, since `forward-line' requires an integer,
 instead of just going to a line. Now rounded to the nearest whole line."
   (with-temp-buffer
@@ -227,12 +227,12 @@ instead of just going to a line. Now rounded to the nearest whole line."
   "Lowering the maximum takes effect, on a ring that has outgrown it.
 
 Regression test: the trim dropped exactly ONE marker per call and every
-tracked move pushes exactly one, so the two cancelled and the ring
+tracked move pushes exactly one, so the two canceled and the ring
 stayed at whatever length it first reached.  With the ring at 10 and
 the option lowered to 2, five further moves left it at 10 and `S'
 walked back through six positions where two were configured.
 
-Growing from empty always honoured the limit -- which is what
+Growing from empty always honored the limit -- which is what
 `donkey-track-position-enforces-ring-max' above covers, and why this
 went unnoticed: the option looks like it works until it is lowered
 mid-session.
@@ -395,7 +395,7 @@ not bring it back."
       (should-error (donkey-jump-back) :type 'user-error))))
 
 (ert-deftest donkey-track-position-survives-other-junk-ring-maxes ()
-  "Every wrong-typed ring max is read as \"off\" rather than signalling.
+  "Every wrong-typed ring max is read as \"off\" rather than signaling.
 
 A string and a symbol stand in for whatever a hand-written init file
 might put there.  A negative count already meant \"keep nothing\"; it is
@@ -832,12 +832,12 @@ Regression test: pressing this with an active region that is NOT a
 genuine visual-line session (e.g. a `donkey-mark-inner' selection,
 where `last-command' is not one of the visual-line commands) must
 start a fresh visual-line session anchored at the current line,
-rather than just cancelling the unrelated region and reporting a
-misleading \"Visual line: cancelled\" for a selection that was never
+rather than just canceling the unrelated region and reporting a
+misleading \"Visual line: canceled\" for a selection that was never
 a visual-line session to begin with.
 
 Confirmed live in `emacs -nw': selecting \"hello\" via `donkey-mark-inner'
-then pressing `V' used to print \"Visual line: cancelled\" instead of
+then pressing `V' used to print \"Visual line: canceled\" instead of
 starting a new visual-line selection on the current line."
   (with-temp-buffer
     (insert "\"hello\" world\n")
@@ -903,7 +903,7 @@ that belongs to a completely different buffer."
   "`donkey-visual-anchor' is cleared on any mark deactivation.
 
 The anchor must be cleared whenever the mark is
-deactivated, not just when cancelled via `donkey-visual-line-toggle'
+deactivated, not just when canceled via `donkey-visual-line-toggle'
 itself.  Regression test: if some other command deactivated the
 mark (e.g. `keyboard-quit'), the anchor was left stale in the SAME buffer,
 so a later, unrelated region activation (e.g. via `set-mark-command')
@@ -1341,7 +1341,7 @@ side of the anchor the selection grows from."
 Regression: marker positions are absolute and narrowing does not move
 them, so a ring recorded before narrowing mostly holds positions the
 buffer no longer shows.  `goto-char' silently clamps to the narrowing
-edge rather than signalling, so those entries landed point on the first
+edge rather than signaling, so those entries landed point on the first
 visible character while still reporting a jump to a recorded position."
   (with-temp-buffer
     (donkey-mode 1)
@@ -1416,7 +1416,7 @@ visible character while still reporting a jump to a recorded position."
 Regression: buffer positions are absolute and narrowing does not move
 them, so `V' followed by \\[narrow-to-region] left the anchor pointing at
 text the buffer no longer shows.  `goto-char' and `set-mark' both clamp
-there rather than signalling, so `J' quietly re-anchored the selection on
+there rather than signaling, so `J' quietly re-anchored the selection on
 the narrowing edge while still presenting itself as the session started
 higher up."
   (with-temp-buffer

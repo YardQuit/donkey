@@ -499,7 +499,7 @@ terminal with no clipboard tools turned it on and the assertion failed
 also tested nothing, since the flag exists to make the tip fire once
 rather than to be nil.
 
-The once-only behaviour is what the flag is for, so that is what is
+The once-only behavior is what the flag is for, so that is what is
 asserted here, with the variable bound rather than read from whatever
 the session left behind."
   (let ((donkey--clipboard-warning-shown nil)

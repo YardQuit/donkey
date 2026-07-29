@@ -31,7 +31,7 @@ It is meant to be an *addition* to Emacs rather than a replacement.
 What it provides are improvements layered on top of what is already
 there; your existing keys, packages and habits are meant to survive
 intact. A modal editor cannot be entirely free of friction, so the few
-native behaviours it does take are named in full below rather than left
+native behaviors it does take are named in full below rather than left
 to be discovered.
 
 ** Design Philosophy
@@ -651,7 +651,7 @@ state, because entering INSERT is what the command is for and only the
 deletion is governed by the count.
 
 =m s= is the exception: a count below 1 is treated as 1. That command is
-defined in terms of the sentence *ahead* of the cursor — it normalises
+defined in terms of the sentence *ahead* of the cursor — it normalizes
 forward and reports =No sentence after point= for anything ending behind
 where it started — so zero and negative counts have nothing they could
 mean but that error.
@@ -1267,7 +1267,7 @@ changed at any time, not just before =donkey.el= loads.
 * Tutor
 
 =g ?= (or =M-x donkey-tutor=) opens a learn-by-doing buffer, the way =C-h t= and
-vimtutor do: the text holding the instructions is the text you practise
+vimtutor do: the text holding the instructions is the text you practice
 on, and changing it is the point. Lines beginning with =>>= are things to
 do; everything else is explanation.
 

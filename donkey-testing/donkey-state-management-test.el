@@ -283,7 +283,7 @@ in `donkey-excluded-modes'."
 ;;; donkey--mode-list (mis-set user options must not reach a command hook)
 ;;; ---------------------------------------------------------------------------
 
-(ert-deftest donkey-mode-list-coerces-without-signalling ()
+(ert-deftest donkey-mode-list-coerces-without-signaling ()
   "`donkey--mode-list' returns a list for anything it is given.
 
 A list passes through, a bare symbol becomes the one-element list it
@@ -330,7 +330,7 @@ NEXT keypress.  Verified by re-introducing the unguarded read: the hook
 is gone after a single key.
 
 Driven with real keys through `execute-kbd-macro', because only the
-real command loop removes a signalling hook function -- `run-hooks',
+real command loop removes a signaling hook function -- `run-hooks',
 which the other integration helpers in this file use, propagates the
 error instead and would never show the removal.  The buffer is
 switched to rather than merely made current for the same reason
@@ -650,7 +650,7 @@ normal mode."
 Regression test: the
 raw key must fall through to the direct `C-g' binding instead, so
 `keyboard-quit' (called from `donkey--exit-insert' there) runs as an
-ordinary command rather than signalling `quit' from inside this
+ordinary command rather than signaling `quit' from inside this
 `pre-command-hook' function — which Emacs's command loop treats as a
 hook malfunction, reporting \"Error in pre-command-hook\" and
 permanently removing this function from the hook after just one
@@ -1123,7 +1123,7 @@ flip would just get reverted immediately and silently swallow the quit.
 Simulates the real command loop rather than using
 `donkey--simulate-cg': in an excluded-mode buffer,
 `donkey--intercept-quit-in-insert' must skip entirely (see its
-docstring — signalling `quit' from inside a `pre-command-hook'
+docstring — signaling `quit' from inside a `pre-command-hook'
 function gets the function permanently disabled), so `this-command'
 must already resolve to `donkey--exit-insert' via the direct `C-g'
 keymap binding before `pre-command-hook' runs, exactly as the real
@@ -1577,7 +1577,7 @@ Emacs session."
 ;;; The one promise: C-g in Insert always reaches Normal
 ;;; ---------------------------------------------------------------------------
 
-(ert-deftest donkey-c-g-interception-survives-a-signalling-user-hook ()
+(ert-deftest donkey-c-g-interception-survives-a-signaling-user-hook ()
   "A broken `donkey-normal-mode-hook' must not cost the user their escape key.
 
 Regression, confirmed by driving a real key through `execute-kbd-macro':
@@ -1623,7 +1623,7 @@ silently is the worst outcome DONKEY has."
       (kill-buffer buf))))
 
 (ert-deftest donkey-c-g-still-reaches-normal-when-deactivate-mark-signals ()
-  "A signalling `deactivate-mark-hook' must not strand the user in Insert.
+  "A signaling `deactivate-mark-hook' must not strand the user in Insert.
 
 It is the only step that runs BEFORE the state transition, and it runs
 `deactivate-mark-hook', which is not DONKEY's -- so a stranger's broken

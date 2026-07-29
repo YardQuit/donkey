@@ -1389,7 +1389,7 @@ state to `donkey-wrap-region'."
   "Run KEYS over TEXT in a displayed buffer with `electric-pair-mode' on.
 
 Every other wrap test runs with NO pairing package, where the
-documented behaviour is a bare insert -- so the delegating path, the
+documented behavior is a bare insert -- so the delegating path, the
 one a configured user actually gets, was covered by nothing.
 `electric-pair-mode' is built in, so this needs no dependency and does
 not skip, unlike the Smartparens tests.
