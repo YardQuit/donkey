@@ -488,9 +488,37 @@ correctly does nothing at all, which is a different test below."
       (should delete-called)
       (should yank-called))))
 
-(ert-deftest donkey-clipboard-warning-shown-starts-nil ()
-  "Starts nil at session start."
-  (should (null donkey--clipboard-warning-shown)))
+(ert-deftest donkey-clipboard-tip-is-shown-once-per-session ()
+  "The missing-tools tip fires on the first paste and not again.
+
+Rewritten from a test that asserted `donkey--clipboard-warning-shown'
+was nil.  That is a `defvar' initial value, true only until something
+sets it: the flag is global, so any earlier test reaching a paste on a
+terminal with no clipboard tools turned it on and the assertion failed
+-- which running the suite in a shuffled order showed it doing.  It
+also tested nothing, since the flag exists to make the tip fire once
+rather than to be nil.
+
+The once-only behaviour is what the flag is for, so that is what is
+asserted here, with the variable bound rather than read from whatever
+the session left behind."
+  (let ((donkey--clipboard-warning-shown nil)
+        (kill-ring (list "text"))
+        (messages nil))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+              ((symbol-function 'donkey--detect-clipboard-tools) (lambda () nil))
+              ((symbol-function 'clipboard-yank) (lambda () nil))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) messages))))
+      (let ((system-type 'gnu/linux))
+        (with-temp-buffer
+          (donkey--clipboard-yank)
+          (donkey--clipboard-yank))))
+    (should donkey--clipboard-warning-shown)
+    (should (= 1 (length (seq-filter
+                          (lambda (m) (string-prefix-p "Tip: Install" m))
+                          messages))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--platform-info
@@ -578,14 +606,22 @@ was the parent, `special-mode-map's own useful bindings asserted here
 would have actually been lost for real at that point."
   (when (get-buffer "*DONKEY Platform Debug*")
     (kill-buffer "*DONKEY Platform Debug*"))
-  (unwind-protect
-      (progn
-        (donkey-debug-platform)
-        (with-current-buffer "*DONKEY Platform Debug*"
-          (should (eq (key-binding "g") #'revert-buffer))
-          (should (eq (key-binding " ") #'scroll-up-command))))
-    (when (get-buffer "*DONKEY Platform Debug*")
-      (kill-buffer "*DONKEY Platform Debug*"))))
+  ;; `donkey-mode' is a GLOBAL minor mode, and this test reads
+  ;; `key-binding' -- so with it left on by an earlier test, "g" resolves
+  ;; to DONKEY's own "g" prefix keymap rather than to `revert-buffer',
+  ;; and the assertion fails on a buffer that is perfectly correct.
+  ;; Turned off for the duration rather than assumed off.
+  (let ((was-on donkey-mode))
+    (unwind-protect
+        (progn
+          (donkey-mode -1)
+          (donkey-debug-platform)
+          (with-current-buffer "*DONKEY Platform Debug*"
+            (should (eq (key-binding "g") #'revert-buffer))
+            (should (eq (key-binding " ") #'scroll-up-command))))
+      (when (get-buffer "*DONKEY Platform Debug*")
+        (kill-buffer "*DONKEY Platform Debug*"))
+      (when was-on (donkey-mode 1)))))
 
 (ert-deftest donkey-debug-platform-includes-system-info ()
   "The debug buffer mentions the running Emacs version."

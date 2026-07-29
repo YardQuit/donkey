@@ -965,8 +965,19 @@ around that false reading before running the keys showed otherwise."
   "Run S as real key input.
 
 Quit is caught: `C-g' in NORMAL state runs the real `keyboard-quit',
-which signals, and batch has no command loop to absorb it."
-  (condition-case nil (execute-kbd-macro (kbd s)) (quit nil)))
+which signals, and batch has no command loop to absorb it.
+
+`prefix-arg' and `current-prefix-arg' are bound because S may carry a
+\\[universal-argument], and `execute-kbd-macro' leaves the prefix set
+GLOBALLY when it returns.  Later tests calling a command through
+`call-interactively' then ran it counted: it cost
+`donkey-change-call-interactively-no-region' and
+`donkey-visual-previous-line-call-interactively-with-selection', which
+failed only in orders where a tutor exercise using a count ran first.
+ERT's fixed order is not one of them, so this never showed until the
+suite was run shuffled."
+  (let ((prefix-arg nil) (current-prefix-arg nil))
+    (condition-case nil (execute-kbd-macro (kbd s)) (quit nil))))
 
 (defun donkey-tutor-test--goline (needle &optional occurrence)
   "Put point at the start of the line holding OCCURRENCE of NEEDLE."
