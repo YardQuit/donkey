@@ -280,21 +280,33 @@ where the one value a user can get wrong is made safe."
     (let ((now-pt (point)))
       (when (and donkey--last-tracked-state
                  (/= (cdr donkey--last-tracked-state) now-pt))
-        (let ((m (make-marker)))
+        (let ((m (make-marker))
+              (limit (donkey--position-ring-limit)))
           (set-marker m (cdr donkey--last-tracked-state))
           (push m donkey--position-ring)
-          (when (> (length donkey--position-ring) (donkey--position-ring-limit))
-            (set-marker (car (last donkey--position-ring)) nil)
-            ;; Assigned back, not just called for effect: `nbutlast'
-            ;; cannot destructively empty a ONE-element list -- it
-            ;; returns nil while leaving the variable pointing at the
-            ;; original cons.  With `donkey-position-ring-max' set to 0
-            ;; (a reasonable way to switch position tracking off) every
-            ;; trim hits exactly that case, so the ring kept the marker
-            ;; that was just pointed nowhere and `donkey-jump-back'
-            ;; failed with "Marker does not point anywhere".
+          ;; Trimmed DOWN TO the limit, not by one.  Dropping a single
+          ;; entry per call cancels exactly against the one just pushed,
+          ;; so a ring that has already grown past a newly lowered
+          ;; `donkey-position-ring-max' stays at its old length forever:
+          ;; with the ring at 10 and the option set to 2, five further
+          ;; moves left it at 10, and `S' walked back through six
+          ;; positions where two were configured.  Growing from empty
+          ;; was never affected, which is why it went unnoticed.
+          ;;
+          ;; `butlast' rather than `nbutlast': the destructive version
+          ;; cannot empty a ONE-element list -- it returns nil while
+          ;; leaving the variable pointing at the original cons -- and a
+          ;; limit of 0 (a reasonable way to switch tracking off) is
+          ;; exactly that case, which used to leave the ring holding a
+          ;; marker that had just been pointed nowhere, so
+          ;; `donkey-jump-back' failed with "Marker does not point
+          ;; anywhere".
+          (when (> (length donkey--position-ring) limit)
+            (dolist (stale (nthcdr limit donkey--position-ring))
+              (set-marker stale nil))
             (setq donkey--position-ring
-                  (nbutlast donkey--position-ring))))
+                  (butlast donkey--position-ring
+                           (- (length donkey--position-ring) limit)))))
         (setq donkey--position-index 0))
       (setq donkey--last-tracked-state (cons (current-buffer) now-pt)))))
 
