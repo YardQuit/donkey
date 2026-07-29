@@ -257,7 +257,7 @@ Expected: \"SPC Prefix\"."
 
 (ert-deftest donkey-describe-bindings-group-name-empty-string ()
   "Empty-string prefix yields \" Prefix\" (leading space).
-Documents existing behaviour rather than asserting it is ideal.
+Documents existing behavior rather than asserting it is ideal.
 Expected: \" Prefix\"."
   (should (equal (donkey--binding-group-name "") " Prefix")))
 
@@ -478,7 +478,7 @@ Expected: after the second call, only keys from the second map remain."
     (kill-buffer "*DONKEY Bindings*")))
 
 (ert-deftest donkey-describe-bindings-each-group-appears-once ()
-  "Every prefix group gets exactly one labelled section.
+  "Every prefix group gets exactly one labeled section.
 
 Regression: entries were sorted by key alone, so single keys interleaved
 with the prefix groups alphabetically -- \"h\" landing between \"g t\"
@@ -495,7 +495,7 @@ docstring promises."
           (setq heads (nreverse heads))
           (should heads)
           (should (equal heads (delete-dups (copy-sequence heads))))
-          ;; The leading block is labelled too, rather than being the one
+          ;; The leading block is labeled too, rather than being the one
           ;; group left without a header.
           (should (equal (car heads) "Single Keys"))))
     (when (get-buffer "*DONKEY Bindings*")
@@ -566,7 +566,7 @@ command lost its binding or the substitution moved back ahead of
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 (ert-deftest donkey-tutor-is-editable ()
-  "It is practised in, so it must not be read-only."
+  "It is practiced in, so it must not be read-only."
   (unwind-protect
       (progn
         (donkey-tutor)
@@ -889,7 +889,7 @@ the `help-key-binding' face."
   "Run BODY over TEXT with DONKEY on and every relevant global bound.
 
 Used to check that the tutor's exercises really produce what the lesson
-says they do.  A tutor is practised in, so an instruction that does not
+says they do.  A tutor is practiced in, so an instruction that does not
 work is worse than no instruction: the reader concludes the editor is
 broken, not the sentence."
   (declare (indent 1))
@@ -919,7 +919,7 @@ broken, not the sentence."
 
 It did not mention rectangles anywhere -- not the key, not the word --
 despite `donkey-copy', `donkey-delete' and `donkey-yank' all having
-rectangle behaviour a reader would meet by accident."
+rectangle behavior a reader would meet by accident."
   (unwind-protect
       (progn
         (donkey-tutor)
@@ -1357,7 +1357,7 @@ same answer whether or not the session has a system clipboard."
 (ert-deftest donkey-tutor-lesson-9-prose-matches-the-verified-keys ()
   "The words of Lesson 9 agree with the key sequence that was verified.
 
-The behavioural tests drive keys directly, so they pass whatever the
+The behavioral tests drive keys directly, so they pass whatever the
 lesson happens to SAY -- both of this lesson's defects lived in the
 prose.  These two assertions are the ones that would have caught them:
 the reader is told to press the forward key twice, not three times, and
@@ -1504,7 +1504,7 @@ key the lesson used to name does not."
 
 The old wording was not merely imprecise, it told the reader to press a
 key that does the opposite of what the sentence promised.  Pinned as
-prose because the behaviour is stock `set-mark-command' and is staying
+prose because the behavior is stock `set-mark-command' and is staying
 that way -- the tutor is where the correction lives."
   (unwind-protect
       (progn
@@ -1654,10 +1654,10 @@ would get \"foo\" and conclude the editor was broken."
                      "send-mail_to")))))
 
 (ert-deftest donkey-tutor-lesson-5-says-punctuation-is-the-modes-call ()
-  "The lesson does not promise behaviour the tutor buffer cannot show.
+  "The lesson does not promise behavior the tutor buffer cannot show.
 
 `text-mode' joins neither period nor comma, so an exercise built on the
-Emacs Lisp behaviour would fail in front of the reader.  The lesson
+Emacs Lisp behavior would fail in front of the reader.  The lesson
 states the rule and says outright that there is nothing here to try it
 on -- pinned so a later edit does not turn the prose into a \">>\" step."
   (unwind-protect
@@ -1897,7 +1897,7 @@ discards WITHOUT using them, the others spend them by using them -- but a
 reader takes \"only key\" literally, and the README had said the accurate
 version all along.
 
-Pinned as prose because the behaviour is already covered from four
+Pinned as prose because the behavior is already covered from four
 directions and was never in doubt; what drifted was the sentence.  This
 asserts the claim is gone and the correction is present, so restoring
 the shorter, wronger wording fails here."
