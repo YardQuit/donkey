@@ -223,6 +223,91 @@ instead of just going to a line. Now rounded to the nearest whole line."
         (donkey--track-position))
       (should (= (length donkey--position-ring) 3)))))
 
+(ert-deftest donkey-track-position-shrinks-a-ring-that-is-already-too-long ()
+  "Lowering the maximum takes effect, on a ring that has outgrown it.
+
+Regression test: the trim dropped exactly ONE marker per call and every
+tracked move pushes exactly one, so the two cancelled and the ring
+stayed at whatever length it first reached.  With the ring at 10 and
+the option lowered to 2, five further moves left it at 10 and `S'
+walked back through six positions where two were configured.
+
+Growing from empty always honoured the limit -- which is what
+`donkey-track-position-enforces-ring-max' above covers, and why this
+went unnoticed: the option looks like it works until it is lowered
+mid-session.
+
+One move is enough to converge, so the assertion is on the first."
+  (with-temp-buffer
+    (insert "hello there\n")
+    (let ((donkey--position-ring nil)
+          (donkey--position-index 0)
+          (donkey--last-tracked-state nil)
+          (donkey-position-ring-max 10))
+      (donkey--track-position)
+      (dotimes (i 9)
+        (goto-char (+ 2 i))
+        (donkey--track-position))
+      (should (= (length donkey--position-ring) 9))
+      ;; Now lower it and move once more.
+      (let ((donkey-position-ring-max 2))
+        (goto-char 11)
+        (donkey--track-position)
+        (should (= (length donkey--position-ring) 2))))))
+
+(ert-deftest donkey-track-position-releases-every-marker-it-drops ()
+  "Markers trimmed off the ring are pointed nowhere, not just the last.
+
+The old trim released one marker per call because it only ever dropped
+one.  Trimming to the limit in a single step drops many at once, and
+each has to be released or the buffer keeps them alive for nothing."
+  (with-temp-buffer
+    (insert "hello there\n")
+    (let ((donkey--position-ring nil)
+          (donkey--position-index 0)
+          (donkey--last-tracked-state nil)
+          (donkey-position-ring-max 10))
+      (donkey--track-position)
+      (dotimes (i 6)
+        (goto-char (+ 2 i))
+        (donkey--track-position))
+      (let ((before (copy-sequence donkey--position-ring)))
+        (let ((donkey-position-ring-max 1))
+          (goto-char 11)
+          (donkey--track-position))
+        (should (= (length donkey--position-ring) 1))
+        ;; Everything no longer in the ring points nowhere.
+        (should (seq-every-p
+                 (lambda (m) (or (memq m donkey--position-ring)
+                                 (null (marker-position m))))
+                 before))))))
+
+(ert-deftest donkey-track-position-drop-to-zero-empties-a-filled-ring ()
+  "Lowering the maximum to 0 empties the ring rather than stranding one.
+
+Zero is a documented way to switch tracking off.  Reaching it from a
+ring that already holds entries goes through the multi-element trim,
+where `nbutlast' would have left the variable pointing at the original
+cons -- the failure the old code's comment describes, reached by the
+other route."
+  (with-temp-buffer
+    (insert "hello there\n")
+    (let ((donkey--position-ring nil)
+          (donkey--position-index 0)
+          (donkey--last-tracked-state nil)
+          (donkey-position-ring-max 10))
+      (donkey--track-position)
+      (dotimes (i 5)
+        (goto-char (+ 2 i))
+        (donkey--track-position))
+      (should (> (length donkey--position-ring) 0))
+      (let ((donkey-position-ring-max 0))
+        (goto-char 11)
+        (donkey--track-position)
+        (should (null donkey--position-ring))
+        ;; And the ordinary report, not "Marker does not point anywhere".
+        (should-error (donkey-jump-back) :type 'user-error)))))
+
 (ert-deftest donkey-track-position-skips-minibuffer ()
   "Tracking should not happen when minibuffer is active."
   (with-temp-buffer
