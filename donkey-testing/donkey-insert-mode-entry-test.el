@@ -1381,6 +1381,105 @@ state to `donkey-wrap-region'."
     (should (eq (lookup-key donkey-normal-mode-map (char-to-string ch))
                 #'donkey-wrap-region))))
 
+;;; ---------------------------------------------------------------------------
+;;; donkey-wrap-region with a real pairing package
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-wrap-test--with-electric-pair (text keys &rest body)
+  "Run KEYS over TEXT in a displayed buffer with `electric-pair-mode' on.
+
+Every other wrap test runs with NO pairing package, where the
+documented behaviour is a bare insert -- so the delegating path, the
+one a configured user actually gets, was covered by nothing.
+`electric-pair-mode' is built in, so this needs no dependency and does
+not skip, unlike the Smartparens tests.
+
+Real keys, and a buffer switched to rather than merely current:
+`electric-pair-mode' works off `post-self-insert-hook', which only
+runs from the command loop, and the command loop acts on the SELECTED
+WINDOW's buffer."
+  (declare (indent 2))
+  `(unwind-protect
+       (progn
+         (when (get-buffer "*donkey-wrap-test*") (kill-buffer "*donkey-wrap-test*"))
+         (donkey-mode 1)
+         (let ((transient-mark-mode t)
+               (prefix-arg nil) (current-prefix-arg nil)
+               (this-command nil) (last-command nil))
+           (switch-to-buffer (get-buffer-create "*donkey-wrap-test*"))
+           (text-mode)
+           (electric-pair-mode 1)
+           (erase-buffer)
+           (insert ,text)
+           (goto-char (point-min))
+           (donkey-enter-normal)
+           (execute-kbd-macro (kbd ,keys))
+           ,@body))
+     (electric-pair-mode -1)
+     (when (get-buffer "*donkey-wrap-test*") (kill-buffer "*donkey-wrap-test*"))
+     (donkey-mode -1)))
+
+(ert-deftest donkey-wrap-region-wraps-the-pairs-electric-pair-knows ()
+  "The four delimiters `electric-pair-mode' treats as pairs do wrap.
+
+The delegating path: `donkey-wrap-region' self-inserts with the region
+still active and the pairing package does the wrapping.  Asserted
+end to end on the buffer text, because the point of the design is what
+the user ends up looking at."
+  (dolist (case '(("(" "(alpha) beta")
+                  ("[" "[alpha] beta")
+                  ("{" "{alpha} beta")
+                  ("\"" "\"alpha\" beta")))
+    (cl-destructuring-bind (delim expected) case
+      (donkey-wrap-test--with-electric-pair "alpha beta" (concat "m w " delim)
+        (should (equal (cons delim (buffer-string))
+                       (cons delim expected)))))))
+
+(ert-deftest donkey-wrap-region-quote-and-backtick-do-not-wrap-under-electric-pair ()
+  "`\\='' and `\\=`' are wrap keys that `electric-pair-mode' does not pair.
+
+Both are in `donkey-wrap-delimiters' by default, so out of the box a
+selection plus `\\='' leaves a stray quote at its start rather than
+wrapping.  Nothing is lost -- the selection's text is still there --
+but the key did not do what the docstring and README said, which is
+what this pins.
+
+Asserted as it IS rather than as it might be preferred.  If DONKEY
+ever wraps these itself instead of delegating, or drops them from the
+default set, this fails and the prose in both places has to move with
+it.
+
+Not the major mode's syntax table: `fundamental-mode', `text-mode' and
+`emacs-lisp-mode' all behave this way, though the character has word,
+punctuation and expression-prefix syntax across the three."
+  (dolist (case '(("'" "'alpha beta")
+                  ("`" "`alpha beta")))
+    (cl-destructuring-bind (delim expected) case
+      (donkey-wrap-test--with-electric-pair "alpha beta" (concat "m w " delim)
+        (should (equal (cons delim (buffer-string))
+                       (cons delim expected)))))))
+
+(ert-deftest donkey-wrap-region-returns-to-normal-after-a-real-wrap ()
+  "A real wrap ends in NORMAL state with no region left active.
+
+The command enters Insert to self-insert and must come back.  Covered
+for the mocked path already; this is the same guarantee with a pairing
+package really running and really modifying the buffer."
+  (donkey-wrap-test--with-electric-pair "alpha beta" "m w ("
+    (should (equal (buffer-string) "(alpha) beta"))
+    (should (bound-and-true-p donkey-normal-mode))
+    (should-not (bound-and-true-p donkey-insert-mode))
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-wrap-region-wraps-a-rectangle-under-electric-pair ()
+  "A rectangle is wrapped by DONKEY itself, pairing package or not.
+
+`donkey--wrap-rectangle-region' does the work directly rather than
+delegating, so this must not change when a pairing package is present
+-- and in particular must not wrap twice."
+  (donkey-wrap-test--with-electric-pair "abcd\nefgh\nijkl\n" "m v j j l ("
+    (should (equal (buffer-string) "(ab)cd\n(ef)gh\n(ij)kl\n"))))
+
 (provide 'donkey-insert-mode-entry-test)
 
 ;;; donkey-insert-mode-entry-test.el ends here
