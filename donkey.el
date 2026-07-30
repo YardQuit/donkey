@@ -2116,6 +2116,16 @@ Signals a `user-error' when there is no enclosing pair left."
                                   open-char))))))
     span))
 
+(defvar-local donkey--mark-pair-state nil
+  "How the last `m i'/`m a' selection was arrived at, for growing it.
+A list (ANCHOR OPEN-CHAR CLOSE-CHAR ON-OPENER LEVEL): where the
+delimiter search ran from, what it resolved to, and how many levels out
+it went.  Read only by `donkey--mark-pair-select' and only when the same
+command repeats, so a stale entry is never consulted.  A plain position
+rather than a marker: nothing can edit the buffer between two presses of
+the same key, since an editing command in between is exactly what stops
+the second press counting as a repeat.")
+
 (defun donkey--mark-pair-select (inner-p &optional count)
   "Shared implementation for `donkey-mark-inner'/`donkey-mark-outer'.
 
@@ -2123,28 +2133,62 @@ With INNER-P non-nil, selects the content between the delimiters,
 excluding them; otherwise selects the delimiters too.
 
 COUNT selects how many levels out to go -- see
-`donkey--mark-pair-positions-nth'."
+`donkey--mark-pair-positions-nth'.  Repeating the command goes one level
+further out per press, so `m i m i' reaches what `C-u 2 m i' reaches.
+
+Point is left at the START of the selection and the mark at its end,
+the same way round as every other DONKEY mark command and as
+`mark-sexp'."
   (donkey--ensure-non-rectangle-selection)
-  (pcase-let*
-      ((`(,open-char ,close-char ,on-opener) (donkey--mark-pair-read-delimiter))
-       (`(,start-pos . ,end-pos)
-        (donkey--mark-pair-positions-nth open-char close-char on-opener
-                                         (max 1 (or count 1)))))
-    (push-mark (if inner-p (1+ start-pos) start-pos))
-    (goto-char (if inner-p (1- end-pos) end-pos))
-    (activate-mark)
-    (when (>= (region-beginning) (region-end))
-      (deactivate-mark)
-      ;; A `user-error': an empty pair is ordinary in code -- `()' for a
-      ;; no-argument call, `""' for an empty string -- so pressing `m i'
-      ;; on one is a miss, not a malfunction, and a bare `error' popped
-      ;; the debugger under `debug-on-error'.  `m a' on the same pair
-      ;; still works, since there the delimiters themselves are content.
-      (user-error "Empty selection between %c and %c" open-char close-char))
-    (message (if inner-p
-                 "Selected content for '%c'"
-               "Selected OUTER content including '%c'")
-             open-char)))
+  ;; A repeat re-runs the ORIGINAL search one level wider rather than
+  ;; searching afresh from wherever the last selection left point.  Two
+  ;; things fall out of that, and neither is available to a fresh search:
+  ;;
+  ;; Repeating never prompts.  The delimiter is remembered, so the second
+  ;; press does not go back through
+  ;; `donkey--mark-pair-read-delimiter' -- which auto-detects only when
+  ;; point is ON a delimiter, and would otherwise sit waiting on
+  ;; `read-char'.  Whichever end of the selection point is left at, one
+  ;; of `m i' and `m a' lands somewhere that is not a delimiter, so this
+  ;; is not something the cursor position alone can fix.
+  ;;
+  ;; And repeating agrees with counting, the way it does for the other
+  ;; mark commands: both walk outward from the same anchor.
+  (let* ((state (and (donkey--mark-extending-p) donkey--mark-pair-state))
+         (anchor (if state (nth 0 state) (point)))
+         (spec (if state
+                   (cdr state)
+                 (donkey--mark-pair-read-delimiter)))
+         (open-char (nth 0 spec))
+         (close-char (nth 1 spec))
+         (on-opener (nth 2 spec))
+         (level (+ (if state (nth 3 spec) 0) (max 1 (or count 1)))))
+    (pcase-let ((`(,start-pos . ,end-pos)
+                 (save-excursion
+                   (goto-char anchor)
+                   (donkey--mark-pair-positions-nth open-char close-char
+                                                    on-opener level))))
+      ;; Mark at the end, point at the start.  It used to be the other way
+      ;; round, which made these the only mark commands to invert the rest;
+      ;; `mark-sexp' and DONKEY's own four linear mark commands all finish
+      ;; with point at the start of what they selected.
+      (push-mark (if inner-p (1- end-pos) end-pos))
+      (goto-char (if inner-p (1+ start-pos) start-pos))
+      (activate-mark)
+      (setq donkey--mark-pair-state
+            (list anchor open-char close-char on-opener level))
+      (when (>= (region-beginning) (region-end))
+        (deactivate-mark)
+        ;; A `user-error': an empty pair is ordinary in code -- `()' for a
+        ;; no-argument call, `""' for an empty string -- so pressing `m i'
+        ;; on one is a miss, not a malfunction, and a bare `error' popped
+        ;; the debugger under `debug-on-error'.  `m a' on the same pair
+        ;; still works, since there the delimiters themselves are content.
+        (user-error "Empty selection between %c and %c" open-char close-char))
+      (message (if inner-p
+                   "Selected content for '%c'"
+                 "Selected OUTER content including '%c'")
+               open-char))))
 
 (defun donkey-mark-inner (&optional count)
   "Mark text INSIDE CHAR pairs (excluding delimiters).
@@ -2169,6 +2213,10 @@ a side effect of the failed search.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
+
+Point is left at the START of the selection and the mark at its end,
+which is where `mark-sexp' leaves them and where the other DONKEY
+mark commands leave them.
 
 COUNT selects how many levels out to go, so a count of 2 from inside a
 nested pair marks the pair enclosing it.  Every pair in
@@ -2195,12 +2243,23 @@ themselves included in the selection.
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
+Point is left at the START of the selection and the mark at its end,
+which is where `mark-sexp' leaves them and where the other DONKEY
+mark commands leave them.
+
 COUNT selects how many levels out to go, so a count of 2 from inside a
 nested pair marks the pair enclosing it -- including for symmetric
 delimiters, where a level counts occurrences outward.  See
 `donkey-mark-inner'."
   (interactive "p")
   (donkey--mark-pair-select nil count))
+
+(defvar-local donkey--mark-sexp-state nil
+  "How the last `m I'/`m A' selection was arrived at, for growing it.
+A cons (ANCHOR . LEVEL): where the search ran from and how many levels
+out it went.  Read only by `donkey--mark-sexp-select' and only when the
+same command repeats; see `donkey--mark-pair-state' for why a plain
+position is enough.")
 
 (defun donkey--mark-sexp-select (inner-p &optional count)
   "Shared implementation for `donkey-mark-sexp-inner'/`donkey-mark-sexp-outer'.
@@ -2212,29 +2271,55 @@ pair; if point is inside a pair, finds the enclosing delimiters.
 COUNT selects how many levels out to go, so a count of 2 marks the pair
 enclosing the one that would be marked without it.  Point already on an
 opening delimiter counts as being at that pair, so a count of 1 there
-uses it rather than its parent.
+uses it rather than its parent.  Repeating the command goes one level
+further out per press, so `m I m I' reaches what `C-u 2 m I' reaches.
 
 With INNER-P non-nil, selects the expression's content, excluding its
 delimiters, and errors if that content is empty (e.g. \"()\");
-otherwise selects the delimiters too."
+otherwise selects the delimiters too.
+
+Point is left at the START of the selection and the mark at its end,
+which is where `mark-sexp' leaves them and where every other DONKEY
+mark command does."
   (donkey--ensure-non-rectangle-selection)
-  (let ((levels (max 1 (or count 1))))
-    (condition-case nil
-        (backward-up-list (if (looking-at "\\s(") (1- levels) levels))
-      (scan-error
-       (user-error "Not inside a balanced expression"))))
-  (let ((start (if inner-p (1+ (point)) (point))) end)
-    (condition-case nil
-        (setq end (progn (forward-list 1)
-                          (if inner-p (1- (point)) (point))))
-      (scan-error
-       (user-error "Unbalanced expression")))
-    (when (and inner-p (>= start end))
-      (user-error "Empty expression"))
-    (push-mark start t)
-    (goto-char end)
-    (activate-mark)
-    (message (if inner-p "Marked inner expression" "Marked outer expression"))))
+  ;; A repeat widens the ORIGINAL search rather than searching afresh
+  ;; from where the last one left point -- see `donkey--mark-pair-select'
+  ;; for why the two are not the same thing.  `m A' used to appear to
+  ;; widen on a second press, but only because point had been left past
+  ;; the closing delimiter where a fresh scan happens to find the
+  ;; enclosing pair; it was an accident of position, and `m I' -- left
+  ;; inside its own content -- re-marked the same expression instead.
+  (let* ((state (and (donkey--mark-extending-p) donkey--mark-sexp-state))
+         (anchor (if state (car state) (point)))
+         (levels (+ (if state (cdr state) 0) (max 1 (or count 1)))))
+    ;; Everything up to the last moment happens under `save-excursion',
+    ;; so a selection that cannot be made leaves point where it was --
+    ;; including on the repeat path, where ANCHOR is somewhere point had
+    ;; already moved away from.
+    (pcase-let
+        ((`(,start . ,end)
+          (save-excursion
+            (goto-char anchor)
+            (condition-case nil
+                (backward-up-list (if (looking-at "\\s(") (1- levels) levels))
+              (scan-error
+               (user-error "Not inside a balanced expression")))
+            (let ((start (if inner-p (1+ (point)) (point))) end)
+              (condition-case nil
+                  (setq end (progn (forward-list 1)
+                                   (if inner-p (1- (point)) (point))))
+                (scan-error
+                 (user-error "Unbalanced expression")))
+              (cons start end)))))
+      (when (and inner-p (>= start end))
+        (user-error "Empty expression"))
+      ;; Mark at the end, point at the start -- the same reversal as in
+      ;; `donkey--mark-pair-select', and for the same reason.
+      (push-mark end t)
+      (goto-char start)
+      (activate-mark)
+      (setq donkey--mark-sexp-state (cons anchor levels))
+      (message (if inner-p "Marked inner expression" "Marked outer expression")))))
 
 (defun donkey-mark-sexp-inner (&optional count)
   "Mark content inside the balanced expression at point.
@@ -2247,6 +2332,10 @@ within, excluding the delimiters themselves.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
+
+Point is left at the START of the selection and the mark at its end,
+which is where `mark-sexp' leaves them and where the other DONKEY
+mark commands leave them.
 
 COUNT selects how many levels out to go."
   (interactive "p")
@@ -2262,6 +2351,10 @@ and marks it including delimiters.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
+
+Point is left at the START of the selection and the mark at its end,
+which is where `mark-sexp' leaves them and where the other DONKEY
+mark commands leave them.
 
 COUNT selects how many levels out to go."
   (interactive "p")
