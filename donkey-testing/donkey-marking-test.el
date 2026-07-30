@@ -3290,21 +3290,58 @@ one."
   "Pressing a mark key N times reaches what a count of N reaches.
 
 Two mechanisms for one idea, so they have to agree or one of them is
-lying.  Checked at two and three, for each of the four keys."
-  (dolist (case '(("m w" "alpha beta gamma delta")
-                  ("m W" "a-one b-two c-three d-four")
-                  ("m s" "One thing.  Two thing.  Three thing.")
-                  ("m p" "Alpha.\n\nBeta.\n\nGamma.\n")))
-    (cl-destructuring-bind (key text) case
+lying.  Checked at two and three, for each of the eight keys.
+
+For the four delimiter keys a level out is what a press buys, and they
+only started agreeing once a repeat stopped searching afresh from
+wherever the previous selection left point: `m A' widened by accident
+of position while `m I' re-marked what it already had, from the same
+text and the same starting point."
+  ;; LEAD moves point before the first press.  The delimiter keys need
+  ;; it: from the outermost opener there is no second level to reach,
+  ;; and from plain text a FRESH press prompts for the delimiter, so the
+  ;; run has to start on the innermost one.
+  (dolist (case '(("m w" "alpha beta gamma delta"             "")
+                  ("m W" "a-one b-two c-three d-four"         "")
+                  ("m s" "One thing.  Two thing.  Three thing." "")
+                  ("m p" "Alpha.\n\nBeta.\n\nGamma.\n"      "")
+                  ("m i" "(((deep)))"                         "l l ")
+                  ("m a" "(((deep)))"                         "l l ")
+                  ("m I" "(((deep)))"                         "l l ")
+                  ("m A" "(((deep)))"                         "l l ")))
+    (cl-destructuring-bind (key text lead) case
       (dolist (n '(2 3))
         (let ((repeated
                (donkey-mark-test--keys
-                   text (mapconcat #'identity (make-list n key) " ")
+                   text (concat lead (mapconcat #'identity (make-list n key) " "))
                  (donkey-mark-test--selection)))
               (counted
-               (donkey-mark-test--keys text (format "C-u %d %s" n key)
+               (donkey-mark-test--keys text (format "%sC-u %d %s" lead n key)
                  (donkey-mark-test--selection))))
           (should (equal (list key n repeated) (list key n counted))))))))
+
+(ert-deftest donkey-repeating-a-delimiter-mark-never-prompts ()
+  "A second press of `m i'/`m a' does not stop to ask for a delimiter.
+
+`donkey--mark-pair-read-delimiter' auto-detects only when point is ON a
+delimiter and otherwise waits on `read-char'.  With point left at one
+end of the selection, one of the two commands always lands somewhere
+that is not a delimiter -- past the closing one when point was left at
+the END, on the first character of the content once it was left at the
+START -- so a repeat used to hang on whichever it was.  What fixes it
+is the repeat reusing the delimiter it already resolved, not where the
+cursor sits.
+
+`read-char' is stubbed to signal rather than to answer, so a prompt
+fails the test instead of hanging the run."
+  (dolist (key '("m i" "m a" "m I" "m A"))
+    (cl-letf (((symbol-function 'read-char)
+               (lambda (&rest _) (error "Prompted for a delimiter"))))
+      (donkey-mark-test--keys "(((deep)))" (format "l l %s %s" key key)
+        (should (equal (cons key (donkey-mark-test--selection))
+                       (cons key (if (member key '("m i" "m I"))
+                                     "(deep)"
+                                   "((deep))"))))))))
 
 (ert-deftest donkey-a-key-in-between-ends-a-mark-run ()
   "Any other key between two presses starts a fresh selection.
@@ -3403,26 +3440,34 @@ runs out of buffer, and a run of presses is the same idea."
                        (cons key expected)))))))
 
 (ert-deftest donkey-mark-commands-agree-about-which-end-holds-the-mark ()
-  "The four object marks leave point at the START, as native does.
+  "EVERY object mark leaves point at the START, as native does.
 
-Regression test: `m p' used to leave point at the END, alone in
-inverting `mark-paragraph', which finishes with `backward-paragraph'
-and leaves point where the selection begins.  Being the odd one out
-cost something concrete -- the first attempt at extending it handed
-native's ALLOW-EXTEND branch a mark-at-start region, and since native
-grows by pushing the MARK forward it collapsed the selection onto the
-paragraph's first character.
+Regression test: `m p' used to leave point at the END, alone among the
+four linear marks in inverting `mark-paragraph', which finishes with
+`backward-paragraph' and leaves point where the selection begins.
+Being the odd one out cost something concrete -- the first attempt at
+extending it handed native's ALLOW-EXTEND branch a mark-at-start region,
+and since native grows by pushing the MARK forward it collapsed the
+selection onto the paragraph's first character.
 
-`m i' and `m a' are still the other way round.  They have no native
-counterpart to agree with and are asserted here as they are, so that
-changing them is a decision someone makes rather than something that
-drifts."
+The four delimiter marks were the other way round for longer, and this
+test used to pin them that way on the grounds that they have no native
+counterpart.  They do: `mark-sexp' leaves point at the start like
+everything else.  Being inverted cost something concrete there too --
+point landed past the closing delimiter, which is not a delimiter, so a
+second press of `m a' fell into the prompting branch of
+`donkey--mark-pair-read-delimiter' and sat waiting on `read-char'.
+
+All eight are asserted together now.  A mark command that disagrees
+about which end holds the mark is the odd one out by construction."
   (dolist (case '(("m w" "alpha beta gamma"     start)
                   ("m W" "a-one b-two"          start)
                   ("m s" "One thing.  Two."     start)
                   ("m p" "Alpha.\n\nBeta.\n"    start)
-                  ("m i" "(abc)"                end)
-                  ("m a" "(abc)"                end)))
+                  ("m i" "(abc)"                start)
+                  ("m a" "(abc)"                start)
+                  ("m I" "(abc)"                start)
+                  ("m A" "(abc)"                start)))
     (cl-destructuring-bind (key text where) case
       (donkey-mark-test--keys text key
         (should (equal (cons key (if (= (point) (region-beginning)) 'start 'end))
