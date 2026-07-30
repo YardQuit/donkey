@@ -2459,6 +2459,44 @@ an ALLOW-EXTEND argument that is nil when called from Lisp."
     (user-error "No sentence after point"))
   (message "Sentence marked")))
 
+;; Exactly one blank line comes with a paragraph, whichever side it is on.
+;;
+;; `backward-paragraph' lands ON the blank line before a paragraph, so
+;; every paragraph but the FIRST arrives with one blank already included
+;; and none after it.  The first has nothing before it to land on, so it
+;; used to come with no blank at all -- and the same key that left
+;;
+;;   "Alpha.\n\nGamma.\n"     after deleting a middle paragraph
+;;
+;; left
+;;
+;;   "\nBeta.\n\nGamma.\n"    after deleting the top one
+;;
+;; a stray blank at the head of the buffer.  Absorbing the following
+;; blank in that case evens it out: deleting any paragraph now leaves its
+;; neighbors separated by exactly one blank line, which is what
+;; `mark-paragraph' does not do and what vi's `ap' text object does.
+;;
+;; One line, not `skip-chars-forward': a run of several blank lines
+;; between paragraphs is the author's spacing, and swallowing all of it
+;; would take more than the paragraph asked for.  Confirmed against
+;; "A.\n\n\n\nB.\n", where deleting either paragraph leaves two blanks
+;; standing.
+(defun donkey--absorb-paragraph-blank (start n)
+  "Extend point over one following blank line, when START owns no leading one.
+
+Called with point at the end of a paragraph selection that began at
+START, having advanced N paragraphs.  Does nothing when N is zero, when
+the selection already begins on a blank line, or when there is no blank
+line to take."
+  (when (and (/= n 0)
+             (save-excursion
+               (goto-char start)
+               (not (looking-at-p "^[[:space:]]*$")))
+             (looking-at-p "^[[:space:]]*$")
+             (< (point) (point-max)))
+    (forward-line 1)))
+
 (defun donkey-mark-paragraph (&optional count)
   "Select the paragraph at or adjacent to point.
 
@@ -2487,6 +2525,12 @@ which is where `mark-paragraph' leaves them and where
 `donkey-mark-word', `donkey-mark-symbol' and `donkey-mark-sentence'
 leave them.
 
+Exactly ONE blank line comes with the paragraph: the one before it, or
+-- for the first paragraph in the buffer, which has none before it --
+the one after.  So deleting a paragraph leaves the separator between
+its neighbors intact rather than a stray blank line, wherever in the
+buffer it sits.
+
 COUNT marks that many paragraphs.  A negative COUNT marks that many
 paragraphs before the one point normalizes onto, and a COUNT of zero
 marks nothing, matching how `forward-paragraph' reads its argument."
@@ -2497,10 +2541,18 @@ marks nothing, matching how `forward-paragraph' reads its argument."
         ;; Grown by moving the MARK, which is the end this command owns
         ;; -- the same shape as `donkey-mark-symbol' and as
         ;; `mark-paragraph's own ALLOW-EXTEND branch.
+        ;;
+        ;; The blank-line rule has to be applied here too, or repeating
+        ;; the key stops agreeing with a count: `m p m p' from the first
+        ;; paragraph gave one blank fewer than `C-u 2 m p', because only
+        ;; the fresh branch below knew to absorb one.  Caught by the
+        ;; test named donkey-repeating-a-mark-key-equals-a-count.
         (set-mark (save-excursion
-                    (goto-char (mark))
-                    (forward-paragraph n)
-                    (point)))
+                    (let ((start (point)))
+                      (goto-char (mark))
+                      (forward-paragraph n)
+                      (donkey--absorb-paragraph-blank start n)
+                      (point))))
       ;; Point ends at the START, mark at the end.  It used to be the
       ;; other way round, which made this the only mark command that
       ;; inverted native: `mark-paragraph' finishes with
@@ -2513,6 +2565,7 @@ marks nothing, matching how `forward-paragraph' reads its argument."
       (backward-paragraph 1)
       (let ((start (point)))
         (forward-paragraph n)
+        (donkey--absorb-paragraph-blank start n)
         (push-mark (point) nil t)
         (goto-char start))
       (activate-mark))

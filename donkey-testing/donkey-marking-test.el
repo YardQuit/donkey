@@ -697,13 +697,20 @@ satisfied just as well as the clean report does."
                    "Middle paragraph here."))))
 
 (ert-deftest donkey-mark-paragraph-two-paragraphs-selects-first ()
-  "In multi-paragraph buffer, selects first paragraph."
+  "In multi-paragraph buffer, selects first paragraph and one blank after it.
+
+The trailing blank used to be left behind.  Every paragraph but the
+first arrives with the blank line BEFORE it, because that is where
+`backward-paragraph' lands; the first has none to land on, so it came
+with no blank at all and deleting it left a stray blank at the head of
+the buffer.  It now takes the blank that follows instead, so exactly one
+blank comes with a paragraph wherever it sits."
   (with-temp-buffer
     (insert "Para one.\n\nPara two.")
     (goto-char 3)
     (donkey-mark-paragraph)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
-                   "Para one.\n"))))
+                   "Para one.\n\n"))))
 
 (ert-deftest donkey-mark-paragraph-two-paragraphs-second ()
   "In multi-paragraph buffer, selects second paragraph with leading newline."
@@ -773,13 +780,17 @@ otherwise swallow this documented case."
 
 The guard checks the RESULT, not what is under point, precisely so this
 keeps working: point sits on whitespace, but the command has a real
-paragraph to give."
+paragraph to give.
+
+The blank point started on comes with it: it is the one blank line the
+first paragraph is entitled to, standing in for the leading one it does
+not have."
   (with-temp-buffer
     (insert "Para one.\n\nPara two.\n")
     (goto-char 11)
     (donkey-mark-paragraph)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
-                   "Para one.\n"))))
+                   "Para one.\n\n"))))
 
 (ert-deftest donkey-mark-paragraph-leading-blank-lines-reach-the-text-below ()
   "From leading blank lines, the paragraph below is still marked."
@@ -801,13 +812,17 @@ paragraph to give."
                    "Line one.\nLine two.\nLine three."))))
 
 (ert-deftest donkey-mark-paragraph-empty-line-separator ()
-  "Paragraphs separated by empty line detected."
+  "Paragraphs separated by empty line detected.
+
+The separator comes with the FIRST paragraph, which owns no blank line
+before it, and with the second by way of its leading blank -- one blank
+either way."
   (with-temp-buffer
     (insert "First para.\n\nSecond para.")
     (goto-char 5)
     (donkey-mark-paragraph)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
-                   "First para.\n"))))
+                   "First para.\n\n"))))
 
 (ert-deftest donkey-mark-paragraph-short-paragraph ()
   "Very short paragraph selected correctly."
@@ -837,13 +852,17 @@ paragraph to give."
                    "   Start of text."))))
 
 (ert-deftest donkey-mark-paragraph-trailing-blank-lines ()
-  "Trailing blank lines not included in selection."
+  "One trailing blank line comes with a first paragraph, the text below never.
+
+The selection stops at the start of \"More\": the blank line separating
+the two is taken, standing in for the leading blank the first paragraph
+does not have, and nothing beyond it is."
   (with-temp-buffer
     (insert "Para.\n\nMore")
     (goto-char 3)
     (donkey-mark-paragraph)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
-                   "Para.\n"))))
+                   "Para.\n\n"))))
 
 (ert-deftest donkey-mark-paragraph-buffer-end ()
   "Selection extends to buffer end when at last paragraph."
@@ -895,22 +914,50 @@ from the implementation rather than the purpose will do."
     (should-error (donkey-mark-paragraph) :type 'user-error)))
 
 (ert-deftest donkey-mark-paragraph-point-on-separator ()
-  "Point on separator between paragraphs selects adjacent paragraph."
+  "Point on separator between paragraphs selects adjacent paragraph.
+
+The separator itself comes with it, as the one blank line a first
+paragraph gets."
   (with-temp-buffer
     (insert "First.\n\nSecond.")
     (goto-char 7)
     (donkey-mark-paragraph)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
-                   "First.\n"))))
+                   "First.\n\n"))))
 
 (ert-deftest donkey-mark-paragraph-multiple-consecutive-blanks ()
-  "Multiple consecutive blank lines handled."
+  "Exactly ONE of several consecutive blank lines comes with the paragraph.
+
+A run of blank lines is the author's spacing, so the first paragraph
+takes one line and leaves the rest standing.  Deleting this selection
+leaves \"\\n\\nMore.\", the same two blanks that separate any other
+paragraph pair here."
   (with-temp-buffer
     (insert "Para.\n\n\n\nMore.")
     (goto-char 3)
     (donkey-mark-paragraph)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
-                   "Para.\n"))))
+                   "Para.\n\n"))))
+
+(ert-deftest donkey-mark-paragraph-deletion-leaves-one-separator-anywhere ()
+  "Deleting a marked paragraph leaves its neighbors one blank line apart.
+
+This is the property the blank-line rule exists for, asserted directly
+rather than through a substring: whichever paragraph goes, what remains
+reads as though it had never been there.  Before the rule, deleting the
+FIRST paragraph left \"\\nBeta.\\n\\nGamma.\\n\" -- a stray blank at the
+head of the buffer -- while deleting either of the others came out
+clean.  Each expectation below also matches vi's `dap'."
+  (dolist (probe '((2 . "Beta.\n\nGamma.\n")
+                   (9 . "Alpha.\n\nGamma.\n")
+                   (16 . "Alpha.\n\nBeta.\n")))
+    (with-temp-buffer
+      (let ((transient-mark-mode t))
+        (insert "Alpha.\n\nBeta.\n\nGamma.\n")
+        (goto-char (car probe))
+        (donkey-mark-paragraph)
+        (delete-region (region-beginning) (region-end))
+        (should (equal (buffer-string) (cdr probe)))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-mark-inner
@@ -2696,8 +2743,10 @@ Start, middle and end all have to agree; only the middle did before."
     (insert "P1 line.\n\nP2 line.\n\nP3 line.\n")
     (goto-char 1)
     (donkey-mark-paragraph 2)
+    ;; The trailing blank is the one blank line a first paragraph gets in
+    ;; place of the leading one it has not got.
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
-                   "P1 line.\n\nP2 line.\n"))))
+                   "P1 line.\n\nP2 line.\n\n"))))
 
 (ert-deftest donkey-mark-symbol-count-covers-the-whole-run ()
   "A counted symbol selection starts at the first symbol, not the last.
