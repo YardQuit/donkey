@@ -2360,6 +2360,34 @@ COUNT selects how many levels out to go."
   (interactive "p")
   (donkey--mark-sexp-select nil count))
 
+(defun donkey--mark-reach-forward-for (thing forward backward)
+  "Move point onto the next THING ahead of it, and say whether one was found.
+
+FORWARD and BACKWARD are the motion pair for THING, called with 1.  Going
+forward and then back lands on the START of the thing ahead, the same
+normalization the mark commands do in the other direction.
+
+For the LEADING gap of a buffer, where the mark commands prefer the
+object BEHIND point and there is none: nothing sits before the first word
+in the buffer, so the one ahead is the only answer available.  Reaching
+for it is what `donkey-mark-sentence' and `donkey-mark-paragraph' already
+did there, and what `donkey-mark-word' and `donkey-mark-symbol' refused
+to do -- so the top of a buffer with leading whitespace was the last
+place where the four disagreed about what a gap means.
+
+Point is left where it started when nothing is found, so the caller can
+report without having moved the cursor first."
+  (let ((origin (point)))
+    ;; The motions signal at the buffer edges -- `scan-error' from
+    ;; `forward-sexp', `end-of-buffer' from others -- and reaching an edge
+    ;; here just means there was nothing ahead either.
+    (condition-case nil
+        (progn (funcall forward 1)
+               (funcall backward 1))
+      (error nil))
+    (or (thing-at-point thing)
+        (progn (goto-char origin) nil))))
+
 (defun donkey--point-on-word-or-symbol-char-p ()
   "Return non-nil if the character after point has word or symbol syntax.
 
@@ -2419,6 +2447,12 @@ marking tests ran first."
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
+From the gap between two words the one BEHIND is marked, and from
+the gap at the end of the buffer the last one is.  In the LEADING gap of
+a buffer there is nothing behind, so the word ahead is marked
+instead -- see `donkey--mark-reach-forward-for'.  `donkey-mark-sentence'
+and `donkey-mark-paragraph' answer the same way at all three.
+
 Pressing the key again immediately EXTENDS the selection by another
 word rather than re-marking the same one, and keeps extending until
 the buffer runs out.  See `donkey--mark-extending-p'.
@@ -2436,8 +2470,11 @@ matching how `mark-word' itself reads its argument."
       ;; than letting `beginning-of-thing' signal a bare `error': a
       ;; buffer with no word before point at all (empty, or nothing but
       ;; whitespace and punctuation) is a normal thing to press this on
-      ;; by accident.
-      (unless (thing-at-point 'word)
+      ;; by accident.  Reached only once there is no word ahead either --
+      ;; see `donkey--mark-reach-forward-for'.
+      (unless (or (thing-at-point 'word)
+                  (donkey--mark-reach-forward-for 'word #'forward-word
+                                                  #'backward-word))
         (user-error "No word at or before point"))
       (beginning-of-thing 'word))
     ;; The normalization above is skipped when extending: it walks point
@@ -2696,6 +2733,12 @@ Trailing commas or periods are omitted from the selection.
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
+From the gap between two symbols the one BEHIND is marked, and from
+the gap at the end of the buffer the last one is.  In the LEADING gap of
+a buffer there is nothing behind, so the symbol ahead is marked
+instead -- see `donkey--mark-reach-forward-for'.  `donkey-mark-sentence'
+and `donkey-mark-paragraph' answer the same way at all three.
+
 COUNT marks that many symbols.  A negative COUNT marks that many symbols
 before the one point normalizes onto, and a COUNT of zero marks nothing,
 matching how `forward-sexp' reads its argument."
@@ -2726,7 +2769,9 @@ matching how `forward-sexp' reads its argument."
     ;; point, which on a blank line in code is typically a bracket rather
     ;; than a symbol -- confirmed with point on the trailing empty line
     ;; of "(foo bar)".
-    (unless (thing-at-point 'symbol)
+    (unless (or (thing-at-point 'symbol)
+                (donkey--mark-reach-forward-for 'symbol #'forward-sexp
+                                                #'backward-sexp))
       (user-error "No symbol at or before point"))
     (beginning-of-thing 'symbol)
     (let ((n (or count 1)))
