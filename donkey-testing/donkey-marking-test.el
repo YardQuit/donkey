@@ -3653,6 +3653,113 @@ the whitespace-only buffers happen to walk back to point-min either way."
       (should-error (donkey-mark-symbol) :type 'user-error)
       (should (equal (point) (point-min))))))
 
+(ert-deftest donkey-mark-word-in-a-buffer-with-no-word-reports ()
+  "A buffer of nothing but punctuation has no word, and this says so.
+
+`thing-at-point' answers with the WHOLE BUFFER as the `word' at point
+when no word character appears anywhere in it -- \"...\", \"!!!\" and
+\"()\" each report themselves -- so the guard meant to catch a buffer
+with no word in it accepted one, and `m w' selected everything while
+announcing \"Word marked\".  Pressing \\`d' next emptied the buffer.
+
+A buffer of pure whitespace answers nil and always reported correctly,
+which is why the hole showed only for text that is neither word nor
+blank.  Both are asserted here so a future fix cannot trade one for the
+other, and all three major modes are covered because the answer does not
+come from the syntax table."
+  (dolist (mode '(fundamental-mode text-mode emacs-lisp-mode))
+    (dolist (text '("..." "  ...  " "!!!" "()" "  ()  " "   " ""))
+      (with-temp-buffer
+        (funcall mode)
+        (let ((transient-mark-mode t) (this-command nil) (last-command nil))
+          (insert text)
+          (goto-char (point-min))
+          (should (equal (list mode text
+                               (condition-case e
+                                   (progn (donkey-mark-word) 'marked)
+                                 (user-error (error-message-string e))))
+                         (list mode text "No word at or before point"))))))))
+
+(ert-deftest donkey-mark-symbol-made-only-of-punctuation-is-not-trimmed-away ()
+  "A symbol that IS punctuation survives the trailing-punctuation trim.
+
+In Lisp `.' has symbol syntax, so \"...\" is a symbol in its own right.
+The trim that drops a trailing \".\" or \",\" took all of it, leaving an
+EMPTY region that was announced as a successful mark -- a selection of
+nothing, which the following operator then acted on.
+
+The ordinary trim is asserted alongside it: dropping the floor is not a
+licence to stop trimming \"foobar.\" down to \"foobar\"."
+  (dolist (case '(("." . ".") (".." . "..") ("..." . "...")
+                  ("foobar." . "foobar") ("foobar,." . "foobar")
+                  ("...foo" . "...foo")))
+    (with-temp-buffer
+      (emacs-lisp-mode)
+      (let ((transient-mark-mode t) (this-command nil) (last-command nil))
+        (insert (car case))
+        (goto-char (point-min))
+        (donkey-mark-symbol)
+        (should (equal (cons (car case) (buffer-substring-no-properties
+                                        (region-beginning) (region-end)))
+                       case))))))
+
+(ert-deftest donkey-mark-symbol-extending-onto-punctuation-takes-the-symbol ()
+  "Extending onto a punctuation symbol adds the symbol, not the space.
+
+The same missing floor on the extend path, presenting differently: the
+trim ate the \"...\" the second press had just covered but not the space
+before it, so \"a\" grew to \"a \" -- a trailing space standing where the
+symbol should have been.  Nothing announced that anything was wrong.
+
+\"foo bar.\" is here to hold the ordinary case down: the trim still drops
+a trailing period when there is a symbol in front of it to keep."
+  (dolist (case '(("a ..."    "a"   "a ...")
+                  ("foo ..."  "foo" "foo ...")
+                  ("x . y"    "x"   "x .")
+                  ("foo bar." "foo" "foo bar")))
+    (cl-destructuring-bind (text once twice) case
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (let ((transient-mark-mode t))
+          (insert text)
+          (goto-char (point-min))
+          (let ((this-command 'donkey-mark-symbol) (last-command nil))
+            (donkey-mark-symbol))
+          (should (equal (cons text (buffer-substring-no-properties
+                                     (region-beginning) (region-end)))
+                         (cons text once)))
+          (let ((this-command 'donkey-mark-symbol)
+                (last-command 'donkey-mark-symbol))
+            (donkey-mark-symbol))
+          (should (equal (cons text (buffer-substring-no-properties
+                                     (region-beginning) (region-end)))
+                         (cons text twice))))))))
+
+(ert-deftest donkey-mark-commands-never-announce-an-empty-selection ()
+  "No mark command reports success with nothing selected.
+
+The property behind two of the defects above, asserted directly: `m w'
+marked a whole buffer it should have refused, and `m W' marked nothing at
+all, and both said the mark had been made.  A selection is either real or
+an error -- never zero characters with a cheerful message."
+  (dolist (command '(donkey-mark-word donkey-mark-symbol
+                     donkey-mark-sentence donkey-mark-paragraph))
+    (dolist (text '("" "   " "\n\n\n" "..." "  ...  " "()" "!!!" "a" "a b"))
+      (dolist (mode '(text-mode emacs-lisp-mode))
+        (with-temp-buffer
+          (funcall mode)
+          (let ((transient-mark-mode t) (this-command nil) (last-command nil))
+            (insert text)
+            (goto-char (point-min))
+            (condition-case nil
+                (progn
+                  (funcall command)
+                  (should-not
+                   (equal (list command mode text
+                                (- (region-end) (region-beginning)))
+                          (list command mode text 0))))
+              (user-error nil))))))))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here
