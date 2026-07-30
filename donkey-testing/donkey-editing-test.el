@@ -3015,6 +3015,112 @@ Pinned as a family so the next one added is measured against them."
                         (equal (buffer-string) "")))))
       (donkey-mode -1))))
 
+;;; ---------------------------------------------------------------------------
+;;; Only a selection reaches the kill ring
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-killrule-test (&rest body)
+  "Run BODY in a DONKEY buffer with an isolated, pre-loaded `kill-ring'.
+
+The ring starts holding \"PREVIOUS\" so that \"nothing was saved\" and
+\"the removed text was saved\" are told apart by WHAT is on the ring
+rather than by whether anything is -- an empty ring cannot distinguish a
+command that saved nothing from one that saved and lost it.  The
+clipboard hooks are unbound so a developer's real clipboard is neither
+read nor written."
+  (declare (indent 0))
+  `(with-temp-buffer
+     (text-mode)
+     (donkey-mode 1)
+     (let ((transient-mark-mode t) (this-command nil) (last-command nil)
+           (inhibit-message t)
+           (kill-ring (list "PREVIOUS")) (kill-ring-yank-pointer nil)
+           (killed-rectangle '("PREVIOUS"))
+           (select-enable-clipboard nil)
+           (interprogram-cut-function nil)
+           (interprogram-paste-function nil))
+       ,@body)))
+
+(ert-deftest donkey-delete-and-change-save-a-selection ()
+  "What `d' and `c' remove from a SELECTION goes on the `kill-ring'.
+
+The half of the rule that makes a replaced selection recoverable.  `c'
+saved nothing at all before -- not even over a region, where `d' always
+did -- so changing a marked word and pasting produced whatever happened
+to be on the ring already."
+  (dolist (command '(donkey-delete donkey-change))
+    (donkey-killrule-test
+      (insert "alpha beta")
+      (goto-char 1)
+      (push-mark 1 t t)
+      (goto-char 6)
+      (funcall command)
+      (should (equal (cons command (car kill-ring))
+                     (cons command "alpha"))))))
+
+(ert-deftest donkey-delete-and-change-leave-the-ring-alone-without-a-selection ()
+  "With NO selection, `d' and `c' save nothing -- counted runs included.
+
+The other half, and the deliberate one: a character removed under the
+cursor is a typo being fixed rather than a cut, and filling the ring with
+single characters would push out what was put there on purpose.  A COUNT
+does not make it a selection, so \\`C-u 3 d' does not save either.
+
+Asserted for both because the rule is the same rule, and stated in both
+docstrings as such -- if one command starts saving here, the other has
+either drifted or been changed on purpose, and this fails either way."
+  (dolist (command '(donkey-delete donkey-change))
+    (dolist (count '(nil 1 3 99))
+      (donkey-killrule-test
+        (insert "abcdef")
+        (goto-char 1)
+        (if count (funcall command count) (funcall command))
+        (should (equal (list command count (car kill-ring))
+                       (list command count "PREVIOUS")))))))
+
+(ert-deftest donkey-copy-saves-even-a-single-character ()
+  "`y' is exempt from the rule, because saving is the whole point.
+
+A copy that declined to save a single character would do nothing at all,
+so `y' fills the ring whether or not a selection was made.  Pinned so
+that the rule for `d' and `c' is never generalized onto it."
+  (dolist (count '(nil 1 3))
+    (donkey-killrule-test
+      (insert "abcdef")
+      (goto-char 1)
+      (if count (donkey-copy count) (donkey-copy))
+      (should (equal (list count (car kill-ring))
+                     (list count (substring "abcdef" 0 (or count 1))))))))
+
+(ert-deftest donkey-change-over-a-rectangle-saves-the-old-columns ()
+  "A changed rectangle goes to `killed-rectangle', not the `kill-ring'.
+
+A rectangle is a selection, so the same rule applies -- but it applies in
+the rectangle's own store, which is where `donkey-delete' and
+`donkey-copy' put theirs and where \\[donkey-yank-rectangle] pastes from.
+`string-rectangle' replaces in place and saves nothing itself, so before
+this the old columns were unrecoverable.
+
+The `kill-ring' is asserted untouched alongside it: a rectangle never
+reaches the linear ring, which is what `donkey-copy' documents at
+length."
+  (donkey-killrule-test
+    (insert "abcd\nefgh\n")
+    (goto-char 1)
+    (rectangle-mark-mode 1)
+    (goto-char 8)
+    ;; Stubbed interactively, since `donkey-change' reaches it through
+    ;; `call-interactively' and the real one prompts in the minibuffer.
+    ;; What it would insert is beside the point here -- the question is
+    ;; whether the columns it replaces were saved first.
+    (cl-letf (((symbol-function 'string-rectangle)
+               (lambda (start end string)
+                 (interactive (list nil nil ""))
+                 (ignore start end string))))
+      (donkey-change))
+    (should (equal killed-rectangle '("ab" "ef")))
+    (should (equal (car kill-ring) "PREVIOUS"))))
+
 (provide 'donkey-editing-test)
 
 ;;; ---------------------------------------------------------------------------

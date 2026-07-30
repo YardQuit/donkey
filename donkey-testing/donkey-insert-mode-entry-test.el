@@ -878,28 +878,37 @@ character actually present at point, `c' still removes exactly it."
       (should entered)
       (should (string= (buffer-string) "ello\n")))))
 
-(ert-deftest donkey-change-region-deletes-region ()
-  "With an active region (not rectangle), deletes from mark to point."
+(ert-deftest donkey-change-region-kills-region ()
+  "With an active region (not rectangle), KILLS from mark to point.
+
+`kill-region' rather than `delete-region', so what the change replaced
+can be pasted back -- the same store `donkey-delete' fills for the same
+selection.  This test asserted the call to `delete-region' and so kept
+passing for as long as `c' saved nothing at all; the `kill-ring' check
+below is the part that would have noticed."
   (let (entered deleted-bounds)
     (with-temp-buffer
       (insert "hello world\n")
       (goto-char 6)
       (push-mark 1)
-      (let ((orig-delete-region (symbol-function 'delete-region)))
+      (let ((orig-kill-region (symbol-function 'kill-region))
+            (kill-ring nil) (kill-ring-yank-pointer nil)
+            (select-enable-clipboard nil) (interprogram-cut-function nil))
         (cl-letf (((symbol-function 'use-region-p)
                    (lambda () t))
-                  ((symbol-function 'delete-region)
-                   (lambda (beg end)
+                  ((symbol-function 'kill-region)
+                   (lambda (beg end &optional region)
                      (setq deleted-bounds (list beg end))
-                     (funcall orig-delete-region beg end)))
+                     (funcall orig-kill-region beg end region)))
                   ((symbol-function 'donkey-enter-insert)
                    (lambda () (setq entered t))))
           (let ((rectangle-mark-mode nil))
-            (donkey-change))))
-      (should entered)
-      (should deleted-bounds)
-      (should (= (car deleted-bounds) 1))
-      (should (= (cadr deleted-bounds) 6)))))
+            (donkey-change)))
+        (should entered)
+        (should deleted-bounds)
+        (should (= (car deleted-bounds) 1))
+        (should (= (cadr deleted-bounds) 6))
+        (should (equal (car kill-ring) "hello"))))))
 
 (ert-deftest donkey-change-region-skips-delete-char ()
   "With an active region, `delete-char' is not called."
@@ -921,7 +930,7 @@ character actually present at point, `c' still removes exactly it."
       (should-not delete-char-called))))
 
 (ert-deftest donkey-change-region-point-before-mark ()
-  "Region with point before mark: `delete-region' receives (mark, point)."
+  "Region with point before mark: `kill-region' receives (mark, point)."
   (let (deleted-bounds)
     (with-temp-buffer
       (insert "hello world\n")
@@ -929,8 +938,9 @@ character actually present at point, `c' still removes exactly it."
       (push-mark 6)
       (cl-letf (((symbol-function 'use-region-p)
                  (lambda () t))
-                ((symbol-function 'delete-region)
-                 (lambda (beg end) (setq deleted-bounds (list beg end))))
+                ((symbol-function 'kill-region)
+                 (lambda (beg end &optional _region)
+                   (setq deleted-bounds (list beg end))))
                 ((symbol-function 'donkey-enter-insert)
                  (lambda () nil)))
         (let ((rectangle-mark-mode nil))
@@ -978,10 +988,10 @@ With region active and `rectangle-mark-mode' enabled, delegates to
       (should-not delete-region-called))))
 
 (ert-deftest donkey-change-rectangle-mode-falls-back-when-disabled ()
-  "Change over a plain region falls back to `delete-region'.
+  "Change over a plain region falls back to `kill-region'.
 
 When `rectangle-mark-mode' is nil and region is active, falls back to
-`delete-region' rather than `string-rectangle'."
+`kill-region' rather than `string-rectangle'."
   (let (delete-called ci-called)
     (with-temp-buffer
       (insert "hello\n")
@@ -991,8 +1001,10 @@ When `rectangle-mark-mode' is nil and region is active, falls back to
                  (lambda () t))
                 ((symbol-function 'call-interactively)
                  (lambda (cmd) (setq ci-called t)))
-                ((symbol-function 'delete-region)
-                 (lambda (beg end) (setq delete-called t)))
+                ((symbol-function 'kill-region)
+                 (lambda (beg end &optional _region)
+                   (ignore beg end)
+                   (setq delete-called t)))
                 ((symbol-function 'donkey-enter-insert)
                  (lambda () nil)))
         (let ((rectangle-mark-mode nil))
