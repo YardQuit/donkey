@@ -3577,20 +3577,21 @@ other three marked the last word, symbol and paragraph."
                                         (region-beginning) (region-end)))
                          (cons command expected))))))))
 
-(ert-deftest donkey-mark-commands-in-the-leading-gap-do-not-yet-agree ()
-  "In the LEADING gap two commands reach forward and two refuse.
+(ert-deftest donkey-mark-commands-agree-about-the-leading-gap ()
+  "In the LEADING gap all four reach forward to the object ahead.
 
-Nothing is behind at the start of a buffer, so the object ahead is the
-only answer available.  `m s' and `m p' give it.  `m w' and `m W' report
-\"No word at or before point\" and \"No symbol at or before point\"
-instead -- the last surviving corner where the four disagree about what
-a gap means, and the mirror image of what `m s' used to do at the other
-end of the buffer.
+Nothing sits behind the start of a buffer, so the object ahead is the
+only answer available.  `m s' and `m p' always gave it; `m w' and `m W'
+reported \"No word at or before point\" and \"No symbol at or before
+point\" instead, which was the last corner where the four disagreed
+about what a gap means -- the mirror image of what `m s' used to do at
+the other end of the buffer.
 
-Asserted as it stands, not as it should be, so that changing it is a
-decision someone makes rather than something that drifts."
-  (dolist (case '((donkey-mark-word      "   alpha beta"        nil error)
-                  (donkey-mark-symbol    "   foo-a bar-b"       emacs-lisp-mode error)
+This test has been inverted deliberately: it was added asserting the
+disagreement, on the footing that changing it should be a decision
+rather than a drift.  This is the decision."
+  (dolist (case '((donkey-mark-word      "   alpha beta"        nil "alpha")
+                  (donkey-mark-symbol    "   foo-a bar-b"       emacs-lisp-mode "foo-a")
                   (donkey-mark-sentence  "   One two.  Three."  nil "One two.")
                   (donkey-mark-paragraph "\n\nA.\n\nB."         nil "\n\nA.\n")))
     (cl-destructuring-bind (command text mode expected) case
@@ -3599,13 +3600,58 @@ decision someone makes rather than something that drifts."
         (let ((transient-mark-mode t) (this-command nil) (last-command nil))
           (insert text)
           (goto-char (point-min))
-          (should (equal (cons command
-                               (condition-case nil
-                                   (progn (funcall command)
-                                          (buffer-substring-no-properties
-                                           (region-beginning) (region-end)))
-                                 (user-error 'error)))
+          (funcall command)
+          (should (equal (cons command (buffer-substring-no-properties
+                                        (region-beginning) (region-end)))
                          (cons command expected))))))))
+
+(ert-deftest donkey-mark-word-and-symbol-still-report-with-nothing-either-way ()
+  "Reaching forward must not turn \"nothing here\" into a selection.
+
+The risk the leading-gap reach introduces: a buffer with no word in it
+at all now runs the backward search, finds nothing, runs the forward
+search, and must still arrive at the refusal rather than marking
+whatever it walked over.  `donkey--mark-reach-forward-for' puts point
+back before answering no, which is what keeps the message honest about
+where the cursor is.
+
+Blank leading text with real words further down is the case that has to
+keep working, and it is covered by the agreement test above; this one is
+its complement."
+  (dolist (case '((donkey-mark-word   ""        nil             "No word at or before point")
+                  (donkey-mark-word   "     "   nil             "No word at or before point")
+                  (donkey-mark-word   "\n\n\n"  nil             "No word at or before point")
+                  (donkey-mark-symbol ""        emacs-lisp-mode "No symbol at or before point")
+                  (donkey-mark-symbol "     "   emacs-lisp-mode "No symbol at or before point")
+                  (donkey-mark-symbol "  ()  "  emacs-lisp-mode "No symbol at or before point")))
+    (cl-destructuring-bind (command text mode expected) case
+      (with-temp-buffer
+        (when mode (funcall mode))
+        (let ((transient-mark-mode t) (this-command nil) (last-command nil))
+          (insert text)
+          (goto-char (point-min))
+          (should (equal (cons text
+                               (condition-case e
+                                   (progn (funcall command) 'no-error)
+                                 (user-error (error-message-string e))))
+                         (cons text expected))))))))
+
+(ert-deftest donkey-mark-symbol-refusal-does-not-leave-point-where-it-searched ()
+  "A refused forward reach puts the cursor back before reporting.
+
+\"  ()  \" in `emacs-lisp-mode' is the shape that shows it: the forward
+reach lands on the paren at position 3, which is a sexp but not a symbol,
+so the answer is no -- and without the restore the cursor would be left
+sitting on the paren the search rejected, three characters from where the
+key was pressed.  Nothing else in the suite distinguishes the two, since
+the whitespace-only buffers happen to walk back to point-min either way."
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (let ((transient-mark-mode t) (this-command nil) (last-command nil))
+      (insert "  ()  ")
+      (goto-char (point-min))
+      (should-error (donkey-mark-symbol) :type 'user-error)
+      (should (equal (point) (point-min))))))
 
 (provide 'donkey-marking-test)
 
