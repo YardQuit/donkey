@@ -508,8 +508,29 @@ Banked lines are not honored either.  With lines banked via
 at point and leaves the banks standing -- `y', `d' and `p' all act on
 the bank instead.
 
+What a SELECTION replaces goes on the `kill-ring\=', so
+\\[donkey-yank] brings it back -- the same store `donkey-delete\=' fills
+for the same selection.  A rectangle goes to `killed-rectangle\='
+instead, where \\[donkey-yank-rectangle] pastes it from.  Nothing was
+saved at all before, so changing a marked word and pasting gave whatever
+happened to be on the ring already.
+
+With NO selection nothing is saved, and that is the rule rather than an
+oversight: a character changed under the cursor is a typo being fixed,
+not a cut, and filling the ring with single characters would push out
+what was put there deliberately.  A COUNT does not change that --
+\\`C-u 3 c\=' is still no selection -- so the text it removes is gone
+except through `undo\='.  `donkey-delete\=' draws the same line in the
+same place.
+
 INSERT state is entered even when there is nothing to delete, such as at
 the very end of the buffer.
+
+COUNT changes that many characters when no selection is active.  A
+negative COUNT changes that many characters before point, and a COUNT of
+zero changes none while still entering INSERT state -- the same reading
+`donkey-delete\=' gives its own argument, since the two remove text
+identically and differ only in what happens next.
 
 COUNT changes that many characters when no region is active.  A negative
 COUNT changes that many characters before point and a COUNT of zero
@@ -519,6 +540,18 @@ entered, which is what was actually asked for."
   (if (use-region-p)
       (if (bound-and-true-p rectangle-mark-mode)
           (progn
+            ;; Saved before it goes, the same way `donkey-delete' fills
+            ;; `killed-rectangle' -- a rectangle is a selection, and what
+            ;; a selection replaces is recoverable.  `string-rectangle'
+            ;; replaces in place and saves nothing itself.
+            ;;
+            ;; Necessarily before the prompt rather than after: by the
+            ;; time `string-rectangle' returns the old columns are gone.
+            ;; So aborting the prompt with \[keyboard-quit] leaves
+            ;; `killed-rectangle' holding the rectangle that was NOT
+            ;; replaced.  Real text from the buffer either way, but worth
+            ;; knowing if a rectangle was waiting there to be pasted.
+            (call-interactively #'copy-rectangle-as-kill)
             (call-interactively #'string-rectangle)
             ;; Explicit rather than implicit: the minibuffer
             ;; save/restore in `donkey--minibuffer-exit' already tends to
@@ -526,8 +559,15 @@ entered, which is what was actually asked for."
             ;; been reached FROM Normal state, which nothing guarantees
             ;; for a command also callable via \\[execute-extended-command].
             (donkey-enter-normal))
-        (delete-region (mark) (point))
+        ;; `kill-region' rather than `delete-region': a selection that
+        ;; gets replaced is recoverable, which is what `donkey-delete'
+        ;; already did for the same selection.  `c' saved nothing at all
+        ;; before this, so \[donkey-yank] after changing a marked word
+        ;; pasted whatever happened to be on the ring instead.
+        (kill-region (mark) (point))
         (donkey-enter-insert))
+    ;; NOT killed: no selection was made, so there is nothing to put
+    ;; back.  See the docstring -- this is the rule, not an oversight.
     (delete-region (point)
                    (max (point-min)
                         (min (point-max) (+ (point) (or count 1)))))
@@ -1371,7 +1411,18 @@ and wins, and the banks survive untouched.  See
 COUNT deletes that many characters when no region is active.
 A count larger than the text remaining stops at the end rather than
 signaling.  A negative COUNT deletes that many characters before point
-and a COUNT of zero deletes none, matching `delete-char'."
+and a COUNT of zero deletes none, matching `delete-char'.
+
+Those characters are NOT put on the `kill-ring', and neither is a
+counted run of them: only a selection is saved.  A character deleted
+under the cursor is a typo being fixed rather than a cut, and filling the
+ring with single characters would push out what was put there
+deliberately -- which is why `delete-char' does not save either, while
+`kill-region' does.  The consequence is worth stating plainly, since
+nothing on screen shows it: after \\`C-u 3 d' a \\[donkey-yank] pastes
+whatever was already on the ring, not the three characters just removed.
+`undo' is what brings those back.  `donkey-change' draws the same line in
+the same place."
   (interactive "p")
   (let* ((n (or count 1))
          (target (max (point-min) (min (point-max) (+ (point) n)))))
