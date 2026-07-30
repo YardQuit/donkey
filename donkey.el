@@ -2360,6 +2360,62 @@ COUNT selects how many levels out to go."
   (interactive "p")
   (donkey--mark-sexp-select nil count))
 
+(defun donkey--trim-symbol-punctuation ()
+  "Move point back over a trailing comma or period on the symbol just passed.
+
+Called with point at the END of a forward symbol run, where a trailing
+\".\" or \",\" is prose punctuation rather than part of the name --
+`donkey-mark-symbol\=' drops it so that marking the symbol in \"see
+`foo\=', bar.\" gives \"bar\" rather than \"bar.\".
+
+Stops short when the symbol IS that punctuation.  In Lisp `.\=' has
+symbol syntax, so \"...\" is a symbol in its own right, and trimming it
+left nothing: `m W\=' on a buffer of \"...\" produced an EMPTY region
+and announced a successful mark.  On the extend path the same trim ate
+the symbol but not the space before it, so a second press over
+\"a ...\" grew the selection from \"a\" to \"a \" -- a trailing
+space where the symbol should have been.  Both leave the whole symbol
+alone now.
+
+The floor is the start of the sexp just traversed rather than the start
+of the whole selection, so the rule reads the same on a fresh mark and on
+an extension: never trim away the thing that was just added."
+  (let ((end (point))
+        (sexp-start (save-excursion
+                      (condition-case nil
+                          (backward-sexp 1)
+                        (scan-error nil))
+                      (point))))
+    (while (memq (char-before) '(?, ?.))
+      (backward-char 1))
+    (when (<= (point) sexp-start)
+      (goto-char end))))
+
+(defun donkey--real-thing-at-point (thing)
+  "Return the THING at point, unless nothing in it is really a THING.
+
+`thing-at-point' reports the WHOLE BUFFER as the `word\=' at point when
+the buffer holds no word character anywhere: \"...\", \"!!!\" and
+\"()\" each answer with themselves.  So the guard meant to reject a
+buffer with no word in it accepted one instead, and `donkey-mark-word\='
+selected the entire buffer while reporting \"Word marked\" -- after
+which \\[donkey-delete] emptied it.  Confirmed in `fundamental-mode\=',
+`text-mode\=' and `emacs-lisp-mode\=' alike, so it is not the major
+mode\='s syntax table deciding.  A buffer of pure whitespace answers nil,
+which is why the hole shows only with non-word text that is not blank
+either.
+
+Checked by looking for a character of the right syntax inside what came
+back, so a real word or symbol passes through unchanged.  `symbol\='
+does not need the treatment -- it answers nil unless the characters
+really do have symbol syntax, which is why \"+++\" is a symbol and
+marking it is correct -- but it is asked the same way here so the two
+commands cannot drift apart."
+  (let ((found (thing-at-point thing)))
+    (and found
+         (string-match-p (if (eq thing 'word) "\\w" "\\w\\|\\s_") found)
+         found)))
+
 (defun donkey--mark-reach-forward-for (thing forward backward)
   "Move point onto the next THING ahead of it, and say whether one was found.
 
@@ -2385,7 +2441,7 @@ report without having moved the cursor first."
         (progn (funcall forward 1)
                (funcall backward 1))
       (error nil))
-    (or (thing-at-point thing)
+    (or (donkey--real-thing-at-point thing)
         (progn (goto-char origin) nil))))
 
 (defun donkey--point-on-word-or-symbol-char-p ()
@@ -2472,7 +2528,7 @@ matching how `mark-word' itself reads its argument."
       ;; whitespace and punctuation) is a normal thing to press this on
       ;; by accident.  Reached only once there is no word ahead either --
       ;; see `donkey--mark-reach-forward-for'.
-      (unless (or (thing-at-point 'word)
+      (unless (or (donkey--real-thing-at-point 'word)
                   (donkey--mark-reach-forward-for 'word #'forward-word
                                                   #'backward-word))
         (user-error "No word at or before point"))
@@ -2755,8 +2811,7 @@ matching how `forward-sexp' reads its argument."
                     (goto-char (mark))
                     (forward-sexp n)
                     (when (> n 0)
-                      (while (memq (char-before) '(?, ?.))
-                        (backward-char 1)))
+                      (donkey--trim-symbol-punctuation))
                     (point))))
     (unless (donkey--point-on-word-or-symbol-char-p)
       (condition-case nil
@@ -2769,7 +2824,7 @@ matching how `forward-sexp' reads its argument."
     ;; point, which on a blank line in code is typically a bracket rather
     ;; than a symbol -- confirmed with point on the trailing empty line
     ;; of "(foo bar)".
-    (unless (or (thing-at-point 'symbol)
+    (unless (or (donkey--real-thing-at-point 'symbol)
                 (donkey--mark-reach-forward-for 'symbol #'forward-sexp
                                                 #'backward-sexp))
       (user-error "No symbol at or before point"))
@@ -2781,8 +2836,7 @@ matching how `forward-sexp' reads its argument."
       ;; count leaves point at the region's START instead, and backing up
       ;; over punctuation there would reach into the symbol before it.
       (when (> n 0)
-        (while (memq (char-before) '(?, ?.))
-          (backward-char 1)))
+        (donkey--trim-symbol-punctuation))
       (push-mark (point) t)
       ;; Back over the same number of symbols the first step covered.
       ;; Going back one regardless left the region holding only the LAST
