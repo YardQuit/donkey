@@ -2467,13 +2467,23 @@ so gating on it would reject work it can actually do.
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
+From the gap between two sentences the one BEHIND is marked, and from
+the gap at the end of the buffer the last one is -- the same answers
+`donkey-mark-word', `donkey-mark-symbol' and `donkey-mark-paragraph'
+give from the gap between two of their own objects.  In the LEADING gap
+of a buffer there is nothing behind, so the sentence ahead is marked
+instead.  This command used to reach forward from every gap, which made
+the same cursor position mean different things depending on which mark
+key followed it, and made the end of a buffer report \"No sentence after
+point\" where the other three simply marked the last object.
+
 COUNT marks that many sentences.  Unlike the other mark commands a COUNT
-below 1 is treated as 1 here: this command is defined in terms of the
-sentence AHEAD of point -- it normalizes forward and then reports \"No
-sentence after point\" for a selection that ends behind where it started
--- so a zero or negative count has nothing it could mean but that error.
-A COUNT reaching past the last sentence marks what there is and stops,
-the way every other counted command does.
+below 1 is treated as 1 here: `mark-end-of-sentence' counts from the
+start this command normalizes onto, so a count of 0 selects nothing at
+all and a negative one reaches back over the sentence already behind
+that start -- neither of which is a sentence at point.  A COUNT reaching
+past the last sentence marks what there is and stops, the way every
+other counted command does.
 
 Pressing the key again immediately EXTENDS the selection by another
 sentence rather than re-marking the same one, and keeps extending until
@@ -2498,26 +2508,44 @@ an ALLOW-EXTEND argument that is nil when called from Lisp."
         ;; backward step land on that same sentence's start from every
         ;; position within it.
         (forward-sentence 1)
-        (backward-sentence 1))
-    ;; Before the general handler, which would otherwise catch this: the
-    ;; forward step signals `end-of-buffer' both for a buffer with no
-    ;; sentence in it at all AND for a real one whose last sentence has
-    ;; no newline after it, where point-max IS the trailing gap.  Those
-    ;; want different answers, and reporting "No sentence at or before
-    ;; point" for the second contradicts a screen that is showing three
-    ;; -- the same contradiction the count-overrun handler below was
-    ;; written to stop, reached by the other route.
+        (backward-sentence 1)
+        ;; Landing AHEAD of where we started means point was not inside a
+        ;; sentence at all -- it was in the gap before this one.  Take the
+        ;; sentence behind instead, which is what `donkey-mark-word',
+        ;; `donkey-mark-symbol' and `donkey-mark-paragraph' all give from
+        ;; the gap between two objects.  This command used to be the one
+        ;; that reached forward, so the same cursor position meant
+        ;; different things depending on which key followed it.
+        ;;
+        ;; Unless there is nothing behind: in the leading gap of a buffer
+        ;; the sentence ahead is the only one there is, and stepping back
+        ;; would drag the leading whitespace into the selection.  The test
+        ;; is whether any prose precedes ORIGIN at all, the same question
+        ;; the trailing-gap handler below asks.
+        (when (and (> (point) origin)
+                   (string-match-p "[^[:space:]\n]"
+                                   (buffer-substring-no-properties
+                                    (point-min) origin)))
+          (backward-sentence 1)))
+    ;; Before the general handler, which would otherwise catch this and
+    ;; refuse.  The forward step signals `end-of-buffer' for a real
+    ;; buffer whose last sentence has no newline after it -- point-max IS
+    ;; the trailing gap there, with nothing ahead to normalize onto.  The
+    ;; sentence BEHIND is the answer, the same one `donkey-mark-word' and
+    ;; `donkey-mark-paragraph' give from the end of a buffer.
     ;;
-    ;; A trailing newline hides it, since the forward step then has
-    ;; somewhere to land and the trailing-gap guard at the end produces
-    ;; the accurate message.  So which of the two a reader saw depended
-    ;; on whether their file ended with a newline.
+    ;; A buffer with no sentence in it at all reaches here too, and ends
+    ;; up marking whitespace, which the guard further down rejects with
+    ;; "No sentence at or before point".  The two used to need telling
+    ;; apart, because a buffer with prose in it got the misleading "No
+    ;; sentence at or before point" while a trailing newline -- giving
+    ;; the forward step somewhere to land -- produced a different message
+    ;; from a different guard.  Which one a reader saw depended on
+    ;; whether their file ended with a newline.  Both now mark the last
+    ;; sentence, so there is nothing left to tell apart.
     (end-of-buffer
-     (user-error
-      (if (string-match-p "[^[:space:]\n]"
-                          (buffer-substring-no-properties (point-min) origin))
-          "No sentence after point"
-        "No sentence at or before point")))
+     (goto-char (point-max))
+     (backward-sentence 1))
     (error (user-error "No sentence at or before point")))
   (condition-case nil
       (mark-end-of-sentence (max 1 (or count 1)))
@@ -2540,16 +2568,6 @@ an ALLOW-EXTEND argument that is nil when called from Lisp."
                                                         (region-end)))
     (deactivate-mark)
     (user-error "No sentence at or before point"))
-  ;; Standing in the gap after a sentence means the one being asked for is
-  ;; the one COMING, not the one just left behind -- which is what the
-  ;; motions above already give for a gap in the middle of the text.  In
-  ;; the trailing gap there is no next sentence to give, and marking the
-  ;; previous one instead would answer a question that was not asked, so
-  ;; say so.  A cursor inside a sentence always leaves that sentence's end
-  ;; ahead of it, so this only ever fires from a gap.
-  (when (<= (region-end) origin)
-    (deactivate-mark)
-    (user-error "No sentence after point"))
   (message "Sentence marked")))
 
 ;; Exactly one blank line comes with a paragraph, whichever side it is on.
