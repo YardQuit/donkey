@@ -2588,21 +2588,29 @@ key nothing at all."
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "Hello there."))))
 
-(ert-deftest donkey-mark-sentence-below-prose-reports-no-next-sentence ()
-  "Point on a blank line under prose reports rather than marking upwards.
+(ert-deftest donkey-mark-sentence-below-prose-marks-the-sentence-above ()
+  "Point on a blank line under prose marks the sentence above it.
 
-Deliberately reverses what this test asserted when it was added: it used
-to expect the sentence above to be marked.  Standing in the gap after a
-sentence asks for the one COMING -- which is what a gap in the middle of
-the text gives -- and in the trailing gap there is none, so marking the
-previous sentence would answer a question that was not asked."
+This assertion has been round twice.  It started here, was reversed to a
+refusal when the command was defined in terms of the sentence AHEAD of
+point, and is back: `m w' and `m p' from the end of a buffer mark the
+last word and the last paragraph rather than refusing, and there is no
+reason for sentences to be the exception."
   (with-temp-buffer
     (insert "Hello there.\n\n\n")
     (goto-char (point-max))
-    (should-error (donkey-mark-sentence) :type 'user-error)))
+    (donkey-mark-sentence)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "Hello there."))))
 
-(ert-deftest donkey-mark-sentence-gap-selects-the-coming-sentence ()
-  "In the gap after a sentence, the sentence that follows is marked.
+(ert-deftest donkey-mark-sentence-gap-selects-the-sentence-behind ()
+  "In the gap between two sentences, the one BEHIND is marked.
+
+The gap is the whole point of the test: a cursor inside a sentence has
+never been in doubt.  `m w', `m W' and `m p' all answer with the object
+behind from the equivalent position, and `m s' reaching forward instead
+made the same cursor position mean different things depending on which
+mark key followed it.
 
 A buffer and a pinned `last-command' per position, not one shared
 between them: `mark-end-of-sentence' extends the existing selection when
@@ -2621,7 +2629,7 @@ it failed.  Interactively the moves between the two positions set
             (this-command 'donkey-mark-sentence))
         (donkey-mark-sentence))
       (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
-                     "Four five six.")))))
+                     "One two three.")))))
 
 (ert-deftest donkey-mark-sentence-repeated-extends-by-one-sentence ()
   "Pressing the key again grows the selection by one more sentence.
@@ -2672,12 +2680,16 @@ away a selection that was already correct."
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "One two three."))))
 
-(ert-deftest donkey-mark-sentence-past-the-last-sentence-reports ()
-  "With no sentence ahead, the command reports instead of marking behind."
+(ert-deftest donkey-mark-sentence-past-the-last-sentence-marks-it ()
+  "With no sentence ahead, the last one is marked rather than refused.
+
+The trailing gap is a gap like any other, so it answers like one."
   (with-temp-buffer
     (insert "One two three.  Four five six.\n")
     (goto-char (point-max))
-    (should-error (donkey-mark-sentence) :type 'user-error)))
+    (donkey-mark-sentence)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "Four five six."))))
 
 (ert-deftest donkey-mark-sentence-from-sentence-start-marks-that-sentence ()
   "Point on the first letter marks THAT sentence, not the one before.
@@ -3478,27 +3490,29 @@ about which end holds the mark is the odd one out by construction."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-mark-sentence-answers-the-same-with-or-without-a-final-newline ()
-  "The refusal past the last sentence must not depend on a trailing newline.
+  "The answer past the last sentence must not depend on a trailing newline.
 
-Regression test: `forward-sentence' signals `end-of-buffer' at
-point-max when there is no newline to land on, and the general handler
-turned that into \"No sentence at or before point\" -- false, and
-contradicting a screen showing three.  With a trailing newline the
-forward step succeeded and the accurate \"No sentence after point\"
-came out instead, so which message a reader saw depended on something
-invisible.
+Regression test: `forward-sentence' signals `end-of-buffer' at point-max
+when there is no newline to land on, and the general handler turned that
+into \"No sentence at or before point\" -- false, and contradicting a
+screen showing two.  With a trailing newline the forward step succeeded
+and a different guard produced \"No sentence after point\" instead, so
+which message a reader saw depended on something invisible.
 
-A buffer with no sentence in it at all still gets the at-or-before
-message, because there the forward step signals for the other reason
-and that message is the true one.  Both halves are asserted here: the
-fix is to tell the two cases apart, not to widen one message over the
-other."
+Both now mark the last sentence, which is the same answer `m w' and
+`m p' give from the end of a buffer, so the pair of messages that had to
+be told apart is down to one.  The property under test is unchanged and
+is the reason this file still carries it: nothing about the answer may
+turn on whether the file ends with a newline.
+
+A buffer with no sentence in it at all still reports, since marking the
+whitespace it walked over would be no answer at all."
   (dolist (case '((""                     "No sentence at or before point")
                   ("\n\n\n"               "No sentence at or before point")
                   ("   "                  "No sentence at or before point")
-                  ("One.  Two."           "No sentence after point")
-                  ("One.  Two.\n"         "No sentence after point")
-                  ("  One."               "No sentence after point")))
+                  ("One.  Two."           "Two.")
+                  ("One.  Two.\n"         "Two.")
+                  ("  One."               "One.")))
     (cl-destructuring-bind (text expected) case
       (with-temp-buffer
         (let ((transient-mark-mode t))
@@ -3506,9 +3520,92 @@ other."
           (goto-char (point-max))
           (should (equal (cons text
                                (condition-case e
-                                   (progn (donkey-mark-sentence 1) 'no-error)
+                                   (progn (donkey-mark-sentence 1)
+                                          (buffer-substring-no-properties
+                                           (region-beginning) (region-end)))
                                  (user-error (error-message-string e))))
                          (cons text expected))))))))
+
+(ert-deftest donkey-mark-commands-agree-about-which-object-a-gap-means ()
+  "From the gap between two objects, all four mark the one BEHIND.
+
+The property is cross-command, so it is asserted across commands rather
+than inside any one of them: a cursor parked in whitespace must not mean
+different things depending on which mark key follows it.  `m s' was the
+exception -- it reached forward from every gap -- and the exception was
+invisible from within its own tests, all of which were written in terms
+of the sentence ahead.
+
+Emacs' own commands mark forward from a gap, but that is an artifact of
+marking from point without normalizing at all: `mark-word' in the gap of
+\"alpha  beta\" answers \" beta\", leading space attached.  Native has
+no opinion about which object was MEANT, so it cannot settle this and
+does not appear in the expectations below."
+  (dolist (case '((donkey-mark-word      "alpha  beta"           7  nil "alpha")
+                  (donkey-mark-symbol    "foo-a  bar-b"          7  emacs-lisp-mode "foo-a")
+                  (donkey-mark-sentence  "One two.  Three four." 10 nil "One two.")
+                  (donkey-mark-paragraph "A.\n\nB."              4  nil "A.\n\n")))
+    (cl-destructuring-bind (command text pos mode expected) case
+      (with-temp-buffer
+        (when mode (funcall mode))
+        (let ((transient-mark-mode t) (this-command nil) (last-command nil))
+          (insert text)
+          (goto-char pos)
+          (funcall command)
+          (should (equal (cons command (buffer-substring-no-properties
+                                        (region-beginning) (region-end)))
+                         (cons command expected))))))))
+
+(ert-deftest donkey-mark-commands-agree-about-the-trailing-gap ()
+  "Past the last object, all four mark that last object.
+
+The end of the buffer is a gap like any other and answers like one.
+`m s' used to refuse here with \"No sentence after point\" while the
+other three marked the last word, symbol and paragraph."
+  (dolist (case '((donkey-mark-word      "alpha beta   "           nil "beta")
+                  (donkey-mark-symbol    "foo-a bar-b   "          emacs-lisp-mode "bar-b")
+                  (donkey-mark-sentence  "One two.  Three four.  " nil "Three four.")
+                  (donkey-mark-paragraph "A.\n\nB.\n\n"            nil "\nB.\n")))
+    (cl-destructuring-bind (command text mode expected) case
+      (with-temp-buffer
+        (when mode (funcall mode))
+        (let ((transient-mark-mode t) (this-command nil) (last-command nil))
+          (insert text)
+          (goto-char (point-max))
+          (funcall command)
+          (should (equal (cons command (buffer-substring-no-properties
+                                        (region-beginning) (region-end)))
+                         (cons command expected))))))))
+
+(ert-deftest donkey-mark-commands-in-the-leading-gap-do-not-yet-agree ()
+  "In the LEADING gap two commands reach forward and two refuse.
+
+Nothing is behind at the start of a buffer, so the object ahead is the
+only answer available.  `m s' and `m p' give it.  `m w' and `m W' report
+\"No word at or before point\" and \"No symbol at or before point\"
+instead -- the last surviving corner where the four disagree about what
+a gap means, and the mirror image of what `m s' used to do at the other
+end of the buffer.
+
+Asserted as it stands, not as it should be, so that changing it is a
+decision someone makes rather than something that drifts."
+  (dolist (case '((donkey-mark-word      "   alpha beta"        nil error)
+                  (donkey-mark-symbol    "   foo-a bar-b"       emacs-lisp-mode error)
+                  (donkey-mark-sentence  "   One two.  Three."  nil "One two.")
+                  (donkey-mark-paragraph "\n\nA.\n\nB."         nil "\n\nA.\n")))
+    (cl-destructuring-bind (command text mode expected) case
+      (with-temp-buffer
+        (when mode (funcall mode))
+        (let ((transient-mark-mode t) (this-command nil) (last-command nil))
+          (insert text)
+          (goto-char (point-min))
+          (should (equal (cons command
+                               (condition-case nil
+                                   (progn (funcall command)
+                                          (buffer-substring-no-properties
+                                           (region-beginning) (region-end)))
+                                 (user-error 'error)))
+                         (cons command expected))))))))
 
 (provide 'donkey-marking-test)
 
