@@ -2261,25 +2261,45 @@ this behavior is later changed, the prose has to move with it."
 
 The point of the guard.  With the rectangle collapsed to column 0 this
 inserted against the left margin instead, so the check is on the text,
-not on the columns -- a reader never sees a column number."
-  (with-temp-buffer
-    ;; `last-command' bound because `next-line' below reuses the GLOBAL
-    ;; `temporary-goal-column' whenever the previous command was itself a
-    ;; line motion.  Inherited from an earlier test, that walked the
-    ;; rectangle to the remembered column instead of keeping the one
-    ;; `end-of-line' put it on, and the appended text landed mid-word:
-    ;; "aa;" rather than "aaaaa;".  Only visible when the suite runs in
-    ;; an order where a line-motion test comes first.
-    (let ((transient-mark-mode t)
-          (last-command nil))
-      (insert "aaaaa\nbbbbb\nccccc\n")
-      (goto-char (point-min))
-      (end-of-line)
-      (donkey-rectangle-mark-mode)
-      (next-line 2)
-      (cl-letf (((symbol-function 'read-string) (lambda (&rest _) ";")))
-        (donkey-change))
-      (should (equal (buffer-string) "aaaaa;\nbbbbb;\nccccc;\n")))))
+not on the columns -- a reader never sees a column number.
+
+Driven by keys in a DISPLAYED buffer, and both halves of that matter.
+The descent used to be a bare `next-line' call, which in a live -nw
+frame lands on column 0 rather than the column `end-of-line' put point
+on: the rectangle came out spanning whole lines and the change REPLACED
+them, giving \";\\n;\\n;\\n\".  Batch kept column 5 and the test passed,
+and batch is the only place it ever ran.  Pressing `j' gives column 5 in
+both, so the command was never at fault -- only the way it was reached.
+
+And keys need a buffer in the selected window, since the command loop
+acts there rather than on whatever is merely current.  Swapping
+`next-line' for `j' inside a `with-temp-buffer' therefore broke it the
+other way round, passing live and failing in batch."
+  (unwind-protect
+      (progn
+        (when (get-buffer "*donkey-rect-eol*") (kill-buffer "*donkey-rect-eol*"))
+        (switch-to-buffer (get-buffer-create "*donkey-rect-eol*"))
+        (text-mode)
+        (donkey-mode 1)
+        ;; `last-command' bound because a line motion reuses the GLOBAL
+        ;; `temporary-goal-column' whenever the previous command was
+        ;; itself one.  Inherited from an earlier test, that walked the
+        ;; rectangle to the remembered column instead of keeping the one
+        ;; `end-of-line' put it on, and the appended text landed mid-word:
+        ;; "aa;" rather than "aaaaa;".  Only visible when the suite runs
+        ;; in an order where a line-motion test comes first.
+        (let ((transient-mark-mode t)
+              (last-command nil)
+              (prefix-arg nil) (current-prefix-arg nil)
+              (inhibit-message t))
+          (insert "aaaaa\nbbbbb\nccccc\n")
+          (goto-char (point-min))
+          (donkey-normal-mode 1)
+          (execute-kbd-macro (kbd "g l m v j j"))
+          (cl-letf (((symbol-function 'read-string) (lambda (&rest _) ";")))
+            (donkey-change))
+          (should (equal (buffer-string) "aaaaa;\nbbbbb;\nccccc;\n"))))
+    (when (get-buffer "*donkey-rect-eol*") (kill-buffer "*donkey-rect-eol*"))))
 
 (ert-deftest donkey-rectangle-mark-mode-creates-rectangular-selection ()
   "Rect mark mode creates a rectangular region selection."

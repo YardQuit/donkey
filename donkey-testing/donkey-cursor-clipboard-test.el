@@ -30,6 +30,56 @@
   "(hbar . N) cursor maps to DECSCUSR steady underline."
   (should (string= (donkey--cursor-type-to-decscusr '(hbar . 2)) "\e[4 q")))
 
+(ert-deftest donkey-cursor-type-to-decscusr-covers-every-emacs-shape ()
+  "Every value Emacs accepts for `cursor-type' maps somewhere deliberate.
+
+Asserted as a table rather than one test per shape, because the defect
+this replaces was an absence: `bar' had both spellings and `hbar' had
+only the (hbar . N) one, so a bare `hbar' -- which Emacs accepts
+wherever it accepts the pair, and which this suite itself sets as a
+buffer-local `cursor-type' elsewhere -- fell through to the fallback and
+drew a block where an underline was asked for.  Nothing noticed, because
+every shape had its own test and the missing one had no test to be
+missing from.
+
+`t' and nil are here too.  They are not shapes -- they mean whatever the
+frame says -- so the fallback is the right answer for them, and pinning
+that keeps a future reader from \"fixing\" them into a shape."
+  (dolist (case '((box         . "\e[2 q")
+                  (bar         . "\e[6 q")
+                  ((bar . 2)   . "\e[6 q")
+                  ((bar . 4)   . "\e[6 q")
+                  (hbar        . "\e[4 q")
+                  ((hbar . 2)  . "\e[4 q")
+                  ((hbar . 4)  . "\e[4 q")
+                  (hollow      . "\e[0 q")
+                  (t           . "\e[0 q")
+                  (nil         . "\e[0 q")
+                  (unknown     . "\e[0 q")))
+    (should (equal (cons (car case)
+                         (donkey--cursor-type-to-decscusr (car case)))
+                   case))))
+
+(ert-deftest donkey-decscusr-denied-terminals-has-a-floor-under-it ()
+  "The option governs \"linux\"; it cannot un-deny \"dumb\".
+
+Emptying `donkey-decscusr-denied-terminals' re-enables \"linux\" but not
+\"dumb\", \"unknown\" or \"cons25\" -- those are refused separately,
+whatever the option says.  Worth pinning in both directions: the option
+is documented as the control, and a reader who takes that literally
+would expect emptying it to let every sequence through.  The docstring
+now says otherwise, and this is what makes that true."
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil)))
+    (dolist (case '(("linux"   . t)
+                    ("dumb"    . nil)
+                    ("unknown" . nil)
+                    ("cons25"  . nil)))
+      (cl-letf (((symbol-function 'tty-type) (lambda (&rest _) (car case))))
+        (let ((donkey-decscusr-denied-terminals nil))
+          (should (equal (cons (car case)
+                               (and (donkey--terminal-supports-decscusr-p) t))
+                         case)))))))
+
 (ert-deftest donkey-cursor-type-to-decscusr-unknown-type-fallback ()
   "Unknown cursor type maps to DECSCUSR default sequence."
   (should (string= (donkey--cursor-type-to-decscusr 'unknown-shape) "\e[0 q")))

@@ -1061,7 +1061,15 @@ rather than a visibly absent one."
   (donkey-tutor-test--live
    (donkey-tutor-test--goline "---> one two three four five")
    (let ((l0 (line-number-at-pos)))
-     (condition-case nil (execute-kbd-macro (kbd "3 j")) (error nil) (quit nil))
+     ;; Two separate macros, because that is what two keypresses are.
+     ;; Driven as ONE macro this passed in batch and failed in a live
+     ;; -nw frame: the `undefined' error aborts the rest of a running
+     ;; macro there, so the motion never ran and the cursor stayed put --
+     ;; which is not what a reader typing the two keys experiences, and
+     ;; not what the lesson claims.  The claim itself is right; only the
+     ;; way it was being checked depended on the environment.
+     (condition-case nil (execute-kbd-macro (kbd "3")) (error nil) (quit nil))
+     (execute-kbd-macro (kbd "j"))
      (should (= (line-number-at-pos) (1+ l0)))))
   (unwind-protect
       (progn
