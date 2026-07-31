@@ -1273,7 +1273,15 @@ wider block.  A COUNT below 1 inserts nothing, as it does for
 \\[donkey-yank]."
   (interactive "p")
   (cond
-   ((null killed-rectangle)
+   ;; A rectangle of nothing but empty rows counts as nothing to paste,
+   ;; not as a paste of nothing.  It is one press away -- copying a
+   ;; zero-width rectangle, which `m v' draws from an existing empty
+   ;; region, stores ("" "") -- and pasting it used to change no text and
+   ;; say nothing at all, leaving a reader who believed the store was
+   ;; loaded with no clue why the key did nothing.  Two routes to the
+   ;; same situation now reach the same message.
+   ((or (null killed-rectangle)
+        (seq-every-p #'string-empty-p killed-rectangle))
     (message "No rectangle to paste"))
    ((bound-and-true-p rectangle-mark-mode)
     (donkey--replace-rectangle-selection-with-killed-rectangle))
@@ -1370,24 +1378,66 @@ copies nothing at all."
   (interactive "p")
   (let* ((n (or count 1))
          (target (max (point-min) (min (point-max) (+ (point) n)))))
-   (cond
-    ;; Before the bank: a rectangle on screen is the live selection, and
-    ;; the live selection wins.  See `donkey--live-rectangle-p'.
-    ((donkey--live-rectangle-p)
-     (call-interactively #'copy-rectangle-as-kill))
-    ((donkey--banked-selection-p)
-     (donkey--copy-banked-selection))
-    ((use-region-p)
-     (let ((bounds (donkey--visual-line-region-bounds)))
-       (kill-ring-save (car bounds) (cdr bounds))))
-    ((zerop n) nil)
-    ((/= target (point))
-     (kill-ring-save (point) target))
-    ((< n 0)
-     (message "Beginning of buffer -- nothing to copy"))
-    (t
-     (message "End of buffer -- nothing to copy"))))
-  (deactivate-mark))
+   ;; Each branch answers whether it copied anything, because only a copy
+   ;; that happened should clear the selection.  The `deactivate-mark'
+   ;; used to sit outside this `cond' and fire on every branch, including
+   ;; the two that report having nothing to take -- so a rectangle drawn
+   ;; where there was nothing to copy vanished on the press that told you
+   ;; so, and had to be drawn again.  `donkey-delete' cannot get this
+   ;; wrong: it never deactivates explicitly, and a deletion that deletes
+   ;; nothing leaves the selection standing by doing nothing at all.
+   ;;
+   ;; A successful copy still clears it.  Nothing else would -- the buffer
+   ;; is untouched, so there is no edit for the command loop to notice --
+   ;; and a selection surviving the key that consumed it is the surprise
+   ;; running the other way.
+   (let ((copied
+          (cond
+           ;; Before the bank: a rectangle on screen is the live
+           ;; selection, and the live selection wins.  See
+           ;; `donkey--live-rectangle-p'.
+           ((donkey--live-rectangle-p)
+            ;; Taken aside first, and committed only if there is anything
+            ;; in it.  A rectangle with no width copies as nothing but
+            ;; empty rows, which `donkey-yank-rectangle' refuses to paste
+            ;; -- so calling it a successful copy here would clear the
+            ;; selection AND leave a store that the paste key says is
+            ;; empty.  Worse, `copy-rectangle-as-kill' writes
+            ;; `killed-rectangle' before anyone can look at what it took,
+            ;; so a real rectangle waiting there would be lost to a press
+            ;; that copied nothing.
+            (let ((taken (let ((killed-rectangle nil))
+                           (call-interactively #'copy-rectangle-as-kill)
+                           killed-rectangle)))
+              (if (seq-every-p #'string-empty-p taken)
+                  (progn
+                    ;; `copy-rectangle-as-kill' sets the `deactivate-mark'
+                    ;; VARIABLE, which the command loop acts on after this
+                    ;; returns -- so declining to call `deactivate-mark'
+                    ;; is not enough to keep the rectangle on screen.
+                    (setq deactivate-mark nil)
+                    (message "Nothing to copy -- the rectangle has no width")
+                    nil)
+                (setq killed-rectangle taken)
+                t)))
+           ((donkey--banked-selection-p)
+            (donkey--copy-banked-selection) t)
+           ((use-region-p)
+            (let ((bounds (donkey--visual-line-region-bounds)))
+              (kill-ring-save (car bounds) (cdr bounds)))
+            t)
+           ((zerop n) nil)
+           ((/= target (point))
+            (kill-ring-save (point) target)
+            t)
+           ((< n 0)
+            (message "Beginning of buffer -- nothing to copy")
+            nil)
+           (t
+            (message "End of buffer -- nothing to copy")
+            nil))))
+     (when copied
+       (deactivate-mark)))))
 
 ;; Two things this got wrong before:
 ;;
@@ -1443,7 +1493,21 @@ the same place."
     ;; Before the bank, for the reason `donkey-copy' gives: see
     ;; `donkey--live-rectangle-p'.
     ((donkey--live-rectangle-p)
-     (call-interactively #'kill-rectangle))
+     ;; Taken aside first, exactly as `donkey-copy' does, and for a
+     ;; sharper reason: `kill-rectangle' overwrites `killed-rectangle'
+     ;; before anything can look at what it took, so a no-width rectangle
+     ;; -- one press away, since `m v' over an existing empty region
+     ;; draws one -- replaced a stored rectangle with empty rows while
+     ;; deleting nothing at all.  A press that removes no text must not
+     ;; destroy what was waiting to be pasted.
+     (let ((taken (let ((killed-rectangle nil))
+                    (call-interactively #'kill-rectangle)
+                    killed-rectangle)))
+       (if (seq-every-p #'string-empty-p taken)
+           (progn
+             (setq deactivate-mark nil)
+             (message "Nothing to delete -- the rectangle has no width"))
+         (setq killed-rectangle taken))))
     ((donkey--banked-selection-p)
      (donkey--delete-banked-selection))
     ((use-region-p)
