@@ -4690,7 +4690,7 @@ beside the redisplay it is part of."
   "Cursor shape when DONKEY Normal state is active.
 
 Set to nil to fall back to global `cursor-type'."
-  :type '(choice (const box) (const bar) (const hollow)
+  :type '(choice (const box) (const bar) (const hbar) (const hollow)
                  (cons symbol integer)
                  (const :tag "Use Global Default" nil))
   :group 'donkey)
@@ -4699,7 +4699,7 @@ Set to nil to fall back to global `cursor-type'."
   "Cursor shape when DONKEY Insert state is active.
 
 Set to nil to fall back to global `cursor-type'."
-  :type '(choice (const box) (const bar) (const hollow)
+  :type '(choice (const box) (const bar) (const hbar) (const hollow)
                  (cons symbol integer)
                  (const :tag "Use Global Default" nil))
   :group 'donkey)
@@ -4718,20 +4718,39 @@ Common entries:
   \"linux\" — Linux framebuffer console; uses ioctls, not DECSCUSR
 
 Users may add entries for terminals that exhibit garbled output
-when DECSCUSR sequences are sent."
+when DECSCUSR sequences are sent.
+
+Removing an entry does not always re-enable it.  \"dumb\", \"unknown\"
+and \"cons25\" are refused by `donkey--terminal-supports-decscusr-p'
+whatever this list says, because a terminal reporting one of those names
+has said it cannot render the sequences at all, and there is no setting
+worth honoring over that.  \"dumb\" appears in the default value as well,
+where it is documentation rather than the thing doing the work: taking
+it out changes nothing, while taking out \"linux\" does."
   :type '(repeat string)
   :group 'donkey)
 
 (defun donkey--cursor-type-to-decscusr (type)
   "Convert cursor TYPE to DECSCUSR escape sequence.
 
-Maps all supported shapes including hollow (blinking)."
+Every shape Emacs accepts for `cursor-type' has a mapping, written both
+as a plain symbol and as the (SHAPE . SIZE) pair wherever Emacs takes
+both spellings.  Anything unrecognized falls back to the terminal's own
+default -- which is where the two values meaning \"whatever the frame
+says\" rather than a shape land, since neither names a shape to send."
   (pcase type
     ('box         "\e[2 q")    ; Steady block
     ('hollow      "\e[0 q")    ; Blinking block (default)
     ('bar         "\e[6 q")    ; Steady bar
     (`(bar . ,_)  "\e[6 q")    ; Steady bar, ignore width
-    (`(hbar . ,_) "\e[4 q")    ; Steady underline
+    ;; Bare `hbar' as well as the (hbar . WIDTH) form.  Only the cons was
+    ;; matched, so the plain symbol -- which Emacs accepts everywhere it
+    ;; accepts the cons, and which this package's own tests use as a
+    ;; buffer-local `cursor-type' -- fell through to the default and drew
+    ;; a block where an underline was asked for.  `bar' has had both
+    ;; spellings all along; this is the same pair for the other shape.
+    ('hbar        "\e[4 q")    ; Steady underline
+    (`(hbar . ,_) "\e[4 q")    ; Steady underline, ignore height
     (_ "\e[0 q")))             ; Fallback to default
 
 (defun donkey--terminal-supports-decscusr-p ()
