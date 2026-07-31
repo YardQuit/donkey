@@ -2045,4 +2045,152 @@ did something surprising with it."
       (let ((spec (cadr (interactive-form command))))
         (should-not (and (stringp spec) (string-match-p "p" spec)))))))
 
+;;; ---------------------------------------------------------------------------
+;;; The two help commands driven as programs
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-tutor-reopened-with-donkey-off-turns-it-back-on ()
+  "Returning to a tutor whose DONKEY was switched off makes it work again.
+
+`donkey-tutor\\=' keeps an existing buffer rather than rebuilding it, so a
+buried lesson survives -- but it used to return that buffer exactly as
+found, DONKEY included.  With DONKEY off there, a reader came back to a
+document about keys where none of the keys worked: \\=`j\\=' typed a
+literal \"j\" into the lesson, and \\=`g ?\\=' -- the key for reopening
+this very buffer -- was not bound at all.  Nothing on screen said why,
+because the text still named every binding.
+
+The binding of \\=`j\\=' is what is asserted rather than the mode flag: a
+flag says DONKEY is on, while the binding says the lesson is usable,
+and it is the second one the reader cares about."
+  (unwind-protect
+      (progn
+        (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*" (donkey-mode -1))
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should (bound-and-true-p donkey-mode))
+          (should (bound-and-true-p donkey-normal-mode))
+          (should (eq (key-binding (kbd "j")) 'next-line))
+          (should (eq (key-binding (kbd "g ?")) 'donkey-tutor))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-reopened-while-live-is-left-exactly-as-found ()
+  "A reopen changes nothing when DONKEY is already on -- INSERT included.
+
+The other half of the rule, and the reason the fix could not simply
+re-enter Normal state on every reopen: coming back to a buried tutor
+mid-exercise should give the lesson back as it was left.  That is the
+same promise that keeps the buffer instead of rebuilding it, so an edit
+made by hand is checked here too."
+  (unwind-protect
+      (progn
+        (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (donkey-enter-insert)
+          (goto-char (point-max))
+          (insert "\nMY OWN PRACTICE LINE\n"))
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should (bound-and-true-p donkey-insert-mode))
+          (should-not (bound-and-true-p donkey-normal-mode))
+          (should (string-match-p "MY OWN PRACTICE LINE" (buffer-string)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-killed-and-reopened-starts-over ()
+  "Killing the tutor is what discards a lesson, and it does.
+
+Documented as the way to start again, and the counterpart to keeping the
+buffer: if a reopen preserved edits AND a kill did too, there would be
+no way back to a clean lesson."
+  (unwind-protect
+      (progn
+        (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-max))
+          (insert "\nMY OWN PRACTICE LINE\n"))
+        (kill-buffer "*DONKEY Tutor*")
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should-not (string-match-p "MY OWN PRACTICE LINE" (buffer-string)))
+          (should (bound-and-true-p donkey-normal-mode))
+          (should-not (buffer-modified-p))
+          (should (= (point) (point-min)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-describe-bindings-lists-every-command-in-the-keymap ()
+  "Nothing bound in Normal state is missing from the listing.
+
+Walked from the keymap rather than from a written list, so a command
+added to the map without being added here fails this instead of
+quietly not appearing.  `ignore\\=' is excluded: those bindings exist to
+suppress keys, and there is nothing to tell a reader about them."
+  (unwind-protect
+      (let (missing)
+        (donkey-describe-bindings)
+        (let ((text (with-current-buffer "*DONKEY Bindings*" (buffer-string))))
+          (dolist (prefix '("" "m" "g" "z" "r"))
+            (let ((map (if (string= prefix "")
+                           donkey-normal-mode-map
+                         (keymap-lookup donkey-normal-mode-map prefix))))
+              (when (keymapp map)
+                (map-keymap
+                 (lambda (_key def)
+                   (when (and (symbolp def) (commandp def) (not (eq def 'ignore)))
+                     (unless (string-match-p (regexp-quote (symbol-name def)) text)
+                       (push (symbol-name def) missing))))
+                 map)))))
+        (should (equal (delete-dups missing) nil)))
+    (when (get-buffer "*DONKEY Bindings*") (kill-buffer "*DONKEY Bindings*"))))
+
+(ert-deftest donkey-describe-bindings-rebuilds-rather-than-appending ()
+  "A second call replaces the listing instead of adding to it.
+
+Also checks that a binding added since the last call shows up, which is
+the practical reason a rebuild matters: someone changing their keymap
+and pressing \\=`?\\=' expects to see what they just changed, not what
+the map held the first time they asked."
+  (unwind-protect
+      (progn
+        (donkey-describe-bindings)
+        (with-current-buffer "*DONKEY Bindings*"
+          (let ((inhibit-read-only t))
+            (goto-char (point-max))
+            (insert "\nSENTINEL\n")))
+        (donkey-describe-bindings)
+        (with-current-buffer "*DONKEY Bindings*"
+          (should-not (string-match-p "SENTINEL" (buffer-string))))
+        (keymap-set donkey-normal-mode-map "Q" #'donkey-org-scratch)
+        (unwind-protect
+            (progn
+              (donkey-describe-bindings)
+              (with-current-buffer "*DONKEY Bindings*"
+                (should (string-match-p "donkey-org-scratch" (buffer-string)))))
+          (keymap-unset donkey-normal-mode-map "Q"))
+        (donkey-describe-bindings)
+        (with-current-buffer "*DONKEY Bindings*"
+          (should-not (string-match-p "donkey-org-scratch" (buffer-string)))))
+    (when (get-buffer "*DONKEY Bindings*") (kill-buffer "*DONKEY Bindings*"))))
+
+(ert-deftest donkey-describe-bindings-works-where-donkey-was-never-enabled ()
+  "`?\\=' is reachable by name from any buffer, so it must not assume its own mode.
+
+`donkey-describe-bindings\\=' reads a keymap variable rather than the
+current buffer, and a reader can call it through
+\\\\[execute-extended-command] from anywhere -- including a buffer DONKEY
+has never touched."
+  (unwind-protect
+      (with-temp-buffer
+        (fundamental-mode)
+        (donkey-describe-bindings)
+        (should (get-buffer "*DONKEY Bindings*"))
+        (with-current-buffer "*DONKEY Bindings*"
+          (should buffer-read-only)
+          (should (eq major-mode 'special-mode))
+          (should (= (point) (point-min)))))
+    (when (get-buffer "*DONKEY Bindings*") (kill-buffer "*DONKEY Bindings*"))))
+
 ;;; donkey-describe-bindings-test.el ends here
