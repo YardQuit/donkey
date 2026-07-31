@@ -42,9 +42,9 @@ drew a block where an underline was asked for.  Nothing noticed, because
 every shape had its own test and the missing one had no test to be
 missing from.
 
-`t' and nil are here too.  They are not shapes -- they mean whatever the
-frame says -- so the fallback is the right answer for them, and pinning
-that keeps a future reader from \"fixing\" them into a shape."
+The two values meaning \"whatever the frame says\" are here too.  Neither
+names a shape, so the fallback is the right answer for them, and pinning
+that keeps a future reader from \"fixing\" them into one."
   (dolist (case '((box         . "\e[2 q")
                   (bar         . "\e[6 q")
                   ((bar . 2)   . "\e[6 q")
