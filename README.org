@@ -610,8 +610,12 @@ Notes:
 
 *** Counts
 
-Most commands take a numeric count via =C-u=, so =C-u 3 x= deletes three
-characters and =C-u 2 m s= marks two sentences:
+A count works wherever "how many" means something, and it always means
+exactly that — so =C-u 3 x= deletes three characters and =C-u 2 m s=
+marks two sentences. Every motion takes one, as does every =m= key that
+selects a thing, along with =d=, =y=, =c= and =p=. The keys with no "how
+many" in them — entering INSERT, toggling a state, asking for help —
+ignore a count rather than refusing it.
 
 | Keys        | Effect                                  |
 |-------------+-----------------------------------------|
@@ -628,6 +632,8 @@ characters and =C-u 2 m s= marks two sentences:
 | =C-u 2 m p= | mark two paragraphs                     |
 | =C-u 2 m A= | mark two levels out of the expression   |
 | =C-u 2 m i= | mark two levels out of the delimiter pair |
+| =C-u 3 S=   | jump back three recorded positions       |
+| =C-u 3 m l= | bank three lines                         |
 
 A count larger than the text remaining does what it can and stops, rather
 than erroring — =C-u 99 x= at the end of a buffer clears the rest.
