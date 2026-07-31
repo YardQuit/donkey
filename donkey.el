@@ -848,8 +848,19 @@ Returns command symbol or nil if no handler matches."
 (defun donkey-org-todo ()
   "Toggle headline TODO state between TODO and DONE.
 
-Uses `org-element-at-point' to detect :todo-type property and
-dispatches `org-todo' accordingly.  No keyword string parsing needed."
+Uses `org-element-at-point' to detect the :todo-type property and
+dispatches `org-todo' accordingly.  No keyword string parsing needed.
+
+A headline with no keyword is left alone.  RET is a reader\='s key in an
+Org buffer -- it ticks a checkbox, it follows a link -- and turning a
+plain heading into a TODO is a different kind of act: it adds structure
+that was not there, to a heading someone may simply have been reading.
+
+That is also the only way this can be reached.  The rule registering it
+is (headline :todo-type donkey-org-todo), so a nil :todo-type never
+matches and the command is never called on a plain heading.  A branch
+here that added the keyword anyway could not run from RET, and read as
+though the feature existed."
   (interactive)
   (when (and (fboundp 'org-element-at-point)
              (fboundp 'org-element-property)
@@ -862,8 +873,6 @@ dispatches `org-todo' accordingly.  No keyword string parsing needed."
        ((eq todo-type 'todo)
         (org-todo 'done))
        ((eq todo-type 'done)
-        (org-todo 'todo))
-       (t
         (org-todo 'todo))))))
 
 (when donkey-default-enter-rules-enabled
