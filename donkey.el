@@ -3703,9 +3703,10 @@ the BUFFER.  One keystroke puts it right.
 >> Press \\[end-of-buffer] to shoot to the end of this buffer, then \\[donkey-jump-back] to come
    straight back to this line.
 
-Press it again to keep walking back through earlier positions.  It is a
-recovery key rather than a filing system: for places you mean to return to
-deliberately, Emacs' own bookmarks are the right tool.
+Press it again to keep walking back through earlier positions, or give it
+a count to take several at once: \\`C-u 3' \\[donkey-jump-back] lands where three presses
+land.  It is a recovery key rather than a filing system: for places you
+mean to return to deliberately, Emacs' own bookmarks are the right tool.
 
 
 Lesson 2 -- counts
@@ -3972,6 +3973,7 @@ aside lines from anywhere in the buffer and act on all of them at once.
 
     \\[donkey-bank-selection] bank this line, or every line a selection touches
         (press it again on a banked line to take it back)
+        (\\`C-u 3' \\[donkey-bank-selection] banks three lines, as selecting them would)
     \\[donkey-unbank-line] unbank this line     \\[donkey-unbank-section] unbank the whole run
     \\[donkey-clear-banked-selection] discard every bank
 
