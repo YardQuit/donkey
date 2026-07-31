@@ -214,6 +214,76 @@ jobs:
           fi
           echo "suite passes in every shuffled order tried"
 
+  # The suite in a REAL terminal frame, which is the kind of frame this
+  # package is for and the kind every other job here lacks.  --batch has
+  # no window, no command loop of the usual shape, and different error
+  # propagation inside `execute-kbd-macro' -- so a test can pass in every
+  # job above and still fail the first time a person runs it.
+  #
+  # Two did.  `donkey-tutor-lesson-2-tells-the-truth-about-bare-digits'
+  # drove "3 j" as one macro: a running macro aborts at the `undefined'
+  # error in a terminal frame, so the motion never ran, while a reader
+  # typing two keys types two COMMANDS and gets the line the lesson
+  # promises.  `...at-end-of-line-appends-via-change' called `next-line'
+  # straight from Lisp, which lands on column 0 there rather than the
+  # column `end-of-line' put point on, so the rectangle spanned whole
+  # lines and the change replaced them.  Both were fixed by driving keys;
+  # neither was a defect in the commands, and neither was visible from
+  # any job that runs --batch.
+  #
+  # `script' supplies the pty Emacs needs to open a terminal frame at all.
+  terminal:
+    name: Suite in a terminal frame (-nw)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+
+      # `ert-run-tests-batch-and-exit' cannot be used outside --batch: its
+      # output goes to the echo area rather than to stdout, so a failing
+      # run would scroll past invisibly and this job would pass while
+      # reporting nothing.  Messages are captured to a file instead, and
+      # the exit status is taken from the stats object rather than by
+      # grepping that file -- a grep would also match a test NAME
+      # containing the word, and the point of this job is to fail when it
+      # should.
+      - name: Write the terminal-frame driver
+        run: |
+          set -euo pipefail
+          cat > /tmp/nw-driver.el <<'ELISP'
+          (require 'ert)
+          (dolist (f (file-expand-wildcards
+                      (expand-file-name "donkey-testing/*-test.el"
+                                        default-directory)))
+            (load f nil t))
+          (let ((log "") stats)
+            (cl-letf (((symbol-function 'message)
+                       (lambda (fmt &rest args)
+                         (when fmt
+                           (setq log (concat log (apply #'format fmt args) "\n"))))))
+              (setq stats (ert-run-tests-batch t)))
+            (with-temp-file "/tmp/nw-run.log" (insert log))
+            (kill-emacs (if (zerop (ert-stats-completed-unexpected stats)) 0 1)))
+          ELISP
+
+      - name: Run the suite in a terminal frame
+        run: |
+          set -uo pipefail
+          TERM=xterm-256color script -qec \
+            "emacs -nw -Q -L . -L donkey-testing -l /tmp/nw-driver.el" /dev/null \
+            > /dev/null 2>&1
+          status=$?
+          tail -n 40 /tmp/nw-run.log || true
+          if [ "$status" -ne 0 ]; then
+            echo "::error::suite failed in a terminal frame"
+            grep -E '^ *FAILED' /tmp/nw-run.log || true
+            exit 1
+          fi
+          grep -E '^Ran ' /tmp/nw-run.log
+
   lint:
     name: Byte-compile, checkdoc, package-lint
     runs-on: ubuntu-latest
