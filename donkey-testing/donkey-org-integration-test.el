@@ -323,8 +323,18 @@ installed and only user-added rules exist."
       (donkey-org-todo))
     (should (eq (car called-with) 'todo))))
 
-(ert-deftest donkey-org-todo-adds-todo-if-none ()
-  "Adds TODO to headline with no keyword."
+(ert-deftest donkey-org-todo-leaves-a-headline-with-no-keyword-alone ()
+  "A headline with no keyword is not given one.
+
+This test used to assert the opposite -- that `donkey-org-todo\=' added
+TODO to a plain headline -- and passed for as long as it existed, while
+no keypress could reach that branch.  The rule registering the command
+is (headline :todo-type donkey-org-todo), so a nil :todo-type never
+matches and the command is not called on a plain heading at all.  Green
+for a reason unrelated to anything a reader can do.
+
+`org-todo\=' is stubbed rather than removed, so \"was not called\" is
+distinguishable from \"was called and did nothing\"."
   (let (called-with)
     (cl-letf (((symbol-function 'org-element-at-point)
                (lambda () '(headline (:todo-type nil))))
@@ -335,9 +345,9 @@ installed and only user-added rules exist."
                    nil)))
               ((symbol-function 'org-todo)
                (lambda (&rest args)
-                 (setq called-with args))))
+                 (setq called-with (or args '(called-with-no-args))))))
       (donkey-org-todo))
-    (should (eq (car called-with) 'todo))))
+    (should (equal called-with nil))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-enter-dwim dispatcher - Org Mode
@@ -776,6 +786,125 @@ available, falls back to `browse-url-at-point'."
     (setq donkey--enter-rules
           (cl-remove 'table donkey--enter-rules :key #'car :test 'eq))
     (should (= call-count 1))))
+
+;;; ---------------------------------------------------------------------------
+;;; RET in a real Org buffer, through the key
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-org-key-test (text keys &rest body)
+  "Type KEYS into a DISPLAYED `org-mode' buffer of TEXT, then run BODY.
+
+Every other test in this file stubs `org-element-at-point' and checks
+which command the dispatch picked.  That is worth having, and it is also
+how a discrepancy survived: `donkey-org-todo\\=' claimed to add TODO to a
+plain heading, a stubbed test asserted it, and no keypress could reach
+the branch.  These press the key instead.
+
+Displayed rather than merely current, because the command loop acts on
+the selected window\\='s buffer.  `org-todo-keywords\\=' is bound so the
+cycle does not depend on the developer\\='s own Org configuration."
+  (declare (indent 2))
+  `(unwind-protect
+       (progn
+         (when (get-buffer "*donkey-org-key-test*")
+           (kill-buffer "*donkey-org-key-test*"))
+         (switch-to-buffer (get-buffer-create "*donkey-org-key-test*"))
+         (org-mode)
+         (donkey-mode 1)
+         (let ((inhibit-message t)
+               (prefix-arg nil) (current-prefix-arg nil)
+               (org-todo-keywords '((sequence "TODO" "DONE"))))
+           (insert ,text)
+           (goto-char (point-min))
+           (donkey-normal-mode 1)
+           (execute-kbd-macro (kbd ,keys))
+           ,@body))
+     (when (get-buffer "*donkey-org-key-test*")
+       (kill-buffer "*donkey-org-key-test*"))))
+
+(defun donkey-org-key-test--line ()
+  "Return the current line, without properties."
+  (buffer-substring-no-properties
+   (line-beginning-position) (line-end-position)))
+
+(ert-deftest donkey-org-ret-leaves-a-plain-heading-plain ()
+  "RET on a headline with no keyword changes nothing.
+
+The end-to-end half of the stubbed test further up this file, the one
+named for leaving a headline with no keyword alone.
+Pressing the key is the only thing a reader can do, and it is the thing
+no test did until now -- which is why the command and the rule that
+invokes it were free to disagree about this case for as long as they
+did.
+
+Pressed twice as well, since \"does nothing\" is a claim a second press
+can falsify in a way the first cannot: a command that added the keyword
+and then cycled it would look identical after one press."
+  (donkey-org-key-test "* just a heading\n" "RET"
+    (should (equal (donkey-org-key-test--line) "* just a heading")))
+  (donkey-org-key-test "* just a heading\n" "RET RET"
+    (should (equal (donkey-org-key-test--line) "* just a heading"))))
+
+(ert-deftest donkey-org-ret-cycles-todo-and-done ()
+  "RET moves a headline TODO -> DONE -> TODO.
+
+The case that DOES fire, kept beside the one that does not.
+
+Note what these two do NOT pin: the rule\='s :todo-type gate.  Dropping
+it -- registering the command for every headline -- changes no behavior
+and fails no test, because the command now does nothing on a nil
+:todo-type either.  The gate and the absent branch are two independent
+ways of leaving a plain heading alone, and the property survives losing
+either one.  Measured rather than assumed: this docstring first claimed
+the plain-heading test would catch it, and mutating the gate proved
+otherwise."
+  (donkey-org-key-test "* TODO write it\n" "RET"
+    (should (equal (donkey-org-key-test--line) "* DONE write it")))
+  (donkey-org-key-test "* DONE write it\n" "RET"
+    (should (equal (donkey-org-key-test--line) "* TODO write it")))
+  (donkey-org-key-test "* TODO write it\n" "RET RET"
+    (should (equal (donkey-org-key-test--line) "* TODO write it"))))
+
+(ert-deftest donkey-org-ret-toggles-a-checkbox ()
+  "RET ticks and unticks a checkbox item."
+  (donkey-org-key-test "- [ ] milk\n" "RET"
+    (should (equal (donkey-org-key-test--line) "- [X] milk")))
+  (donkey-org-key-test "- [X] milk\n" "RET"
+    (should (equal (donkey-org-key-test--line) "- [ ] milk")))
+  ;; A list item with no checkbox has nothing to tick.
+  (donkey-org-key-test "- milk\n" "RET"
+    (should (equal (donkey-org-key-test--line) "- milk"))))
+
+(ert-deftest donkey-org-ret-follows-a-link-from-anywhere-on-it ()
+  "RET opens a link whichever part of it point sits on.
+
+Only `browse-url\\=' is stubbed -- the outermost effect -- so the dispatch
+inside DONKEY runs unaltered.  Stubbing `org-open-at-point\\=' instead
+makes the dispatch fall through to `browse-url-at-point\\=', which then
+reports \"No URL found\" on a bracket link: a failure produced entirely
+by the stub, and one I mistook for a defect while sweeping this family
+until I re-ran it without."
+  (dolist (case '(("[[https://example.com][site]]\n"     "")
+                  ("[[https://example.com][site]]\n"     "l l l l")
+                  ("see [[https://example.com][site]]\n" "l l l l l l l l")
+                  ("https://example.com\n"               "")))
+    (cl-destructuring-bind (text lead) case
+      (let (visited)
+        (cl-letf (((symbol-function 'browse-url)
+                   (lambda (url &rest _) (setq visited url))))
+          (donkey-org-key-test text (concat lead " RET")
+            (should (equal (cons text visited)
+                           (cons text "https://example.com")))))))))
+
+(ert-deftest donkey-org-ret-does-nothing-where-no-rule-matches ()
+  "RET on prose, a table or an empty buffer leaves the text alone.
+
+RET doing nothing is the documented default outside the registered
+element types, so it is asserted rather than assumed -- a new rule that
+matched too broadly would show up here first."
+  (dolist (text '("just some prose\n" "| a | b |\n" ""))
+    (donkey-org-key-test text "RET"
+      (should (equal (cons text (buffer-string)) (cons text text))))))
 
 (provide 'donkey-org-integration-test)
 
