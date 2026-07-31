@@ -1492,6 +1492,103 @@ delegating, so this must not change when a pairing package is present
   (donkey-wrap-test--with-electric-pair "abcd\nefgh\nijkl\n" "m v j j l ("
     (should (equal (buffer-string) "(ab)cd\n(ef)gh\n(ij)kl\n"))))
 
+;;; ---------------------------------------------------------------------------
+;;; What the insert-entry keys do to a selection, a rectangle and a bank
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-entry-test (text keys &rest body)
+  "Type KEYS into a DONKEY buffer of TEXT, then run BODY.
+
+Real keys in a DISPLAYED buffer, because selection state is settled by
+the command loop rather than by the command -- the same reason the
+rectangle tests do it.  A directly called entry command would report a
+selection still active no matter what it did."
+  (declare (indent 2))
+  `(unwind-protect
+       (progn
+         (when (get-buffer "*donkey-entry-test*")
+           (kill-buffer "*donkey-entry-test*"))
+         (switch-to-buffer (get-buffer-create "*donkey-entry-test*"))
+         (text-mode)
+         (donkey-mode 1)
+         (let ((transient-mark-mode t)
+               (prefix-arg nil) (current-prefix-arg nil)
+               (inhibit-message t)
+               (killed-rectangle nil))
+           (insert ,text)
+           (goto-char (point-min))
+           (donkey-normal-mode 1)
+           (execute-kbd-macro (kbd ,keys))
+           ,@body))
+     (when (get-buffer "*donkey-entry-test*")
+       (kill-buffer "*donkey-entry-test*"))))
+
+(ert-deftest donkey-insert-entry-keys-drop-a-selection-and-enter-insert ()
+  "Every insert-entry key drops an active selection and starts typing.
+
+Asserted across the six together because the property is what they have
+in common: each deactivates the region, moves where its own name says,
+and enters INSERT.  A seventh key joining them without the first step
+would leave a selection standing that the next self-inserting character
+replaces."
+  (dolist (key '("i" "a" "I" "A" "o" "O"))
+    (donkey-entry-test "ab\ncd\n" (concat "v l " key)
+      (should (equal (list key (region-active-p) donkey-insert-mode)
+                     (list key nil t))))))
+
+(ert-deftest donkey-insert-entry-keys-drop-a-rectangle-rather-than-filling-it ()
+  "A drawn rectangle is dropped, not block-inserted into.
+
+The one place these keys could plausibly do something clever and do not:
+vi\\='s `I\\=' over a visual block inserts on every row.  DONKEY has no
+block insert, and `donkey-change\\=' is the key that acts on a rectangle
+-- it replaces every row via `string-rectangle\\='.  So the two sit
+beside each other answering differently, which is why the docstrings now
+say so and why this pins it.
+
+The buffer is asserted unchanged for the four that only move, since
+\"dropped the rectangle\" and \"quietly edited every row\" would
+otherwise look alike from the state flags."
+  (dolist (key '("i" "a" "I" "A"))
+    (donkey-entry-test "ab\ncd\n" (concat "m v j l " key)
+      (should (equal (list key (bound-and-true-p rectangle-mark-mode)
+                           donkey-insert-mode (buffer-string))
+                     (list key nil t "ab\ncd\n")))))
+  ;; `o' and `O' add their line, and still leave no rectangle behind.
+  (dolist (key '("o" "O"))
+    (donkey-entry-test "ab\ncd\n" (concat "m v j l " key)
+      (should (equal (list key (bound-and-true-p rectangle-mark-mode)
+                           donkey-insert-mode)
+                     (list key nil t))))))
+
+(ert-deftest donkey-insert-entry-keys-leave-a-bank-standing ()
+  "Banked lines survive entering INSERT, as they survive `donkey-change\\='.
+
+`donkey-copy\\=', `donkey-delete\\=' and `donkey-yank\\=' spend a bank.
+Entering INSERT is not an operation on a selection, so there is nothing
+for a bank to mean here and it is left alone -- which nothing asserted
+until now, in either direction."
+  (dolist (key '("i" "a" "I" "A" "o" "O"))
+    (donkey-entry-test "ab\ncd\n" (concat "m l " key)
+      (should (equal (list key (length donkey--banked-overlays)
+                           donkey-insert-mode)
+                     (list key 1 t))))))
+
+(ert-deftest donkey-insert-after-at-end-of-buffer-still-enters-insert ()
+  "`a\\=' at the very end of the buffer starts typing instead of refusing.
+
+There is no character to step over there, so the `forward-char\\=' would
+signal and abort before the state change -- leaving Normal state active
+with only an end-of-buffer message to explain it.  Guarded in the source,
+and asserted here alongside the ordinary case so the guard cannot be
+mistaken for dead code."
+  (donkey-entry-test "ab\n" "G a"
+    (should donkey-insert-mode)
+    (should (= (point) (point-max))))
+  (donkey-entry-test "ab\n" "a"
+    (should donkey-insert-mode)
+    (should (= (point) 2))))
+
 (provide 'donkey-insert-mode-entry-test)
 
 ;;; donkey-insert-mode-entry-test.el ends here

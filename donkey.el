@@ -433,13 +433,44 @@ nothing meaningful to deselect."
     (deactivate-mark)))
 
 (defun donkey-insert-here ()
-  "Insert at current position - enters INSERT state."
+  "Insert at point, and enter INSERT state.
+
+Any active selection is dropped first and nothing is done to it -- a
+drawn rectangle included, which is worth saying because `donkey-change'
+is the one insert-entry key that does the opposite: under
+`rectangle-mark-mode' it replaces every row of the block.  The two keys
+sit beside each other and answer differently.
+
+Banked lines are left standing, again as `donkey-change' leaves them.
+It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
+bank; entering INSERT is not an operation on a selection, so there is
+nothing here for a bank to mean.
+
+Takes no COUNT."
   (interactive)
   (donkey--deactivate-region-if-active)
   (donkey-enter-insert))
 
 (defun donkey-insert-after ()
-  "Insert after current char - enters INSERT state."
+  "Insert after the character at point, and enter INSERT state.
+
+At the very end of the buffer there is no character to step over, so
+point stays put rather than `forward-char' signaling -- which would
+abort before the state change and leave Normal state active, with only
+an end-of-buffer message to explain it.
+
+Any active selection is dropped first and nothing is done to it -- a
+drawn rectangle included, which is worth saying because `donkey-change'
+is the one insert-entry key that does the opposite: under
+`rectangle-mark-mode' it replaces every row of the block.  The two keys
+sit beside each other and answer differently.
+
+Banked lines are left standing, again as `donkey-change' leaves them.
+It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
+bank; entering INSERT is not an operation on a selection, so there is
+nothing here for a bank to mean.
+
+Takes no COUNT."
   (interactive)
   (donkey--deactivate-region-if-active)
   (condition-case _err
@@ -448,21 +479,67 @@ nothing meaningful to deselect."
   (donkey-enter-insert))
 
 (defun donkey-insert-beginning-of-line ()
-  "Insert at beginning of line - enters INSERT state."
+  "Move to the beginning of the line, and enter INSERT state.
+
+Any active selection is dropped first and nothing is done to it -- a
+drawn rectangle included, which is worth saying because `donkey-change'
+is the one insert-entry key that does the opposite: under
+`rectangle-mark-mode' it replaces every row of the block.  The two keys
+sit beside each other and answer differently.
+
+Banked lines are left standing, again as `donkey-change' leaves them.
+It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
+bank; entering INSERT is not an operation on a selection, so there is
+nothing here for a bank to mean.
+
+Takes no COUNT."
   (interactive)
   (donkey--deactivate-region-if-active)
   (beginning-of-line)
   (donkey-enter-insert))
 
 (defun donkey-insert-end-of-line ()
-  "Insert at end of line - enters INSERT state."
+  "Move to the end of the line, and enter INSERT state.
+
+Any active selection is dropped first and nothing is done to it -- a
+drawn rectangle included, which is worth saying because `donkey-change'
+is the one insert-entry key that does the opposite: under
+`rectangle-mark-mode' it replaces every row of the block.  The two keys
+sit beside each other and answer differently.
+
+Banked lines are left standing, again as `donkey-change' leaves them.
+It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
+bank; entering INSERT is not an operation on a selection, so there is
+nothing here for a bank to mean.
+
+Takes no COUNT."
   (interactive)
   (donkey--deactivate-region-if-active)
   (move-end-of-line 1)
   (donkey-enter-insert))
 
 (defun donkey-open-below ()
-  "Open a new line below and enter INSERT state."
+  "Open a new line below the current one, and enter INSERT state.
+
+Any active selection is dropped first and nothing is done to it -- a
+drawn rectangle included, which is worth saying because `donkey-change'
+is the one insert-entry key that does the opposite: under
+`rectangle-mark-mode' it replaces every row of the block.  The two keys
+sit beside each other and answer differently.
+
+Banked lines are left standing, again as `donkey-change' leaves them.
+It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
+bank; entering INSERT is not an operation on a selection, so there is
+nothing here for a bank to mean.
+
+Takes no COUNT.
+
+A count would read naturally here -- vi's 3o is a real thing -- but
+what it means there is the text typed afterwards repeated three times,
+which needs machinery for capturing an insert and replaying it that
+DONKEY does not have.  The reading that IS easy, three blank lines with
+point on the first, leaves two stray blanks under whatever gets typed
+and is not what anyone means by it."
   (interactive)
   (donkey--deactivate-region-if-active)
   (move-end-of-line 1)
@@ -470,7 +547,22 @@ nothing meaningful to deselect."
   (donkey-enter-insert))
 
 (defun donkey-open-above ()
-  "Open a new line above and enter INSERT state."
+  "Open a new line above the current one, and enter INSERT state.
+
+Any active selection is dropped first and nothing is done to it -- a
+drawn rectangle included, which is worth saying because `donkey-change'
+is the one insert-entry key that does the opposite: under
+`rectangle-mark-mode' it replaces every row of the block.  The two keys
+sit beside each other and answer differently.
+
+Banked lines are left standing, again as `donkey-change' leaves them.
+It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
+bank; entering INSERT is not an operation on a selection, so there is
+nothing here for a bank to mean.
+
+Takes no COUNT.
+
+See `donkey-open-below' for why neither of these takes a count."
   (interactive)
   (donkey--deactivate-region-if-active)
   (move-beginning-of-line 1)
