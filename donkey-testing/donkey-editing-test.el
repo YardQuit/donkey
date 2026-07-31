@@ -3192,8 +3192,8 @@ and the single press is what the key already meant."
 
 Real keys through `execute-kbd-macro' in a DISPLAYED buffer, because
 what is under test includes whether the rectangle SURVIVES the press --
-and a rectangle is cleared by the command loop acting on the
-`deactivate-mark' variable, not by the command itself.  A directly
+and a rectangle is cleared by the command loop acting on the variable
+`deactivate-mark', not by the command itself.  A directly
 called `donkey-delete' therefore always looks as though it kept the
 selection, which would pass this suite while the real key threw it away.
 The buffer is switched to rather than merely made current, since the
@@ -3243,16 +3243,18 @@ and `prefix-arg' is bound because `execute-kbd-macro' otherwise leaves a
 (ert-deftest donkey-rectangle-press-that-does-nothing-keeps-the-rectangle ()
   "A rectangle survives a press that had nothing to act on.
 
-`donkey-copy' ended with an unconditional `deactivate-mark' outside its
-`cond', so it fired on the branches that report having nothing to take:
+`donkey-copy' ended with an unconditional call to the function
+`deactivate-mark' outside its `cond', so it fired on the branches that
+report having nothing to take:
 a rectangle drawn where there was nothing to copy vanished on the very
 press that said so, and had to be drawn again.  `donkey-delete' never
 had that bug, since it deactivates only as a side effect of changing the
 buffer -- and both are asserted here, so the two keys cannot drift.
 
-The no-width case needs `deactivate-mark' cleared as well as left
-uncalled: `copy-rectangle-as-kill' and `kill-rectangle' set the
-VARIABLE, and the command loop acts on it afterwards."
+The no-width case needs the variable `deactivate-mark' cleared as well
+as the function of that name left uncalled: `copy-rectangle-as-kill' and
+`kill-rectangle' set the variable, and the command loop acts on it
+afterwards."
   ;; Nothing to act on: an empty buffer.
   (dolist (keys '("m v y" "m v d" "m v x" "m v P"))
     (donkey-rect-test nil "" keys
@@ -3267,10 +3269,10 @@ VARIABLE, and the command loop acts on it afterwards."
 (ert-deftest donkey-rectangle-press-that-took-it-still-clears-the-rectangle ()
   "A press that DID take the rectangle still ends the selection.
 
-The complement, and the reason the fix could not simply drop the
-`deactivate-mark': a copy changes no text, so nothing else would clear
-the selection, and one surviving the key that consumed it is the
-surprise running the other way."
+The complement, and the reason the fix could not simply drop the call to
+the function `deactivate-mark': a copy changes no text, so nothing else
+would clear the selection, and one surviving the key that consumed it is
+the surprise running the other way."
   (dolist (keys '("m v j l y" "m v j l d"))
     (donkey-rect-test nil "abcd\nefgh\n" keys
       (should (equal (cons keys (bound-and-true-p rectangle-mark-mode))
