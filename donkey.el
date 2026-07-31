@@ -320,11 +320,17 @@ where the one value a user can get wrong is made safe."
 ;; visible character while still reporting "Position 2/3" -- a claimed jump
 ;; to a recorded position that was really just a jump to the boundary.
 ;; `donkey--banked-spans' filters the same way and for the same reason.
-(defun donkey-jump-back ()
+(defun donkey-jump-back (&optional count)
   "Rotate to the next stored position in the ring and jump there.
 
 Press repeatedly to cycle through the last `donkey-position-ring-max'
 recorded positions in this buffer.
+
+COUNT jumps back that many recorded positions at once, reaching the same
+place a run of COUNT presses reaches.  A COUNT below 1 is treated as 1:
+the ring is walked in one direction only, so zero has nothing to mean
+here and a negative count would have to invent a forward walk this key
+does not do.
 
 Intended mainly for undoing navigation mistakes: a big jump is easy to
 mis-key, and this makes one cheap to take back -- reaching for `g l' and
@@ -338,7 +344,7 @@ to remember.
 Positions outside the accessible portion are skipped rather than jumped
 to, and the count in the message is of the visible entries, so it matches
 what pressing again will cycle through."
-  (interactive)
+  (interactive "p")
   (let ((visible (seq-filter (lambda (m)
                                (let ((pos (marker-position m)))
                                  (and pos
@@ -363,6 +369,13 @@ what pressing again will cycle through."
              (idx (if (>= donkey--position-index ring-len)
                       0
                     donkey--position-index)))
+        ;; A COUNT is N presses in one, wrapping where N presses would
+        ;; wrap: each press walks the ring by one and starts over at the
+        ;; top on reaching the end, so the (N-1)th entry along from here
+        ;; is exactly where N presses would have arrived.  The index left
+        ;; behind is the one they would have left too, so a count and a
+        ;; run of presses stay interchangeable in either order.
+        (setq idx (mod (+ idx (1- (max 1 (or count 1)))) ring-len))
         (goto-char (nth idx visible))
         (setq donkey--position-index (1+ idx))
         (setq donkey--last-tracked-state (cons (current-buffer) (point)))
@@ -3130,7 +3143,7 @@ the live region, never duplicates or splits text."
                                                   (region-end)))))
          (lambda (a b) (< (car a) (car b))))))
 
-(defun donkey-bank-selection ()
+(defun donkey-bank-selection (&optional count)
   "Set the current selection aside and release the mark to keep navigating.
 
 Banks every whole line the active region touches (or just the current
@@ -3147,6 +3160,10 @@ that reason, and said \"y/d\" until `donkey-yank' learned to replace a
 bank, which left the one command that had grown a new use unadvertised
 on screen.
 
+COUNT banks that many lines starting at the one point is on, exactly as
+selecting them first and pressing this once would -- the toggle below
+included.  A COUNT below 2 is the plain single-line press.
+
 This toggles, with or without a region.  With no region, point on an
 already-banked line unbanks that line.  With a region whose lines are
 ALL already banked, the whole block is unbanked in one press -- which
@@ -3161,9 +3178,22 @@ actually acted on are spent, so banks outside the accessible portion of
 a narrowed buffer survive to count again;
 `donkey-clear-banked-selection' discards them without doing anything
 else."
-  (interactive)
-  (if (use-region-p)
-      (let* ((span (donkey--whole-line-span (region-beginning) (region-end)))
+  (interactive "p")
+  ;; A COUNT with no region reads as the region it would have taken to
+  ;; select those lines, so `C-u 3 m l' and selecting three lines before
+  ;; pressing it are the same press -- including the toggle rule, which
+  ;; the shared branch below already implements: three banked lines come
+  ;; back off, a partly-banked three completes instead.  Writing it as a
+  ;; span rather than as a loop over the single-line branch is what keeps
+  ;; those two readings from drifting apart.
+  (if (or (use-region-p) (> (prefix-numeric-value count) 1))
+      (let* ((span (if (use-region-p)
+                       (donkey--whole-line-span (region-beginning) (region-end))
+                     (donkey--whole-line-span
+                      (point)
+                      (save-excursion
+                        (forward-line (1- (max 1 (or count 1))))
+                        (line-end-position)))))
              (lines (count-lines (car span) (cdr span)))
              (unbanking (donkey--span-lines-banked-p (car span) (cdr span))))
         (if unbanking
@@ -3681,8 +3711,13 @@ deliberately, Emacs' own bookmarks are the right tool.
 Lesson 2 -- counts
 ------------------
 
-Nearly every DONKEY command takes a count, and it always means the same
-thing: how many.  Give it as C-u N before the key.
+A count works wherever \"how many\" means something, and it always means
+exactly that.  Give it as C-u N before the key.
+
+Every motion takes one, and so does every \`m' key that selects a thing,
+along with \[donkey-delete], \[donkey-copy], \[donkey-change] and \[donkey-yank].  The keys with no \"how many\"
+in them -- entering INSERT, toggling a state, asking for help -- ignore a
+count rather than refusing it, so a guess there costs nothing.
 
 If you are coming from vi, note the \\`C-u'.  A bare \\`3' does NOT start a
 count here -- digits are unbound in NORMAL state.  Worse than doing
