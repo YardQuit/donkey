@@ -1994,4 +1994,47 @@ README had the pair the wrong way round, listing only the closer."
           (push (format "%c (U+%04X)" open open) missing))))
     (should (equal (delete-dups missing) nil))))
 
+(ert-deftest donkey-tutor-claim-counts-cover-the-families-lesson-2-names ()
+  "Lesson 2 names three families as taking a count.  All three do.
+
+The lesson used to open \"Nearly every DONKEY command takes a count\",
+which was measurably generous: 35 of the 60 bound commands read one at
+the time of writing, and a reader who believed it found that \\`C-u 3 o'
+opened one line and \\`C-u 3 m l' banked one, silently, with a message
+that did not mention the count it had dropped.
+
+It names the families instead now, so the claim is checkable -- which is
+what this checks.  A key joining any of these families without a count
+fails here, and so does a rewrite of the lesson that widens the claim
+past what the keymap actually does."
+  (let (missing)
+    (dolist (key '(;; every motion
+                   "h" "j" "k" "l" "w" "b" "W" "B" "J" "K" "G" "S"
+                   "g g" "g e" "g h" "g l"
+                   ;; every `m' key that selects a thing
+                   "m w" "m W" "m s" "m p" "m i" "m a" "m I" "m A"
+                   ;; and the four the lesson names outright
+                   "d" "y" "c" "p"))
+      (let* ((command (keymap-lookup donkey-normal-mode-map key))
+             (spec (and (commandp command)
+                        (cadr (interactive-form command)))))
+        (unless (and (stringp spec) (string-match-p "p" spec))
+          (push (format "%s (%s)" key command) missing))))
+    (should (equal missing nil))))
+
+(ert-deftest donkey-tutor-claim-counts-are-ignored-not-refused ()
+  "The other half of Lesson 2: a count on a key without one is harmless.
+
+The lesson tells the reader that a guess costs nothing, so a key with no
+\"how many\" in it has to IGNORE a count rather than signal on it.  Emacs
+gives that for free to any command whose `interactive' spec does not read
+one -- which is why the claim is safe to make, and why it would stop
+being safe if one of these grew a spec that read a prefix argument and
+did something surprising with it."
+  (dolist (key '("i" "a" "A" "I" "v" "V" "m v" "%" "?"))
+    (let ((command (keymap-lookup donkey-normal-mode-map key)))
+      (should (commandp command))
+      (let ((spec (cadr (interactive-form command))))
+        (should-not (and (stringp spec) (string-match-p "p" spec)))))))
+
 ;;; donkey-describe-bindings-test.el ends here

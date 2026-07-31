@@ -1513,6 +1513,58 @@ land consistently just short of it."
                            (progn (donkey-jump-back) (line-number-at-pos)))
                      '(5 4 3))))))
 
+(defmacro donkey-nav-test--with-ring (&rest body)
+  "Run BODY in a buffer holding a freshly built position ring.
+
+The same shape `donkey-jump-back-walks-further-back-on-repeat' builds by
+hand: a position at the top, four more walking down, and one at the end.
+Factored out here only because the count test has to build it twice per
+case -- once to press, once to count -- and the two have to be identical
+or the comparison means nothing."
+  (declare (indent 0))
+  `(with-temp-buffer
+     (donkey-mode 1)
+     (dotimes (i 20) (insert (format "line %02d\n" (1+ i))))
+     (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+       (goto-char (point-min))
+       (donkey--track-position)
+       (dotimes (_ 4) (forward-line 1) (donkey--track-position))
+       (goto-char (point-max))
+       (donkey--track-position)
+       ,@body)))
+
+(ert-deftest donkey-jump-back-count-equals-that-many-presses ()
+  "`C-u N S' lands where N presses land, wrap included.
+
+The ring is walked one entry per press and starts over on reaching the
+end, so a count has to wrap the same way or the two readings of \"go back
+N\" disagree exactly when the ring is short -- which is precisely when
+someone is pressing it repeatedly.  Checked past the ring's length for
+that reason: the interesting N are the ones that go round.
+
+The index left behind is asserted through the NEXT press rather than
+directly, since a count that landed in the right place but recorded the
+wrong one would show up only on what follows it."
+  (dolist (n '(1 2 3 4 5 6 7))
+    (let ((by-presses
+           (donkey-nav-test--with-ring
+             (dotimes (_ n) (donkey-jump-back))
+             (list (line-number-at-pos)
+                   (progn (donkey-jump-back) (line-number-at-pos)))))
+          (by-count
+           (donkey-nav-test--with-ring
+             (donkey-jump-back n)
+             (list (line-number-at-pos)
+                   (progn (donkey-jump-back) (line-number-at-pos))))))
+      (should (equal (cons n by-presses) (cons n by-count)))))
+  ;; A count below 1 is the plain single press.
+  (dolist (count '(0 -3))
+    (let ((once (donkey-nav-test--with-ring
+                  (donkey-jump-back) (line-number-at-pos)))
+          (clamped (donkey-nav-test--with-ring
+                     (donkey-jump-back count) (line-number-at-pos))))
+      (should (equal (cons count once) (cons count clamped))))))
+
 (provide 'donkey-navigation-test)
 
 ;;; donkey-navigation-test.el ends here

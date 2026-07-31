@@ -3121,6 +3121,68 @@ length."
     (should (equal killed-rectangle '("ab" "ef")))
     (should (equal (car kill-ring) "PREVIOUS"))))
 
+(ert-deftest donkey-bank-selection-count-equals-selecting-those-lines ()
+  "`C-u N m l' banks the same lines that selecting N of them would.
+
+The count reads as the region it would have taken to make it, so the two
+routes share one implementation and cannot answer differently -- the
+toggle included: N already-banked lines come back off, and a partly
+banked N completes instead of clearing.
+
+A count past the last line banks what there is and stops, the way every
+other counted command in the keymap does.  A count below 2 is the plain
+single-line press, since the ring of readings a zero or negative count
+could have here -- nothing, or the lines above -- has no obvious winner
+and the single press is what the key already meant."
+  (cl-flet ((banked-lines ()
+              (sort (mapcar (lambda (ov) (line-number-at-pos (overlay-start ov)))
+                            donkey--banked-overlays)
+                    #'<))
+            (setup ()
+              (erase-buffer)
+              (insert "one\ntwo\nthree\nfour\nfive\n")
+              (goto-char (point-min))
+              (donkey-clear-banked-selection)))
+    (with-temp-buffer
+      (text-mode)
+      (donkey-mode 1)
+      (let ((transient-mark-mode t) (inhibit-message t))
+        ;; A count banks that many lines.
+        (setup)
+        (donkey-bank-selection 3)
+        (should (equal (banked-lines) '(1 2 3)))
+        ;; And the same lines a region over them would have banked.
+        (let ((counted (banked-lines)))
+          (setup)
+          (push-mark (point-min) t t)
+          (goto-char (line-end-position 3))
+          (donkey-bank-selection)
+          (should (equal (banked-lines) counted)))
+        ;; Pressing it again with the same count takes them back off.
+        (setup)
+        (donkey-bank-selection 3)
+        (goto-char (point-min))
+        (donkey-bank-selection 3)
+        (should (equal (banked-lines) nil))
+        ;; Partly banked completes rather than clearing.
+        (setup)
+        (donkey-bank-selection)
+        (goto-char (point-min))
+        (donkey-bank-selection 3)
+        (should (equal (banked-lines) '(1 2 3)))
+        ;; Past the end stops at the last line.
+        (setup)
+        (goto-char (point-min))
+        (forward-line 3)
+        (donkey-bank-selection 9)
+        (should (equal (banked-lines) '(4 5)))
+        ;; Below 2 is the plain single-line press.
+        (dolist (count '(0 1 -2))
+          (setup)
+          (donkey-bank-selection count)
+          (should (equal (list count (banked-lines))
+                         (list count '(1)))))))))
+
 (provide 'donkey-editing-test)
 
 ;;; ---------------------------------------------------------------------------
