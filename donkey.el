@@ -4456,7 +4456,24 @@ what starts over."
   (interactive)
   (let ((existing (get-buffer "*DONKEY Tutor*")))
     (if existing
-        (pop-to-buffer existing)
+        (progn
+          ;; Returning to a tutor whose DONKEY has been switched off puts
+          ;; a reader in front of a document about keys where none of the
+          ;; keys work: `j\=' types a literal "j" into the lesson, and
+          ;; \=`g ?\=' -- the key for reopening this very buffer -- is not
+          ;; bound at all.  Nothing on screen explains it, since the text
+          ;; still names every binding.
+          ;;
+          ;; Only when it is OFF.  If DONKEY is live the state is left
+          ;; exactly as it was, INSERT included: coming back to a buried
+          ;; tutor mid-exercise should return the lesson as it was left,
+          ;; which is the same promise that keeps the buffer instead of
+          ;; rebuilding it.
+          (with-current-buffer existing
+            (unless (bound-and-true-p donkey-mode)
+              (donkey-mode 1)
+              (donkey-enter-normal)))
+          (pop-to-buffer existing))
       (let ((buf (get-buffer-create "*DONKEY Tutor*")))
         (with-current-buffer buf
           (text-mode)
