@@ -133,11 +133,16 @@ jobs:
 
       # `skip-unless' reports a skip, not a failure, so a suite where
       # Smartparens failed to load would pass here while testing nothing.
-      # The count is asserted instead: with it present exactly two tests
-      # skip -- `donkey-cg-without-smartparens', which skips BECAUSE it
-      # is present, and the one needing `sp-overlay-keymap'.  Any more
-      # than that means the integration tests silently went back to
-      # skipping.
+      # The count is asserted instead: with it present exactly ONE test
+      # skips -- `donkey-cg-without-smartparens', which skips BECAUSE it
+      # is present.  Any more than that means the integration tests
+      # silently went back to skipping.
+      #
+      # The budget was two until the second skipper was looked at: it
+      # gated on `sp-overlay-keymap', which is bound nowhere in
+      # Smartparens 1.11.0, so it could never run in the very job built
+      # to run it and the branch it covered went untested.  A budget with
+      # room in it hides exactly this, so there is no room now.
       - name: Run the suite with Smartparens loaded
         run: |
           set -uo pipefail
@@ -155,8 +160,8 @@ jobs:
             exit 1
           fi
           skipped=$(grep -c '^  SKIPPED' /tmp/sp-run.log || true)
-          if [ "$skipped" -gt 2 ]; then
-            echo "::error::$skipped tests skipped with Smartparens loaded; expected 2"
+          if [ "$skipped" -gt 1 ]; then
+            echo "::error::$skipped tests skipped with Smartparens loaded; expected 1"
             grep '^  SKIPPED' /tmp/sp-run.log
             exit 1
           fi
