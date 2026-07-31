@@ -3183,6 +3183,140 @@ and the single press is what the key already meant."
           (should (equal (list count (banked-lines))
                          (list count '(1)))))))))
 
+;;; ---------------------------------------------------------------------------
+;;; A rectangle press that does nothing must cost nothing
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-rect-test (stored text keys &rest body)
+  "Type KEYS into a DONKEY buffer of TEXT holding STORED, then run BODY.
+
+Real keys through `execute-kbd-macro' in a DISPLAYED buffer, because
+what is under test includes whether the rectangle SURVIVES the press --
+and a rectangle is cleared by the command loop acting on the variable
+`deactivate-mark', not by the command itself.  A directly
+called `donkey-delete' therefore always looks as though it kept the
+selection, which would pass this suite while the real key threw it away.
+The buffer is switched to rather than merely made current, since the
+loop acts on the selected window's buffer.
+
+STORED is loaded into `killed-rectangle' so that \"left alone\" and
+\"overwritten\" can be told apart -- an empty store answers the same for
+both, which is how the overwrite went unnoticed.  The clipboard hooks
+are unbound so a developer's own clipboard is neither read nor written,
+and `prefix-arg' is bound because `execute-kbd-macro' otherwise leaves a
+\\[universal-argument] set globally for whatever test runs next."
+  (declare (indent 3))
+  `(unwind-protect
+       (progn
+         (when (get-buffer "*donkey-rect-test*")
+           (kill-buffer "*donkey-rect-test*"))
+         (switch-to-buffer (get-buffer-create "*donkey-rect-test*"))
+         (text-mode)
+         (donkey-mode 1)
+         (let ((transient-mark-mode t)
+               (prefix-arg nil) (current-prefix-arg nil)
+               (inhibit-message t)
+               (kill-ring nil) (kill-ring-yank-pointer nil)
+               (killed-rectangle ,stored)
+               (select-enable-clipboard nil)
+               (interprogram-cut-function nil)
+               (interprogram-paste-function nil)
+               (donkey-rect-test--said nil))
+           (insert ,text)
+           (goto-char (point-min))
+           (donkey-normal-mode 1)
+           (cl-letf* ((orig (symbol-function 'message))
+                      ((symbol-function 'message)
+                       (lambda (fmt &rest args)
+                         (when fmt
+                           (setq donkey-rect-test--said
+                                 (apply #'format fmt args)))
+                         (apply orig fmt args))))
+             (execute-kbd-macro (kbd ,keys)))
+           ,@body))
+     (when (get-buffer "*donkey-rect-test*")
+       (kill-buffer "*donkey-rect-test*"))))
+
+(defvar donkey-rect-test--said nil
+  "Last message from the keys run by `donkey-rect-test'.")
+
+(ert-deftest donkey-rectangle-press-that-does-nothing-keeps-the-rectangle ()
+  "A rectangle survives a press that had nothing to act on.
+
+`donkey-copy' ended with an unconditional call to the function
+`deactivate-mark' outside its `cond', so it fired on the branches that
+report having nothing to take:
+a rectangle drawn where there was nothing to copy vanished on the very
+press that said so, and had to be drawn again.  `donkey-delete' never
+had that bug, since it deactivates only as a side effect of changing the
+buffer -- and both are asserted here, so the two keys cannot drift.
+
+The no-width case needs the variable `deactivate-mark' cleared as well
+as the function of that name left uncalled: `copy-rectangle-as-kill' and
+`kill-rectangle' set the variable, and the command loop acts on it
+afterwards."
+  ;; Nothing to act on: an empty buffer.
+  (dolist (keys '("m v y" "m v d" "m v x" "m v P"))
+    (donkey-rect-test nil "" keys
+      (should (equal (cons keys (bound-and-true-p rectangle-mark-mode))
+                     (cons keys t)))))
+  ;; Nothing to act on: a rectangle with no width.
+  (dolist (keys '("v j m v y" "v j m v d" "v j m v x"))
+    (donkey-rect-test nil "abcd\nefgh\n" keys
+      (should (equal (cons keys (bound-and-true-p rectangle-mark-mode))
+                     (cons keys t))))))
+
+(ert-deftest donkey-rectangle-press-that-took-it-still-clears-the-rectangle ()
+  "A press that DID take the rectangle still ends the selection.
+
+The complement, and the reason the fix could not simply drop the call to
+the function `deactivate-mark': a copy changes no text, so nothing else
+would clear the selection, and one surviving the key that consumed it is
+the surprise running the other way."
+  (dolist (keys '("m v j l y" "m v j l d"))
+    (donkey-rect-test nil "abcd\nefgh\n" keys
+      (should (equal (cons keys (bound-and-true-p rectangle-mark-mode))
+                     (cons keys nil)))
+      (should (equal (cons keys killed-rectangle)
+                     (cons keys '("ab" "ef")))))))
+
+(ert-deftest donkey-no-width-rectangle-does-not-destroy-the-stored-one ()
+  "A press that removes no text must not lose what was waiting to be pasted.
+
+`kill-rectangle' and `copy-rectangle-as-kill' overwrite
+`killed-rectangle' before anything can look at what they took, so a
+rectangle with no width -- one press away, since `m v' over an existing
+empty region draws one -- replaced a stored rectangle with empty rows
+while deleting nothing at all.  Silent data loss, from a key that
+reported nothing at the time.
+
+Both commands take the kill aside now and commit it only if there is
+something in it, which is what this asserts.  The buffer is checked too:
+what made the loss silent is that nothing on screen changed."
+  (dolist (keys '("v j m v y" "v j m v d" "v j m v x"))
+    (donkey-rect-test '("KEEP" "ME") "abcd\nefgh\n" keys
+      (should (equal (cons keys killed-rectangle)
+                     (cons keys '("KEEP" "ME"))))
+      (should (equal (cons keys (buffer-string))
+                     (cons keys "abcd\nefgh\n"))))))
+
+(ert-deftest donkey-yank-rectangle-reports-both-kinds-of-empty-store ()
+  "An all-empty store is nothing to paste, not a paste of nothing.
+
+`P' reported \"No rectangle to paste\" for an unset store but did nothing
+and said nothing for one holding only empty rows -- reachable in one
+press, since copying a no-width rectangle used to store (\"\" \"\").  Both
+routes reach the same message now.
+
+The copy side no longer produces such a store, so this is belt and
+braces: anything else that fills `killed-rectangle' can still leave one,
+and a reader who believes a rectangle is loaded is owed the same answer
+either way."
+  (dolist (stored '(nil ("" "") ("")))
+    (donkey-rect-test stored "abcd\n" "P"
+      (should (equal (list stored donkey-rect-test--said (buffer-string))
+                     (list stored "No rectangle to paste" "abcd\n"))))))
+
 (provide 'donkey-editing-test)
 
 ;;; ---------------------------------------------------------------------------
