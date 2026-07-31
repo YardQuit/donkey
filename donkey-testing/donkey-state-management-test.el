@@ -1337,13 +1337,30 @@ disabling the `C-g' interception fallback for it."
      (donkey--clear-transient-overlays)
      (should (overlay-start ov)))))
 
-(ert-deftest donkey-clear-overlays-with-smartparens-overlay-keymap ()
-  "Strategy 3 deletes overlays carrying sp-overlay-keymap."
-  (skip-unless (boundp 'sp-overlay-keymap))
+(ert-deftest donkey-clear-overlays-deletes-an-untracked-pair-overlay ()
+  "Strategy 3 deletes a Smartparens overlay it is not tracking.
+
+The other half of the strategy from
+`donkey-clear-overlays-removes-tracked-pair-overlay-from-sp-list\=': an
+overlay carrying the Smartparens keymap but absent from
+`sp-pair-overlay-list\=' goes through a plain `delete-overlay\=', since
+there is no Smartparens bookkeeping to unwind.
+
+This used to gate on `sp-overlay-keymap\=', which does not exist -- not
+in the version CI pins, and nowhere in Smartparens 1.11.0, where the
+keymap is `sp-pair-overlay-keymap\='.  So it skipped unconditionally,
+including in the job built to run exactly these tests, and the branch it
+was written for went uncovered.  The source keeps a `boundp\='-guarded
+arm for the other name in case some version has it; what it cannot do is
+be tested through a symbol that is never bound."
+  (skip-unless (boundp 'sp-pair-overlay-keymap))
   (donkey--with-test-buffer
    (donkey-enter-insert)
-   (let ((ov (make-overlay (point) (1+ (point)))))
-     (overlay-put ov 'keymap sp-overlay-keymap)
+   (let ((ov (make-overlay (point) (1+ (point))))
+         ;; Deliberately NOT in `sp-pair-overlay-list': that is what
+         ;; separates this from the tracked case.
+         (sp-pair-overlay-list nil))
+     (overlay-put ov 'keymap sp-pair-overlay-keymap)
      (overlay-put ov 'donkey-test t)
      (should (overlay-start ov))
      (donkey--clear-transient-overlays)
