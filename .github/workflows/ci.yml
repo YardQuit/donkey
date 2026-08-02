@@ -6,6 +6,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Nothing here writes to the repository, so the token should not be able
+# to either.  Without this block the GITHUB_TOKEN's reach is whatever the
+# repository's default happens to be; with it, every job in this file is
+# capped at read whatever that default says.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Tests (Emacs ${{ matrix.emacs_version }})
@@ -28,9 +35,11 @@ jobs:
           - emacs_version: snapshot
             experimental: true
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to the commit v4 pointed at when audited -- a tag can move.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: purcell/setup-emacs@master
+      # Pinned: @master executes whatever that branch holds on the day.
+      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
         with:
           version: ${{ matrix.emacs_version }}
 
@@ -59,9 +68,11 @@ jobs:
     name: Tests (each file alone)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to the commit v4 pointed at when audited -- a tag can move.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: purcell/setup-emacs@master
+      # Pinned: @master executes whatever that branch holds on the day.
+      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
         with:
           version: '30.1'
 
@@ -104,9 +115,11 @@ jobs:
     name: Tests (with Smartparens)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to the commit v4 pointed at when audited -- a tag can move.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: purcell/setup-emacs@master
+      # Pinned: @master executes whatever that branch holds on the day.
+      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
         with:
           version: '30.1'
 
@@ -123,6 +136,12 @@ jobs:
       # Pinned to a tag rather than tracking master: this job exists to
       # test DONKEY, and an upstream change breaking the build should be
       # a deliberate bump here rather than a red run on an unrelated PR.
+      #
+      # And verified by COMMIT after fetching, because a tag is a mutable
+      # pointer: whoever controls the upstream repository can move it,
+      # and this job executes whatever Emacs Lisp it lands on.  The tag
+      # is the human-readable request; the hash is the contract.  A
+      # deliberate version bump updates both, side by side.
       - name: Fetch Smartparens and dash
         run: |
           set -euo pipefail
@@ -130,6 +149,18 @@ jobs:
             https://github.com/Fuco1/smartparens.git /tmp/smartparens
           git clone --depth 1 --branch 2.19.1 \
             https://github.com/magnars/dash.el.git /tmp/dash
+          expect_sp=4873352b5d0a1c5142658122de1b6950b8fe7e4d
+          # dash's 2.19.1 is an ANNOTATED tag: `ls-remote' shows the tag
+          # object's hash, while the checkout lands on the commit it points
+          # to.  The commit is what executes, so the commit is what is
+          # pinned -- resolved via ls-remote's peeled 'refs/tags/2.19.1^{}'.
+          expect_dash=39d067b9fbb2db65fc7a6938bfb21489ad990cb4
+          got_sp=$(git -C /tmp/smartparens rev-parse HEAD)
+          got_dash=$(git -C /tmp/dash rev-parse HEAD)
+          if [ "$got_sp" != "$expect_sp" ] || [ "$got_dash" != "$expect_dash" ]; then
+            echo "::error::upstream tag moved: smartparens $got_sp (want $expect_sp), dash $got_dash (want $expect_dash)"
+            exit 1
+          fi
 
       # `skip-unless' reports a skip, not a failure, so a suite where
       # Smartparens failed to load would pass here while testing nothing.
@@ -171,9 +202,11 @@ jobs:
     name: Tests (shuffled order)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to the commit v4 pointed at when audited -- a tag can move.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: purcell/setup-emacs@master
+      # Pinned: @master executes whatever that branch holds on the day.
+      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
         with:
           version: '30.1'
 
@@ -236,9 +269,11 @@ jobs:
     name: Suite in a terminal frame (-nw)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to the commit v4 pointed at when audited -- a tag can move.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: purcell/setup-emacs@master
+      # Pinned: @master executes whatever that branch holds on the day.
+      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
         with:
           version: '30.1'
 
@@ -288,9 +323,11 @@ jobs:
     name: Byte-compile, checkdoc, package-lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to the commit v4 pointed at when audited -- a tag can move.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: purcell/setup-emacs@master
+      # Pinned: @master executes whatever that branch holds on the day.
+      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
         with:
           version: '30.1'
 
@@ -322,21 +359,27 @@ jobs:
           fi
           echo "checkdoc clean"
 
-      - name: Install package-lint
+      # Cloned at a pinned commit rather than installed from MELPA, for
+      # the same reason the Smartparens job clones: the archive serves
+      # whatever it built most recently, this job executes it, and a
+      # lint run should not change meaning -- or content -- between two
+      # pushes of the same tree.  It also drops the archive-refresh
+      # network dependency, which has been this job's only flaky part.
+      - name: Fetch package-lint
         run: |
           set -euo pipefail
-          emacs -Q --batch --eval "(progn \
-            (require 'package) \
-            (add-to-list 'package-archives \
-                         '(\"melpa\" . \"https://melpa.org/packages/\") t) \
-            (package-initialize) \
-            (package-refresh-contents) \
-            (package-install 'package-lint))"
+          git clone https://github.com/purcell/package-lint.git /tmp/package-lint
+          git -C /tmp/package-lint checkout --quiet 35996f478d81e51dae4fa30d051f741895d07399
+          got=$(git -C /tmp/package-lint rev-parse HEAD)
+          if [ "$got" != "35996f478d81e51dae4fa30d051f741895d07399" ]; then
+            echo "::error::package-lint checkout mismatch: $got"
+            exit 1
+          fi
 
       - name: package-lint
         run: |
           set -euo pipefail
           emacs -Q --batch \
-            --eval "(package-initialize)" \
+            -L /tmp/package-lint \
             -l package-lint \
             -f package-lint-batch-and-exit donkey.el
