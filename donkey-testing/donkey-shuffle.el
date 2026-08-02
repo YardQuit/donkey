@@ -69,7 +69,15 @@ otherwise.  Skipped tests are counted but are not failures."
                    seed ran skipped (length failed)))
     (dolist (name failed)
       (princ (format "  FAILED %s\n" name)))
-    (kill-emacs (if failed 1 0))))
+    ;; Zero tests is a failure, not a pass.  Invoked without the test
+    ;; files loaded first -- which the CI job does and a hand run can
+    ;; forget -- this ran nothing and exited 0, so a shuffled job that
+    ;; silently loaded nothing would have stayed green.  The same shape
+    ;; as the Smartparens skip budget that hid a permanently-skipped
+    ;; test: an empty run must not be able to pass.
+    (when (zerop ran)
+      (princ "seed ran ZERO tests -- were the test files loaded first?\n"))
+    (kill-emacs (if (or failed (zerop ran)) 1 0))))
 
 (provide 'donkey-shuffle)
 
