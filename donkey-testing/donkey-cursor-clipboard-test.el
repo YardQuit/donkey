@@ -433,7 +433,7 @@ real platform instead of the intended one."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-clipboard-yank-uses-clipboard-yank-when-available ()
-  "Calls `clipboard-yank' when fboundp; `kill-ring' yank is not called."
+  "A successful `clipboard-yank' is the whole story; `yank' is not called."
   (let ((clipboard-called nil)
         (yank-called nil))
     (cl-letf (((symbol-function 'clipboard-yank)
@@ -444,27 +444,33 @@ real platform instead of the intended one."
       (should clipboard-called)
       (should-not yank-called))))
 
-(ert-deftest donkey-clipboard-yank-falls-back-to-yank-when-clipboard-undefined ()
-  "Falls back to yank when `clipboard-yank' is not fboundp."
-  (let ((yank-called nil))
-    (cl-letf (((symbol-function 'clipboard-yank) nil)
+(ert-deftest donkey-clipboard-yank-falls-back-to-yank-on-clipboard-error ()
+  "An erroring `clipboard-yank' falls back to `yank' and says so.
+
+The ONE fallback this function has.  A second test used to assert a
+fallback for `clipboard-yank' not being defined, by stubbing `fboundp'
+itself to say no -- manufacturing a world the package's version floor
+rules out, since the function is preloaded in every Emacs from 29 on.
+When the branch it reached was removed, that test kept passing anyway:
+its stubbed `clipboard-yank' signaled, so the ERROR path caught it --
+green for a reason unrelated to what it claimed to check, which is the
+recurring failure mode this suite keeps being cured of.
+
+The message is asserted as well as the call, since naming the platform
+is the part a bug report leans on."
+  (let ((yank-called nil) said)
+    (cl-letf (((symbol-function 'clipboard-yank)
+               (lambda () (signal 'error '("Clipboard inaccessible"))))
               ((symbol-function 'yank)
                (lambda () (setq yank-called t)))
-              ((symbol-function 'fboundp)
-               (lambda (sym)
-                 (not (eq sym 'clipboard-yank)))))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (when (and fmt (not said))
+                   (setq said (apply #'format fmt args))))))
       (donkey--clipboard-yank)
-      (should yank-called))))
-
-(ert-deftest donkey-clipboard-yank-falls-back-to-yank-on-clipboard-error ()
-  "Falls back to yank when `clipboard-yank' signals an error."
-  (let ((yank-called nil))
-    (cl-letf (((symbol-function 'clipboard-yank)
-               (lambda () (signal 'error "Clipboard inaccessible")))
-              ((symbol-function 'yank)
-               (lambda () (setq yank-called t))))
-      (donkey--clipboard-yank)
-      (should yank-called))))
+      (should yank-called)
+      (should (string-match-p "Clipboard unavailable on .*yanked from kill ring"
+                              said)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--delete-active-region-safe
@@ -573,6 +579,26 @@ the session left behind."
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--platform-info
 ;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-platform-info-native-comp-asks-the-question ()
+  "The :native-comp field reports availability, not the predicate's existence.
+
+It used to be (fboundp \='native-comp-available-p), which is t on every
+Emacs this package runs on whether or not native compilation is
+available -- so the one field meant to distinguish the two builds
+answered yes for both.  Stubbing the predicate to say no simulates a
+build without the feature, which is the outermost boundary there is
+here: no keypress and no test machinery can produce a different Emacs
+build.  Under the old code this still reported t, because a stubbed
+function is exactly as `fboundp' as a real one -- which is what makes
+this test able to tell the two implementations apart even on a build
+where both answer t."
+  (cl-letf (((symbol-function 'native-comp-available-p)
+             (lambda () nil)))
+    (should (eq (plist-get (donkey--platform-info) :native-comp) nil)))
+  (cl-letf (((symbol-function 'native-comp-available-p)
+             (lambda () t)))
+    (should (eq (plist-get (donkey--platform-info) :native-comp) t))))
 
 (ert-deftest donkey-platform-info-returns-expected-keys ()
   "Returns a plist with all documented diagnostic keys."
