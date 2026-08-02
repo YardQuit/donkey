@@ -5,6 +5,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
+(require 'donkey-test-keys)
 
 (defvar rectangle-mark-mode)
 
@@ -1499,29 +1500,15 @@ delegating, so this must not change when a pairing package is present
 (defmacro donkey-entry-test (text keys &rest body)
   "Type KEYS into a DONKEY buffer of TEXT, then run BODY.
 
-Real keys in a DISPLAYED buffer, because selection state is settled by
-the command loop rather than by the command -- the same reason the
-rectangle tests do it.  A directly called entry command would report a
-selection still active no matter what it did."
+A thin skin over `donkey-test-keys--harness\=', which carries the
+rationale for the displayed buffer and the real keys: selection state
+is settled by the command loop rather than by the command, so a
+directly called entry command reports a selection still active no
+matter what it did."
   (declare (indent 2))
-  `(unwind-protect
-       (progn
-         (when (get-buffer "*donkey-entry-test*")
-           (kill-buffer "*donkey-entry-test*"))
-         (switch-to-buffer (get-buffer-create "*donkey-entry-test*"))
-         (text-mode)
-         (donkey-mode 1)
-         (let ((transient-mark-mode t)
-               (prefix-arg nil) (current-prefix-arg nil)
-               (inhibit-message t)
-               (killed-rectangle nil))
-           (insert ,text)
-           (goto-char (point-min))
-           (donkey-normal-mode 1)
-           (execute-kbd-macro (kbd ,keys))
-           ,@body))
-     (when (get-buffer "*donkey-entry-test*")
-       (kill-buffer "*donkey-entry-test*"))))
+  `(donkey-test-keys--harness "*donkey-entry-test*" #'text-mode ()
+       ,text ,keys
+     ,@body))
 
 (ert-deftest donkey-insert-entry-keys-drop-a-selection-and-enter-insert ()
   "Every insert-entry key drops an active selection and starts typing.
