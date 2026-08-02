@@ -1,0 +1,21 @@
+# Keeps the commit-pinned `uses:` references in the workflows current.
+# Dependabot understands the SHA-plus-comment convention the CI file
+# uses and bumps both together, so the hash stays the contract and the
+# comment stays readable.
+#
+# Aimed at `slave' rather than the default branch on purpose: this
+# repository develops on `slave' and releases to `master', and a bump
+# landing on `master' directly would put a workflow change there that
+# `slave' has never seen.
+#
+# Only the actions are covered.  The Smartparens, dash and package-lint
+# clones are plain `git clone' lines in shell steps -- no Dependabot
+# ecosystem sees those, so their pins remain deliberate manual edits,
+# tag and hash side by side.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "slave"
+    schedule:
+      interval: "monthly"
