@@ -1144,25 +1144,28 @@ Output goes to a temporary buffer named '*DONKEY Platform Debug*'."
 (defun donkey--clipboard-yank ()
   "Yank from the system clipboard with `kill-ring' fallback.
 
-Invokes `clipboard-yank' when the function is available; otherwise
-falls back to `yank'.  If `clipboard-yank' signals an error
-\(empty or inaccessible clipboard), falls back to `yank' from the
-kill ring and emits an informative message with platform context.
-Shows platform-appropriate installation tips only once per session."
-  (let ((platform-context
-         (cond
-          ((eq system-type 'darwin) "macOS")
-          ((eq system-type 'windows-nt) "Windows")
-          (t "Linux/BSD"))))
-    (condition-case err
-        (if (fboundp 'clipboard-yank)
-            (clipboard-yank)
-          (yank))
-      (error
-       (yank)
-       (message "Clipboard unavailable on %s; yanked from kill ring (%s)."
-                platform-context
-                (error-message-string err)))))
+If `clipboard-yank' signals an error (empty or inaccessible clipboard),
+falls back to `yank' from the kill ring and emits an informative message
+with platform context.  Shows platform-appropriate installation tips
+only once per session.
+
+`clipboard-yank' is called without a `fboundp' guard, and the docstring
+used to describe a fallback for when it \"is available; otherwise\" --
+there is no otherwise.  The function is preloaded from menu-bar.el in
+every Emacs this package runs on, so the guard could never be false and
+the fallback it selected could never run.  The same discovery retired
+`kill-active-region' from `donkey--delete-active-region-safe': a branch
+that cannot run is documentation that cannot be true."
+  (condition-case err
+      (clipboard-yank)
+    (error
+     (yank)
+     (message "Clipboard unavailable on %s; yanked from kill ring (%s)."
+              (cond
+               ((eq system-type 'darwin) "macOS")
+               ((eq system-type 'windows-nt) "Windows")
+               (t "Linux/BSD"))
+              (error-message-string err))))
   ;; Show tip only once, and only for platforms that actually need external tools
   (when (and (not donkey--clipboard-warning-shown)
              (not (display-graphic-p))
