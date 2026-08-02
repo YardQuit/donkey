@@ -5,6 +5,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
+(require 'donkey-test-keys)
 
 (defvar rectangle-mark-mode)
 
@@ -3190,55 +3191,17 @@ and the single press is what the key already meant."
 (defmacro donkey-rect-test (stored text keys &rest body)
   "Type KEYS into a DONKEY buffer of TEXT holding STORED, then run BODY.
 
-Real keys through `execute-kbd-macro' in a DISPLAYED buffer, because
-what is under test includes whether the rectangle SURVIVES the press --
-and a rectangle is cleared by the command loop acting on the variable
-`deactivate-mark', not by the command itself.  A directly
-called `donkey-delete' therefore always looks as though it kept the
-selection, which would pass this suite while the real key threw it away.
-The buffer is switched to rather than merely made current, since the
-loop acts on the selected window's buffer.
-
-STORED is loaded into `killed-rectangle' so that \"left alone\" and
-\"overwritten\" can be told apart -- an empty store answers the same for
-both, which is how the overwrite went unnoticed.  The clipboard hooks
-are unbound so a developer's own clipboard is neither read nor written,
-and `prefix-arg' is bound because `execute-kbd-macro' otherwise leaves a
-\\[universal-argument] set globally for whatever test runs next."
+The harness -- displayed buffer, real keys, prefix and clipboard
+isolation, message capture -- is `donkey-test-keys--harness\=', which
+carries the shared rationale.  What this wrapper adds is STORED, loaded
+into `killed-rectangle\=' so that \"left alone\" and \"overwritten\"
+can be told apart: an empty store answers the same for both, which is
+how the no-width overwrite went unnoticed."
   (declare (indent 3))
-  `(unwind-protect
-       (progn
-         (when (get-buffer "*donkey-rect-test*")
-           (kill-buffer "*donkey-rect-test*"))
-         (switch-to-buffer (get-buffer-create "*donkey-rect-test*"))
-         (text-mode)
-         (donkey-mode 1)
-         (let ((transient-mark-mode t)
-               (prefix-arg nil) (current-prefix-arg nil)
-               (inhibit-message t)
-               (kill-ring nil) (kill-ring-yank-pointer nil)
-               (killed-rectangle ,stored)
-               (select-enable-clipboard nil)
-               (interprogram-cut-function nil)
-               (interprogram-paste-function nil)
-               (donkey-rect-test--said nil))
-           (insert ,text)
-           (goto-char (point-min))
-           (donkey-normal-mode 1)
-           (cl-letf* ((orig (symbol-function 'message))
-                      ((symbol-function 'message)
-                       (lambda (fmt &rest args)
-                         (when fmt
-                           (setq donkey-rect-test--said
-                                 (apply #'format fmt args)))
-                         (apply orig fmt args))))
-             (execute-kbd-macro (kbd ,keys)))
-           ,@body))
-     (when (get-buffer "*donkey-rect-test*")
-       (kill-buffer "*donkey-rect-test*"))))
-
-(defvar donkey-rect-test--said nil
-  "Last message from the keys run by `donkey-rect-test'.")
+  `(donkey-test-keys--harness "*donkey-rect-test*" #'text-mode
+       ((killed-rectangle ,stored))
+       ,text ,keys
+     ,@body))
 
 (ert-deftest donkey-rectangle-press-that-does-nothing-keeps-the-rectangle ()
   "A rectangle survives a press that had nothing to act on.
@@ -3314,7 +3277,7 @@ and a reader who believes a rectangle is loaded is owed the same answer
 either way."
   (dolist (stored '(nil ("" "") ("")))
     (donkey-rect-test stored "abcd\n" "P"
-      (should (equal (list stored donkey-rect-test--said (buffer-string))
+      (should (equal (list stored donkey-test-keys--said (buffer-string))
                      (list stored "No rectangle to paste" "abcd\n"))))))
 
 (provide 'donkey-editing-test)

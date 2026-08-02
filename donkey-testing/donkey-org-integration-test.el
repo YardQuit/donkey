@@ -4,6 +4,7 @@
 
 (require 'ert)
 (require 'cl-lib)
+(require 'donkey-test-keys)
 (require 'org)
 (require 'donkey)
 
@@ -794,33 +795,19 @@ available, falls back to `browse-url-at-point'."
 (defmacro donkey-org-key-test (text keys &rest body)
   "Type KEYS into a DISPLAYED `org-mode' buffer of TEXT, then run BODY.
 
-Every other test in this file stubs `org-element-at-point' and checks
-which command the dispatch picked.  That is worth having, and it is also
-how a discrepancy survived: `donkey-org-todo\\=' claimed to add TODO to a
-plain heading, a stubbed test asserted it, and no keypress could reach
-the branch.  These press the key instead.
-
-Displayed rather than merely current, because the command loop acts on
-the selected window\\='s buffer.  `org-todo-keywords\\=' is bound so the
-cycle does not depend on the developer\\='s own Org configuration."
+Every other test in this file stubs `org-element-at-point\=' and checks
+which command the dispatch picked.  That is worth having, and it is
+also how a discrepancy survived: `donkey-org-todo\=' claimed to add
+TODO to a plain heading, a stubbed test asserted it, and no keypress
+could reach the branch.  These press the key instead, through
+`donkey-test-keys--harness\=', which carries the displayed-buffer
+rationale.  `org-todo-keywords\=' is bound so the cycle does not depend
+on the developer\='s own Org configuration."
   (declare (indent 2))
-  `(unwind-protect
-       (progn
-         (when (get-buffer "*donkey-org-key-test*")
-           (kill-buffer "*donkey-org-key-test*"))
-         (switch-to-buffer (get-buffer-create "*donkey-org-key-test*"))
-         (org-mode)
-         (donkey-mode 1)
-         (let ((inhibit-message t)
-               (prefix-arg nil) (current-prefix-arg nil)
-               (org-todo-keywords '((sequence "TODO" "DONE"))))
-           (insert ,text)
-           (goto-char (point-min))
-           (donkey-normal-mode 1)
-           (execute-kbd-macro (kbd ,keys))
-           ,@body))
-     (when (get-buffer "*donkey-org-key-test*")
-       (kill-buffer "*donkey-org-key-test*"))))
+  `(donkey-test-keys--harness "*donkey-org-key-test*" #'org-mode
+       ((org-todo-keywords '((sequence "TODO" "DONE"))))
+       ,text ,keys
+     ,@body))
 
 (defun donkey-org-key-test--line ()
   "Return the current line, without properties."
