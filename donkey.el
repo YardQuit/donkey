@@ -1059,7 +1059,12 @@ availability.  Useful for debugging platform-specific issues."
         :tty-type (tty-type)
         :term-env (getenv "TERM")
         :clipboard-tools-available (donkey--detect-clipboard-tools)
-        :native-comp (fboundp 'native-comp-available-p)
+        ;; The QUESTION, not the predicate's existence: `fboundp' here
+        ;; answered t on every Emacs this package runs on, native
+        ;; compilation or no -- the function is always defined and
+        ;; returns nil on builds without the feature.  A diagnostic that
+        ;; always says yes is not a diagnostic.
+        :native-comp (native-comp-available-p)
         :emacs-version emacs-version))
 
 (defun donkey-debug-platform ()
