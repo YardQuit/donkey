@@ -2250,6 +2250,34 @@ follows would then pull those back instead of what was being pasted."
    (donkey-yank)
    (should (equal (car kill-ring) "ZZZ\n"))))
 
+(ert-deftest donkey-yank-over-banked-lines-restores-a-missing-line-ending ()
+  "A fragment pasted over a banked line becomes the line, not a splice.
+
+Regression: the bank's spans carry their final newlines and the paste
+never gave one back, so a kill without its own -- a fragment killed
+mid-line -- glued onto whatever line followed the bank: `m l p' with
+\"ZZZ\" on the ring turned rows two and three into \"ZZZCCC three\".
+See `donkey--paste-restoring-line-ending' for the rule."
+  (donkey-test--paste-buffer
+   (kill-new "ZZZ")
+   (donkey-test--row 2) (donkey-bank-selection)
+   (donkey-yank)
+   (should (equal (buffer-string)
+                  "AAA one\nZZZ\nCCC three\nDDD four\nEEE five\n"))))
+
+(ert-deftest donkey-yank-over-banked-lines-restored-ending-is-not-content ()
+  "Point stays at the end of the pasted text, before the restored newline.
+
+The newline given back behind a fragment is structure, not content --
+inserting it in front of point would land the cursor on the next line,
+as though the paste had included a line break the user never killed."
+  (donkey-test--paste-buffer
+   (kill-new "ZZZ")
+   (donkey-test--row 2) (donkey-bank-selection)
+   (donkey-yank)
+   (should (eq (char-before) ?Z))
+   (should (eq (char-after) ?\n))))
+
 (ert-deftest donkey-yank-with-nothing-to-paste-leaves-the-region-alone ()
   "With nothing to paste, `p' does nothing at all.
 
@@ -2684,6 +2712,115 @@ later tidy-up that routed `c' through
    (donkey-visual-line-toggle)
    (donkey-delete 1)
    (should (equal (buffer-string) "alpha\ngamma\n"))))
+
+;; `V p' -- pasting over a visual-line selection replaces whole lines.
+;;
+;; Driven through real keys in a displayed buffer, because the defect these
+;; tests pin was born between commands: `V y' widened the COPY to include
+;; the newline while `p' deleted only the raw region, and no direct call
+;; exercises that hand-off.  See `donkey--paste-restoring-line-ending' for
+;; the rule, and `donkey-test-keys--harness' for why the keys are real.
+
+(ert-deftest donkey-visual-line-paste-replaces-the-line-through-the-keys ()
+  "`V y j V p' replaces a line without opening an empty one below.
+
+The reported papercut, pinned end to end: copying a line with `V y'
+takes its newline so it pastes back complete, but `p' over the target's
+`V' selection deleted only the highlighted region -- one character short
+of the line it presents as -- so the target's newline survived next to
+the kill's and every replaced line grew an empty line under it."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode ()
+      "aaa\nbbb\nccc\n" "V y j V p"
+    (should (equal (buffer-string) "aaa\naaa\nccc\n"))
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-visual-line-paste-replaces-a-span-of-lines ()
+  "`V J p' hands the whole span's newlines to the paste, not just one."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode
+      ((kill-ring (list "ZZZ\n")))
+      "aaa\nbbb\nccc\nddd\n" "j V J p"
+    (should (equal (buffer-string) "aaa\nZZZ\nddd\n"))))
+
+(ert-deftest donkey-visual-line-paste-restores-a-missing-line-ending ()
+  "A fragment pasted over `V' becomes the line's content, newline intact.
+
+The other half of the rule: the deletion takes the line's newline, so a
+kill that brings none -- killed mid-line with `v y' -- must have the
+taken one restored behind it.  The buffer result is identical to what
+this case produced before `p' widened, which is exactly the point:
+fixing the whole-line kill must not break the fragment."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode
+      ((kill-ring (list "ZZZ")))
+      "aaa\nbbb\nccc\n" "j V p"
+    (should (equal (buffer-string) "aaa\nZZZ\nccc\n"))))
+
+(ert-deftest donkey-visual-line-paste-restored-ending-is-not-content ()
+  "Point stays at the end of the pasted fragment, before the restored newline."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode
+      ((kill-ring (list "ZZZ")))
+      "aaa\nbbb\nccc\n" "j V p"
+    (should (eq (char-before) ?Z))
+    (should (eq (char-after) ?\n))))
+
+(ert-deftest donkey-visual-line-paste-count-stacks-complete-lines ()
+  "\\[universal-argument] 3 p over `V' replaces one line with three, no blanks between."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode
+      ((kill-ring (list "ZZZ\n")))
+      "aaa\nbbb\nccc\n" "j V C-u 3 p"
+    (should (equal (buffer-string) "aaa\nZZZ\nZZZ\nZZZ\nccc\n"))))
+
+(ert-deftest donkey-visual-line-paste-count-of-zero-is-a-linewise-delete ()
+  "\\[universal-argument] 0 p over `V' removes the lines outright, matching `V d'.
+
+Regression: the raw-region delete left the un-shown newline standing,
+so replacing a line with nothing kept an empty line as a souvenir."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode
+      ((kill-ring (list "ZZZ\n")))
+      "aaa\nbbb\nccc\n" "j V C-u 0 p"
+    (should (equal (buffer-string) "aaa\nccc\n"))))
+
+(ert-deftest donkey-visual-line-paste-of-nothing-conjures-no-newline ()
+  "A paste that inserts nothing does not get a newline restored behind it.
+
+The discriminating case for measuring \"pasted anything\" by point
+rather than by the count: on the buffer's FIRST line there is no
+earlier line ending to mask the mistake, so restoring a newline behind
+a zero-count paste materializes a blank line at the top for a press
+that visibly did nothing.  Everywhere else the previous line's newline
+happens to sit at `char-before' and hides the bug."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode
+      ((kill-ring (list "ZZZ\n")))
+      "bbb\nccc\n" "V C-u 0 p"
+    (should (equal (buffer-string) "ccc\n"))))
+
+(ert-deftest donkey-visual-line-paste-last-line-kill-still-ends-complete ()
+  "A whole-line kill pasted over a final line without a newline keeps its own."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode
+      ((kill-ring (list "ZZZ\n")))
+      "aaa\nbbb" "j V p"
+    (should (equal (buffer-string) "aaa\nZZZ\n"))))
+
+(ert-deftest donkey-visual-line-paste-last-line-fragment-adds-no-newline ()
+  "A fragment over the final line restores only what the delete took: nothing.
+
+The buffer's last line has no newline to take, so none is given back --
+TOOK-NEWLINE is a fact about the deleted span, not a constant.  Passing
+t unconditionally would grow a trailing newline on every such paste."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode
+      ((kill-ring (list "ZZZ")))
+      "aaa\nbbb" "j V p"
+    (should (equal (buffer-string) "aaa\nZZZ"))))
+
+(ert-deftest donkey-visual-line-paste-with-nothing-to-paste-keeps-the-line ()
+  "`V p' with an empty kill ring reports and leaves the line standing.
+
+Guard order pinned: `donkey--nothing-to-paste-p' must run before the
+visual-line branch removes anything, the same protection the plain
+region and the bank already have."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode ()
+      "aaa\nbbb\n" "V p"
+    (should (equal (buffer-string) "aaa\nbbb\n"))
+    (should (equal donkey-test-keys--said "Nothing to paste"))))
 
 (ert-deftest donkey-change-does-not-act-on-banked-lines ()
   "`c' changes the character at point and leaves banks standing.
