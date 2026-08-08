@@ -597,8 +597,8 @@ and RET, pressing `j' and `l' typed a literal \"jl\" into the buffer
 instead of moving.
 
 A visual-line selection made with `V' is NOT widened to whole lines
-here, unlike `donkey-copy' and `donkey-delete' -- see
-`donkey--visual-line-region-bounds' for the widening those two do.  The
+here, unlike `donkey-copy', `donkey-delete' and `donkey-yank' -- see
+`donkey--visual-line-region-bounds' for the widening those three do.  The
 newline ending the last line is kept, so `V c' empties the line and
 leaves point on it ready to type, rather than removing the line and
 dropping INSERT state onto the following one.  That is what changing a
@@ -1294,6 +1294,70 @@ negative count to mean, so there is nothing for it to do but nothing."
   (dotimes (_ (max 0 n))
     (funcall inserter)))
 
+(defun donkey--paste-restoring-line-ending (n took-newline)
+  "Paste N times at point, giving back a line ending the delete took.
+
+The tail end of pasting over a line selection.  Both of DONKEY's line
+selections -- a \"V\" session and banked lines -- are removed whole,
+final newline included, before the paste lands.  TOOK-NEWLINE says
+whether the deleted span really did end in one; the buffer's last line
+has none to take.  When it did, and the pasted text does not end in a
+newline of its own, the taken one is inserted back -- under
+`save-excursion', because it is restored structure rather than pasted
+content, so point stays where the paste left it.
+
+The rule this enforces: replacing a line selection preserves the
+buffer's line structure.  A kill taken with \"V y\" carries its final
+newline and slots in as the complete line it is; a fragment killed
+mid-line becomes the line's new content instead of splicing onto the
+line below.  Each selection used to get one of those wrong, in opposite
+directions: \"V p\" left the target's newline standing, so a whole-line
+kill brought a second one and opened an empty line under every replaced
+line, while the bank always took the newline and never gave it back, so
+pasting a fragment over a banked line glued it to the line after.
+
+Whether anything was pasted is measured by point, not by N: N above
+zero still inserts nothing when the newest kill is empty, and restoring
+a newline behind a paste of nothing would conjure a blank line for a
+press that visibly did nothing -- at the top of the buffer, where no
+earlier line ending covers for it, dropping the point check does
+exactly that."
+  (let ((before (point)))
+    (donkey--paste-times n #'donkey--clipboard-yank)
+    (when (and took-newline
+               (> (point) before)
+               (not (eq (char-before) ?\n)))
+      (save-excursion (insert "\n")))))
+
+(defun donkey--replace-visual-lines-with-paste (n)
+  "Replace the visual-line selection's whole lines with N pastes.
+
+The \"V\" counterpart of `donkey--replace-banked-selection-with-paste':
+the session's lines are deleted whole -- widened exactly as `y' and `d'
+widen them, see `donkey--visual-line-region-bounds' -- and the paste
+lands where they began.  Deleted rather than killed, for the reason
+`donkey--delete-active-region-safe' gives: the yank that follows must
+pull what is being pasted, not what was just removed.
+
+The final newline traveling with the lines is the point of this
+function.  It used to stay behind, because the paste deleted the raw
+region the highlight shows -- one character short of the lines it
+presents as, see `donkey--visual-line-region-bounds' -- so pasting the
+complete line \"V y\" kills put its newline next to the survivor and
+opened an empty line under every replaced line.  A kill that brings no
+newline gets the deleted one restored after it;
+`donkey--paste-restoring-line-ending' states the whole rule.
+
+An N below 1 pastes nothing, and the lines are still removed: asking to
+replace them with nothing is a delete, the same reading the banked
+counterpart gives its own count of zero."
+  (let* ((span (donkey--visual-line-region-bounds))
+         (took-newline (eq (char-before (cdr span)) ?\n)))
+    (delete-region (car span) (cdr span))
+    (deactivate-mark)
+    (goto-char (car span))
+    (donkey--paste-restoring-line-ending n took-newline)))
+
 ;; Why pasting takes two keys rather than one:
 ;;
 ;; "p" used to decide for you, by tracking which of the two stores had been
@@ -1323,6 +1387,14 @@ lines banked, they are replaced by what is pasted rather than the paste
 landing at point.  Checked before the lines are removed, so a paste with
 nothing to paste does not eat them.
 
+A visual-line selection made with `V' is replaced as whole lines,
+widened exactly as `y' and `d' widen it, final newline included.  A
+kill taken with \"V y\" carries its own newline and slots in as the
+complete line it is, instead of opening an empty line under every line
+it replaces; a kill without one gets the taken newline restored behind
+it and becomes the line's new content.  See
+`donkey--replace-visual-lines-with-paste'.
+
 With `rectangle-mark-mode' active, falls through to `undefined' --
 there is no rectangular shape to give linear clipboard text, and
 pasting it anyway would delete every row of the selection and replace
@@ -1351,6 +1423,8 @@ which is what asking to replace it with nothing means."
         (donkey--replace-banked-selection-with-paste n)))
      ((donkey--nothing-to-paste-p)
       (message "Nothing to paste"))
+     ((donkey--visual-line-session-active-p)
+      (donkey--replace-visual-lines-with-paste n))
      (t
       (donkey--delete-active-region-safe)
       (donkey--paste-times n #'donkey--clipboard-yank)))))
@@ -1415,6 +1489,11 @@ with no final newline, which the next `p' spliced onto whatever line it
 landed in.  `donkey-bank-selection' has always spanned whole lines, via
 `donkey--whole-line-span'; routing a visual-line session through the same
 helper makes donkey's two line selections finally agree.
+
+`p' joined `y' and `d' later, for the same reason: pasting over a \"V\"
+selection deleted the raw region and left the un-shown newline standing,
+so the complete line `y' now kills arrived with one newline too many and
+opened an empty line under every line it replaced.
 
 Widened here rather than in the motions: moving point past the line
 instead would make `forward-line' count from one line further along than
@@ -1930,8 +2009,9 @@ the visual-line session's original anchor line instead of extending
 ;; line: canceled" for a selection that was never a visual-line session.
 ;;
 ;; The highlight is left one character short deliberately -- see
-;; `donkey--visual-line-region-bounds' for why the widening lives in
-;; `donkey-copy' and `donkey-delete' rather than in the selection itself.
+;; `donkey--visual-line-region-bounds' for why the widening lives in the
+;; commands that consume the selection -- `donkey-copy', `donkey-delete'
+;; and `donkey-yank' -- rather than in the selection itself.
 (defun donkey-visual-line-toggle ()
   "Start/cancel visual line selection.
 
@@ -1943,12 +2023,13 @@ visual-line session anchored at the current line instead.
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
 
-What is highlighted is one character short of what `y' and `d' take.
-The selection stops at the end of the last line, so the newline ending it
-is NOT shown as selected -- but `donkey-copy' and `donkey-delete' widen a
-live session to whole lines before acting, so the line break goes with
-it: `d' removes the line outright rather than emptying it, and `y' gives
-a kill that pastes back as a complete line."
+What is highlighted is one character short of what `y', `d' and `p'
+take.  The selection stops at the end of the last line, so the newline
+ending it is NOT shown as selected -- but `donkey-copy', `donkey-delete'
+and `donkey-yank' widen a live session to whole lines before acting, so
+the line break goes with it: `d' removes the line outright rather than
+emptying it, `y' gives a kill that pastes back as a complete line, and
+`p' replaces the line instead of opening an empty one under it."
   (interactive)
   (if (donkey--visual-line-session-active-p)
       (progn
@@ -3652,16 +3733,26 @@ That one is a kill because kill is the point of it; here `kill-new'
 would push the replaced lines onto the kill ring and the paste below
 would pull those back instead of what was being pasted.
 
+The spans are whole lines, final newlines included, so a paste bringing
+no newline of its own -- a fragment killed mid-line -- used to splice
+onto whatever line followed the bank.  The taken line ending is now
+restored behind such a paste; `donkey--paste-restoring-line-ending'
+states the rule both line selections follow.  Whether the FIRST span
+ended in a newline is what matters, because that is where the paste
+lands; the remaining spans are simply gone, as they are for a delete.
+
 Consumes the bank, the way `donkey-copy' and `donkey-delete' do."
   (let* ((spans (donkey--effective-line-spans))
          (lines (donkey--span-line-count spans))
-         (target (car (car spans))))
+         (target (car (car spans)))
+         ;; Read before the deletions below shift every position.
+         (took-newline (eq (char-before (cdr (car spans))) ?\n)))
     (dolist (span (reverse spans))
       (delete-region (car span) (cdr span)))
     (donkey--consume-banked-spans spans)
     (deactivate-mark)
     (goto-char target)
-    (donkey--paste-times (or count 1) #'donkey--clipboard-yank)
+    (donkey--paste-restoring-line-ending (or count 1) took-newline)
     (message "Replaced %d line%s" lines (if (= 1 lines) "" "s"))))
 
 (defun donkey--delete-banked-selection ()
