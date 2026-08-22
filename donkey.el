@@ -5518,6 +5518,46 @@ is broken when nothing happens.  Kept in step with
 ;;; Global Mode Toggle
 ;;; ---------------------------------------------------------------------------
 
+(defvar donkey--startup-resweep-timer nil
+  "One-shot idle timer for `donkey--startup-resweep\\=', or nil.
+
+Stored so `donkey-mode\\='s disable path can cancel it.  The resweep
+itself refuses to run with the mode off, but a live timer belonging to
+a switched-off mode is still DONKEY state, and the teardown promises
+to clear all of it.")
+
+(defun donkey--startup-resweep ()
+  "Apply DONKEY\\='s default state to buffers created during startup.
+
+When `donkey-mode\\=' is enabled from an init file, its sweep over
+`buffer-list\\=' covers only the buffers existing at that moment, and
+`after-change-major-mode-hook\\=' covers buffers that pick a major mode
+later.  The startup screen (*GNU Emacs*) slips through both nets: it
+is created after EVERY startup hook -- probed live: it does not exist
+yet when `after-init-hook\\=', `emacs-startup-hook\\=' or even
+`window-setup-hook\\=' runs -- and it stays in `fundamental-mode\\=', the
+mode buffers are born in, so no mode function ever fires the hook for
+it.  A user landing there found the mode on with every key dead --
+literally: the splash suppresses self-insert itself, so \"j\" was not
+even typing, it was `undefined\\=', in a package whose whole point is
+that \"j\" moves.
+
+This function is the missing sweep, scheduled from the enable path on
+a one-shot idle timer because no hook is late enough.  Scheduled
+UNCONDITIONALLY, because the enable path cannot tell whether startup
+is still in progress: guarding on a nil `after-init-time\\=' was tried
+and rejected -- that variable is already set while \"-l\" files and
+`after-init-hook\\=' functions run, yet the splash arrives later still,
+so the guard skipped exactly the enables it was meant to serve.  An
+extra sweep costs nothing when nothing was missed:
+`donkey--ensure-default-state\\=' only touches buffers holding no DONKEY
+state at all."
+  (setq donkey--startup-resweep-timer nil)
+  (when (bound-and-true-p donkey-mode)
+    (dolist (buf (buffer-list))
+      (with-current-buffer buf
+        (donkey--ensure-default-state)))))
+
 ;;;###autoload
 (define-minor-mode donkey-mode
   "Toggle DONKEY Modal Editing globally.
@@ -5539,11 +5579,28 @@ donkey-mode' to toggle."
         (add-hook 'post-command-hook #'donkey--update-cursor-passive)
         (dolist (buf (buffer-list))
           (with-current-buffer buf
-            (donkey--ensure-default-state))))
+            (donkey--ensure-default-state)))
+        ;; Buffers the startup sequence creates after this sweep -- the
+        ;; startup screen foremost -- are missed by it, and by
+        ;; `after-change-major-mode-hook' too when they stay in
+        ;; `fundamental-mode'.  Sweep once more at first idle, which is
+        ;; the earliest moment guaranteed to fall after startup has
+        ;; finished.  See `donkey--startup-resweep' for why there is no
+        ;; am-I-in-startup guard here.
+        (unless donkey--startup-resweep-timer
+          (setq donkey--startup-resweep-timer
+                (run-with-idle-timer 0.1 nil #'donkey--startup-resweep))))
     (remove-hook 'after-change-major-mode-hook #'donkey--ensure-default-state)
     (remove-hook 'post-command-hook #'donkey--track-position)
     (remove-hook 'post-command-hook #'donkey--check-post-command-non-editing)
     (remove-hook 'post-command-hook #'donkey--update-cursor-passive)
+    ;; A pending resweep would no-op behind its own donkey-mode guard,
+    ;; but a timer left ticking for a switched-off mode is still state
+    ;; this teardown promises to clear -- same reasoning as the banked
+    ;; lines below.
+    (when donkey--startup-resweep-timer
+      (cancel-timer donkey--startup-resweep-timer)
+      (setq donkey--startup-resweep-timer nil))
     (dolist (buf (buffer-list))
       (with-current-buffer buf
         (when (bound-and-true-p donkey-normal-mode)
