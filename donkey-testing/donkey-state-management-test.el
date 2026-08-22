@@ -1482,6 +1482,170 @@ functions."
   (should-not (memq #'donkey--check-post-command-non-editing post-command-hook))
   (should-not (memq #'donkey--update-cursor-passive post-command-hook)))
 
+(defun donkey-test--cancel-stray-resweep-timers ()
+  "Cancel every pending `donkey--startup-resweep\\=' timer.
+
+Calling the resweep DIRECTLY -- as several tests below do -- clears
+the tracking variable while the enable-time timer object stays
+pending, which the disable path then cannot see.  A test that does so
+must sweep the orphan out by function identity afterward, or it leaks
+into whichever test asserts `timer-idle-list\\=' contents next.  Found
+by the shuffle runner, seeds 1 and 20260822: in alphabetical order the
+asserting tests happen to run first, so only a shuffled order ever put
+the leak in front of them."
+  (dolist (tm (copy-sequence timer-idle-list))
+    (when (eq (timer--function tm) #'donkey--startup-resweep)
+      (cancel-timer tm)))
+  (setq donkey--startup-resweep-timer nil))
+
+;; The startup resweep -- see `donkey--startup-resweep'.  The buffer these
+;; tests stand in for is the startup screen: created after every startup
+;; hook and left in `fundamental-mode', the mode buffers are born in, so
+;; neither the enable-time sweep nor `after-change-major-mode-hook' ever
+;; reaches it.  `get-buffer-create' reproduces exactly that shape.
+
+(ert-deftest donkey-mode-enable-schedules-the-startup-resweep ()
+  "Enabling the mode schedules the one-shot idle resweep, unconditionally.
+
+UNCONDITIONALLY is the load-bearing word, and a batch run is the
+discriminating environment for it: `after-init-time' is long set here,
+exactly as it is when the mode is enabled from a \"-l\" file or an
+`after-init-hook' function -- enables whose startup screen still
+arrives later.  Guarding the schedule on a nil `after-init-time' was
+tried and rejected in the fix; reintroducing it fails this test before
+it misses any splash."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (should after-init-time)
+        (should donkey--startup-resweep-timer)
+        (should (memq donkey--startup-resweep-timer timer-idle-list)))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-mode-enable-twice-schedules-one-resweep ()
+  "Re-enabling the mode does not stack a second resweep timer."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (let ((first donkey--startup-resweep-timer))
+          (donkey-mode 1)
+          (should (eq first donkey--startup-resweep-timer))
+          (should (= 1 (seq-count
+                        (lambda (tm)
+                          (eq (timer--function tm) #'donkey--startup-resweep))
+                        timer-idle-list)))))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-mode-disable-cancels-the-startup-resweep ()
+  "Disabling the mode cancels a pending resweep -- teardown mirrors setup.
+
+The resweep would no-op behind its own `donkey-mode' guard, but a live
+timer belonging to a switched-off mode is still DONKEY state, and the
+teardown promises to clear all of it."
+  (donkey-mode 1)
+  (donkey-mode -1)
+  (should-not donkey--startup-resweep-timer)
+  (should-not (cl-some (lambda (tm)
+                         (eq (timer--function tm) #'donkey--startup-resweep))
+                       timer-idle-list)))
+
+(ert-deftest donkey-startup-resweep-adopts-a-late-fundamental-buffer ()
+  "The resweep gives Normal state to a buffer born after the enable sweep.
+
+The reported defect, reduced to its mechanism: a buffer created after
+`donkey-mode's own sweep, in `fundamental-mode' so no mode function
+ever fires `after-change-major-mode-hook' for it, sat with the mode on
+and no state -- on the real startup screen that meant every key dead."
+  (unwind-protect
+      (let (buf)
+        (donkey-mode 1)
+        (setq buf (get-buffer-create "*donkey-late-buffer*"))
+        (with-current-buffer buf
+          (should-not (bound-and-true-p donkey-normal-mode))
+          (should-not (bound-and-true-p donkey-insert-mode)))
+        (donkey--startup-resweep)
+        (with-current-buffer buf
+          (should (bound-and-true-p donkey-normal-mode))))
+    (when (get-buffer "*donkey-late-buffer*")
+      (kill-buffer "*donkey-late-buffer*"))
+    (donkey-mode -1)
+    (donkey-test--cancel-stray-resweep-timers)))
+
+(ert-deftest donkey-startup-resweep-excluded-mode-gets-insert ()
+  "A late buffer in an excluded mode gets passthrough Insert, not Normal.
+
+The resweep routes through `donkey--ensure-default-state', so the
+excluded-mode rule travels with it.  The mode is claimed by setting
+`major-mode' directly rather than running `comint-mode', which would
+want a subprocess; the variable is what `donkey--excluded-mode-p'
+actually reads."
+  (unwind-protect
+      (let (buf)
+        (donkey-mode 1)
+        (setq buf (get-buffer-create "*donkey-late-excluded*"))
+        (with-current-buffer buf
+          (setq-local major-mode 'comint-mode))
+        (donkey--startup-resweep)
+        (with-current-buffer buf
+          (should (bound-and-true-p donkey-insert-mode))
+          (should-not (bound-and-true-p donkey-normal-mode))))
+    (when (get-buffer "*donkey-late-excluded*")
+      (kill-buffer "*donkey-late-excluded*"))
+    (donkey-mode -1)
+    (donkey-test--cancel-stray-resweep-timers)))
+
+(ert-deftest donkey-startup-resweep-leaves-existing-state-alone ()
+  "A buffer already holding a state keeps it through a resweep.
+
+What makes the unconditional schedule safe to begin with: an extra
+sweep only touches buffers holding no DONKEY state at all, so Insert
+entered by hand survives it."
+  (unwind-protect
+      (let ((buf (get-buffer-create "*donkey-late-buffer*")))
+        (donkey-mode 1)
+        (with-current-buffer buf
+          (donkey-enter-insert))
+        (donkey--startup-resweep)
+        (with-current-buffer buf
+          (should (bound-and-true-p donkey-insert-mode))
+          (should-not (bound-and-true-p donkey-normal-mode))))
+    (when (get-buffer "*donkey-late-buffer*")
+      (kill-buffer "*donkey-late-buffer*"))
+    (donkey-mode -1)
+    (donkey-test--cancel-stray-resweep-timers)))
+
+(ert-deftest donkey-startup-resweep-respects-the-mode-being-off ()
+  "With `donkey-mode' off, the resweep touches nothing.
+
+The guard that makes a stale firing harmless: the timer is canceled on
+disable as well, but a belt does not argue against suspenders here --
+the timer fires code, and code that runs for a switched-off mode must
+decline on its own evidence."
+  (donkey-mode -1)
+  (let ((buf (get-buffer-create "*donkey-late-buffer*")))
+    (unwind-protect
+        (progn
+          (donkey--startup-resweep)
+          (with-current-buffer buf
+            (should-not (bound-and-true-p donkey-normal-mode))
+            (should-not (bound-and-true-p donkey-insert-mode))))
+      (kill-buffer buf))))
+
+(ert-deftest donkey-startup-resweep-forgets-its-timer ()
+  "The resweep clears `donkey--startup-resweep-timer' when it runs.
+
+The variable doubles as the only-schedule-one guard on the enable
+path; a fired resweep that left it set would make every later enable
+skip scheduling for the rest of the session."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (should donkey--startup-resweep-timer)
+        (donkey--startup-resweep)
+        (should-not donkey--startup-resweep-timer))
+    (donkey-mode -1)
+    (donkey-test--cancel-stray-resweep-timers)))
+
 (ert-deftest donkey-mode-update-cursor-on-post-command-hook-resyncs-on-window-switch ()
   "The cursor resyncs on a window switch.
 
