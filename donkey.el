@@ -613,9 +613,9 @@ Banked lines are not honored either.  With lines banked via
 at point and leaves the banks standing -- `y', `d' and `p' all act on
 the bank instead.
 
-What a SELECTION replaces goes on the `kill-ring\=', so
-\\[donkey-yank] brings it back -- the same store `donkey-delete\=' fills
-for the same selection.  A rectangle goes to `killed-rectangle\='
+What a SELECTION replaces goes on the `kill-ring\\=', so
+\\[donkey-yank] brings it back -- the same store `donkey-delete\\=' fills
+for the same selection.  A rectangle goes to `killed-rectangle\\='
 instead, where \\[donkey-yank-rectangle] pastes it from.  Nothing was
 saved at all before, so changing a marked word and pasting gave whatever
 happened to be on the ring already.
@@ -624,8 +624,8 @@ With NO selection nothing is saved, and that is the rule rather than an
 oversight: a character changed under the cursor is a typo being fixed,
 not a cut, and filling the ring with single characters would push out
 what was put there deliberately.  A COUNT does not change that --
-\\`C-u 3 c\=' is still no selection -- so the text it removes is gone
-except through `undo\='.  `donkey-delete\=' draws the same line in the
+\\`C-u 3 c\\=' is still no selection -- so the text it removes is gone
+except through `undo\\='.  `donkey-delete\\=' draws the same line in the
 same place.
 
 INSERT state is entered even when there is nothing to delete, such as at
@@ -634,7 +634,7 @@ the very end of the buffer.
 COUNT changes that many characters when no selection is active.  A
 negative COUNT changes that many characters before point, and a COUNT of
 zero changes none while still entering INSERT state -- the same reading
-`donkey-delete\=' gives its own argument, since the two remove text
+`donkey-delete\\=' gives its own argument, since the two remove text
 identically and differ only in what happens next.
 
 COUNT changes that many characters when no region is active.  A negative
@@ -851,7 +851,7 @@ Returns command symbol or nil if no handler matches."
 Uses `org-element-at-point' to detect the :todo-type property and
 dispatches `org-todo' accordingly.  No keyword string parsing needed.
 
-A headline with no keyword is left alone.  RET is a reader\='s key in an
+A headline with no keyword is left alone.  RET is a reader\\='s key in an
 Org buffer -- it ticks a checkbox, it follows a link -- and turning a
 plain heading into a TODO is a different kind of act: it adds structure
 that was not there, to a heading someone may simply have been reading.
@@ -2695,12 +2695,12 @@ COUNT selects how many levels out to go."
 
 Called with point at the END of a forward symbol run, where a trailing
 \".\" or \",\" is prose punctuation rather than part of the name --
-`donkey-mark-symbol\=' drops it so that marking the symbol in \"see
-`foo\=', bar.\" gives \"bar\" rather than \"bar.\".
+`donkey-mark-symbol\\=' drops it so that marking the symbol in \"see
+`foo\\=', bar.\" gives \"bar\" rather than \"bar.\".
 
-Stops short when the symbol IS that punctuation.  In Lisp `.\=' has
+Stops short when the symbol IS that punctuation.  In Lisp `.\\=' has
 symbol syntax, so \"...\" is a symbol in its own right, and trimming it
-left nothing: `m W\=' on a buffer of \"...\" produced an EMPTY region
+left nothing: `m W\\=' on a buffer of \"...\" produced an EMPTY region
 and announced a successful mark.  On the extend path the same trim ate
 the symbol but not the space before it, so a second press over
 \"a ...\" grew the selection from \"a\" to \"a \" -- a trailing
@@ -2724,19 +2724,19 @@ an extension: never trim away the thing that was just added."
 (defun donkey--real-thing-at-point (thing)
   "Return the THING at point, unless nothing in it is really a THING.
 
-`thing-at-point' reports the WHOLE BUFFER as the `word\=' at point when
+`thing-at-point' reports the WHOLE BUFFER as the `word\\=' at point when
 the buffer holds no word character anywhere: \"...\", \"!!!\" and
 \"()\" each answer with themselves.  So the guard meant to reject a
-buffer with no word in it accepted one instead, and `donkey-mark-word\='
+buffer with no word in it accepted one instead, and `donkey-mark-word\\='
 selected the entire buffer while reporting \"Word marked\" -- after
-which \\[donkey-delete] emptied it.  Confirmed in `fundamental-mode\=',
-`text-mode\=' and `emacs-lisp-mode\=' alike, so it is not the major
-mode\='s syntax table deciding.  A buffer of pure whitespace answers nil,
+which \\[donkey-delete] emptied it.  Confirmed in `fundamental-mode\\=',
+`text-mode\\=' and `emacs-lisp-mode\\=' alike, so it is not the major
+mode\\='s syntax table deciding.  A buffer of pure whitespace answers nil,
 which is why the hole shows only with non-word text that is not blank
 either.
 
 Checked by looking for a character of the right syntax inside what came
-back, so a real word or symbol passes through unchanged.  `symbol\='
+back, so a real word or symbol passes through unchanged.  `symbol\\='
 does not need the treatment -- it answers nil unless the characters
 really do have symbol syntax, which is why \"+++\" is a symbol and
 marking it is correct -- but it is asked the same way here so the two
