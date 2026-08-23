@@ -5380,6 +5380,63 @@ overlays."
 ;; Pre-command hook backup for packages that override C-g
 (add-hook 'pre-command-hook #'donkey--intercept-quit-in-insert)
 
+(defun donkey--recover-quit-in-insert (orig data context caller)
+  "Give a quit that unwound during Insert state its meaning: exit Insert.
+
+Installed around `command-error-function' while `donkey-mode' is on.
+ORIG is the wrapped handler; DATA, CONTEXT and CALLER are what the
+command loop hands it.  Everything except a quit-in-Insert is passed
+through untouched.
+
+The failure this recovers: `C-g' is also Emacs\\='s interrupt
+character.  A press that lands while Lisp is running -- refontifying
+after an edit, a spell-checker\\='s pass over the visible window, a
+checker, a garbage collection -- is consumed interrupting that work
+and never becomes a key.  No keymap and no hook can see it; it is
+absent even from `view-lossage'.  Measured live with real terminal
+bytes: with a large window, a `C-g' 30 ms after \"o\" was eaten by
+`jit-lock' once in fifteen tries, leaving the user in Insert with
+\"Quit\" in the echo area -- pressed again a beat later, it worked.
+This handler runs when such a quit unwinds to the command loop, and
+finishes the exit the press was for.
+
+Converting is sound because keys only ever land BETWEEN commands: any
+quit that unwinds while Insert state is on came from a `C-g' pressed
+DURING execution, and in Insert state that key has exactly one
+meaning.  Had the same press arrived a tick later it would have run
+`donkey--exit-insert' itself.  The work it interrupted stays
+interrupted either way; this only stops the press\\='s second job --
+the state change -- from being lost with it.
+
+The minibuffer and excluded modes fall through to ORIG, mirroring
+`donkey--exit-insert', which delegates those to `keyboard-quit': in
+buffers where Insert is permanent, a quit is a quit.  A quit with
+Insert off -- Normal state\\='s ordinary `keyboard-quit', an aborted
+command in some other buffer -- is not this handler\\='s business and
+passes through.
+
+Coverage is partial by design, and cannot be otherwise: a quit that
+some other code swallows before it reaches the command loop --
+redisplay reports its own as \"Error during redisplay\", timers catch
+theirs -- never arrives here.  This recovers the flavor that surfaces
+as a bare \"Quit\", which is the one users actually see.
+
+The exit is wrapped like `donkey--intercept-quit-in-insert' wraps its
+own: an error inside a `command-error-function' must never escape, so
+it is reported and the original handler still runs, keeping the error
+visible through the standard path."
+  (if (and (eq (car-safe data) 'quit)
+           (bound-and-true-p donkey-insert-mode)
+           (not (minibufferp))
+           (not (donkey--excluded-mode-p)))
+      (condition-case err
+          (donkey--exit-insert)
+        (error
+         (message "DONKEY: error recovering from quit: %s"
+                  (error-message-string err))
+         (funcall orig data context caller)))
+    (funcall orig data context caller)))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Input Method Management
 ;;; ---------------------------------------------------------------------------
@@ -5589,7 +5646,12 @@ donkey-mode' to toggle."
         ;; am-I-in-startup guard here.
         (unless donkey--startup-resweep-timer
           (setq donkey--startup-resweep-timer
-                (run-with-idle-timer 0.1 nil #'donkey--startup-resweep))))
+                (run-with-idle-timer 0.1 nil #'donkey--startup-resweep)))
+        ;; A quit that unwinds during Insert state was a C-g eaten while
+        ;; Lisp was running; recover its meaning.  See
+        ;; `donkey--recover-quit-in-insert'.
+        (add-function :around command-error-function
+                      #'donkey--recover-quit-in-insert))
     (remove-hook 'after-change-major-mode-hook #'donkey--ensure-default-state)
     (remove-hook 'post-command-hook #'donkey--track-position)
     (remove-hook 'post-command-hook #'donkey--check-post-command-non-editing)
@@ -5601,6 +5663,7 @@ donkey-mode' to toggle."
     (when donkey--startup-resweep-timer
       (cancel-timer donkey--startup-resweep-timer)
       (setq donkey--startup-resweep-timer nil))
+    (remove-function command-error-function #'donkey--recover-quit-in-insert)
     (dolist (buf (buffer-list))
       (with-current-buffer buf
         (when (bound-and-true-p donkey-normal-mode)
