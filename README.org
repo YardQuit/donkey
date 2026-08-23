@@ -19,6 +19,7 @@
 - [[*Tutor][Tutor]]
 - [[*Describe Bindings][Describe Bindings]]
 - [[*Customization Group][Customization Group]]
+- [[*Troubleshooting][Troubleshooting]]
 - [[*Development][Development]]
 
 * Overview
@@ -1329,6 +1330,59 @@ All DONKEY variables are under the =donkey= Customize group:
 | =donkey-decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
 | =donkey-wrap-delimiters=             | list    | =( [ { " ' `=      | Delimiters that wrap an active region  |
 | =donkey-mark-pair-delimiters=        | alist   | =(see above)=      | Delimiter pairs for mark-inner/outer   |
+
+* Troubleshooting
+
+** A =C-g= in Insert state that sometimes does nothing
+
+The symptom: you press =C-g= to leave Insert state and nothing happens
+— or =Quit= flashes in the echo area — and the second or third press
+works. Intermittently, more on some files than others, more when the
+window is large.
+
+This is not a DONKEY binding misfiring, and no package can intercept
+it, because the press never becomes a keypress at all. =C-g= is also
+Emacs's *interrupt character*: when it arrives while Emacs is running
+Lisp, it is consumed interrupting that work — below every keymap and
+every hook. And the moment right after an edit is exactly when Emacs
+tends to be running Lisp: refontifying the visible window (built-in,
+every configuration has this), re-spellchecking it (=jinx=), running
+checkers (=flymake=, =eglot=). Press =C-g= fast after =o= or a burst
+of typing — modal muscle memory does — and the press can land inside
+that window and vanish. The bigger the visible region and the more
+post-edit machinery, the wider the window: large frames, prose-heavy
+buffers, multiple dictionaries, and many frames sharing one Emacs
+(daemon setups) all raise the odds.
+
+The confirming test: reproduce it, then immediately =C-h l=
+(=view-lossage=). A press that was eaten as an interrupt is simply
+absent from the key log — you pressed three times, the log shows one.
+
+What helps is shrinking the busy window:
+
+#+begin_src emacs-lisp
+  ;; Redisplay skips fontification while input is pending, so a fast
+  ;; keypress is read as a key instead of interrupting jit-lock.
+  (setq redisplay-skip-fontification-on-input t)
+
+  ;; If you run jinx: move its visible-region recheck out from under
+  ;; your fingers (default is 0.2, squarely where a quick C-g lands).
+  (setq jinx-delay 0.8)
+#+end_src
+
+The same idea applies to any checker with an idle delay: raise it past
+your reaction time.
+
+DONKEY also recovers on its own where recovery is possible: a quit
+that unwinds to the command loop while Insert state is on is given
+the meaning the press had — the exit runs instead of =Quit= being
+printed. That catches the flavor you would otherwise see as a bare
+=Quit= while stuck in Insert. It cannot catch a quit that redisplay
+or a timer swallows before the command loop sees it — those never
+reach Lisp that DONKEY controls — which is what the settings above
+are for: they shrink the window in which the press can be eaten at
+all. Prevention where prevention is possible, recovery where only
+recovery is; together they collapse the frequency to rare.
 
 * Development
 
