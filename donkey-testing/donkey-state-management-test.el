@@ -1631,6 +1631,98 @@ decline on its own evidence."
             (should-not (bound-and-true-p donkey-insert-mode))))
       (kill-buffer buf))))
 
+;; The quit-recovery guard -- see `donkey--recover-quit-in-insert'.  The
+;; eaten keypress itself cannot be reproduced from ERT: keys driven
+;; through `execute-kbd-macro' are injected above the interrupt layer,
+;; so a macro C-g can never be eaten, at any timing -- a timing-sweep
+;; test here would pass forever regardless of the code.  What CAN be
+;; pinned deterministically is the handler's decision table, and the
+;; live rig with real terminal bytes covers the timing dimension
+;; outside the suite.
+
+(ert-deftest donkey-recover-quit-in-insert-exits-insert ()
+  "A quit unwinding with Insert state on becomes the exit it stood for."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (switch-to-buffer (get-buffer-create "*donkey-recover-test*"))
+        (donkey-enter-insert)
+        (let (orig-called)
+          (donkey--recover-quit-in-insert
+           (lambda (&rest _) (setq orig-called t)) '(quit) "" nil)
+          (should-not orig-called)
+          (should (bound-and-true-p donkey-normal-mode))
+          (should-not (bound-and-true-p donkey-insert-mode))))
+    (when (get-buffer "*donkey-recover-test*")
+      (kill-buffer "*donkey-recover-test*"))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-recover-quit-in-normal-passes-through ()
+  "A quit with Normal state on is ordinary and reaches the wrapped handler."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (switch-to-buffer (get-buffer-create "*donkey-recover-test*"))
+        (donkey-enter-normal)
+        (let (orig-called)
+          (donkey--recover-quit-in-insert
+           (lambda (&rest _) (setq orig-called t)) '(quit) "" nil)
+          (should orig-called)
+          (should (bound-and-true-p donkey-normal-mode))))
+    (when (get-buffer "*donkey-recover-test*")
+      (kill-buffer "*donkey-recover-test*"))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-recover-non-quit-passes-through ()
+  "Real errors are not this handler's business, whatever the state."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (switch-to-buffer (get-buffer-create "*donkey-recover-test*"))
+        (donkey-enter-insert)
+        (let (orig-called)
+          (donkey--recover-quit-in-insert
+           (lambda (&rest _) (setq orig-called t))
+           '(error "Boom") "" nil)
+          (should orig-called)
+          ;; and Insert survives: an error is not an exit request
+          (should (bound-and-true-p donkey-insert-mode))))
+    (when (get-buffer "*donkey-recover-test*")
+      (kill-buffer "*donkey-recover-test*"))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-recover-quit-in-excluded-mode-passes-through ()
+  "Excluded modes keep their real quits, mirroring `donkey--exit-insert'."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (switch-to-buffer (get-buffer-create "*donkey-recover-test*"))
+        (setq-local major-mode 'comint-mode)
+        (donkey-enter-insert)
+        (let (orig-called)
+          (donkey--recover-quit-in-insert
+           (lambda (&rest _) (setq orig-called t)) '(quit) "" nil)
+          (should orig-called)
+          (should (bound-and-true-p donkey-insert-mode))))
+    (when (get-buffer "*donkey-recover-test*")
+      (kill-buffer "*donkey-recover-test*"))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-mode-enable-installs-the-quit-recovery ()
+  "Enabling the mode wraps `command-error-function'; disabling unwraps.
+
+Teardown mirrors setup: a handler left wrapped after the mode is off
+would keep converting quits for a package the user turned off."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (should (advice-function-member-p #'donkey--recover-quit-in-insert
+                                          command-error-function))
+        (donkey-mode -1)
+        (should-not (advice-function-member-p #'donkey--recover-quit-in-insert
+                                              command-error-function)))
+    (donkey-mode -1)))
+
 (ert-deftest donkey-startup-resweep-forgets-its-timer ()
   "The resweep clears `donkey--startup-resweep-timer' when it runs.
 

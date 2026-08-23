@@ -7,6 +7,15 @@
 (require 'donkey-test-keys)
 (require 'org)
 (require 'donkey)
+;; Loaded HERE so the tests below that stub `browse-url' replace a real
+;; definition.  Cold, `browse-url' is an autoload cell: a `cl-letf' stub
+;; installed over it is silently OVERWRITTEN when following the link
+;; loads browse-url.el mid-test, and the real function runs instead of
+;; the stub.  Invisible in any order where an earlier test already
+;; forced the load -- shuffle seed 20260823 was the first order that
+;; ran such a test cold, and it failed there on both a patched and a
+;; pristine tree.  Stub only what is already loaded.
+(require 'browse-url)
 
 (defvar org-agenda-mode-map nil)
 (defvar this-original-command)
