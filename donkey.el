@@ -5536,18 +5536,34 @@ regardless of which Donkey state is active when it's called."
   "Enable DONKEY Normal state unless the current major mode is excluded.
 
 For excluded modes, enable DONKEY Insert state (passthrough) instead.
-Returns non-nil if DONKEY was enabled."
-  (let ((is-excluded-p (donkey--excluded-mode-p)))
-    (cond
-     (is-excluded-p
-      (unless (bound-and-true-p donkey-insert-mode)
-        (donkey-enter-insert)
-        t))
-     (t
-      (unless (or (bound-and-true-p donkey-normal-mode)
-                  (bound-and-true-p donkey-insert-mode))
-        (donkey-enter-normal)
-        t)))))
+Returns non-nil if DONKEY was enabled.
+
+Minibuffers get NO state at all -- they stay in plain Emacs
+passthrough, the answer `donkey--minibuffer-setup' already gives.
+This function is the one funnel every sweep pours through -- the
+enable-time sweep over `buffer-list', the startup resweep, and
+`after-change-major-mode-hook' -- and before this guard, the
+minibuffer was protected only by hook ORDER: entry survived because
+`minibuffer-setup-hook' happens to run after the major-mode hook and
+switched Normal back off.  Nothing protected it after entry.  Probed
+live: a resweep fired while a prompt was open put Normal state INTO
+the active minibuffer, where the letters being typed are commands.
+Ordering luck is state you must trust; this guard is state you can
+verify."
+  (cond
+   ((minibufferp) nil)
+   (t
+    (let ((is-excluded-p (donkey--excluded-mode-p)))
+      (cond
+       (is-excluded-p
+        (unless (bound-and-true-p donkey-insert-mode)
+          (donkey-enter-insert)
+          t))
+       (t
+        (unless (or (bound-and-true-p donkey-normal-mode)
+                    (bound-and-true-p donkey-insert-mode))
+          (donkey-enter-normal)
+          t)))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mode Indicator
