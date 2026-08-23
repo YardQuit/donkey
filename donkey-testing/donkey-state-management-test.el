@@ -1631,6 +1631,44 @@ decline on its own evidence."
             (should-not (bound-and-true-p donkey-insert-mode))))
       (kill-buffer buf))))
 
+;; donkey-version -- the loaded version, from the package header.
+
+(ert-deftest donkey-version-matches-the-package-header ()
+  "The captured version and the header's version are the same string.
+
+Rule made literal: documentation stating an enumerable fact gets a
+test that recounts it.  `lm-version' re-reads the header from the
+source file on disk; in this suite the loaded library IS that file,
+so the two must agree exactly -- a bump that edits the header without
+a reload, or a capture that broke, shows up as a mismatch."
+  (require 'lisp-mnt)
+  (let ((source (locate-library "donkey.el")))
+    (should source)
+    (should (equal donkey-version (lm-version source)))))
+
+(ert-deftest donkey-version-looks-like-a-version ()
+  "The captured version has the MAJOR.MINOR.PATCH shape releases use."
+  (should (stringp donkey-version))
+  (should (string-match-p "\\`[0-9]+\\.[0-9]+\\.[0-9]+\\'" donkey-version)))
+
+(ert-deftest donkey-version-command-returns-the-string-from-lisp ()
+  "Called from Lisp, the command returns the version, not a message.
+
+The interactive branch -- echoing \"DONKEY <version>\" -- cannot be
+tested here: `called-interactively-p' is nil under --batch whatever
+the caller does, including `funcall-interactively', so a test of the
+echo would really test the fallback.  That branch was verified in a
+live -nw frame when the command shipped; this pins the Lisp contract."
+  (should (equal (donkey-version) donkey-version)))
+
+(ert-deftest donkey-version-command-returns-nil-when-unknown ()
+  "An unreadable header at load time means nil from Lisp, not a sentence.
+
+Callers can tell \"unknown\" from a real version without parsing
+prose; the docstring promises exactly that."
+  (let ((donkey-version nil))
+    (should (null (donkey-version)))))
+
 ;; The quit-recovery guard -- see `donkey--recover-quit-in-insert'.  The
 ;; eaten keypress itself cannot be reproduced from ERT: keys driven
 ;; through `execute-kbd-macro' are injected above the interrupt layer,

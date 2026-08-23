@@ -18,6 +18,7 @@
 - [[*Org-Scratch Buffer][Org-Scratch Buffer]]
 - [[*Tutor][Tutor]]
 - [[*Describe Bindings][Describe Bindings]]
+- [[*Version][Version]]
 - [[*Customization Group][Customization Group]]
 - [[*Troubleshooting][Troubleshooting]]
 - [[*Development][Development]]
@@ -1308,6 +1309,14 @@ section headers.
   M-x donkey-describe-bindings
 
 #+end_src
+
+* Version
+
+=M-x donkey-version= shows the version of DONKEY that is *loaded* —
+captured from the package header at load time, so after updating the
+file on disk it keeps reporting the version actually running until
+you reload. From Lisp, =(donkey-version)= returns the version string,
+or =nil= when no readable header was found at load time.
 
 * Customization Group
 
