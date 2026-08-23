@@ -233,7 +233,10 @@ jobs:
             test_args="$test_args -l $f"
           done
           failed=""
-          for seed in 1 2 3 4 5; do
+          # 20260823: the first order that ran the org link test cold,
+          # exposing a cl-letf stub over an autoload cell (see the
+          # browse-url require in donkey-org-integration-test.el).
+          for seed in 1 2 3 4 5 20260823; do
             # shellcheck disable=SC2086
             if ! emacs -Q --batch -L . -L donkey-testing $test_args \
                  -l donkey-testing/donkey-shuffle.el \
