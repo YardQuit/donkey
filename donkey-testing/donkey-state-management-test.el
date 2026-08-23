@@ -1631,6 +1631,42 @@ decline on its own evidence."
             (should-not (bound-and-true-p donkey-insert-mode))))
       (kill-buffer buf))))
 
+;; The minibuffer stays out of every sweep -- see the minibuffer guard
+;; in `donkey--ensure-default-state'.
+
+(ert-deftest donkey-ensure-default-state-leaves-minibuffers-alone ()
+  "The state funnel gives a minibuffer no state at all, and says so.
+
+Every sweep pours through `donkey--ensure-default-state' -- the
+enable-time sweep, the startup resweep, and
+`after-change-major-mode-hook' -- and before the guard this pins, a
+sweep that reached an ACTIVE minibuffer put Normal state into it,
+turning the letters being typed into commands.  Entry was protected
+only by hook order; nothing protected a prompt after entry."
+  (unwind-protect
+      (with-current-buffer (window-buffer (minibuffer-window))
+        (should (minibufferp))
+        (should-not (donkey--ensure-default-state))
+        (should-not (bound-and-true-p donkey-normal-mode))
+        (should-not (bound-and-true-p donkey-insert-mode)))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-startup-resweep-leaves-minibuffers-alone ()
+  "The startup resweep passes minibuffers by, end to end.
+
+The path that was probed live before the fix: a resweep firing while
+a prompt was open put Normal state into the minibuffer.  This drives
+the same sweep and asserts the minibuffer comes out stateless."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (donkey--startup-resweep)
+        (with-current-buffer (window-buffer (minibuffer-window))
+          (should-not (bound-and-true-p donkey-normal-mode))
+          (should-not (bound-and-true-p donkey-insert-mode))))
+    (donkey-mode -1)
+    (donkey-test--cancel-stray-resweep-timers)))
+
 ;; donkey-version -- the loaded version, from the package header.
 
 (ert-deftest donkey-version-matches-the-package-header ()
