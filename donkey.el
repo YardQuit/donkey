@@ -5624,7 +5624,28 @@ and rejected -- that variable is already set while \"-l\" files and
 so the guard skipped exactly the enables it was meant to serve.  An
 extra sweep costs nothing when nothing was missed:
 `donkey--ensure-default-state\\=' only touches buffers holding no DONKEY
-state at all."
+state at all.
+
+Daemon sessions get nothing from this timer, and the guarantee above
+is weaker there than it reads.  An \"emacs --daemon\" reaches its first
+idle within a fraction of a second of the enable -- measured at
+0.21 s, before any client frame exists, sweeping only buffers the
+enable sweep had already covered.  What protects a frame made later by
+\"emacsclient -c\" is `after-change-major-mode-hook\\=' instead, and it
+reaches more than it looks: `set-buffer-major-mode\\=' calls the mode
+function even when the mode stays `fundamental-mode\\=', so the
+switch-to-a-new-name path fires the hook too.  Probed live in a
+graphical client frame: the visited file and *scratch* both carry
+state, and the only buffers left without it are internal,
+leading-space ones no user visits.
+
+What stays uncovered is the class the splash belonged to, not just
+that one buffer: a buffer made by a bare `get-buffer-create\\=' after
+this timer has run, and never given a major mode, holds no state
+permanently.  No such buffer is reachable in normal use today -- the
+audit that measured the timing found none -- so this function fixes
+the instance and the class is left open deliberately, to be closed if
+a real one ever turns up."
   (setq donkey--startup-resweep-timer nil)
   (when (bound-and-true-p donkey-mode)
     (dolist (buf (buffer-list))
