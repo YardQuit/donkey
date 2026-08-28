@@ -1214,14 +1214,18 @@ that cannot run is documentation that cannot be true."
                ((eq system-type 'windows-nt) "Windows")
                (t "Linux/BSD"))
               (error-message-string err))))
-  ;; Show tip only once, and only for platforms that actually need external tools
-  (when (and (not donkey--clipboard-warning-shown)
-             (not (display-graphic-p))
-             (not (donkey--detect-clipboard-tools))
-             (not (eq system-type 'darwin))
-             (not (eq system-type 'windows-nt)))
+  ;; Show tip only once, and only for platforms that actually need
+  ;; external tools.  The flag is set on the first paste whatever the
+  ;; answer: it used to be set only when the tip fired, so a terminal
+  ;; session WITH the tools repeated `donkey--detect-clipboard-tools' --
+  ;; a PATH walk per `executable-find' -- on every paste.
+  (unless donkey--clipboard-warning-shown
     (setq donkey--clipboard-warning-shown t)
-    (message "Tip: Install wl-clipboard (Wayland) or xclip/xsel (X11) for system clipboard.")))
+    (when (and (not (display-graphic-p))
+               (not (eq system-type 'darwin))
+               (not (eq system-type 'windows-nt))
+               (not (donkey--detect-clipboard-tools)))
+      (message "Tip: Install wl-clipboard (Wayland) or xclip/xsel (X11) for system clipboard."))))
 
 (defun donkey--delete-active-region-safe ()
   "Delete the active region, if there is one, to make room for a paste.
@@ -2923,6 +2927,21 @@ matching how `mark-word' itself reads its argument."
     (mark-word (or count 1) extend))
   (message "Word marked"))
 
+(defun donkey--region-blank-p ()
+  "Return non-nil if only whitespace and newlines lie in the region.
+
+Walks the region in place rather than copying it into a string to
+match against: the callers ask this of whatever they just marked, and
+a paragraph or sentence selection can be large.  Both bounds are read
+before point moves; `region-end' is a function of point, and reading
+it after the skip returned the skip's own position."
+  (let ((beg (region-beginning))
+        (end (region-end)))
+    (save-excursion
+      (goto-char beg)
+      (skip-chars-forward "[:space:]\n" end)
+      (= (point) end))))
+
 (defun donkey-mark-sentence (&optional count)
   "Select sentence at point.
 
@@ -2999,9 +3018,9 @@ an ALLOW-EXTEND argument that is nil when called from Lisp."
         ;; is whether any prose precedes ORIGIN at all, the same question
         ;; the trailing-gap handler below asks.
         (when (and (> (point) origin)
-                   (string-match-p "[^[:space:]\n]"
-                                   (buffer-substring-no-properties
-                                    (point-min) origin)))
+                   (save-excursion
+                     (goto-char (point-min))
+                     (re-search-forward "[^[:space:]\n]" origin t)))
           (backward-sentence 1)))
     ;; Before the general handler, which would otherwise catch this and
     ;; refuse.  The forward step signals `end-of-buffer' for a real
@@ -3039,9 +3058,7 @@ an ALLOW-EXTEND argument that is nil when called from Lisp."
   ;; holding nothing but whitespace -- they simply walk to its end and
   ;; back, "marking" the blank.  Reject that here so such a buffer still
   ;; reports rather than selecting nothing of substance.
-  (when (string-match-p "\\`[[:space:]\n]*\\'"
-                        (buffer-substring-no-properties (region-beginning)
-                                                        (region-end)))
+  (when (donkey--region-blank-p)
     (deactivate-mark)
     (user-error "No sentence at or before point"))
   (message "Sentence marked")))
@@ -3157,9 +3174,7 @@ marks nothing, matching how `forward-paragraph' reads its argument."
         (goto-char start))
       (activate-mark))
     (when (and (/= n 0)
-               (string-match-p "\\`[[:space:]\n]*\\'"
-                               (buffer-substring-no-properties (region-beginning)
-                                                               (region-end))))
+               (donkey--region-blank-p))
       (deactivate-mark)
       (user-error "No paragraph at or before point"))
     (message "Paragraph marked")))
@@ -3800,9 +3815,12 @@ Consumes the bank, the way `donkey-copy' and `donkey-delete' do."
          (target (car (car spans)))
          ;; Read before the deletions below shift every position.
          (took-newline (eq (char-before (cdr (car spans))) ?\n)))
+    ;; BEFORE the deletions, as `donkey--delete-banked-selection' does:
+    ;; they shrink the buffer, and spans computed against the old text
+    ;; then point past `point-max'.
+    (donkey--consume-banked-spans spans)
     (dolist (span (reverse spans))
       (delete-region (car span) (cdr span)))
-    (donkey--consume-banked-spans spans)
     (deactivate-mark)
     (goto-char target)
     (donkey--paste-restoring-line-ending (or count 1) took-newline)
@@ -3845,13 +3863,13 @@ PREFIX is the accumulated key sequence string for the current path."
                         (lookup-key def [self-insert-command]))
              (cond
               ((keymapp def)
-               (setq acc (append acc
-                                 (donkey--desc-bindings-collect-leaves
-                                  def (concat full-key " ")))))
+               (dolist (leaf (donkey--desc-bindings-collect-leaves
+                              def (concat full-key " ")))
+                 (push leaf acc)))
               ((and (consp def) (keymapp (cdr def)))
-               (setq acc (append acc
-                                 (donkey--desc-bindings-collect-leaves
-                                  (cdr def) (concat full-key " ")))))
+               (dolist (leaf (donkey--desc-bindings-collect-leaves
+                              (cdr def) (concat full-key " ")))
+                 (push leaf acc)))
               (t
                (push (cons full-key def) acc)))))))
      map)
@@ -5019,7 +5037,18 @@ terminal I/O (see `donkey--last-applied-cursor-settings').
 The buffer-local write is skipped the same way when the value already
 holds: this runs from `post-command-hook' after every command, and a
 `setq-local' per keystroke that changes nothing is a per-buffer
-variable write for nothing."
+variable write for nothing.
+
+The terminal is only driven when the current buffer is the one in the
+selected window.  A terminal has one cursor, and it shows that buffer;
+sending a shape for any other buffer is wrong on its face, and the
+buffers this is called for are not only visible ones: every
+`with-temp-buffer' that sets a major mode runs
+`after-change-major-mode-hook' and lands here through
+`donkey--ensure-default-state', from inside whatever package made the
+buffer -- and `donkey--send-cursor-sequence' pauses for redisplay.
+The terminal cache is left alone in that case too, so the next command
+in a visible buffer resyncs it through `donkey--update-cursor-passive'."
   (let ((effective (cond
                     (setting setting)
                     ((local-variable-p 'cursor-type) cursor-type)
@@ -5034,7 +5063,10 @@ variable write for nothing."
      (donkey--cursor-type-owned
       (kill-local-variable 'cursor-type)
       (setq donkey--cursor-type-owned nil)))
-    (unless (equal effective (gethash terminal donkey--last-applied-cursor-settings))
+    (when (and (eq (current-buffer) (window-buffer (selected-window)))
+               (not (equal effective
+                           (gethash terminal
+                                    donkey--last-applied-cursor-settings))))
       (puthash terminal effective donkey--last-applied-cursor-settings)
       (donkey--send-cursor-sequence effective))))
 
@@ -5111,11 +5143,16 @@ Updates the custom variable and saves to your customization file."
 (defvar donkey--minibuffer-pre-state-stack nil
   "Stack of DONKEY states saved before minibuffer activations.
 
-Each element is normal, insert, or nil.  A stack rather than a
-single slot so recursive minibuffer activations (nested reads,
-e.g. via `enable-recursive-minibuffers') each restore their own
-saved state on exit instead of clobbering one another.  Not
-buffer-local because we need to read it after switching buffers.")
+Each element is (BUFFER . STATE), STATE being normal, insert, or
+nil.  A stack rather than a single slot so recursive minibuffer
+activations (nested reads, e.g. via `enable-recursive-minibuffers')
+each restore their own saved state on exit instead of clobbering one
+another.  Not buffer-local because we need to read it after switching
+buffers.
+
+The buffer is recorded, not looked up again at exit: the command run
+from the minibuffer may have switched the window to another buffer by
+then, and the saved state belongs to the buffer it was saved from.")
 
 (defun donkey--minibuffer-current-state ()
   "Return the current DONKEY state as a symbol."
@@ -5135,11 +5172,10 @@ rare case where it somehow is, so the minibuffer instead falls through
 to plain Emacs passthrough by default, same as any other buffer
 Donkey never activated in."
   ;; Capture state from the buffer that initiated the minibuffer
-  (let ((orig-state
-         (with-current-buffer
-             (window-buffer (minibuffer-selected-window))
-           (donkey--minibuffer-current-state))))
-    (push orig-state donkey--minibuffer-pre-state-stack))
+  (let ((orig (window-buffer (minibuffer-selected-window))))
+    (push (cons orig (with-current-buffer orig
+                       (donkey--minibuffer-current-state)))
+          donkey--minibuffer-pre-state-stack))
   ;; Guard against donkey-normal-mode somehow already being on here
   (when (bound-and-true-p donkey-normal-mode)
     (donkey-normal-mode -1)))
@@ -5156,10 +5192,11 @@ hook resurrect Normal or Insert state in the originating buffer on
 exit, the same way a stray `C-g' through `donkey-setup-smartparens''
 keymaps could before `donkey--exit-insert' gained its own
 `donkey-mode' guard."
-  (let ((saved-state (pop donkey--minibuffer-pre-state-stack)))
-    (when (bound-and-true-p donkey-mode)
-      (with-current-buffer
-          (window-buffer (minibuffer-selected-window))
+  (pcase-let ((`(,buf . ,saved-state)
+               (pop donkey--minibuffer-pre-state-stack)))
+    (when (and (bound-and-true-p donkey-mode)
+               (buffer-live-p buf))
+      (with-current-buffer buf
         (pcase saved-state
           ('normal (donkey-enter-normal))
           ('insert (donkey-enter-insert)))))))
@@ -5216,20 +5253,13 @@ Operates on the current buffer only."
         (when (and (overlayp ov) (overlay-start ov))
           (delete-overlay ov)
           (setq cleared (1+ cleared)))))
-    ;; Strategy 2: Buffer-wide scan for transient faces
-    (dolist (ov (overlays-in beg end))
-      (when (overlay-start ov)
-        (let ((face (overlay-get ov 'face)))
-          (when (or (overlay-get ov 'donkey-cleanup)
-                    (and face
-                         (cond
-                          ((symbolp face)
-                           (memq face transient-faces))
-                          ((consp face)
-                           (cl-some (lambda (f) (memq f transient-faces)) face)))))
-            (delete-overlay ov)
-            (setq cleared (1+ cleared))))))
-    ;; Strategy 3: Remove overlays carrying smartparens keymap properties.
+    ;; Strategies 2 and 3 share ONE scan.  `overlays-in' over the whole
+    ;; buffer conses a fresh list of every overlay, and this runs on
+    ;; every Insert -> Normal exit: in an Org, LSP or Flycheck buffer
+    ;; that is thousands of overlays, and two scans were twice that.
+    ;;
+    ;; Strategy 2: transient faces.
+    ;; Strategy 3: overlays carrying smartparens keymap properties.
     ;;
     ;; For overlays Smartparens is actively tracking in
     ;; `sp-pair-overlay-list', go through its own `sp--remove-overlay'
@@ -5243,18 +5273,29 @@ Operates on the current buffer only."
     ;; (wrong-type-argument number-or-marker-p nil).
     (dolist (ov (overlays-in beg end))
       (when (overlay-start ov)
-        (let ((km (overlay-get ov 'keymap)))
-          (when (and km
-                     (or (and (boundp 'sp-pair-overlay-keymap)
-                              (eq km sp-pair-overlay-keymap))
-                         (and (boundp 'sp-overlay-keymap)
-                              (eq km sp-overlay-keymap))))
+        (let ((face (overlay-get ov 'face))
+              (km (overlay-get ov 'keymap)))
+          (cond
+           ((or (overlay-get ov 'donkey-cleanup)
+                (and face
+                     (cond
+                      ((symbolp face)
+                       (memq face transient-faces))
+                      ((consp face)
+                       (cl-some (lambda (f) (memq f transient-faces)) face)))))
+            (delete-overlay ov)
+            (setq cleared (1+ cleared)))
+           ((and km
+                 (or (and (boundp 'sp-pair-overlay-keymap)
+                          (eq km sp-pair-overlay-keymap))
+                     (and (boundp 'sp-overlay-keymap)
+                          (eq km sp-overlay-keymap))))
             (if (and (boundp 'sp-pair-overlay-list)
                      (fboundp 'sp--remove-overlay)
                      (memq ov sp-pair-overlay-list))
                 (sp--remove-overlay ov)
               (delete-overlay ov))
-            (setq cleared (1+ cleared))))))
+            (setq cleared (1+ cleared)))))))
     cleared))
 
 (defun donkey--schedule-overlay-cleanup ()
@@ -5716,9 +5757,25 @@ the instance and the class is left open deliberately, to be closed if
 a real one ever turns up."
   (setq donkey--startup-resweep-timer nil)
   (when (bound-and-true-p donkey-mode)
-    (dolist (buf (buffer-list))
+    (donkey--sweep-buffers)))
+
+(defun donkey--sweep-buffers ()
+  "Apply `donkey--ensure-default-state' to every buffer, one at a time.
+
+Each buffer is its own `condition-case': entering a state runs the
+user-facing `donkey-normal-mode-hook' and `donkey-insert-mode-hook',
+and one of those signaling in one buffer used to abort the whole
+sweep -- with the global hooks already installed and `donkey-mode'
+already t, leaving the mode half on.  The error is reported, the
+buffer is skipped, and the sweep goes on."
+  (dolist (buf (buffer-list))
+    (when (buffer-live-p buf)
       (with-current-buffer buf
-        (donkey--ensure-default-state)))))
+        (condition-case err
+            (donkey--ensure-default-state)
+          (error
+           (message "DONKEY: error applying default state in %s: %s"
+                    (buffer-name) (error-message-string err))))))))
 
 (defconst donkey--global-hooks
   '((after-change-major-mode-hook . donkey--ensure-default-state)
@@ -5768,9 +5825,7 @@ donkey-mode' to toggle."
   (if donkey-mode
       (progn
         (donkey--install-global-hooks)
-        (dolist (buf (buffer-list))
-          (with-current-buffer buf
-            (donkey--ensure-default-state)))
+        (donkey--sweep-buffers)
         ;; Buffers the startup sequence creates after this sweep -- the
         ;; startup screen foremost -- are missed by it, and by
         ;; `after-change-major-mode-hook' too when they stay in

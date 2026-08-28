@@ -29,3 +29,4 @@ nohup.out
 mule--test.el
 ^20*.org$
 run_tests.sh
+*.patch

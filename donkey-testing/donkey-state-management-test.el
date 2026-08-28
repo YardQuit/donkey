@@ -199,20 +199,60 @@ state unrestored once the outer minibuffer finally exited."
                      (lambda (_win) buf)))
             ;; Outer minibuffer opens while buf is in Normal state.
             (donkey--minibuffer-setup)
-            (should (equal donkey--minibuffer-pre-state-stack '(normal)))
+            (should (equal donkey--minibuffer-pre-state-stack
+                           (list (cons buf 'normal))))
             (should-not (bound-and-true-p donkey-normal-mode))
             ;; A nested/recursive minibuffer opens on top of the outer one.
             (donkey--minibuffer-setup)
-            (should (equal donkey--minibuffer-pre-state-stack '(nil normal)))
+            (should (equal donkey--minibuffer-pre-state-stack
+                           (list (cons buf nil) (cons buf 'normal))))
             ;; Inner minibuffer exits first: pops its own entry only.
             (donkey--minibuffer-exit)
-            (should (equal donkey--minibuffer-pre-state-stack '(normal)))
+            (should (equal donkey--minibuffer-pre-state-stack
+                           (list (cons buf 'normal))))
             (should-not (bound-and-true-p donkey-normal-mode))
             ;; Outer minibuffer exits: must still restore Normal for buf.
             (donkey--minibuffer-exit)
             (should (null donkey--minibuffer-pre-state-stack))
             (should (bound-and-true-p donkey-normal-mode))))
       (when (buffer-live-p buf) (kill-buffer buf)))))
+
+(ert-deftest donkey-minibuffer-exit-restores-the-buffer-it-saved-from ()
+  "Exit restores the buffer whose state was saved, not the window's current one.
+
+Regression test: both hooks used to look the buffer up through
+`minibuffer-selected-window' at the time they ran, so a command that
+switched that window's buffer from inside the minibuffer had the saved
+state applied to whatever buffer the window showed afterwards."
+  (let ((orig (generate-new-buffer "donkey-minibuf-orig"))
+        (other (generate-new-buffer "donkey-minibuf-other"))
+        (donkey--minibuffer-pre-state-stack nil)
+        (donkey-mode t)
+        (shown nil))
+    (unwind-protect
+        (progn
+          ;; Both start with no state, whatever a globally enabled
+          ;; `donkey-mode' left behind through `fundamental-mode's hook.
+          (dolist (b (list orig other))
+            (with-current-buffer b
+              (fundamental-mode)
+              (donkey-normal-mode -1)
+              (donkey-insert-mode -1)))
+          (with-current-buffer orig (donkey-normal-mode 1))
+          (setq shown orig)
+          (cl-letf (((symbol-function 'minibuffer-selected-window)
+                     (lambda () 'donkey-fake-window))
+                    ((symbol-function 'window-buffer)
+                     (lambda (_win) shown)))
+            (donkey--minibuffer-setup)
+            (with-current-buffer orig (donkey-normal-mode -1))
+            ;; The command run from the minibuffer switched the window.
+            (setq shown other)
+            (donkey--minibuffer-exit)
+            (should (buffer-local-value 'donkey-normal-mode orig))
+            (should-not (buffer-local-value 'donkey-normal-mode other))))
+      (dolist (b (list orig other))
+        (when (buffer-live-p b) (kill-buffer b))))))
 
 (ert-deftest donkey-minibuffer-exit-skips-restore-when-donkey-mode-off ()
   "Minibuffer exit skips the restore when `donkey-mode' is off.
@@ -237,7 +277,8 @@ class `donkey--exit-insert' has its own `donkey-mode' guard for."
                     ((symbol-function 'window-buffer)
                      (lambda (_win) buf)))
             (donkey--minibuffer-setup)
-            (should (equal donkey--minibuffer-pre-state-stack '(normal)))
+            (should (equal donkey--minibuffer-pre-state-stack
+                           (list (cons buf 'normal))))
             ;; User disables donkey-mode while the minibuffer is still open.
             (setq donkey-mode nil)
             (donkey--minibuffer-exit)

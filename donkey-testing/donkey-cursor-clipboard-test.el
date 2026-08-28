@@ -239,8 +239,34 @@ only worth making when the value changes."
                (lambda (&rest _) (setq send-called t)))
               ((symbol-function 'sit-for) (lambda (&rest _) t)))
       (with-temp-buffer
+        (set-window-buffer nil (current-buffer))
         (donkey--apply-cursor-setting 'bar))
       (should send-called))))
+
+(ert-deftest donkey-apply-cursor-setting-leaves-terminal-alone-when-not-shown ()
+  "A buffer not in the selected window neither sends nor touches the cache.
+
+Regression test: every `with-temp-buffer' that sets a major mode runs
+`after-change-major-mode-hook' and reaches this through
+`donkey--ensure-default-state', from inside whatever package made the
+buffer.  Driving the terminal from there sent a shape for a buffer
+nobody sees and paused for redisplay in the caller's critical section."
+  (let ((send-called nil))
+    (clrhash donkey--last-applied-cursor-settings)
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
+              ((symbol-function 'tty-type) (lambda () "xterm-256color"))
+              ((symbol-function 'send-string-to-terminal)
+               (lambda (&rest _) (setq send-called t)))
+              ((symbol-function 'sit-for) (lambda (&rest _) t)))
+      (with-temp-buffer
+        (should-not (eq (current-buffer) (window-buffer (selected-window))))
+        (donkey--apply-cursor-setting 'bar)
+        ;; The buffer-local value is still applied ...
+        (should (eq cursor-type 'bar)))
+      ;; ... but the terminal was not driven, and the cache does not
+      ;; claim it was.
+      (should-not send-called)
+      (should (zerop (hash-table-count donkey--last-applied-cursor-settings))))))
 
 (ert-deftest donkey-apply-cursor-setting-skips-redundant-resend ()
   "Does not re-send DECSCUSR when called again with the same setting.
@@ -259,6 +285,7 @@ synchronous `sit-for' delay on every single transition."
                (lambda (&rest _) (setq send-count (1+ send-count))))
               ((symbol-function 'sit-for) (lambda (&rest _) t)))
       (with-temp-buffer
+        (set-window-buffer nil (current-buffer))
         (donkey--apply-cursor-setting 'bar)
         (donkey--apply-cursor-setting 'bar)
         ;; Each real call sends the sequence twice (see
@@ -276,6 +303,7 @@ synchronous `sit-for' delay on every single transition."
                (lambda (seq &rest _) (push seq sent)))
               ((symbol-function 'sit-for) (lambda (&rest _) t)))
       (with-temp-buffer
+        (set-window-buffer nil (current-buffer))
         (donkey--apply-cursor-setting 'bar)
         (donkey--apply-cursor-setting 'box)
         (should sent)))))
@@ -314,6 +342,7 @@ mode's body toggles the other off."
   (let ((send-count 0))
     (clrhash donkey--last-applied-cursor-settings)
     (with-temp-buffer
+      (set-window-buffer nil (current-buffer))
       (donkey-insert-mode 1)
       (cl-letf (((symbol-function 'donkey--send-cursor-sequence)
                  (lambda (&rest _) (setq send-count (1+ send-count)))))
@@ -349,13 +378,16 @@ sequence at all for the return trip until this was fixed."
               ;; Buffer A applies 'box, buffer B applies 'bar -- as if
               ;; each buffer's own donkey-normal-mode/insert-mode hook
               ;; had already fired once, same as the live repro.
+              (set-window-buffer nil buf-a)
               (with-current-buffer buf-a (donkey--apply-cursor-setting 'box))
+              (set-window-buffer nil buf-b)
               (with-current-buffer buf-b (donkey--apply-cursor-setting 'bar))
               (setq send-log nil)
               ;; Simulate switching back to buffer A via `other-window':
               ;; buffer A's own state (`box') hasn't changed, but the
               ;; terminal's actual last-applied value is now `bar' (from
               ;; B), so this must still resend.
+              (set-window-buffer nil buf-a)
               (with-current-buffer buf-a (donkey--apply-cursor-setting 'box))
               (should send-log))))))))
 
