@@ -101,9 +101,13 @@ explicitly if desired."
 (defun donkey--mode-list (value)
   "Return VALUE as a list of major modes, never signaling.
 
-A list is returned unchanged, a bare symbol is taken as a one-element
-list, and anything else reads as the empty list."
-  (cond ((listp value) value)
+A list is returned with any non-symbol dropped, a bare symbol is taken
+as a one-element list, and anything else reads as the empty list.  The
+filter matters as much as the coercion: a list holding a string --
+\(\"shell-mode\") for `shell-mode' -- reaches `derived-mode-p', which
+signals `wrong-type-argument' on it, from the same hook the comment
+above describes."
+  (cond ((listp value) (seq-filter #'symbolp value))
         ((symbolp value) (list value))
         (t nil)))
 
@@ -120,9 +124,38 @@ option cannot signal from here."
     (or (memq major-mode modes)
         (apply #'derived-mode-p modes))))
 
+(defun donkey--memo-major-mode-in-p (cache-var mode-list)
+  "Return `donkey--major-mode-in-p' of MODE-LIST, memoized in CACHE-VAR.
+
+CACHE-VAR names a buffer-local variable holding a cons of the key
+\(MAJOR-MODE . LIST) and the RESULT.  The entry is reused only while
+both the buffer's
+`major-mode' and the MODE-LIST object are `eq' to the ones it was
+computed for, so a mode change or any reassignment of the user
+option -- `setq', `add-to-list', Customize -- recomputes on the next
+call.
+
+Worth caching because `donkey--major-mode-in-p' walks the mode's
+parent chain once per listed mode, and its callers sit on
+`pre-command-hook', twice on `post-command-hook', and in the
+`donkey-insert-mode' lighter, which is evaluated on every redisplay
+of every window."
+  (let ((cache (symbol-value cache-var)))
+    (if (and cache
+             (eq (car (car cache)) major-mode)
+             (eq (cdr (car cache)) mode-list))
+        (cdr cache)
+      (let ((result (donkey--major-mode-in-p mode-list)))
+        (set cache-var (cons (cons major-mode mode-list) result))
+        result))))
+
+(defvar-local donkey--excluded-mode-cache nil
+  "Memo for `donkey--excluded-mode-p'; see `donkey--memo-major-mode-in-p'.")
+
 (defun donkey--excluded-mode-p ()
   "Return non-nil if the current major mode is in `donkey-excluded-modes'."
-  (donkey--major-mode-in-p donkey-excluded-modes))
+  (donkey--memo-major-mode-in-p 'donkey--excluded-mode-cache
+                                donkey-excluded-modes))
 
 (defun donkey--insert-state-lighter ()
   "Return the modeline text for Insert state in the current buffer.
@@ -718,9 +751,13 @@ one if you'd rather it fall through to its own original RET binding."
   :type '(repeat symbol)
   :group 'donkey)
 
+(defvar-local donkey--editing-mode-cache nil
+  "Memo for `donkey--editing-mode-p'; see `donkey--memo-major-mode-in-p'.")
+
 (defun donkey--editing-mode-p ()
   "Return non-nil if current major mode is in `donkey-editing-modes'."
-  (donkey--major-mode-in-p donkey-editing-modes))
+  (donkey--memo-major-mode-in-p 'donkey--editing-mode-cache
+                                donkey-editing-modes))
 
 (defun donkey--register-enter-rule (rule)
   "Register RULE for ENTER DWIM dispatch.
@@ -910,8 +947,14 @@ was intended, which is the entire reason `donkey-editing-modes' exists."
 (add-hook 'donkey-normal-mode-hook
           (lambda ()
             (unless (donkey--editing-mode-p)
+              ;; A mode with no local map at all -- `fundamental-mode'
+              ;; buffers, and any mode that never made one -- returns
+              ;; nil here, and `lookup-key' signals on nil rather than
+              ;; treating it as empty.  From this hook, that aborts
+              ;; `donkey-normal-mode' itself.
               (setq donkey--saved-ret-binding
-                    (lookup-key (current-local-map) (kbd "RET")))))
+                    (let ((map (current-local-map)))
+                      (and map (lookup-key map (kbd "RET")))))))
           t)
 
 ;;; ---------------------------------------------------------------------------
@@ -1949,10 +1992,15 @@ region regardless of what deactivated the mark — this command,
 `keyboard-quit', or anything else.  Without this, a stale anchor left
 over from an abandoned visual-line selection could hijack a later,
 unrelated region activation (e.g. via `set-mark-command') in the same
-buffer."
+buffer.
+
+Installed buffer-locally by `donkey-visual-line-toggle' at the moment
+it sets the anchor, rather than globally at load: an anchor is the
+only thing this has to clear, and the buffers holding one are exactly
+the buffers where the hook needs to exist.  Adding a function that is
+already present is a no-op, so repeated sessions do not grow the hook."
   (setq donkey-visual-anchor nil))
 
-(add-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor)
 
 (defun donkey--visual-line-session-active-p ()
   "Return non-nil if point is continuing an active visual-line selection.
@@ -2034,8 +2082,13 @@ emptying it, `y' gives a kill that pastes back as a complete line, and
   (if (donkey--visual-line-session-active-p)
       (progn
         (deactivate-mark)
+        ;; `donkey--clear-visual-anchor' normally does this from the
+        ;; local `deactivate-mark-hook'; cleared here as well so a
+        ;; cancel never depends on that hook being in place.
+        (setq donkey-visual-anchor nil)
         (message "Visual line: canceled"))
     (donkey--ensure-non-rectangle-selection)
+    (add-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor nil t)
     (setq donkey-visual-anchor (line-beginning-position))
     (set-mark (line-beginning-position))
     (end-of-line)
@@ -4947,21 +5000,40 @@ then wrongly skip resending on returning to a previously-visited
 buffer, since that buffer's own cache still (correctly, for itself)
 remembers its own last self-applied value.")
 
+(defvar-local donkey--cursor-type-owned nil
+  "Non-nil while the buffer-local `cursor-type' is one DONKEY set.
+
+`donkey--apply-cursor-setting' with a nil SETTING removes the local
+value only when this is set.  Without the flag, the disable path --
+which visits EVERY buffer -- killed a local `cursor-type' that some
+other package had set on purpose in a buffer DONKEY never touched.")
+
 (defun donkey--apply-cursor-setting (setting)
   "Apply SETTING, falling back to global default if SETTING is nil.
 
 In terminal mode, also sends DECSCUSR escape sequence for visual
 cursor change -- but only when SETTING's effective value actually
 changed since the last call for this terminal, to avoid redundant
-terminal I/O (see `donkey--last-applied-cursor-settings')."
+terminal I/O (see `donkey--last-applied-cursor-settings').
+
+The buffer-local write is skipped the same way when the value already
+holds: this runs from `post-command-hook' after every command, and a
+`setq-local' per keystroke that changes nothing is a per-buffer
+variable write for nothing."
   (let ((effective (cond
                     (setting setting)
                     ((local-variable-p 'cursor-type) cursor-type)
                     (t (default-value 'cursor-type))))
         (terminal (frame-terminal)))
-    (if setting
-        (setq-local cursor-type setting)
-      (kill-local-variable 'cursor-type))
+    (cond
+     (setting
+      (unless (and (local-variable-p 'cursor-type)
+                   (equal cursor-type setting))
+        (setq-local cursor-type setting))
+      (setq donkey--cursor-type-owned t))
+     (donkey--cursor-type-owned
+      (kill-local-variable 'cursor-type)
+      (setq donkey--cursor-type-owned nil)))
     (unless (equal effective (gethash terminal donkey--last-applied-cursor-settings))
       (puthash terminal effective donkey--last-applied-cursor-settings)
       (donkey--send-cursor-sequence effective))))
@@ -5092,8 +5164,6 @@ keymaps could before `donkey--exit-insert' gained its own
           ('normal (donkey-enter-normal))
           ('insert (donkey-enter-insert)))))))
 
-(add-hook 'minibuffer-setup-hook #'donkey--minibuffer-setup)
-(add-hook 'minibuffer-exit-hook #'donkey--minibuffer-exit)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Insert to Normal Transition
@@ -5377,8 +5447,8 @@ overlays."
 ;; Bind C-g directly in insert mode map
 (keymap-set donkey-insert-mode-map "C-g" #'donkey--exit-insert)
 
-;; Pre-command hook backup for packages that override C-g
-(add-hook 'pre-command-hook #'donkey--intercept-quit-in-insert)
+;; The `pre-command-hook' backup for packages that override C-g is
+;; installed by `donkey-mode', alongside the rest of the global hooks.
 
 (defun donkey--recover-quit-in-insert (orig data context caller)
   "Give a quit that unwound during Insert state its meaning: exit Insert.
@@ -5525,8 +5595,6 @@ regardless of which Donkey state is active when it's called."
 
 (add-hook 'donkey-normal-mode-hook #'donkey--on-normal-entry)
 (add-hook 'donkey-insert-mode-hook #'donkey--on-insert-entry)
-(add-hook 'input-method-activate-hook #'donkey--on-input-method-activate)
-(add-hook 'input-method-deactivate-hook #'donkey--on-input-method-deactivate)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Enhanced Mode Activation Logic
@@ -5652,6 +5720,38 @@ a real one ever turns up."
       (with-current-buffer buf
         (donkey--ensure-default-state)))))
 
+(defconst donkey--global-hooks
+  '((after-change-major-mode-hook . donkey--ensure-default-state)
+    (post-command-hook . donkey--track-position)
+    (post-command-hook . donkey--check-post-command-non-editing)
+    (post-command-hook . donkey--update-cursor-passive)
+    (pre-command-hook . donkey--intercept-quit-in-insert)
+    (minibuffer-setup-hook . donkey--minibuffer-setup)
+    (minibuffer-exit-hook . donkey--minibuffer-exit)
+    (input-method-activate-hook . donkey--on-input-method-activate)
+    (input-method-deactivate-hook . donkey--on-input-method-deactivate))
+  "Every (HOOK . FUNCTION) `donkey-mode' adds to Emacs\='s own hooks.
+
+One list, so the enable and disable paths cannot drift apart.  All of
+these used to be added at load time -- some of them by a bare
+`require', before the mode was ever turned on -- and none were removed
+on disable, so a session that had merely loaded the file ran DONKEY
+code on every command, every minibuffer and every input-method toggle
+for good.  (`deactivate-mark-hook' is not here:
+`donkey--clear-visual-anchor' is installed buffer-locally by the
+command that needs it.)  A global minor mode\='s hooks
+belong to the mode.")
+
+(defun donkey--install-global-hooks ()
+  "Add every hook in `donkey--global-hooks'."
+  (pcase-dolist (`(,hook . ,fn) donkey--global-hooks)
+    (add-hook hook fn)))
+
+(defun donkey--remove-global-hooks ()
+  "Remove every hook in `donkey--global-hooks'."
+  (pcase-dolist (`(,hook . ,fn) donkey--global-hooks)
+    (remove-hook hook fn)))
+
 ;;;###autoload
 (define-minor-mode donkey-mode
   "Toggle DONKEY Modal Editing globally.
@@ -5667,10 +5767,7 @@ donkey-mode' to toggle."
   :group 'donkey
   (if donkey-mode
       (progn
-        (add-hook 'after-change-major-mode-hook #'donkey--ensure-default-state)
-        (add-hook 'post-command-hook #'donkey--track-position)
-        (add-hook 'post-command-hook #'donkey--check-post-command-non-editing)
-        (add-hook 'post-command-hook #'donkey--update-cursor-passive)
+        (donkey--install-global-hooks)
         (dolist (buf (buffer-list))
           (with-current-buffer buf
             (donkey--ensure-default-state)))
@@ -5689,10 +5786,7 @@ donkey-mode' to toggle."
         ;; `donkey--recover-quit-in-insert'.
         (add-function :around command-error-function
                       #'donkey--recover-quit-in-insert))
-    (remove-hook 'after-change-major-mode-hook #'donkey--ensure-default-state)
-    (remove-hook 'post-command-hook #'donkey--track-position)
-    (remove-hook 'post-command-hook #'donkey--check-post-command-non-editing)
-    (remove-hook 'post-command-hook #'donkey--update-cursor-passive)
+    (donkey--remove-global-hooks)
     ;; A pending resweep would no-op behind its own donkey-mode guard,
     ;; but a timer left ticking for a switched-off mode is still state
     ;; this teardown promises to clear -- same reasoning as the banked

@@ -194,12 +194,40 @@ qualify."
     (should (eq cursor-type 'bar))))
 
 (ert-deftest donkey-apply-cursor-setting-kills-local-when-nil ()
-  "Kills local `cursor-type' when given a nil setting."
+  "Kills the local `cursor-type' DONKEY set when given a nil setting."
   (with-temp-buffer
-    (setq-local cursor-type 'bar)
+    (donkey--apply-cursor-setting 'bar)
     (should (local-variable-p 'cursor-type))
     (donkey--apply-cursor-setting nil)
     (should-not (local-variable-p 'cursor-type))))
+
+(ert-deftest donkey-apply-cursor-setting-leaves-foreign-local-alone ()
+  "A nil setting does not kill a local `cursor-type' DONKEY never set.
+
+The disable path calls this in EVERY buffer, including ones some
+other package gave a buffer-local cursor on purpose."
+  (with-temp-buffer
+    (setq-local cursor-type 'hbar)
+    (donkey--apply-cursor-setting nil)
+    (should (local-variable-p 'cursor-type))
+    (should (eq cursor-type 'hbar))))
+
+(ert-deftest donkey-apply-cursor-setting-skips-redundant-local-write ()
+  "Re-applying the value already in place does not write `cursor-type'.
+
+This runs from `post-command-hook' after every command; the write is
+only worth making when the value changes."
+  (with-temp-buffer
+    (donkey--apply-cursor-setting 'bar)
+    (let (written)
+      (add-variable-watcher 'cursor-type
+                            (lambda (&rest _) (setq written t)))
+      (unwind-protect
+          (progn
+            (donkey--apply-cursor-setting 'bar)
+            (should-not written))
+        (dolist (w (get-variable-watchers 'cursor-type))
+          (remove-variable-watcher 'cursor-type w))))))
 
 (ert-deftest donkey-apply-cursor-setting-sends-decscusr-in-terminal ()
   "Sends DECSCUSR in terminal mode."

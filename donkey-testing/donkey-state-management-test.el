@@ -198,18 +198,18 @@ state unrestored once the outer minibuffer finally exited."
                     ((symbol-function 'window-buffer)
                      (lambda (_win) buf)))
             ;; Outer minibuffer opens while buf is in Normal state.
-            (run-hooks 'minibuffer-setup-hook)
+            (donkey--minibuffer-setup)
             (should (equal donkey--minibuffer-pre-state-stack '(normal)))
             (should-not (bound-and-true-p donkey-normal-mode))
             ;; A nested/recursive minibuffer opens on top of the outer one.
-            (run-hooks 'minibuffer-setup-hook)
+            (donkey--minibuffer-setup)
             (should (equal donkey--minibuffer-pre-state-stack '(nil normal)))
             ;; Inner minibuffer exits first: pops its own entry only.
-            (run-hooks 'minibuffer-exit-hook)
+            (donkey--minibuffer-exit)
             (should (equal donkey--minibuffer-pre-state-stack '(normal)))
             (should-not (bound-and-true-p donkey-normal-mode))
             ;; Outer minibuffer exits: must still restore Normal for buf.
-            (run-hooks 'minibuffer-exit-hook)
+            (donkey--minibuffer-exit)
             (should (null donkey--minibuffer-pre-state-stack))
             (should (bound-and-true-p donkey-normal-mode))))
       (when (buffer-live-p buf) (kill-buffer buf)))))
@@ -236,11 +236,11 @@ class `donkey--exit-insert' has its own `donkey-mode' guard for."
                      (lambda () 'donkey-fake-window))
                     ((symbol-function 'window-buffer)
                      (lambda (_win) buf)))
-            (run-hooks 'minibuffer-setup-hook)
+            (donkey--minibuffer-setup)
             (should (equal donkey--minibuffer-pre-state-stack '(normal)))
             ;; User disables donkey-mode while the minibuffer is still open.
             (setq donkey-mode nil)
-            (run-hooks 'minibuffer-exit-hook)
+            (donkey--minibuffer-exit)
             (should (null donkey--minibuffer-pre-state-stack))
             (should-not (bound-and-true-p donkey-normal-mode))))
       (when (buffer-live-p buf) (kill-buffer buf)))))
@@ -876,6 +876,8 @@ the user had just turned off."
   (with-temp-buffer
     (fundamental-mode)
     (donkey-enter-insert)
+    ;; These hooks are installed by `donkey-mode', which is not on
+    ;; here; bind exactly what it would install.
     (cl-letf (((symbol-function 'activate-input-method)
                (lambda (name)
                  (setq current-input-method name)
@@ -883,7 +885,11 @@ the user had just turned off."
               ((symbol-function 'deactivate-input-method)
                (lambda ()
                  (setq current-input-method nil)
-                 (run-hooks 'input-method-deactivate-hook))))
+                 (run-hooks 'input-method-deactivate-hook)))
+              (input-method-activate-hook
+               (list #'donkey--on-input-method-activate))
+              (input-method-deactivate-hook
+               (list #'donkey--on-input-method-deactivate)))
       (setq current-input-method "swedish-postfix")
       (donkey-enter-normal)
       (donkey-enter-insert)
@@ -1874,9 +1880,26 @@ reset) relies on exactly this to restore the cursor -- `passive'
 must only suppress the reset for the global `post-command-hook' poll,
 never for the mode-hook-triggered call."
   (with-temp-buffer
-    (setq-local cursor-type 'hbar)
+    (donkey--apply-cursor-setting 'hbar)
     (donkey--update-cursor)
     (should-not (local-variable-p 'cursor-type))))
+
+(ert-deftest donkey-mode-owns-every-global-hook ()
+  "Every hook in `donkey--global-hooks' is on with the mode, gone without it.
+
+Regression test: `pre-command-hook', the minibuffer hooks and the
+input-method hooks used to be added at
+load time by a bare `require' and never removed, so a session that had
+only loaded the file ran DONKEY code on every command for good."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (pcase-dolist (`(,hook . ,fn) donkey--global-hooks)
+          (should (memq fn (default-value hook))))
+        (donkey-mode -1)
+        (pcase-dolist (`(,hook . ,fn) donkey--global-hooks)
+          (should-not (memq fn (default-value hook)))))
+    (donkey-mode -1)))
 
 (ert-deftest donkey-mode-check-post-command-non-editing-not-registered-before-enable ()
   "The non-editing post-command check is not registered before enable.
