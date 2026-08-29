@@ -805,6 +805,10 @@ and clears the anchor."
     (goto-char 1)
     (let ((donkey-visual-anchor (point))
           (last-command 'donkey-visual-line-toggle))
+      ;; Real sessions install this hook in the same breath as setting
+      ;; the anchor; the cancel branch clears the anchor through it, so
+      ;; a fabricated anchor needs the hook fabricated alongside.
+      (add-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor nil t)
       (set-mark 1)
       (activate-mark)
       (donkey-visual-line-toggle)

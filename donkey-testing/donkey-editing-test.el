@@ -1275,6 +1275,36 @@ The docstring says so, and a caller merging them itself depends on it:
                    (list (cons (save-excursion (forward-line 0) (point))
                                (save-excursion (forward-line 1) (point))))))))
 
+(ert-deftest donkey-delete-read-only-buffer-keeps-the-bank ()
+  "Deleting banked lines in a read-only buffer signals before consuming.
+
+Banking is overlay-only, so it succeeds in a read-only buffer.
+Regression test: the bank was consumed before the first
+`delete-region' signaled `buffer-read-only', so the selection was
+destroyed with no text changed and nothing killed."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 4)
+    (forward-line 1)
+    (donkey-bank-selection)
+    (setq buffer-read-only t)
+    (should-error (donkey--delete-banked-selection) :type 'buffer-read-only)
+    (should (donkey--banked-selection-p))))
+
+(ert-deftest donkey-yank-read-only-buffer-keeps-the-bank ()
+  "Pasting over banked lines in a read-only buffer signals before consuming.
+
+Same guarantee as `donkey-delete-read-only-buffer-keeps-the-bank',
+for the paste path."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 4)
+    (forward-line 1)
+    (donkey-bank-selection)
+    (setq buffer-read-only t)
+    (let ((kill-ring (list "replacement\n")))
+      (should-error (donkey--replace-banked-selection-with-paste 1)
+                    :type 'buffer-read-only))
+    (should (donkey--banked-selection-p))))
+
 (ert-deftest donkey-bank-selection-does-not-outlive-the-buffer-being-refilled ()
   "Regression test: a bank must not survive the text it banked.
 

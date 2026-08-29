@@ -128,12 +128,17 @@ option cannot signal from here."
   "Return `donkey--major-mode-in-p' of MODE-LIST, memoized in CACHE-VAR.
 
 CACHE-VAR names a buffer-local variable holding a cons of the key
-\(MAJOR-MODE . LIST) and the RESULT.  The entry is reused only while
-both the buffer's
-`major-mode' and the MODE-LIST object are `eq' to the ones it was
-computed for, so a mode change or any reassignment of the user
-option -- `setq', `add-to-list', Customize -- recomputes on the next
-call.
+\(MAJOR-MODE . SNAPSHOT) and the RESULT, SNAPSHOT being a copy of
+MODE-LIST as it was when the entry was computed.  The entry is reused
+only while the buffer's `major-mode' is `eq' and MODE-LIST is `equal'
+to that snapshot, so a mode change or any change to the user option --
+`setq', `add-to-list', Customize, and equally an in-place `delq',
+`nconc' or `setcdr' that hands back the same cons -- recomputes on the
+next call.  A snapshot compared by value, not the original object
+compared by `eq': (setq donkey-editing-modes (delq \\='org-mode
+donkey-editing-modes)) returns the very cons it mutated whenever the
+removed element is not first, so an `eq' check kept serving the
+pre-mutation answer.
 
 Worth caching because `donkey--major-mode-in-p' walks the mode's
 parent chain once per listed mode, and its callers sit on
@@ -143,10 +148,14 @@ of every window."
   (let ((cache (symbol-value cache-var)))
     (if (and cache
              (eq (car (car cache)) major-mode)
-             (eq (cdr (car cache)) mode-list))
+             (equal (cdr (car cache)) mode-list))
         (cdr cache)
       (let ((result (donkey--major-mode-in-p mode-list)))
-        (set cache-var (cons (cons major-mode mode-list) result))
+        (set cache-var (cons (cons major-mode
+                                   (if (listp mode-list)
+                                       (copy-sequence mode-list)
+                                     mode-list))
+                             result))
         result))))
 
 (defvar-local donkey--excluded-mode-cache nil
@@ -1057,6 +1066,15 @@ then returns to the Org buffer."
 
 Prevents spamming users with repeated tips on every yank operation.")
 
+(defvar donkey--clipboard-executables 'unknown
+  "Memoized answer to \"is a clipboard tool on PATH?\": t, nil, or `unknown'.
+
+Caches only the `executable-find' walk from
+`donkey--detect-clipboard-tools', which is per-process -- PATH does not
+vary by frame -- so one walk serves the session.  The frame-dependent
+half of that function, `display-graphic-p', is deliberately NOT cached;
+see its docstring for the daemon scenario that keeps it live.")
+
 (defun donkey--detect-clipboard-tools ()
   "Detect available system clipboard tools.
 
@@ -1064,21 +1082,30 @@ Checks for wl-clipboard (Wayland), xclip/xsel (X11), and
 pbcopy/pbpaste (macOS).  On Windows, native clipboard integration
 is assumed.  Returns non-nil if any tool or native support is found.
 
-Called fresh every time rather than cached, since the answer can
-differ per frame: a single `emacs --daemon' process can have both a
-GUI frame (opened via `emacsclient -c') and a terminal frame (via
-`emacsclient -t') at once, each with different clipboard capabilities,
-and a value cached once at load time would go stale for whichever
-frame didn't exist yet when the daemon started."
+The `display-graphic-p' branch is evaluated fresh every time, since
+that answer can differ per frame: a single `emacs --daemon' process
+can have both a GUI frame (opened via `emacsclient -c') and a terminal
+frame (via `emacsclient -t') at once, each with different clipboard
+capabilities, and a value cached once at load time would go stale for
+whichever frame didn't exist yet when the daemon started.  Only the
+PATH walk is cached, in `donkey--clipboard-executables' -- it is the
+expensive part, it cannot differ per frame, and caching it is what
+keeps this callable per paste (see `donkey--clipboard-yank')."
   (cond
    ;; macOS: always has pbcopy/pbpaste
    ((eq system-type 'darwin) t)
    ;; Windows: native clipboard integration, no external tools needed
    ((eq system-type 'windows-nt) t)
    ;; Linux/BSD: check for Wayland and X11 clipboard tools
-   ((or (executable-find "wl-copy")
-        (executable-find "xclip")
-        (executable-find "xsel")) t)
+   ((progn
+      (when (eq donkey--clipboard-executables 'unknown)
+        (setq donkey--clipboard-executables
+              (and (or (executable-find "wl-copy")
+                       (executable-find "xclip")
+                       (executable-find "xsel"))
+                   t)))
+      donkey--clipboard-executables)
+    t)
    ;; GUI Emacs has its own clipboard bridge on all platforms
    ((display-graphic-p) t)
    (t nil)))
@@ -1215,17 +1242,22 @@ that cannot run is documentation that cannot be true."
                (t "Linux/BSD"))
               (error-message-string err))))
   ;; Show tip only once, and only for platforms that actually need
-  ;; external tools.  The flag is set on the first paste whatever the
-  ;; answer: it used to be set only when the tip fired, so a terminal
-  ;; session WITH the tools repeated `donkey--detect-clipboard-tools' --
-  ;; a PATH walk per `executable-find' -- on every paste.
-  (unless donkey--clipboard-warning-shown
+  ;; external tools.  The flag is set when the tip FIRES, not on the
+  ;; first paste whatever the answer: `display-graphic-p' is
+  ;; frame-dependent, and a daemon session whose first paste happened
+  ;; in a GUI frame -- where the tip is never eligible -- must still
+  ;; show it on a later `emacsclient -t' paste with the tools missing.
+  ;; The per-paste cost that once justified first-paste latching is
+  ;; gone a different way: the PATH walk inside
+  ;; `donkey--detect-clipboard-tools' is memoized in
+  ;; `donkey--clipboard-executables'.
+  (when (and (not donkey--clipboard-warning-shown)
+             (not (display-graphic-p))
+             (not (eq system-type 'darwin))
+             (not (eq system-type 'windows-nt))
+             (not (donkey--detect-clipboard-tools)))
     (setq donkey--clipboard-warning-shown t)
-    (when (and (not (display-graphic-p))
-               (not (eq system-type 'darwin))
-               (not (eq system-type 'windows-nt))
-               (not (donkey--detect-clipboard-tools)))
-      (message "Tip: Install wl-clipboard (Wayland) or xclip/xsel (X11) for system clipboard."))))
+    (message "Tip: Install wl-clipboard (Wayland) or xclip/xsel (X11) for system clipboard.")))
 
 (defun donkey--delete-active-region-safe ()
   "Delete the active region, if there is one, to make room for a paste.
@@ -2085,11 +2117,12 @@ emptying it, `y' gives a kill that pastes back as a complete line, and
   (interactive)
   (if (donkey--visual-line-session-active-p)
       (progn
+        ;; `deactivate-mark' clears the anchor through the buffer-local
+        ;; `deactivate-mark-hook'.  That hook is guaranteed present: an
+        ;; active session requires a non-nil anchor, and the only code
+        ;; that sets one is the start branch below, one line after
+        ;; installing the hook.
         (deactivate-mark)
-        ;; `donkey--clear-visual-anchor' normally does this from the
-        ;; local `deactivate-mark-hook'; cleared here as well so a
-        ;; cancel never depends on that hook being in place.
-        (setq donkey-visual-anchor nil)
         (message "Visual line: canceled"))
     (donkey--ensure-non-rectangle-selection)
     (add-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor nil t)
@@ -3809,7 +3842,12 @@ states the rule both line selections follow.  Whether the FIRST span
 ended in a newline is what matters, because that is where the paste
 lands; the remaining spans are simply gone, as they are for a delete.
 
-Consumes the bank, the way `donkey-copy' and `donkey-delete' do."
+Consumes the bank, the way `donkey-copy' and `donkey-delete' do --
+but only after the read-only check below.  Banking works in a
+read-only buffer (it is overlay-only), so without the check the
+first `delete-region' signaled `buffer-read-only' AFTER the bank was
+consumed: bank gone, buffer untouched, nothing pasted."
+  (barf-if-buffer-read-only)
   (let* ((spans (donkey--effective-line-spans))
          (lines (donkey--span-line-count spans))
          (target (car (car spans)))
@@ -3830,7 +3868,14 @@ Consumes the bank, the way `donkey-copy' and `donkey-delete' do."
   "Kill every banked line (plus any active region's lines) as one kill.
 
 Deletes back to front so each span's positions stay valid while the
-earlier ones are still being removed."
+earlier ones are still being removed.
+
+The read-only check runs first, before anything is consumed, for the
+reason `donkey--replace-banked-selection-with-paste' gives: banking
+succeeds in a read-only buffer, and consuming the bank ahead of a
+`delete-region' that is going to signal destroys the selection while
+changing no text."
+  (barf-if-buffer-read-only)
   (let* ((spans (donkey--effective-line-spans))
          (lines (donkey--span-line-count spans))
          (text (mapconcat (lambda (span)
@@ -5049,26 +5094,36 @@ buffers this is called for are not only visible ones: every
 buffer -- and `donkey--send-cursor-sequence' pauses for redisplay.
 The terminal cache is left alone in that case too, so the next command
 in a visible buffer resyncs it through `donkey--update-cursor-passive'."
-  (let ((effective (cond
-                    (setting setting)
-                    ((local-variable-p 'cursor-type) cursor-type)
-                    (t (default-value 'cursor-type))))
-        (terminal (frame-terminal)))
-    (cond
-     (setting
-      (unless (and (local-variable-p 'cursor-type)
-                   (equal cursor-type setting))
-        (setq-local cursor-type setting))
-      (setq donkey--cursor-type-owned t))
-     (donkey--cursor-type-owned
-      (kill-local-variable 'cursor-type)
-      (setq donkey--cursor-type-owned nil)))
-    (when (and (eq (current-buffer) (window-buffer (selected-window)))
-               (not (equal effective
-                           (gethash terminal
-                                    donkey--last-applied-cursor-settings))))
-      (puthash terminal effective donkey--last-applied-cursor-settings)
-      (donkey--send-cursor-sequence effective))))
+  (cond
+   (setting
+    (unless (and (local-variable-p 'cursor-type)
+                 (equal cursor-type setting))
+      (setq-local cursor-type setting)
+      ;; Owned only when the write happened.  When the guard above
+      ;; skips because a FOREIGN buffer-local already equals SETTING,
+      ;; claiming ownership would make the nil branch below kill a
+      ;; value some other package set on purpose -- the case
+      ;; `donkey--cursor-type-owned' exists to protect.
+      (setq donkey--cursor-type-owned t)))
+   (donkey--cursor-type-owned
+    (kill-local-variable 'cursor-type)
+    (setq donkey--cursor-type-owned nil)))
+  (when (eq (current-buffer) (window-buffer (selected-window)))
+    ;; `cursor-type' read here is what the buffer now displays: the
+    ;; branch above just wrote or killed it, and Emacs resolves the
+    ;; local-vs-default lookup itself.  Both this and `frame-terminal'
+    ;; live inside the shown-buffer check because the common callers --
+    ;; `post-command-hook' in every buffer, every `with-temp-buffer'
+    ;; that sets a major mode -- overwhelmingly return right here, and
+    ;; computing terminal identity and effective value for them was
+    ;; dead work on the per-keystroke path.
+    (let ((terminal (frame-terminal))
+          (effective cursor-type))
+      (unless (equal effective
+                     (gethash terminal
+                              donkey--last-applied-cursor-settings))
+        (puthash terminal effective donkey--last-applied-cursor-settings)
+        (donkey--send-cursor-sequence effective)))))
 
 (defun donkey--update-cursor (&optional passive)
   "Update cursor based on current DONKEY state.
@@ -5489,7 +5544,9 @@ overlays."
 (keymap-set donkey-insert-mode-map "C-g" #'donkey--exit-insert)
 
 ;; The `pre-command-hook' backup for packages that override C-g is
-;; installed by `donkey-mode', alongside the rest of the global hooks.
+;; installed by `donkey-mode' alongside the rest of the global hooks,
+;; and by the state modes themselves for standalone use -- see
+;; `donkey--state-hooks'.
 
 (defun donkey--recover-quit-in-insert (orig data context caller)
   "Give a quit that unwound during Insert state its meaning: exit Insert.
@@ -5759,34 +5816,101 @@ a real one ever turns up."
   (when (bound-and-true-p donkey-mode)
     (donkey--sweep-buffers)))
 
-(defun donkey--sweep-buffers ()
-  "Apply `donkey--ensure-default-state' to every buffer, one at a time.
+(defun donkey--sweep-buffers (&optional fn)
+  "Apply FN to every buffer, one at a time, errors contained per buffer.
 
-Each buffer is its own `condition-case': entering a state runs the
-user-facing `donkey-normal-mode-hook' and `donkey-insert-mode-hook',
-and one of those signaling in one buffer used to abort the whole
-sweep -- with the global hooks already installed and `donkey-mode'
-already t, leaving the mode half on.  The error is reported, the
-buffer is skipped, and the sweep goes on."
-  (dolist (buf (buffer-list))
-    (when (buffer-live-p buf)
-      (with-current-buffer buf
-        (condition-case err
-            (donkey--ensure-default-state)
-          (error
-           (message "DONKEY: error applying default state in %s: %s"
-                    (buffer-name) (error-message-string err))))))))
+FN defaults to `donkey--ensure-default-state', the enable-path sweep.
+The disable path passes `donkey--disable-in-buffer' instead: both
+directions run the user-facing `donkey-normal-mode-hook' and
+`donkey-insert-mode-hook' in every buffer, and both have the same
+stake in one hook's signal not aborting the rest of the loop.
+
+Each buffer is its own `condition-case': one of those hooks signaling
+in one buffer used to abort the whole sweep -- with the global hooks
+already installed and `donkey-mode' already t, leaving the mode half
+on -- and the disable direction had the mirror image, global hooks
+already gone and buffers past the error left holding their state for
+good.  The error is reported, the buffer is skipped, and the sweep
+goes on."
+  (let ((fn (or fn #'donkey--ensure-default-state)))
+    (dolist (buf (buffer-list))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (condition-case err
+              (funcall fn)
+            (error
+             (message "DONKEY: error sweeping %s: %s"
+                      (buffer-name) (error-message-string err)))))))))
+
+(defun donkey--disable-in-buffer ()
+  "Clear every piece of DONKEY state from the current buffer.
+
+The disable path's per-buffer work, run through `donkey--sweep-buffers'
+so one buffer's erroring hook cannot strand the rest."
+  (when (bound-and-true-p donkey-normal-mode)
+    (donkey-normal-mode -1))
+  (when (bound-and-true-p donkey-insert-mode)
+    (donkey-insert-mode -1))
+  ;; Installed buffer-locally by `donkey-visual-line-toggle', so the
+  ;; `donkey--global-hooks' teardown never sees it; without this line
+  ;; it would keep running on every mark deactivation in this buffer
+  ;; for the rest of the session, mode off or not.
+  (remove-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor t)
+  ;; Banked lines are Donkey state drawn on the buffer, and this
+  ;; mode promises to clear all of it.  Left behind, the
+  ;; highlights would be permanent: the only command that removes
+  ;; them is `donkey-clear-banked-selection', reachable solely
+  ;; through a Normal-state key that no longer exists once the
+  ;; mode is off.
+  (donkey-clear-banked-selection)
+  (donkey--apply-cursor-setting nil))
+
+(defconst donkey--state-hooks
+  '((pre-command-hook . donkey--intercept-quit-in-insert)
+    (input-method-activate-hook . donkey--on-input-method-activate)
+    (input-method-deactivate-hook . donkey--on-input-method-deactivate))
+  "The (HOOK . FUNCTION) entries the STATE modes need, `donkey-mode' or not.
+
+A subset of `donkey--global-hooks'.  `donkey-normal-mode' and
+`donkey-insert-mode' are usable standalone, without ever enabling
+`donkey-mode' -- `donkey--intercept-quit-in-insert's docstring states
+the contract, and its guard tests `donkey-insert-mode' for exactly
+that reason -- and these three are the global hooks that contract
+depends on: the `C-g' backup for packages that shadow the key, and
+the input-method fences around Normal state.  When the hook-lifecycle
+cleanup moved every global hook behind `donkey-mode', standalone
+sessions silently lost all three; `donkey--install-state-hooks' is
+what gives them back.")
+
+(defun donkey--install-state-hooks ()
+  "Add the hooks in `donkey--state-hooks' when a DONKEY state is on.
+
+Registered on `donkey-normal-mode-hook' and `donkey-insert-mode-hook',
+so a standalone state activation -- no `donkey-mode' involved --
+installs what it needs the moment it happens.  Guarded on a state
+actually being on because those mode hooks also fire on the way OFF:
+`donkey-mode's disable path removes every global hook first and sweeps
+the states off after, and an unguarded install here would resurrect
+these three behind the teardown's back.  Each function on these hooks
+guards on the state that concerns it, so between standalone sessions
+the installed hooks are inert, exactly as they were when load time
+installed them for good."
+  (when (or (bound-and-true-p donkey-normal-mode)
+            (bound-and-true-p donkey-insert-mode))
+    (pcase-dolist (`(,hook . ,fn) donkey--state-hooks)
+      (add-hook hook fn))))
+
+(add-hook 'donkey-normal-mode-hook #'donkey--install-state-hooks)
+(add-hook 'donkey-insert-mode-hook #'donkey--install-state-hooks)
 
 (defconst donkey--global-hooks
-  '((after-change-major-mode-hook . donkey--ensure-default-state)
+  `((after-change-major-mode-hook . donkey--ensure-default-state)
     (post-command-hook . donkey--track-position)
     (post-command-hook . donkey--check-post-command-non-editing)
     (post-command-hook . donkey--update-cursor-passive)
-    (pre-command-hook . donkey--intercept-quit-in-insert)
     (minibuffer-setup-hook . donkey--minibuffer-setup)
     (minibuffer-exit-hook . donkey--minibuffer-exit)
-    (input-method-activate-hook . donkey--on-input-method-activate)
-    (input-method-deactivate-hook . donkey--on-input-method-deactivate))
+    ,@donkey--state-hooks)
   "Every (HOOK . FUNCTION) `donkey-mode' adds to Emacs\='s own hooks.
 
 One list, so the enable and disable paths cannot drift apart.  All of
@@ -5797,7 +5921,11 @@ code on every command, every minibuffer and every input-method toggle
 for good.  (`deactivate-mark-hook' is not here:
 `donkey--clear-visual-anchor' is installed buffer-locally by the
 command that needs it.)  A global minor mode\='s hooks
-belong to the mode.")
+belong to the mode.
+
+The `donkey--state-hooks' tail is shared with the standalone state
+modes, which reinstall those three on their own when activated without
+`donkey-mode' -- see `donkey--install-state-hooks'.")
 
 (defun donkey--install-global-hooks ()
   "Add every hook in `donkey--global-hooks'."
@@ -5849,21 +5977,14 @@ donkey-mode' to toggle."
     (when donkey--startup-resweep-timer
       (cancel-timer donkey--startup-resweep-timer)
       (setq donkey--startup-resweep-timer nil))
+    ;; Same promise as the timer above.  With the exit hook just
+    ;; removed, an entry pushed by a still-open minibuffer has lost the
+    ;; pop that balanced it; left on the stack, a later enable's first
+    ;; minibuffer exit would pop it and force a stale state into
+    ;; whatever buffer it named, off by one for every nesting after.
+    (setq donkey--minibuffer-pre-state-stack nil)
     (remove-function command-error-function #'donkey--recover-quit-in-insert)
-    (dolist (buf (buffer-list))
-      (with-current-buffer buf
-        (when (bound-and-true-p donkey-normal-mode)
-          (donkey-normal-mode -1))
-        (when (bound-and-true-p donkey-insert-mode)
-          (donkey-insert-mode -1))
-        ;; Banked lines are Donkey state drawn on the buffer, and this
-        ;; mode promises to clear all of it.  Left behind, the
-        ;; highlights would be permanent: the only command that removes
-        ;; them is `donkey-clear-banked-selection', reachable solely
-        ;; through a Normal-state key that no longer exists once the
-        ;; mode is off.
-        (donkey-clear-banked-selection)
-        (donkey--apply-cursor-setting nil)))))
+    (donkey--sweep-buffers #'donkey--disable-in-buffer)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Donkey Version

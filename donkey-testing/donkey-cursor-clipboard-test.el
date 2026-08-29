@@ -212,6 +212,23 @@ other package gave a buffer-local cursor on purpose."
     (should (local-variable-p 'cursor-type))
     (should (eq cursor-type 'hbar))))
 
+(ert-deftest donkey-apply-cursor-setting-does-not-claim-an-equal-foreign-local ()
+  "Skipping a redundant write over a FOREIGN local claims no ownership.
+
+A package sets `cursor-type' buffer-locally to the very value DONKEY
+is about to apply: the redundant-write guard skips the `setq-local',
+and the skip must not set `donkey--cursor-type-owned' -- otherwise the
+next nil apply, which the disable path runs in every buffer, kills the
+package's deliberate setting.  Regression test: the owned flag used to
+be set outside the guard, so the skipped write still claimed the
+foreign value."
+  (with-temp-buffer
+    (setq-local cursor-type 'bar)
+    (donkey--apply-cursor-setting 'bar)
+    (donkey--apply-cursor-setting nil)
+    (should (local-variable-p 'cursor-type))
+    (should (eq cursor-type 'bar))))
+
 (ert-deftest donkey-apply-cursor-setting-skips-redundant-local-write ()
   "Re-applying the value already in place does not write `cursor-type'.
 
@@ -466,23 +483,31 @@ real platform instead of the intended one."
   (let ((system-type 'windows-nt))
     (should (eq (donkey--detect-clipboard-tools) t))))
 
+;; The three tests below bind `donkey--clipboard-executables' back to
+;; `unknown': the PATH walk is memoized, and the load-time warning check
+;; already ran it against the REAL path -- a stubbed `executable-find'
+;; is never consulted unless the cache is reset.
+
 (ert-deftest donkey-detect-clipboard-tools-returns-t-in-gui-mode ()
   "Returns t in GUI mode, regardless of tools found."
-  (let ((system-type 'gnu/linux))
+  (let ((system-type 'gnu/linux)
+        (donkey--clipboard-executables 'unknown))
     (cl-letf (((symbol-function 'executable-find) (lambda (&rest _) nil))
               ((symbol-function 'display-graphic-p) (lambda () t)))
       (should (eq (donkey--detect-clipboard-tools) t)))))
 
 (ert-deftest donkey-detect-clipboard-tools-returns-nil-when-no-tools-and-terminal ()
   "Nil when no executables found and not in GUI mode."
-  (let ((system-type 'gnu/linux))
+  (let ((system-type 'gnu/linux)
+        (donkey--clipboard-executables 'unknown))
     (cl-letf (((symbol-function 'executable-find) (lambda (&rest _) nil))
               ((symbol-function 'display-graphic-p) (lambda () nil)))
       (should (null (donkey--detect-clipboard-tools))))))
 
 (ert-deftest donkey-detect-clipboard-tools-returns-t-when-wl-copy-found ()
   "Returns t when wl-copy is found on the search path."
-  (let ((system-type 'gnu/linux))
+  (let ((system-type 'gnu/linux)
+        (donkey--clipboard-executables 'unknown))
     (cl-letf (((symbol-function 'executable-find)
                (lambda (name) (equal name "wl-copy")))
               ((symbol-function 'display-graphic-p) (lambda () nil)))
@@ -635,6 +660,52 @@ the session left behind."
     (should (= 1 (length (seq-filter
                           (lambda (m) (string-prefix-p "Tip: Install" m))
                           messages))))))
+
+(ert-deftest donkey-clipboard-tip-survives-an-earlier-gui-paste ()
+  "A paste where the tip was never eligible does not use up its one showing.
+
+Daemon scenario: the session's first paste happens in a GUI frame,
+where the tip never applies, and a later paste arrives from
+`emacsclient -t' on a box with no clipboard tools.  Regression test:
+the flag was latched on the first paste whatever the answer, so the
+GUI paste permanently suppressed the tty tip."
+  (let ((donkey--clipboard-warning-shown nil)
+        (kill-ring (list "text"))
+        (graphic t)
+        (messages nil))
+    (cl-letf (((symbol-function 'display-graphic-p)
+               (lambda (&rest _) graphic))
+              ((symbol-function 'donkey--detect-clipboard-tools)
+               (lambda () nil))
+              ((symbol-function 'clipboard-yank) (lambda () nil))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) messages))))
+      (let ((system-type 'gnu/linux))
+        (with-temp-buffer
+          (donkey--clipboard-yank)      ; GUI frame: tip ineligible
+          (setq graphic nil)
+          (donkey--clipboard-yank))))   ; tty frame: tip must still fire
+    (should donkey--clipboard-warning-shown)
+    (should (= 1 (length (seq-filter
+                          (lambda (m) (string-prefix-p "Tip: Install" m))
+                          messages))))))
+
+(ert-deftest donkey-clipboard-executable-walk-runs-once ()
+  "The PATH walk inside `donkey--detect-clipboard-tools' is memoized.
+
+The frame-dependent `display-graphic-p' branch stays live -- the
+daemon scenario in that docstring -- but the `executable-find' chain
+cannot differ per frame, and it is what made calling the detector per
+paste expensive."
+  (let ((donkey--clipboard-executables 'unknown)
+        (walks 0))
+    (cl-letf (((symbol-function 'executable-find)
+               (lambda (&rest _) (setq walks (1+ walks)) "/usr/bin/wl-copy")))
+      (let ((system-type 'gnu/linux))
+        (should (donkey--detect-clipboard-tools))
+        (should (donkey--detect-clipboard-tools))))
+    (should (= walks 1))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--platform-info

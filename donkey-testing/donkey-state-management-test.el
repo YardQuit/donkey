@@ -320,6 +320,25 @@ in `donkey-excluded-modes'."
     (let ((major-mode 'text-mode))
       (should-not (donkey--excluded-mode-p)))))
 
+(ert-deftest donkey-excluded-mode-p-sees-an-in-place-list-mutation ()
+  "The memo recomputes when the option mutates without changing identity.
+
+Regression test: `donkey--memo-major-mode-in-p' compared the list by
+`eq', and (setq donkey-excluded-modes (delq \\='foo
+donkey-excluded-modes)) hands back the very cons it mutated whenever
+the removed element is not first -- so every buffer that had cached a
+verdict kept serving the pre-mutation answer until its major mode
+changed.  The cache now snapshots the list and compares by `equal'."
+  (with-temp-buffer
+    (let ((donkey-excluded-modes (list 'comint-mode 'text-mode))
+          (major-mode 'text-mode))
+      (should (donkey--excluded-mode-p))
+      ;; Not first in the list, so `delq' mutates in place and returns
+      ;; the same head cons -- `setq' notwithstanding, the object stays
+      ;; `eq' to what the cache saw.
+      (setq donkey-excluded-modes (delq 'text-mode donkey-excluded-modes))
+      (should-not (donkey--excluded-mode-p)))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--mode-list (mis-set user options must not reach a command hook)
 ;;; ---------------------------------------------------------------------------
@@ -1967,6 +1986,92 @@ Emacs session."
                       (bound-and-true-p donkey-insert-mode))))
       (donkey-mode -1)
       (when (buffer-live-p buf) (kill-buffer buf)))))
+
+(ert-deftest donkey-standalone-state-installs-its-hooks ()
+  "Activating a state without `donkey-mode' installs the hooks it needs.
+
+`donkey-normal-mode'/`donkey-insert-mode' are documented as usable
+standalone -- `donkey--intercept-quit-in-insert's docstring states the
+contract -- and the `C-g' backup plus the input-method fences are the
+global hooks that contract depends on.  Regression test: when the
+hook-lifecycle cleanup moved every global hook behind `donkey-mode',
+standalone sessions silently lost all three."
+  (unwind-protect
+      (progn
+        (donkey-mode -1)
+        (pcase-dolist (`(,hook . ,fn) donkey--state-hooks)
+          (remove-hook hook fn))
+        (with-temp-buffer
+          (donkey-insert-mode 1)
+          (pcase-dolist (`(,hook . ,fn) donkey--state-hooks)
+            (should (memq fn (default-value hook))))
+          (donkey-insert-mode -1)))
+    ;; Standalone installs are deliberately not removed on state exit
+    ;; (the functions guard on the states themselves); removed here so
+    ;; this test leaves the session as it found it.
+    (pcase-dolist (`(,hook . ,fn) donkey--state-hooks)
+      (remove-hook hook fn))))
+
+(ert-deftest donkey-mode-disable-does-not-resurrect-state-hooks ()
+  "The disable sweep's own state toggles must not reinstall state hooks.
+
+The disable path removes the global hooks first and sweeps every
+buffer's Normal/Insert state off after -- and each of those toggles
+fires the very mode hooks `donkey--install-state-hooks' listens on.
+Its on-a-state guard is what keeps the teardown's own sweep from
+undoing the removal it follows."
+  (let ((buf (generate-new-buffer "*donkey-state-hooks-test*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf
+            (fundamental-mode)
+            (donkey-mode 1))
+          (donkey-mode -1)
+          (pcase-dolist (`(,hook . ,fn) donkey--state-hooks)
+            (should-not (memq fn (default-value hook)))))
+      (when (buffer-live-p buf) (kill-buffer buf)))))
+
+(ert-deftest donkey-mode-disable-clears-the-minibuffer-state-stack ()
+  "Disabling clears any entry a still-open minibuffer pushed.
+
+Regression test: `donkey--minibuffer-exit' is the only pop, and the
+disable path removes that hook before the exit can run it.  A stranded
+\(BUFFER . STATE) entry survived into the next enable, whose first
+minibuffer exit popped it and forced a stale state into whatever
+buffer it named -- off by one for every nesting after."
+  (let ((donkey--minibuffer-pre-state-stack
+         (list (cons (current-buffer) 'normal))))
+    (donkey-mode -1)
+    (should (null donkey--minibuffer-pre-state-stack))))
+
+(ert-deftest donkey-mode-disable-survives-a-signaling-user-hook ()
+  "One buffer's erroring hook must not strand the rest in DONKEY state.
+
+The enable sweep already contains per-buffer errors; the disable sweep
+used to be a raw `dolist', so one user hook signaling in one buffer
+aborted teardown with the global hooks already gone and `donkey-mode'
+already nil -- every buffer after the error kept Normal/Insert state
+permanently."
+  (let ((buf-a (generate-new-buffer "*donkey-disable-err-a*"))
+        (buf-b (generate-new-buffer "*donkey-disable-err-b*"))
+        (bomb (lambda ()
+                (when (string= (buffer-name) "*donkey-disable-err-a*")
+                  (error "boom")))))
+    (unwind-protect
+        (progn
+          (dolist (buf (list buf-a buf-b))
+            (with-current-buffer buf (fundamental-mode)))
+          (donkey-mode 1)
+          (add-hook 'donkey-normal-mode-hook bomb)
+          (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+            (donkey-mode -1))
+          (with-current-buffer buf-b
+            (should-not (bound-and-true-p donkey-normal-mode))
+            (should-not (bound-and-true-p donkey-insert-mode))))
+      (remove-hook 'donkey-normal-mode-hook bomb)
+      (donkey-mode -1)
+      (dolist (buf (list buf-a buf-b))
+        (when (buffer-live-p buf) (kill-buffer buf))))))
 
 (ert-deftest donkey-mode-disable-clears-existing-buffers ()
   "Disabling donkey-mode turns off normal/insert state in all buffers."
