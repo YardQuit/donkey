@@ -22,16 +22,19 @@ jobs:
       fail-fast: false
       matrix:
         # 29.1 is the version declared in Package-Requires; 30.1 is the
-        # current stable series.  "release-snapshot" builds the emacs-31
-        # branch (31.0.90 at time of writing) -- the imminent release, so
-        # a break there is something to know about now rather than on the
-        # day it ships, and it is required to pass like the rest.
-        emacs_version: ['29.1', '30.1', 'release-snapshot']
+        # previous stable series; 31.1 is the current release.  31 was
+        # covered by "release-snapshot" while it was the imminent
+        # release; now that it has shipped it is pinned like the others,
+        # so what is required to pass is a version a user actually runs
+        # rather than whatever the release branch holds on the day.
+        emacs_version: ['29.1', '30.1', '31.1']
         experimental: [false]
         include:
-          # "snapshot" is Emacs master (32.0.50), not 31 -- a far-future
-          # canary.  Allowed to fail so churn upstream in a version nobody
-          # is running yet does not block this repository.
+          # "snapshot" is Emacs master (the next release in development)
+          # -- the canary slot 31 graduated out of.  Allowed to fail so
+          # churn upstream in a version nobody is running yet does not
+          # block this repository; when it nears release, move it through
+          # "release-snapshot" the way 31 came through.
           - emacs_version: snapshot
             experimental: true
     steps:
@@ -74,7 +77,7 @@ jobs:
       # Pinned: @master executes whatever that branch holds on the day.
       - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
         with:
-          version: '30.1'
+          version: '31.1'
 
       # The suite above loads every file into one Emacs, so a test can pass
       # on state an earlier file left behind and nothing says so.  That is
@@ -121,7 +124,7 @@ jobs:
       # Pinned: @master executes whatever that branch holds on the day.
       - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
         with:
-          version: '30.1'
+          version: '31.1'
 
       # Four tests gate on `(featurep 'smartparens)' and had therefore
       # never run anywhere -- not locally, not in CI.  Four tests that
@@ -208,7 +211,7 @@ jobs:
       # Pinned: @master executes whatever that branch holds on the day.
       - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
         with:
-          version: '30.1'
+          version: '31.1'
 
       # The job above catches state leaking between FILES.  This catches it
       # between tests: ERT runs in a fixed order, so a test that only passes
@@ -278,7 +281,7 @@ jobs:
       # Pinned: @master executes whatever that branch holds on the day.
       - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
         with:
-          version: '30.1'
+          version: '31.1'
 
       # `ert-run-tests-batch-and-exit' cannot be used outside --batch: its
       # output goes to the echo area rather than to stdout, so a failing
@@ -332,7 +335,7 @@ jobs:
       # Pinned: @master executes whatever that branch holds on the day.
       - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
         with:
-          version: '30.1'
+          version: '31.1'
 
       # Warnings are errors for the package file.  The test files are not
       # compiled: they carry deliberate unused lambda arguments (mock
