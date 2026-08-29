@@ -2056,7 +2056,7 @@ permanently."
         (buf-b (generate-new-buffer "*donkey-disable-err-b*"))
         (bomb (lambda ()
                 (when (string= (buffer-name) "*donkey-disable-err-a*")
-                  (error "boom")))))
+                  (error "Boom")))))
     (unwind-protect
         (progn
           (dolist (buf (list buf-a buf-b))
