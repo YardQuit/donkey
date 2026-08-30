@@ -1095,6 +1095,48 @@ If no tools are found and Emacs is running in terminal mode, a warning
 is shown once at load time. Yank operations fall back to the kill ring
 silently after the first warning.
 
+** Daemon with Mixed GUI and Terminal Frames (Wayland)
+
+One known trap sits outside DONKEY's reach. On a pgtk Emacs daemon
+serving both a GUI frame and an =emacsclient -t= frame, copy in the
+GUI frame and then =donkey-yank= (=p=) in the terminal frame: the
+terminal frame reads the clipboard through =wl-paste=, which asks the
+compositor, which asks the owner of the selection — the very Emacs
+that is now blocked waiting for =wl-paste=. The result is a hang until
+the subprocess times out. Nothing in DONKEY can prevent it, because
+the wait happens inside =gui-backend-get-selection= before DONKEY's
+fallbacks run.
+
+What works for us on pgtk with Emacs 31 is to route the terminal
+frame's clipboard reads through a live GUI frame — pgtk serves Emacs'
+own selection locally, so the round-trip through the compositor never
+happens — and to have =xclip= drive =wl-copy= for writes:
+
+#+begin_src emacs-lisp
+  (use-package xclip
+    :ensure t
+    :init
+    (setq xclip-method 'wl-copy          ; Wayland only; X11 keeps the default
+          xclip-program "wl-copy")
+    :config
+    (xclip-mode 1))
+
+  ;; Daemon with mixed GUI/tty frames: read the clipboard through a live
+  ;; GUI frame.  pgtk serves Emacs' own selection locally, avoiding the
+  ;; wl-paste self-deadlock right after a copy in a GUI frame.
+  (cl-defmethod gui-backend-get-selection :around (type data-type
+                                                        &context (window-system nil))
+    (let ((gui-frame (seq-find #'display-graphic-p (frame-list))))
+      (if gui-frame
+          (with-selected-frame gui-frame
+            (gui-backend-get-selection type data-type))
+        (cl-call-next-method))))
+#+end_src
+
+This overrides an internal generic and is a workaround, not a
+recommendation: apply it only if you see the hang described above,
+and drop it once a stock Emacs no longer needs it.
+
 * Input Method Management
 
 DONKEY automatically saves and restores the active input method when
