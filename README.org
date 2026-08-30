@@ -1434,20 +1434,26 @@ optional third-party symbols such as =smartparens-mode-map=.
 
 ** Emacs versions
 
-The suite runs against three versions that must all pass:
+The suite runs against four versions that must all pass:
 
-| Version  | What it is                                 |
-|----------+--------------------------------------------|
-| =29.1=   | the minimum declared in =Package-Requires= |
-| =30.1=   | the previous stable series                 |
-| =31.1=   | the current stable release                 |
+| Version             | What it is                                         |
+|---------------------+----------------------------------------------------|
+| =29.1=              | the minimum declared in =Package-Requires=         |
+| =30.1=              | the previous stable series                         |
+| =31.1=              | the current stable release                         |
+| =release-snapshot=  | the release branch upstream, i.e. the next release |
 
-A fourth, =snapshot=, builds Emacs master — the next release in
-development, a version nobody is running yet. It is allowed to fail
-without blocking the repository, so churn upstream does not turn the
-build red. When that release nears, it is moved through
-=release-snapshot= (the release branch, required to pass) the way 31 was,
-and pinned to its released version once it ships.
+=release-snapshot= is whatever branch Emacs is preparing its next
+release from. At time of writing that is =emacs-31=, reporting
+=31.1.50= on the way to 31.2; when upstream cuts =emacs-32= it follows
+that branch without any change here, which is how 31 was covered before
+it shipped. Once a release comes out of it, the released version is
+pinned in the table like the others.
+
+A fifth, =snapshot=, builds Emacs master — the next release in
+development, a version nobody is running yet (it reports =32.0.50=). It
+is allowed to fail without blocking the repository, so churn upstream
+does not turn the build red.
 
 The single-version jobs — each test file in isolation, Smartparens,
 shuffled order, the terminal frame and lint — run on =31.1=. They test

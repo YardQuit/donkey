@@ -22,19 +22,21 @@ jobs:
       fail-fast: false
       matrix:
         # 29.1 is the version declared in Package-Requires; 30.1 is the
-        # previous stable series; 31.1 is the current release.  31 was
-        # covered by "release-snapshot" while it was the imminent
-        # release; now that it has shipped it is pinned like the others,
-        # so what is required to pass is a version a user actually runs
-        # rather than whatever the release branch holds on the day.
-        emacs_version: ['29.1', '30.1', '31.1']
+        # previous stable series; 31.1 is the current release.
+        # "release-snapshot" is the release branch upstream -- the next
+        # release in preparation, required to pass so a break surfaces
+        # before release day rather than on it.  Today that is emacs-31
+        # heading to 31.2 (it reports 31.1.50); when emacs-32 is cut it
+        # follows that branch without a change here, and once a release
+        # ships from it the released version is pinned like the others.
+        emacs_version: ['29.1', '30.1', '31.1', 'release-snapshot']
         experimental: [false]
         include:
-          # "snapshot" is Emacs master (the next release in development)
-          # -- the canary slot 31 graduated out of.  Allowed to fail so
-          # churn upstream in a version nobody is running yet does not
-          # block this repository; when it nears release, move it through
-          # "release-snapshot" the way 31 came through.
+          # "snapshot" is Emacs master (the next release in development).
+          # Allowed to fail so churn upstream in a version nobody is
+          # running yet does not block this repository; a release nears
+          # when upstream branches it, and from then on it is the
+          # "release-snapshot" slot above that is required.
           - emacs_version: snapshot
             experimental: true
     steps:
