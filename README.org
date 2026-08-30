@@ -1436,17 +1436,20 @@ optional third-party symbols such as =smartparens-mode-map=.
 
 The suite runs against three versions that must all pass:
 
-| Version             | What it is                                       |
-|---------------------+--------------------------------------------------|
-| =29.1=              | the minimum declared in =Package-Requires=       |
-| =30.1=              | the current stable series                        |
-| =release-snapshot=  | the =emacs-31= branch, i.e. the imminent release |
+| Version  | What it is                                 |
+|----------+--------------------------------------------|
+| =29.1=   | the minimum declared in =Package-Requires= |
+| =30.1=   | the previous stable series                 |
+| =31.1=   | the current stable release                 |
 
-A fourth, =snapshot=, builds Emacs master — a far-future canary, several
-versions ahead of anything being released. It is allowed to fail without
-blocking the repository, so churn upstream in a version nobody runs yet
-does not turn the build red.
+A fourth, =snapshot=, builds Emacs master — the next release in
+development, a version nobody is running yet. It is allowed to fail
+without blocking the repository, so churn upstream does not turn the
+build red. When that release nears, it is moved through
+=release-snapshot= (the release branch, required to pass) the way 31 was,
+and pinned to its released version once it ships.
 
-Note that =snapshot= is *not* Emacs 31: at time of writing it reports
-=32.0.50=, while =release-snapshot= reports =31.0.90=. Testing against a
-release candidate means the latter.
+The single-version jobs — each test file in isolation, Smartparens,
+shuffled order, the terminal frame and lint — run on =31.1=. They test
+properties of the suite rather than of Emacs; the matrix above covers
+the older versions.
