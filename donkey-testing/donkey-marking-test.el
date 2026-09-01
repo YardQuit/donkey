@@ -3803,6 +3803,79 @@ would re-paint a reminder for a mode that is over."
     (should-not (memq #'donkey--mark-run-mode-show-hint
                       post-command-hook))))
 
+(ert-deftest donkey-visual-line-keeps-its-hint-visible ()
+  "The visual-line reminder is repainted after the session's motions.
+
+Same treatment mark run mode's hint gets: without the repaint the
+reminder vanished under the first message anything painted.  In
+`V J' the hint must appear exactly twice -- entry and the repaint
+after `J' -- which also catches the hook falling out of
+`donkey--global-hooks', since entry alone still shows it once.  And a
+message painted mid-session must be REPLACED by the next motion's
+repaint: after a foreign `message' call, one `j' brings the reminder
+back."
+  (let (msgs)
+    (cl-letf (((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (when fmt (push (apply #'format fmt args) msgs))
+                 nil)))
+      (donkey-mark-test--keys "one\ntwo\nthree\nfour\n" "V J"
+        nil))
+    (should (= 2 (seq-count (lambda (m) (equal m donkey--visual-line-hint))
+                            msgs))))
+  (let (msgs)
+    (cl-letf (((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (when fmt (push (apply #'format fmt args) msgs))
+                 nil)))
+      (donkey-mark-test--keys "one\ntwo\nthree\nfour\n" "V J"
+        (message "foreign")
+        (execute-kbd-macro (kbd "j"))))
+    (should (equal (car msgs) donkey--visual-line-hint))))
+
+(ert-deftest donkey-the-visual-hint-never-paints-over-foreign-echo ()
+  "The repaint fires only for listed motions in a genuinely live session.
+
+The whitelist in `donkey--visual-line-hint-motions' is the whole
+no-clobber rule: a command that messaged must keep its echo, and
+whether one just did cannot be told after the fact, so anything not
+listed -- here a stand-in `save-buffer' -- must not repaint.  Nor may
+a listed motion outside any session: once the region is gone the
+reminder would be advertising keys that no longer extend anything."
+  (donkey-mark-test--keys "one\ntwo\nthree\n" "V J"
+    (let (msgs)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (when fmt (push (apply #'format fmt args) msgs))
+                   nil)))
+        (let ((this-command 'save-buffer))
+          (donkey--visual-line-show-hint))
+        (should-not msgs)
+        (deactivate-mark)
+        (let ((this-command 'next-line))
+          (donkey--visual-line-show-hint))
+        (should-not msgs)))))
+
+(ert-deftest donkey-a-stale-visual-anchor-does-not-repaint-the-hint ()
+  "A superseding selection ends the reminder along with the session.
+
+A mark command mid-session repositions the region without ever
+deactivating it, so the anchor survives while the session is over --
+the exact state `donkey--visual-line-session-active-p' exists to
+reject, and the case that separates it from a bare anchor check in
+`donkey--visual-line-show-hint': anchor set, region active, mark on
+the marked word.  A motion here must not resurrect the visual-line
+reminder over a selection that is no longer a visual-line session."
+  (donkey-mark-test--keys "one two\nthree four\n" "V J m w"
+    (let (msgs)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (when fmt (push (apply #'format fmt args) msgs))
+                   nil)))
+        (let ((this-command 'next-line))
+          (donkey--visual-line-show-hint))
+        (should-not msgs)))))
+
 (ert-deftest donkey-the-toggle-is-no-family-member ()
   "A letter after `M' marks afresh even with an old mark lying around.
 

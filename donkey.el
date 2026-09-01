@@ -2091,6 +2091,48 @@ the visual-line session's original anchor line instead of extending
 
 ;; Canceling only a genuine session avoids reporting a misleading "Visual
 ;; line: canceled" for a selection that was never a visual-line session.
+
+(defvar donkey--visual-line-hint
+  "Visual line: J/K whole lines, j/k by char, V to cancel"
+  "The echo-area reminder shown while a visual-line session is active.
+
+Shown by `donkey-visual-line-toggle' at entry and kept VISIBLE across
+the session's motions by `donkey--visual-line-show-hint', the way
+`donkey--mark-run-mode-hint' stays up for mark run mode.")
+
+(defconst donkey--visual-line-hint-motions
+  '(donkey-visual-next-line donkey-visual-previous-line
+    next-line previous-line forward-char backward-char
+    forward-word backward-word forward-sexp backward-sexp)
+  "The commands after which the visual-line reminder is repainted.
+
+Motions only, and only motions that never message: a command that DID
+message must keep its echo, and whether one just did cannot be told
+after the fact -- a stale message and a fresh one read the same from
+`current-message' -- so the rule is a whitelist of the session's own
+silent motions rather than a guess.  This is where the coverage stops:
+after any command not listed here, the reminder waits for the next
+listed motion instead of repainting, and a count's keystroke echo is
+never painted over because the prefix commands are not listed either.")
+
+(defun donkey--visual-line-show-hint ()
+  "Keep the visual-line reminder visible across the session's motions.
+
+On `post-command-hook' for the life of `donkey-mode' -- registered in
+`donkey--global-hooks' rather than added per session, so two sessions
+in two buffers cannot strand or double it -- and inert to the cheapest
+test first in every buffer without an anchor.  Repaints only after the
+motions in `donkey--visual-line-hint-motions', and only while
+`donkey--visual-line-session-active-p' says the session is genuinely
+live, so a stale anchor cannot resurrect the reminder.  Unlogged: a
+dozen copies of one reminder is what *Messages* would otherwise keep.
+Guarded, not signaling -- a function that errors on
+`post-command-hook' is silently removed for the session."
+  (when (and donkey-visual-anchor
+             (memq this-command donkey--visual-line-hint-motions)
+             (donkey--visual-line-session-active-p))
+    (let ((message-log-max nil))
+      (message "%s" donkey--visual-line-hint))))
 ;;
 ;; The highlight is left one character short deliberately -- see
 ;; `donkey--visual-line-region-bounds' for why the widening lives in the
@@ -2130,7 +2172,7 @@ emptying it, `y' gives a kill that pastes back as a complete line, and
     (set-mark (line-beginning-position))
     (end-of-line)
     (activate-mark)
-    (message "Visual line: J/K whole lines, j/k by char, V to cancel")))
+    (message "%s" donkey--visual-line-hint)))
 
 (defun donkey-visual-next-line (&optional count)
   "Move down COUNT lines, extending the visual-line selection if active.
@@ -6311,6 +6353,7 @@ installed them for good."
 (defconst donkey--global-hooks
   `((after-change-major-mode-hook . donkey--ensure-default-state)
     (post-command-hook . donkey--track-position)
+    (post-command-hook . donkey--visual-line-show-hint)
     (post-command-hook . donkey--check-post-command-non-editing)
     (post-command-hook . donkey--update-cursor-passive)
     (minibuffer-setup-hook . donkey--minibuffer-setup)

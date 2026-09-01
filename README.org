@@ -252,6 +252,10 @@ snaps the selection back to whole lines from the original anchor.
 =J= and =K= take a count like =j= and =k= do, so =C-u 3 J= is the same
 as pressing =J= three times, and a negative count moves the other way.
 
+The echo-area reminder =V= shows stays visible across the session's
+motions, as mark run mode's does; a command that prints its own
+message keeps its echo, and the next motion brings the reminder back.
+
 If the buffer is narrowed so that the anchor line is no longer visible,
 =J= and =K= stop extending and just move by lines — the session cannot
 honestly continue from an anchor the buffer is not showing. Widening
