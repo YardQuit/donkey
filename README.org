@@ -236,8 +236,9 @@ process interaction.
 | =(= =[= ={= ="= ='= =`= | =donkey-wrap-region= | Wrap active region with delimiter, see below |
 
 =V=, =M= and =m v= toggle: pressing any of them a second time cancels
-the selection it started (=M= cancels any active selection, however it
-was made). =v= does not. It is =set-mark-command=, so a
+the selection it started (=M='s cancel press is the one *inside* its
+mode; over an existing selection it adopts instead — see the mark run
+section). =v= does not. It is =set-mark-command=, so a
 second press drops a fresh mark where point is standing and begins
 selecting again from there — the old selection is gone, but you are
 still selecting. Use =C-g= to let go of a =v= selection.
@@ -714,9 +715,17 @@ press — =M w w d= selects two words and deletes them. =h j k l= move
 point without ending the run, adjusting the selection's near end the
 way =j=/=k= adjust a =V= session, and =g h= / =g l= reach the line's
 ends the same way; other =g= keys are not shadowed and end the mode
-like any foreign key. =M= pressed
-again drops the selection and the mode, and =C-g= does the same, as
-it does for every selection. The echo-area reminder stays visible for
+like any foreign key. =J= and =K= make lines a growable object of the
+mode: fresh, either marks the current line, and further presses grow
+by whole lines — =J= at the bottom end, =K= at the top, a mark
+mid-line completing its own line first. Pressed with a selection already active — a
+=V= session, a =v= region, or one the =m=-prefixed keys built — =M=
+*adopts* it into the mode rather than dropping it: =m w M w= extends
+the marked word, and a =V J= selection keeps its lines while the
+object keys grow it. =M= pressed again, inside the mode, drops the
+selection and the mode, and =C-g= does the same, as it does for every
+selection. A rectangle is the one selection =M= cancels rather than
+adopts. The echo-area reminder stays visible for
 as long as the mode is active. Only these eight keys are in the family:
 =m i= and =m a= count levels rather than objects, and a selection
 started with =v= is still never grown by a mark key.

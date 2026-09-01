@@ -2956,7 +2956,9 @@ selection from wherever that mark lay.")
    '(donkey-mark-word donkey-mark-word-backward
      donkey-mark-symbol donkey-mark-symbol-backward
      donkey-mark-sentence donkey-mark-sentence-backward
-     donkey-mark-paragraph donkey-mark-paragraph-backward)
+     donkey-mark-paragraph donkey-mark-paragraph-backward
+     donkey-mark-run-line-forward donkey-mark-run-line-backward
+     donkey-mark-run-adopt)
    donkey--mark-run-motions)
   "The commands that grow ONE selection between them -- the mark run family.
 
@@ -2978,6 +2980,8 @@ any of them still ends a run, prefix spelling and mode alike.
 `donkey-mark-run-toggle' itself is NOT a member: it marks nothing, and
 membership would let a mark left over from an older selection qualify
 the first letter after `M' as a continuation -- see its docstring.
+`donkey-mark-run-adopt' IS one: an adopting press hands the next key a
+live selection, and membership is what makes that key grow it.
 
 The delimiter marks (`donkey-mark-inner' and friends) are not members:
 they count LEVELS, not objects, and one level out is not one more of
@@ -3036,18 +3040,18 @@ marking tests ran first."
   "Drop the active selection and let mark run mode lapse.
 
 Bound to \`M' inside `donkey-mark-run-mode-map', and called by
-`donkey-mark-run-toggle' when \`M' is pressed over an active selection
-outside the mode.  It is deliberately no member of
+`donkey-mark-run-toggle' for the one selection it refuses to adopt, a
+rectangle.  It is deliberately no member of
 `donkey--mark-run-commands' and no key of the mode map's family row,
 so running it fails `donkey--mark-run-mode-keep-p' and the transient
 map is gone by the next key.
 
 The message is worded like `donkey-visual-line-toggle's \"Visual
-line: canceled\", the pair being the two selection toggles.  It says
-\"Mark run\" even when the selection it drops was built by `v' or
-`V' -- a deliberate trade of precision for consistency: the key the
-user pressed is the mark run key, and two cancel messages in one
-family read as two features."
+line: canceled\", the pair being the two selection toggles.  Since
+adoption arrived, the selection it drops is nearly always a run this
+mode grew -- adopted or marked -- so the wording is also simply
+accurate; the rectangle case keeps the small imprecision, and the
+consistency is worth it."
   (interactive)
   (deactivate-mark)
   (message "Mark run: canceled"))
@@ -3107,6 +3111,64 @@ motions."
   (move-end-of-line count))
 
 
+(defun donkey-mark-run-line-forward (&optional count)
+  "Mark the current line, or grow the run's forward end by whole lines.
+
+Bound to \`J' inside `donkey-mark-run-mode-map', making lines a
+growable object of the mode the way words and sentences are: a fresh
+press selects the line point is on, and each further press pushes the
+MARK down a line -- the forward end, per the family's rule.  A mark
+sitting mid-line -- a word selection's end, say -- first completes its
+own line, the way a backward symbol press from mid-symbol first
+reaches that symbol's start; the next press adds a whole one.
+
+Unlike `donkey-visual-line-toggle's sessions there is no anchor and no
+whole-line widening on `y'/`d': this is a plain character region that
+happens to end at line boundaries.  \`V' remains the tool for
+line-exact work, and an `M' over its session adopts the lines whole.
+
+COUNT lines; a COUNT below 1 is treated as 1, the reading the
+backward keys give theirs -- the other direction is \`K'."
+  (interactive "p")
+  (let ((n (max 1 (or count 1))))
+    (if (donkey--mark-extending-p donkey--mark-run-commands)
+        (progn
+          (set-mark (save-excursion
+                      (goto-char (mark))
+                      (end-of-line (if (eolp) (1+ n) n))
+                      (point)))
+          (message "Line marked"))
+      (donkey--ensure-non-rectangle-selection)
+      (beginning-of-line)
+      (push-mark (save-excursion (end-of-line n) (point)) t t)
+      (message "Line marked"))))
+
+(defun donkey-mark-run-line-backward (&optional count)
+  "Mark the current line, or grow the run's backward end by whole lines.
+
+Bound to \`K' inside `donkey-mark-run-mode-map'; the other end of
+`donkey-mark-run-line-forward's pair.  A fresh press selects the line
+point is on; each further press walks POINT up a line, first
+completing a partial line the way its partner does at the mark end.
+
+COUNT lines; a COUNT below 1 is treated as 1."
+  (interactive "p")
+  (let ((n (max 1 (or count 1))))
+    (if (donkey--mark-extending-p donkey--mark-run-commands)
+        (progn
+          (if (bolp)
+              (forward-line (- n))
+            (beginning-of-line)
+            (forward-line (- (1- n))))
+          (activate-mark)
+          (message "Line marked"))
+      (donkey--ensure-non-rectangle-selection)
+      (beginning-of-line)
+      (push-mark (line-end-position) t t)
+      (when (> n 1)
+        (forward-line (- (1- n))))
+      (message "Line marked"))))
+
 (defvar donkey-mark-run-mode-map
   (let ((map (make-sparse-keymap)))
     (keymap-set map "w" #'donkey-mark-word)
@@ -3124,6 +3186,8 @@ motions."
     (keymap-set map "k" #'donkey-mark-run-up)
     (keymap-set map "g h" #'donkey-mark-run-line-start)
     (keymap-set map "g l" #'donkey-mark-run-line-end)
+    (keymap-set map "J" #'donkey-mark-run-line-forward)
+    (keymap-set map "K" #'donkey-mark-run-line-backward)
     map)
   "The keys live during mark run mode -- see `donkey-mark-run-toggle'.
 
@@ -3141,7 +3205,7 @@ key does its ordinary job in the same press -- `M w w d' selects two
 words and deletes them, with no explicit exit.")
 
 (defvar donkey--mark-run-mode-hint
-  "Mark run: w/b words, W/B symbols, s/S sentences, p/P paragraphs, hjkl move, M to cancel"
+  "Mark run: w/b words, W/B symbols, s/S sentences, p/P paragraphs, J/K lines, hjkl move, M to cancel"
   "The echo-area reminder shown while mark run mode is active.
 
 Styled after `donkey-visual-line-toggle's message, and kept VISIBLE
@@ -3178,8 +3242,56 @@ or \`C-u 3 w' inside it would fall apart between the \`C-u' and the
       (memq this-command '(universal-argument universal-argument-more
                            digit-argument negative-argument))))
 
+(defun donkey--mark-run-enter ()
+  "Arm mark run mode: the transient map, the hint hook, the reminder.
+
+One address for entering, whether `donkey-mark-run-toggle' starts from
+nothing or `donkey-mark-run-adopt' brings a selection along.  Teardown
+mirrors setup: the hook leaves through the transient map's own exit,
+whichever key causes it, and `add-hook' does not stack duplicates, so
+re-entry cannot double the hook."
+  (add-hook 'post-command-hook #'donkey--mark-run-mode-show-hint)
+  (set-transient-map donkey-mark-run-mode-map
+                     #'donkey--mark-run-mode-keep-p
+                     (lambda ()
+                       (remove-hook 'post-command-hook
+                                    #'donkey--mark-run-mode-show-hint)))
+  (message "%s" donkey--mark-run-mode-hint))
+
+(defun donkey-mark-run-adopt ()
+  "Adopt the active selection into a mark run and enter the mode.
+
+What \`M' does when a selection already exists: a visual-line
+session, a `v' region, or a selection the prefixed mark keys built
+all carry over, and the object keys grow them from there -- `m w M
+w' extends the marked word rather than starting over, and a `V J'
+selection keeps its lines when `M' takes it.  Canceling is still one
+key away: \`M' again, inside the mode, or \`C-g'.
+
+The region is normalized to the family's layout first -- point at the
+start, mark at the forward end -- because a visual-line session grown
+downward leaves them the other way around, and the family's ends are
+fixed: forward keys push the mark, backward keys walk point.  Without
+the swap, `w' after adopting such a selection walked its TOP edge
+down instead of growing the bottom.
+
+Any visual-line anchor is cleared: the session, if one was live, is
+over -- the run owns the selection now, and a later \`V' starts a
+fresh line session rather than resuming a dead one.
+
+A member of `donkey--mark-run-commands', which is the point of being
+a command of its own: `donkey-mark-run-toggle' renames its adopting
+press to this name in `this-command', and membership is what lets the
+object key that follows read the adopted selection as a run in
+progress instead of marking afresh over it."
+  (interactive)
+  (when (> (point) (mark))
+    (exchange-point-and-mark))
+  (setq donkey-visual-anchor nil)
+  (donkey--mark-run-enter))
+
 (defun donkey-mark-run-toggle ()
-  "Enter mark run mode, or cancel the active selection.
+  "Enter mark run mode, adopting any active selection; \`M' again cancels.
 
 Mark run mode is the `m' prefix held down for you: the eight object
 keys \`w' \`W' \`b' \`B' \`s' \`S' \`p' \`P' run exactly the
@@ -3206,14 +3318,18 @@ words and deletes them.  \`M' pressed again cancels the selection and the
 mode with it, and \`C-g' does the same, as it does for every
 selection.
 
-Pressed with an active selection this cancels instead of entering the
-mode -- its own selection, one the mark keys built, or one `v' built.
-Whether the selection was \"its own\" would be state to trust;
-`region-active-p' is state to verify, and a key that reads \"drop the
-selection\" is useful from all of them.  A stale
-`rectangle-mark-mode' is disabled first, per
-`donkey--ensure-non-rectangle-selection', so a rectangle is canceled
-rather than adopted.
+Pressed with an active selection this ADOPTS it into the mode instead
+of entering empty-handed -- see `donkey-mark-run-adopt': a
+visual-line session, a `v' region, or a prefix-built selection all
+carry over, and the in-mode \`M' is where canceling lives, the same
+second-press shape `donkey-visual-line-toggle' has.  This press once
+canceled ANY active selection; adoption replaced that after live use,
+because \"transfer my selection into the mode\" kept being the
+intent and \"throw it away\" kept being the result.  The one
+exception is a rectangle: it has no forward end for the family to
+own, so a stale `rectangle-mark-mode' is disabled per
+`donkey--ensure-non-rectangle-selection' and the selection is
+canceled rather than adopted.
 
 This command is NOT a member of `donkey--mark-run-commands': it marks
 nothing, and membership would let a mark left over from an older
@@ -3225,19 +3341,19 @@ from mid-word took the tail of the word.  The mode form marks the
 whole object, exactly as the prefixed key does, which is the promise
 this key makes: the same behavior, minus the prefix."
   (interactive)
-  (donkey--ensure-non-rectangle-selection)
-  (if (region-active-p)
-      (donkey-mark-run-cancel)
-    ;; Teardown mirrors setup: the hook leaves through the transient
-    ;; map's own exit, whichever key causes it.  `add-hook' does not
-    ;; stack duplicates, so re-entry cannot double the hook.
-    (add-hook 'post-command-hook #'donkey--mark-run-mode-show-hint)
-    (set-transient-map donkey-mark-run-mode-map
-                       #'donkey--mark-run-mode-keep-p
-                       (lambda ()
-                         (remove-hook 'post-command-hook
-                                      #'donkey--mark-run-mode-show-hint)))
-    (message "%s" donkey--mark-run-mode-hint)))
+  (let ((was-rectangle (bound-and-true-p rectangle-mark-mode)))
+    (donkey--ensure-non-rectangle-selection)
+    (cond
+     (was-rectangle
+      (donkey-mark-run-cancel))
+     ((region-active-p)
+      ;; The rename is what makes the adoption stick: this command is
+      ;; no family member, and without it the object key that follows
+      ;; would mark afresh over the selection just adopted.
+      (setq this-command 'donkey-mark-run-adopt)
+      (donkey-mark-run-adopt))
+     (t
+      (donkey--mark-run-enter)))))
 
 (defun donkey-mark-word (&optional count)
   "Select the entire word at or adjacent to point.
@@ -4768,10 +4884,13 @@ same thing its forward partner would.  Runs mix objects, too: each
 press adds one object of its own kind at its own end, so \\[donkey-mark-word] \\[donkey-mark-sentence]
 grows the word selection forward to the end of its sentence.  And
 \\[donkey-mark-run-toggle] holds the prefix down for you: in mark run mode the bare
-letters w W b B s S p P mark and grow the same way, h j k l and
+letters w W b B s S p P mark and grow the same way, J and K grow by
+whole lines, h j k l and
 g h / g l adjust the near end without ending the run, any other key
 returns to normal and does its job, and \\[donkey-mark-run-toggle] again -- or \\`C-g' -- drops the
-selection.
+selection.  A selection you already have -- from \\[donkey-set-mark], \\[donkey-visual-line-toggle] or the
+mark keys -- is ADOPTED by \\[donkey-mark-run-toggle] rather than dropped, and the object
+keys grow it from there.
 
 A word stops at a hyphen or underscore; a symbol runs straight through
 one.  On a name held together by them the two select very different

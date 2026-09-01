@@ -3791,10 +3791,13 @@ The object members of `donkey--mark-run-commands' may revive a region
 a hook deactivated mid-run; the `donkey--mark-run-motions' members
 are held to `region-active-p' as well, or `M l w' next to the mark a
 canceled selection left behind grew a selection from wherever that
-mark lay.  Here: `m w' leaves its mark, `M' cancels, `M l' moves
+mark lay.  Here: a run is marked and canceled from inside the mode --
+its mark stays behind -- the mode is re-entered empty, `l' moves
 beside the stale mark, and `w' must mark the word at point afresh --
-\"that\", not the \"hat\" that growing from the stale mark gave."
-  (donkey-mark-test--keys "for text that is" "w w l m w M M l w"
+\"that\", not the \"hat\" that growing from the stale mark gave.
+\(Staged through the in-mode cancel because `M' over a live
+selection now ADOPTS it rather than canceling.)"
+  (donkey-mark-test--keys "for text that is" "w w l M w M M l w"
     (should (equal (donkey-mark-test--selection) "that"))))
 
 (ert-deftest donkey-mark-run-mode-mixes-objects ()
@@ -3949,16 +3952,91 @@ reminder over a selection that is no longer a visual-line session."
           (donkey--visual-line-show-hint))
         (should-not msgs)))))
 
+(ert-deftest donkey-m-adopts-an-existing-selection ()
+  "`M' over a live selection carries it into the mode; `M M' cancels.
+
+The press once canceled any active selection; adoption replaced that
+because \"transfer my selection into the mode\" kept being the
+intent.  A prefix-built run, a `v' region and a visual-line session
+all carry over, and the object keys grow them: `m w M w' extends the
+marked word, and a `V J' selection keeps both lines when a word is
+added.  The adopted region is normalized to the family layout --
+point at the start, where a downward `V' session had it at the end --
+pinned by point sitting at `region-beginning' after `V J M'.  The
+visual-line session itself ends at adoption, anchor cleared, so its
+reminder cannot resurrect over a selection the run now owns.  And the
+toggle is still a toggle: the in-mode `M' after an adoption cancels,
+one key as ever."
+  (donkey-mark-test--keys "for text that is not saved" "w w l m w M w"
+    (should (equal (donkey-mark-test--selection) "that is")))
+  (donkey-mark-test--keys "for text that is" "v l l M w"
+    (should (equal (donkey-mark-test--selection) "for")))
+  (donkey-mark-test--keys "one two\nthree four\nfive six\n" "V J M w"
+    (should (equal (donkey-mark-test--selection)
+                   "one two\nthree four\nfive")))
+  (donkey-mark-test--keys "one two\nthree four\n" "V J M"
+    (should (= (point) (region-beginning))))
+  (donkey-mark-test--keys "one two\nthree four\n" "V M"
+    (should (equal (donkey-mark-test--selection) "one two"))
+    (should-not (donkey--visual-line-session-active-p)))
+  (donkey-mark-test--keys "for text that is" "w w l m w M M"
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-j-and-k-grow-the-run-by-lines ()
+  "Inside the mode, `J' and `K' make lines a growable object.
+
+Fresh, either press marks the line point is on; further presses grow
+by whole lines, `J' pushing the mark down and `K' walking point up,
+the family's fixed ends.  A mark sitting mid-line first completes its
+own line -- the mid-object rule words and symbols already follow --
+so `M w J' takes the word's whole line, and objects keep mixing:
+`M J w' is the line plus a word.  Counts work, and `J' outside the
+mode is untouched -- still `donkey-visual-next-line', V's key."
+  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
+      "j M J"
+    (should (equal (donkey-mark-test--selection) "three four")))
+  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
+      "j M J J"
+    (should (equal (donkey-mark-test--selection) "three four\nfive six")))
+  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
+      "j M J K"
+    (should (equal (donkey-mark-test--selection) "one two\nthree four")))
+  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
+      "j M w J"
+    (should (equal (donkey-mark-test--selection) "three four")))
+  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
+      "j M J w"
+    (should (equal (donkey-mark-test--selection) "three four\nfive")))
+  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
+      "j M C-u 2 J"
+    (should (equal (donkey-mark-test--selection) "three four\nfive six")))
+  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
+      "V J M J"
+    (should (equal (donkey-mark-test--selection)
+                   "one two\nthree four\nfive six")))
+  (donkey-mark-test--keys "one two\nthree four\n" "J"
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-a-rectangle-is-canceled-not-adopted ()
+  "`M' over a rectangle drops it; there is no forward end to own.
+
+The one selection adoption refuses: the family's rule -- forward keys
+push the mark, backward keys walk point -- has no meaning across a
+block, so the stale `rectangle-mark-mode' is disabled and the
+selection canceled, as the toggle always did."
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "m v j l M"
+    (should-not (region-active-p))))
+
 (ert-deftest donkey-the-toggle-is-no-family-member ()
   "A letter after `M' marks afresh even with an old mark lying around.
 
-`m w M M b': the first `M' cancels the word selection, leaving its
-mark at the word's end; the second enters the mode.  Were
+`M w M M b': the in-mode `M' cancels the word selection, leaving its
+mark at the word's end; the next `M' re-enters the mode empty.  Were
 `donkey-mark-run-toggle' in `donkey--mark-run-commands', that stale
 mark would qualify `b' as a continuation -- point walks back and
 re-activates \"text that\", a selection the user had just dropped.
 Fresh, `b' marks the word at point."
-  (donkey-mark-test--keys "for text that is" "w w l m w M M b"
+  (donkey-mark-test--keys "for text that is" "w w l M w M M b"
     (should (equal (donkey-mark-test--selection) "that"))))
 
 (ert-deftest donkey-mark-extending-p-companions-only-through-the-command-loop ()
