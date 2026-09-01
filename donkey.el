@@ -3077,7 +3077,10 @@ sentence rather than re-marking the same one, and keeps extending until
 the buffer runs out.  That comes from `mark-end-of-sentence', which
 grows the region whenever `last-command' is this command again; the
 other mark commands do not, since `mark-word' and friends gate it behind
-an ALLOW-EXTEND argument that is nil when called from Lisp."
+an ALLOW-EXTEND argument that is nil when called from Lisp.
+`donkey-mark-sentence-backward' continues the same run from the other
+end, in either order -- see `donkey--mark-extending-p', and see below
+for how its continuation reaches `mark-end-of-sentence's own test."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (let ((origin (point)))
@@ -3134,18 +3137,32 @@ an ALLOW-EXTEND argument that is nil when called from Lisp."
      (goto-char (point-max))
      (backward-sentence 1))
     (error (user-error "No sentence at or before point")))
-  (condition-case nil
-      (mark-end-of-sentence (max 1 (or count 1)))
-    ;; A count running past the last sentence marks what there is and
-    ;; stops, like the counted deletes and every other mark command --
-    ;; `forward-sentence' inside `mark-end-of-sentence' signals a bare
-    ;; `end-of-buffer' there instead, which the guard below then reported
-    ;; as "No sentence at or before point": a flat contradiction of the
-    ;; screen, which is showing one.  Bare \\[universal-argument] means
-    ;; FOUR, so `C-u m s' hit this on any buffer of three sentences or
-    ;; fewer -- confirmed on "One thing.  Two thing.  Three thing.".
-    (end-of-buffer (push-mark (point-max) nil t))
-    (error (user-error "No sentence at or before point")))
+  ;; Continuing a run the BACKWARD key started or last grew: the
+  ;; extension lives inside `mark-end-of-sentence', whose own test is
+  ;; `(eq last-command this-command)' -- it cannot know about the
+  ;; companion.  Presenting the companion press as a repeat, exactly
+  ;; when `donkey--mark-extending-p' says the run is live, lets the
+  ;; native extension fire from the mark instead of collapsing the far
+  ;; end back to the first sentence; the binding is the identity on a
+  ;; plain repeat.  The normalization above has already run, harmlessly:
+  ;; mid-run point sits at the region's start, which is a sentence
+  ;; start, and normalizing from there lands where it stood.
+  (let ((last-command (if (donkey--mark-extending-p
+                           '(donkey-mark-sentence-backward))
+                          this-command
+                        last-command)))
+    (condition-case nil
+        (mark-end-of-sentence (max 1 (or count 1)))
+      ;; A count running past the last sentence marks what there is and
+      ;; stops, like the counted deletes and every other mark command --
+      ;; `forward-sentence' inside `mark-end-of-sentence' signals a bare
+      ;; `end-of-buffer' there instead, which the guard below then reported
+      ;; as "No sentence at or before point": a flat contradiction of the
+      ;; screen, which is showing one.  Bare \\[universal-argument] means
+      ;; FOUR, so `C-u m s' hit this on any buffer of three sentences or
+      ;; fewer -- confirmed on "One thing.  Two thing.  Three thing.".
+      (end-of-buffer (push-mark (point-max) nil t))
+      (error (user-error "No sentence at or before point"))))
   ;; Going forward first means the motions no longer signal in a buffer
   ;; holding nothing but whitespace -- they simply walk to its end and
   ;; back, "marking" the blank.  Reject that here so such a buffer still
@@ -3154,6 +3171,46 @@ an ALLOW-EXTEND argument that is nil when called from Lisp."
     (deactivate-mark)
     (user-error "No sentence at or before point"))
   (message "Sentence marked")))
+
+(defun donkey-mark-sentence-backward (&optional count)
+  "Select the sentence at point, or grow a sentence selection BACKWARD.
+
+The other end of `donkey-mark-sentence's run, the same shape as
+`donkey-mark-word-backward': the selection's mark sits at the forward
+end and point at the start, so `m s' grows it by pushing the mark ahead
+and this one by walking point back with `backward-sentence', and either
+key immediately after the other continues the one run -- see
+`donkey--mark-extending-p'.  The forward partner's extension lives
+inside `mark-end-of-sentence' rather than in a branch of its own, so
+continuing a run THIS command started is arranged inside
+`donkey-mark-sentence' -- see the `last-command' binding there.
+
+With no run to continue this selects exactly what `donkey-mark-sentence'
+selects, by calling it -- which also inherits its no-sentence
+`user-error' and its rectangle cleanup; see `donkey-mark-word-backward'
+for why the delegate cannot itself decide to extend, and why the
+extending branch has no rectangle to clean.
+
+Running out of buffer stops and keeps what is selected:
+`backward-sentence' signals nothing at the buffer's start, it walks to
+the start of the paragraph's text and stays -- confirmed by probe at
+the top of a buffer and on a count overshooting it.
+
+COUNT marks or extends by that many sentences.  A COUNT below 1 is
+treated as 1, the reading `donkey-mark-sentence' already gives its own
+counts and the other backward keys give theirs."
+  (interactive "p")
+  (let ((n (max 1 (or count 1))))
+    (if (donkey--mark-extending-p '(donkey-mark-sentence))
+        (progn
+          (backward-sentence n)
+          ;; See `donkey-mark-word-backward': moving point re-activates
+          ;; nothing, unlike the mark-moving forward direction.
+          (activate-mark)
+          (message "Sentence marked"))
+      (donkey-mark-sentence)
+      (when (> n 1)
+        (backward-sentence (1- n))))))
 
 ;; Exactly one blank line comes with a paragraph, whichever side it is on.
 ;;
@@ -4383,8 +4440,8 @@ buffer runs out.  A count says the same thing in one go, so \\[donkey-mark-word]
 and \\`C-u 2' \\[donkey-mark-word] agree.  Any other key in between ends the run, and
 the next press starts a fresh selection.
 
-Words, symbols and paragraphs can grow BACKWARD too: \\[donkey-mark-word-backward] adds the
-word before the selection, \\[donkey-mark-symbol-backward] the symbol, \\[donkey-mark-paragraph-backward] the paragraph.
+All four can grow BACKWARD too: \\[donkey-mark-word-backward] adds the word before the
+selection, \\[donkey-mark-symbol-backward] the symbol, \\[donkey-mark-sentence-backward] the sentence, \\[donkey-mark-paragraph-backward] the paragraph.
 Either direction continues the same run, so \\[donkey-mark-word] \\[donkey-mark-word] \\[donkey-mark-word-backward] takes
 two words forward and then one back.  Pressed fresh, each selects the
 same thing its forward partner would.
@@ -4965,6 +5022,7 @@ what starts over."
 (keymap-set donkey-normal-mode-map "m p" #'donkey-mark-paragraph)
 (keymap-set donkey-normal-mode-map "m P" #'donkey-mark-paragraph-backward)
 (keymap-set donkey-normal-mode-map "m s" #'donkey-mark-sentence)
+(keymap-set donkey-normal-mode-map "m S" #'donkey-mark-sentence-backward)
 (keymap-set donkey-normal-mode-map "m v" #'donkey-rectangle-mark-mode)
 (keymap-set donkey-normal-mode-map "m w" #'donkey-mark-word)
 (keymap-set donkey-normal-mode-map "m W" #'donkey-mark-symbol)

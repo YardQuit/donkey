@@ -395,6 +395,7 @@ out of reach of everything but =undo=.
 | =m b= | =donkey-mark-word-backward=  | Mark word, or grow a selection backward |
 | =m B= | =donkey-mark-symbol-backward= | Mark symbol, or grow a selection backward |
 | =m s= | =donkey-mark-sentence=       | Mark sentence                        |
+| =m S= | =donkey-mark-sentence-backward= | Mark sentence, or grow a selection backward |
 | =m p= | =donkey-mark-paragraph=      | Mark paragraph                       |
 | =m P= | =donkey-mark-paragraph-backward= | Mark paragraph, or grow a selection backward |
 | =m i= | =donkey-mark-inner=          | Mark inside delimiter pair           |
@@ -668,8 +669,8 @@ forward and reports =No sentence after point= for anything ending behind
 where it started — so zero and negative counts have nothing they could
 mean but that error.
 
-=m b=, =m B= and =m P= are the others, treating a count below 1 as 1
-for the mirrored reason: they *are* the backward direction, so a
+=m b=, =m B=, =m S= and =m P= are the others, treating a count below 1
+as 1 for the mirrored reason: they *are* the backward direction, so a
 negative count has nothing left to point at that =C-u -2 m w= and
 friends do not already say.
 
@@ -681,15 +682,15 @@ instead of re-marking the same one, and keeps growing on each further
 press until the buffer runs out. So =m s m s m s= is another way to say
 =C-u 3 m s=, and the same holds for the other three.
 
-Words, symbols and paragraphs grow *backward* as well: =m b= adds the
-word before the selection, =m B= the symbol, =m P= the paragraph, and
-either direction continues the same run. Starting on =that= in "This
-buffer is for text that is not saved", =m w m w m b= selects =text that
-is= — two words forward, one back. Pressed fresh, with no run to
-continue, each backward key selects exactly what its forward partner
-would; the two differ only in the direction further presses grow. The
-run never changes object mid-flight: =m w= then =m B= marks a fresh
-symbol rather than growing the word selection.
+All four grow *backward* as well: =m b= adds the word before the
+selection, =m B= the symbol, =m S= the sentence, =m P= the paragraph,
+and either direction continues the same run. Starting on =that= in
+"This buffer is for text that is not saved", =m w m w m b= selects
+=text that is= — two words forward, one back. Pressed fresh, with no
+run to continue, each backward key selects exactly what its forward
+partner would; the two differ only in the direction further presses
+grow. The run never changes object mid-flight: =m w= then =m B= marks
+a fresh symbol rather than growing the word selection.
 
 Any other key in between ends the run — =m w l m w= marks a single word
 again rather than two. An active selection made some other way is left

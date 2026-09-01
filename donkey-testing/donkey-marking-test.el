@@ -3322,7 +3322,7 @@ one."
   "Pressing a mark key N times reaches what a count of N reaches.
 
 Two mechanisms for one idea, so they have to agree or one of them is
-lying.  Checked at two and three, for each of the eleven keys.
+lying.  Checked at two and three, for each of the twelve keys.
 
 The three backward keys need a LEAD deep enough that the count has
 room to reach: from the buffer's first object there is nothing behind,
@@ -3343,6 +3343,8 @@ text and the same starting point."
                   ("m b" "alpha beta gamma delta"             "w w w ")
                   ("m B" "a-one b-two c-three d-four"         "w w w w w w ")
                   ("m s" "One thing.  Two thing.  Three thing." "")
+                  ("m S" "One thing.  Two thing.  Three thing.  Four thing."
+                   "w w w w w ")
                   ("m p" "Alpha.\n\nBeta.\n\nGamma.\n"      "")
                   ("m P" "Alpha.\n\nBeta.\n\nGamma.\n"      "j j j j ")
                   ("m i" "(((deep)))"                         "l l ")
@@ -3444,11 +3446,22 @@ the run would depend on which key happened to start it."
 
 `m b m w' grows the word selection forward rather than starting over,
 and `m B m W' does the same for symbols -- the companion test in
-`donkey--mark-extending-p' works both ways round."
+`donkey--mark-extending-p' works both ways round.
+
+The sentence pair is checked in BOTH orders, because its two directions
+extend through different code: `m s m S' exercises the backward
+command's own extending branch, while `m S m s' exercises the
+`last-command' binding inside `donkey-mark-sentence' that presents the
+companion press to `mark-end-of-sentence' as a repeat -- without it the
+forward press would collapse the far end back to the first sentence."
   (donkey-mark-test--keys "for text that is not saved" "w w l m b m w"
     (should (equal (donkey-mark-test--selection) "that is")))
   (donkey-mark-test--keys "a-one b-two c-three d-four" "w w w w w m B m W"
-    (should (equal (donkey-mark-test--selection) "c-three d-four"))))
+    (should (equal (donkey-mark-test--selection) "c-three d-four")))
+  (donkey-mark-test--keys "One thing.  Two thing.  Three thing." "w w w m S m s"
+    (should (equal (donkey-mark-test--selection) "Two thing.  Three thing.")))
+  (donkey-mark-test--keys "One thing.  Two thing.  Three thing." "w w w m s m S"
+    (should (equal (donkey-mark-test--selection) "One thing.  Two thing."))))
 
 (ert-deftest donkey-mark-word-backward-stops-at-the-buffer-start ()
   "Running out of buffer keeps the selection and stays put.
@@ -3478,6 +3491,7 @@ walk point FORWARD, past the mark."
     ;; Fresh: below 1 is a plain press.
     (dolist (case '(("m b" "that")
                     ("m B" "that")
+                    ("m S" "for text that is")
                     ("m P" "for text that is")))
       (cl-destructuring-bind (key expected) case
         (donkey-mark-test--keys "for text that is"
@@ -3485,11 +3499,12 @@ walk point FORWARD, past the mark."
           (should (equal (list key prefix (donkey-mark-test--selection))
                          (list key prefix expected))))))
     ;; Continuing a run: below 1 still grows by exactly one object.
-    ;; The paragraph run has nothing behind a one-paragraph buffer, but
-    ;; the clamp still shows: a raw -2 would walk point forward onto the
-    ;; mark and collapse the selection.
+    ;; The sentence and paragraph runs have nothing behind this
+    ;; one-object buffer, but the clamp still shows: a raw -2 would walk
+    ;; point forward onto the mark and collapse the selection.
     (dolist (case '(("m w" "m b" "text that")
                     ("m W" "m B" "text that")
+                    ("m s" "m S" "for text that is")
                     ("m p" "m P" "for text that is")))
       (cl-destructuring-bind (fwd bwd expected) case
         (donkey-mark-test--keys "for text that is"
@@ -3572,6 +3587,8 @@ in."
   ;; view, so its expectation is the unchanged span, re-activated.
   (dolist (case '(("m w" "m b" donkey-mark-word-backward "text that")
                   ("m W" "m B" donkey-mark-symbol-backward "text that")
+                  ("m s" "m S" donkey-mark-sentence-backward
+                   "for text that is")
                   ("m p" "m P" donkey-mark-paragraph-backward
                    "for text that is")))
     (cl-destructuring-bind (fwd bwd cmd expected) case
@@ -3586,6 +3603,23 @@ in."
                 (should (equal (list fwd bwd (donkey-mark-test--selection))
                                (list fwd bwd expected)))))
           (remove-hook 'pre-command-hook sabotage))))))
+
+(ert-deftest donkey-mark-sentence-backward-repeats-grow-backward ()
+  "`m S m S' takes the sentence at point and the one before it."
+  (donkey-mark-test--keys "One thing.  Two thing.  Three thing." "w w w m S m S"
+    (should (equal (donkey-mark-test--selection)
+                   "One thing.  Two thing."))))
+
+(ert-deftest donkey-mark-sentence-backward-alone-selects-what-m-s-selects ()
+  "A fresh `m S' agrees with a fresh `m s', like the other pairs."
+  (let ((backward (donkey-mark-test--keys
+                      "One thing.  Two thing.  Three thing." "w w w m S"
+                    (donkey-mark-test--selection)))
+        (forward (donkey-mark-test--keys
+                     "One thing.  Two thing.  Three thing." "w w w m s"
+                   (donkey-mark-test--selection))))
+    (should (equal backward "Two thing."))
+    (should (equal backward forward))))
 
 (ert-deftest donkey-mark-extending-p-companions-only-through-the-command-loop ()
   "COMPANIONS extend a run only under the same guards as a repeat.
