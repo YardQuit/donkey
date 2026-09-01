@@ -392,8 +392,11 @@ out of reach of everything but =undo=.
 |-------+----------------------------+--------------------------------------|
 | =m w= | =donkey-mark-word=           | Mark word at point                   |
 | =m W= | =donkey-mark-symbol=         | Mark symbol (hyphens, underscores)   |
+| =m b= | =donkey-mark-word-backward=  | Mark word, or grow a selection backward |
+| =m B= | =donkey-mark-symbol-backward= | Mark symbol, or grow a selection backward |
 | =m s= | =donkey-mark-sentence=       | Mark sentence                        |
 | =m p= | =donkey-mark-paragraph=      | Mark paragraph                       |
+| =m P= | =donkey-mark-paragraph-backward= | Mark paragraph, or grow a selection backward |
 | =m i= | =donkey-mark-inner=          | Mark inside delimiter pair           |
 | =m a= | =donkey-mark-outer=          | Mark including delimiter pair        |
 | =m I= | =donkey-mark-sexp-inner=     | Mark inside balanced expression      |
@@ -629,6 +632,7 @@ ignore a count rather than refusing it.
 | =C-u 3 y=   | copy three characters                   |
 | =C-u 3 c=   | change three characters                 |
 | =C-u 3 m w= | mark three words                        |
+| =C-u 3 m b= | mark the word and the two before it     |
 | =C-u 2 m W= | mark two symbols                        |
 | =C-u 2 m s= | mark two sentences                      |
 | =C-u 2 m p= | mark two paragraphs                     |
@@ -658,11 +662,16 @@ exception worth naming: it changes no text but still drops into INSERT
 state, because entering INSERT is what the command is for and only the
 deletion is governed by the count.
 
-=m s= is the exception: a count below 1 is treated as 1. That command is
+=m s= is one exception: a count below 1 is treated as 1. That command is
 defined in terms of the sentence *ahead* of the cursor — it normalizes
 forward and reports =No sentence after point= for anything ending behind
 where it started — so zero and negative counts have nothing they could
 mean but that error.
+
+=m b=, =m B= and =m P= are the others, treating a count below 1 as 1
+for the mirrored reason: they *are* the backward direction, so a
+negative count has nothing left to point at that =C-u -2 m w= and
+friends do not already say.
 
 **** Repeating a mark key extends the selection
 
@@ -671,6 +680,16 @@ Pressing =m w=, =m W=, =m s= or =m p= a second time straight away
 instead of re-marking the same one, and keeps growing on each further
 press until the buffer runs out. So =m s m s m s= is another way to say
 =C-u 3 m s=, and the same holds for the other three.
+
+Words, symbols and paragraphs grow *backward* as well: =m b= adds the
+word before the selection, =m B= the symbol, =m P= the paragraph, and
+either direction continues the same run. Starting on =that= in "This
+buffer is for text that is not saved", =m w m w m b= selects =text that
+is= — two words forward, one back. Pressed fresh, with no run to
+continue, each backward key selects exactly what its forward partner
+would; the two differ only in the direction further presses grow. The
+run never changes object mid-flight: =m w= then =m B= marks a fresh
+symbol rather than growing the word selection.
 
 Any other key in between ends the run — =m w l m w= marks a single word
 again rather than two. An active selection made some other way is left

@@ -2894,13 +2894,23 @@ one before marking it."
 ;; word.  That is a change to a flow nobody asked about, and it is not
 ;; what `m s' does today: `m s l m s' starts over.  Matching `m s'
 ;; exactly keeps the family uniform without disturbing `v'.
-(defun donkey--mark-extending-p ()
+(defun donkey--mark-extending-p (&optional companions)
   "Return non-nil when a mark command should grow its selection.
 
 True when the command now running is the one that ran last and it left
 a mark behind -- the same test `mark-end-of-sentence' applies, which is
 why `m s' has grown on a second press since before there was a rule.
 Any other key in between ends the run.
+
+COMPANIONS names the commands that continue this command's run without
+being it.  A forward/backward pair -- `donkey-mark-word' and
+`donkey-mark-word-backward', and likewise the symbol and paragraph
+pairs -- grows ONE selection between them, each from its own end, so
+either member arriving right after the other is a continuation, not a
+fresh start.  It is a list per caller rather than one shared family
+list because the run must not cross object types: `m w' then `m B'
+marks a fresh symbol, since \"the symbol before the current WORD
+selection\" is not a length the word run ever promised.
 
 `this-command' is checked for being set at all before it is compared.
 Outside the command loop BOTH it and `last-command' are nil, so the
@@ -2913,7 +2923,8 @@ behind test order -- any earlier test leaves `last-command' non-nil,
 which makes the comparison false again, so it only showed when the
 marking tests ran first."
   (and this-command
-       (eq last-command this-command)
+       (or (eq last-command this-command)
+           (memq last-command companions))
        (mark t)
        t))
 
@@ -2932,13 +2943,15 @@ and `donkey-mark-paragraph' answer the same way at all three.
 Pressing the key again immediately EXTENDS the selection by another
 word rather than re-marking the same one, and keeps extending until
 the buffer runs out.  See `donkey--mark-extending-p'.
+`donkey-mark-word-backward' continues the same run from the other end,
+in either order -- `m w m w m b' is two words forward and one back.
 
 COUNT marks that many words.  A negative COUNT marks that many words
 before the one point normalizes onto, and a COUNT of zero marks nothing,
 matching how `mark-word' itself reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (let ((extend (donkey--mark-extending-p)))
+  (let ((extend (donkey--mark-extending-p '(donkey-mark-word-backward))))
     (unless extend
       (unless (donkey--point-on-word-or-symbol-char-p)
         (backward-word 1))
@@ -2959,6 +2972,52 @@ matching how `mark-word' itself reads its argument."
     ;; region by nothing and then by one word from the wrong end.
     (mark-word (or count 1) extend))
   (message "Word marked"))
+
+(defun donkey-mark-word-backward (&optional count)
+  "Select the word at point, or grow a word selection BACKWARD.
+
+The other end of `donkey-mark-word's run.  Every word selection keeps
+its mark at the forward end and point at the start, so the two commands
+never contend over an end: `m w' grows the selection by pushing the
+mark ahead, this one by walking point back, and either key immediately
+after the other continues the one run -- see `donkey--mark-extending-p'.
+From \"that\" in \"for text that is not saved\", `m w m w m b' selects
+\"text that is\": two words forward, one back.
+
+With no run to continue this selects exactly what `donkey-mark-word'
+selects, BY CALLING IT -- the pair differs only in which end a
+following press grows, so a fresh press must not disagree about what
+the first word is.  The delegate cannot itself decide to extend:
+reaching it here means `last-command' is neither member of the pair,
+and that is the same test it applies.  Rectangle cleanup rides along
+the same way; on the extending branch there is nothing to clean,
+because the press that started the run disabled any stale
+`rectangle-mark-mode' and a rectangle can only have activated since
+through a command that ended the run.
+
+Running out of buffer stops at the start and keeps what is selected,
+matching the forward direction at the end of the buffer.
+
+COUNT marks or extends by that many words.  A COUNT below 1 is treated
+as 1, as `donkey-mark-sentence' treats its own: zero and negative
+counts already mean something in this family -- `donkey-mark-word'
+reads them as reaching BEHIND point -- and this command is that
+direction, so they have nothing left to name here."
+  (interactive "p")
+  (let ((n (max 1 (or count 1))))
+    (if (donkey--mark-extending-p '(donkey-mark-word))
+        (progn
+          (forward-word (- n))
+          ;; The forward direction re-activates the mark on every press
+          ;; as a side effect of `set-mark'/`mark-word'; moving point
+          ;; activates nothing, so re-assert it here or a region some
+          ;; hook deactivated mid-run would grow invisibly.  A no-op
+          ;; when the region is already active.
+          (activate-mark)
+          (message "Word marked"))
+      (donkey-mark-word)
+      (when (> n 1)
+        (forward-word (- (1- n)))))))
 
 (defun donkey--region-blank-p ()
   "Return non-nil if only whitespace and newlines lie in the region.
@@ -3168,13 +3227,18 @@ the one after.  So deleting a paragraph leaves the separator between
 its neighbors intact rather than a stray blank line, wherever in the
 buffer it sits.
 
+Pressing the key again immediately EXTENDS the selection by another
+paragraph -- see `donkey--mark-extending-p' -- and
+`donkey-mark-paragraph-backward' continues the same run from the other
+end, in either order.
+
 COUNT marks that many paragraphs.  A negative COUNT marks that many
 paragraphs before the one point normalizes onto, and a COUNT of zero
 marks nothing, matching how `forward-paragraph' reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (let ((n (or count 1)))
-    (if (donkey--mark-extending-p)
+    (if (donkey--mark-extending-p '(donkey-mark-paragraph-backward))
         ;; Grown by moving the MARK, which is the end this command owns
         ;; -- the same shape as `donkey-mark-symbol' and as
         ;; `mark-paragraph's own ALLOW-EXTEND branch.
@@ -3212,6 +3276,48 @@ marks nothing, matching how `forward-paragraph' reads its argument."
       (user-error "No paragraph at or before point"))
     (message "Paragraph marked")))
 
+(defun donkey-mark-paragraph-backward (&optional count)
+  "Select the paragraph at point, or grow a paragraph selection BACKWARD.
+
+The other end of `donkey-mark-paragraph's run, the same shape as
+`donkey-mark-word-backward': the selection's mark sits at the forward
+end and point at the start, so `m p' grows it by pushing the mark ahead
+and this one by walking point back, and either key immediately after
+the other continues the one run -- see `donkey--mark-extending-p'.
+
+The one-blank-line rule needs no backward counterpart to
+`donkey--absorb-paragraph-blank': `backward-paragraph' lands BEFORE the
+blank line that precedes the paragraph it walks over, so the separator
+that used to lead the selection simply becomes interior -- confirmed by
+probe, growing back from \"Beta\" onto \"Alpha\" selects both
+paragraphs with the one blank line between them and no stray blank at
+either end.
+
+With no run to continue this selects exactly what
+`donkey-mark-paragraph' selects, by calling it -- which also inherits
+its no-paragraph `user-error' and its rectangle cleanup; see
+`donkey-mark-word-backward' for why the delegate cannot itself decide
+to extend, and why the extending branch has no rectangle to clean.
+
+Running out of buffer stops at the start and keeps what is selected.
+
+COUNT marks or extends by that many paragraphs.  A COUNT below 1 is
+treated as 1, for the reason `donkey-mark-word-backward' gives: the
+family already reads zero and negative counts as reaching behind
+point, and this command is that direction."
+  (interactive "p")
+  (let ((n (max 1 (or count 1))))
+    (if (donkey--mark-extending-p '(donkey-mark-paragraph))
+        (progn
+          (backward-paragraph n)
+          ;; See `donkey-mark-word-backward': moving point re-activates
+          ;; nothing, unlike the mark-moving forward direction.
+          (activate-mark)
+          (message "Paragraph marked"))
+      (donkey-mark-paragraph)
+      (when (> n 1)
+        (backward-paragraph (1- n))))))
+
 (defun donkey-mark-symbol (&optional count)
   "Select the entire symbol at or adjacent to point.
 
@@ -3226,12 +3332,17 @@ a buffer there is nothing behind, so the symbol ahead is marked
 instead -- see `donkey--mark-reach-forward-for'.  `donkey-mark-sentence'
 and `donkey-mark-paragraph' answer the same way at all three.
 
+Pressing the key again immediately EXTENDS the selection by another
+symbol -- see `donkey--mark-extending-p' -- and
+`donkey-mark-symbol-backward' continues the same run from the other
+end, in either order.
+
 COUNT marks that many symbols.  A negative COUNT marks that many symbols
 before the one point normalizes onto, and a COUNT of zero marks nothing,
 matching how `forward-sexp' reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (if (donkey--mark-extending-p)
+  (if (donkey--mark-extending-p '(donkey-mark-symbol-backward))
       ;; Grown by moving the MARK, which is where this command leaves the
       ;; far end of its selection -- it finishes with `backward-sexp', so
       ;; point sits at the START.  The same shape as `mark-word's own
@@ -3276,6 +3387,56 @@ matching how `forward-sexp' reads its argument."
       (backward-sexp n))
     (activate-mark))
   (message "Symbol marked"))
+
+(defun donkey-mark-symbol-backward (&optional count)
+  "Select the symbol at point, or grow a symbol selection BACKWARD.
+
+The other end of `donkey-mark-symbol's run, the same shape as
+`donkey-mark-word-backward': the selection's mark sits at the forward
+end and point at the start, so `m W' grows it by pushing the mark ahead
+and this one by walking point back with `backward-sexp', and either key
+immediately after the other continues the one run -- see
+`donkey--mark-extending-p'.
+
+No punctuation trim runs here.  `donkey--trim-symbol-punctuation' drops
+a trailing \".\" or \",\" because prose punctuation attaches to the END
+of a name; the backward walk lands on symbol STARTS, where there is
+nothing equivalent to shed, and whatever punctuation separated the
+symbols becomes interior to the selection -- confirmed by probe, growing
+back from \"baz\" over \"foo, bar baz\" selects all of it, comma in
+place.
+
+With no run to continue this selects exactly what `donkey-mark-symbol'
+selects, by calling it -- which also inherits its trailing-punctuation
+trim, its no-symbol `user-error', and its rectangle cleanup; see
+`donkey-mark-word-backward' for why the delegate cannot itself decide
+to extend, and why the extending branch has no rectangle to clean.
+
+At the start of the buffer `backward-sexp' simply stops, and before an
+unmatched opener it signals `scan-error' without moving; both leave the
+selection as it was, matching how the forward direction runs out of
+buffer.
+
+COUNT marks or extends by that many symbols.  A COUNT below 1 is
+treated as 1, for the reason `donkey-mark-word-backward' gives: the
+family already reads zero and negative counts as reaching behind
+point, and this command is that direction."
+  (interactive "p")
+  (let ((n (max 1 (or count 1))))
+    (if (donkey--mark-extending-p '(donkey-mark-symbol))
+        (progn
+          (condition-case nil
+              (backward-sexp n)
+            (scan-error nil))
+          ;; See `donkey-mark-word-backward': moving point re-activates
+          ;; nothing, unlike the mark-moving forward direction.
+          (activate-mark)
+          (message "Symbol marked"))
+      (donkey-mark-symbol)
+      (when (> n 1)
+        (condition-case nil
+            (backward-sexp (1- n))
+          (scan-error nil))))))
 
 ;; The non-toggling behavior is left as stock deliberately: "v" is
 ;; `set-mark-command' and nothing else, so `C-u v' still pops the mark ring
@@ -4222,6 +4383,12 @@ buffer runs out.  A count says the same thing in one go, so \\[donkey-mark-word]
 and \\`C-u 2' \\[donkey-mark-word] agree.  Any other key in between ends the run, and
 the next press starts a fresh selection.
 
+Words, symbols and paragraphs can grow BACKWARD too: \\[donkey-mark-word-backward] adds the
+word before the selection, \\[donkey-mark-symbol-backward] the symbol, \\[donkey-mark-paragraph-backward] the paragraph.
+Either direction continues the same run, so \\[donkey-mark-word] \\[donkey-mark-word] \\[donkey-mark-word-backward] takes
+two words forward and then one back.  Pressed fresh, each selects the
+same thing its forward partner would.
+
 A word stops at a hyphen or underscore; a symbol runs straight through
 one.  On a name held together by them the two select very different
 things, which is why both keys exist.
@@ -4796,10 +4963,13 @@ what starts over."
 (keymap-set donkey-normal-mode-map "m I" #'donkey-mark-sexp-inner)
 (keymap-set donkey-normal-mode-map "m i" #'donkey-mark-inner)
 (keymap-set donkey-normal-mode-map "m p" #'donkey-mark-paragraph)
+(keymap-set donkey-normal-mode-map "m P" #'donkey-mark-paragraph-backward)
 (keymap-set donkey-normal-mode-map "m s" #'donkey-mark-sentence)
 (keymap-set donkey-normal-mode-map "m v" #'donkey-rectangle-mark-mode)
 (keymap-set donkey-normal-mode-map "m w" #'donkey-mark-word)
 (keymap-set donkey-normal-mode-map "m W" #'donkey-mark-symbol)
+(keymap-set donkey-normal-mode-map "m b" #'donkey-mark-word-backward)
+(keymap-set donkey-normal-mode-map "m B" #'donkey-mark-symbol-backward)
 (keymap-set donkey-normal-mode-map "m l" #'donkey-bank-selection)
 ;; Backspace and Delete both clear the bank.  "DEL" is Emacs's name for
 ;; ASCII 127, which is what BACKSPACE sends -- the physical Delete key is

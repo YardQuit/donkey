@@ -3322,7 +3322,12 @@ one."
   "Pressing a mark key N times reaches what a count of N reaches.
 
 Two mechanisms for one idea, so they have to agree or one of them is
-lying.  Checked at two and three, for each of the eight keys.
+lying.  Checked at two and three, for each of the eleven keys.
+
+The three backward keys need a LEAD deep enough that the count has
+room to reach: from the buffer's first object there is nothing behind,
+and both mechanisms would agree on a truncated answer without proving
+the count moves at all.
 
 For the four delimiter keys a level out is what a press buys, and they
 only started agreeing once a repeat stopped searching afresh from
@@ -3335,8 +3340,11 @@ text and the same starting point."
   ;; run has to start on the innermost one.
   (dolist (case '(("m w" "alpha beta gamma delta"             "")
                   ("m W" "a-one b-two c-three d-four"         "")
+                  ("m b" "alpha beta gamma delta"             "w w w ")
+                  ("m B" "a-one b-two c-three d-four"         "w w w w w w ")
                   ("m s" "One thing.  Two thing.  Three thing." "")
                   ("m p" "Alpha.\n\nBeta.\n\nGamma.\n"      "")
+                  ("m P" "Alpha.\n\nBeta.\n\nGamma.\n"      "j j j j ")
                   ("m i" "(((deep)))"                         "l l ")
                   ("m a" "(((deep)))"                         "l l ")
                   ("m I" "(((deep)))"                         "l l ")
@@ -3399,6 +3407,209 @@ a change to a flow that was never in question.  DONKEY uses the
 narrower test, and this is what says so."
   (donkey-mark-test--keys "alpha beta gamma" "v l l l m w"
     (should (equal (donkey-mark-test--selection) "alpha"))))
+
+;;; ---------------------------------------------------------------------------
+;;; Growing a selection backward: m b, m B, m P
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-mark-word-backward-continues-a-forward-run ()
+  "`m w m w m b' from \"that\" selects two words forward and one back.
+
+The headline case for the backward keys, as reported: every word
+selection keeps its mark at the forward end and point at the start, so
+the two directions grow one region without fighting over an end."
+  (donkey-mark-test--keys "for text that is not saved" "w w l m w m w m b"
+    (should (equal (donkey-mark-test--selection) "text that is"))))
+
+(ert-deftest donkey-mark-word-backward-alone-selects-what-m-w-selects ()
+  "A fresh `m b', with no run to continue, agrees with a fresh `m w'.
+
+The pair differs only in which end a FOLLOWING press grows; a fresh
+press must not disagree about what the first word is, or the meaning of
+the run would depend on which key happened to start it."
+  (let ((backward (donkey-mark-test--keys "for text that is" "w w l m b"
+                    (donkey-mark-test--selection)))
+        (forward (donkey-mark-test--keys "for text that is" "w w l m w"
+                   (donkey-mark-test--selection))))
+    (should (equal backward "that"))
+    (should (equal backward forward))))
+
+(ert-deftest donkey-mark-word-backward-repeats-grow-backward ()
+  "`m b m b' takes the word at point and the one before it."
+  (donkey-mark-test--keys "for text that is not saved" "w w l m b m b"
+    (should (equal (donkey-mark-test--selection) "text that"))))
+
+(ert-deftest donkey-mark-backward-then-forward-continues-the-run ()
+  "The directions continue one run in either order, per object type.
+
+`m b m w' grows the word selection forward rather than starting over,
+and `m B m W' does the same for symbols -- the companion test in
+`donkey--mark-extending-p' works both ways round."
+  (donkey-mark-test--keys "for text that is not saved" "w w l m b m w"
+    (should (equal (donkey-mark-test--selection) "that is")))
+  (donkey-mark-test--keys "a-one b-two c-three d-four" "w w w w w m B m W"
+    (should (equal (donkey-mark-test--selection) "c-three d-four"))))
+
+(ert-deftest donkey-mark-word-backward-stops-at-the-buffer-start ()
+  "Running out of buffer keeps the selection and stays put.
+
+The forward direction stops quietly at the end of the buffer;
+`forward-word' with a negative count stops the same way at the start,
+so pressing `m b' with nothing left behind changes nothing and still
+reports a marked word rather than erroring."
+  (donkey-mark-test--keys "alpha beta" "m w m b m b"
+    (should (equal (donkey-mark-test--selection) "alpha"))
+    (should (= (point) (point-min)))))
+
+(ert-deftest donkey-mark-backward-counts-below-one-are-one ()
+  "`C-u 0' and `C-u -2' mean a plain press for all three backward keys.
+
+Zero and negative counts already reach behind point elsewhere in the
+family (`C-u -2 m w'), and these commands ARE the backward direction,
+so they have nothing left to name here -- the same reading
+`donkey-mark-sentence' gives its own counts below 1.
+
+Checked both fresh and as a continuation, because only the second can
+tell the clamp apart from delegation: a fresh press hands no count to
+the partner it calls, so it reads as a plain press with or without the
+clamp, while mid-run a raw 0 would grow by nothing and a raw -2 would
+walk point FORWARD, past the mark."
+  (dolist (prefix '("C-u 0 " "C-u -2 "))
+    ;; Fresh: below 1 is a plain press.
+    (dolist (case '(("m b" "that")
+                    ("m B" "that")
+                    ("m P" "for text that is")))
+      (cl-destructuring-bind (key expected) case
+        (donkey-mark-test--keys "for text that is"
+            (concat "w w l " prefix key)
+          (should (equal (list key prefix (donkey-mark-test--selection))
+                         (list key prefix expected))))))
+    ;; Continuing a run: below 1 still grows by exactly one object.
+    ;; The paragraph run has nothing behind a one-paragraph buffer, but
+    ;; the clamp still shows: a raw -2 would walk point forward onto the
+    ;; mark and collapse the selection.
+    (dolist (case '(("m w" "m b" "text that")
+                    ("m W" "m B" "text that")
+                    ("m p" "m P" "for text that is")))
+      (cl-destructuring-bind (fwd bwd expected) case
+        (donkey-mark-test--keys "for text that is"
+            (concat "w w l " fwd " " prefix bwd)
+          (should (equal (list bwd prefix (donkey-mark-test--selection))
+                         (list bwd prefix expected))))))))
+
+(ert-deftest donkey-a-backward-key-does-not-cross-object-types ()
+  "`m w' then `m B' marks a fresh symbol, not a backward word.
+
+Each backward key companions only its own forward partner: \"the
+symbol before the current WORD selection\" is not a length the word
+run ever promised, so switching objects starts over instead."
+  (donkey-mark-test--keys "for that is" "w l m w m B"
+    (should (equal (donkey-mark-test--selection) "that"))))
+
+(ert-deftest donkey-an-interposed-key-ends-a-backward-run ()
+  "Any other key between presses of `m b' starts a fresh selection.
+
+The discriminating position matters: with the in-between motion left
+inside the word just marked, a wrongly surviving run and a fresh mark
+select the same text, which is why the family-wide in-between test
+cannot carry this key.  Moving on to a LATER word separates them -- a
+fresh press marks \"not\", a surviving run would walk point back from
+it and leave a sliver next to the old mark."
+  (donkey-mark-test--keys "for text that is not saved" "w w l m b w w l m b"
+    (should (equal (donkey-mark-test--selection) "not"))))
+
+(ert-deftest donkey-mark-symbol-backward-keeps-separating-punctuation-interior ()
+  "`m B' growing backward crosses punctuation without trimming it.
+
+`donkey--trim-symbol-punctuation' is about a trailing \".\" or \",\" at
+the selection's forward END; the backward walk lands on symbol starts,
+and whatever separated the symbols simply becomes interior text."
+  (donkey-mark-test--keys "foo, bar baz" "w w w m B m B m B"
+    (should (equal (donkey-mark-test--selection) "foo, bar baz"))))
+
+(ert-deftest donkey-mark-paragraph-backward-takes-the-paragraph-above ()
+  "`m p m P' selects both paragraphs with their one separator inside.
+
+Pinned against the one-blank-line rule: `backward-paragraph' lands
+before the blank that precedes the paragraph it walks over, so the
+blank that used to lead the selection becomes interior and no stray
+blank line appears at either end."
+  (donkey-mark-test--keys "Alpha one.\n\nBeta two.\n\nGamma three.\n"
+      "j j m p m P"
+    (should (equal (donkey-mark-test--selection)
+                   "Alpha one.\n\nBeta two.\n"))))
+
+(ert-deftest donkey-mark-paragraph-backward-alone-selects-what-m-p-selects ()
+  "A fresh `m P' agrees with a fresh `m p', like the word pair."
+  (let ((backward (donkey-mark-test--keys
+                      "Alpha one.\n\nBeta two.\n\nGamma three.\n" "j j m P"
+                    (donkey-mark-test--selection)))
+        (forward (donkey-mark-test--keys
+                     "Alpha one.\n\nBeta two.\n\nGamma three.\n" "j j m p"
+                   (donkey-mark-test--selection))))
+    (should (equal backward "\nBeta two.\n"))
+    (should (equal backward forward))))
+
+(ert-deftest donkey-a-backward-press-revives-a-deactivated-run ()
+  "A backward key re-activates the region it grows, like its partner.
+
+The forward direction re-activates on every press as a side effect of
+`set-mark'/`mark-word'; walking point activates nothing.  Without the
+explicit `activate-mark' on the extending branch, a region a hook
+deactivated mid-run would keep growing invisibly: point moves, nothing
+shows, and the next `d' acts on a selection the user cannot see.
+
+The deactivation is staged from `pre-command-hook', firing just before
+the backward press -- the run is still live there, since the hook is
+not a command and `last-command' still names the forward partner.  It
+CANNOT be staged between two `execute-kbd-macro' calls: starting a
+macro from Lisp resets `last-command' to nil before its first command,
+so a second macro is never a continuation of the first and the fresh
+branch would be exercised instead, in every frame kind this suite runs
+in."
+  ;; The paragraph pair has nothing behind a single-paragraph buffer to
+  ;; grow onto; what it must still do is bring the selection back into
+  ;; view, so its expectation is the unchanged span, re-activated.
+  (dolist (case '(("m w" "m b" donkey-mark-word-backward "text that")
+                  ("m W" "m B" donkey-mark-symbol-backward "text that")
+                  ("m p" "m P" donkey-mark-paragraph-backward
+                   "for text that is")))
+    (cl-destructuring-bind (fwd bwd cmd expected) case
+      (let ((sabotage (lambda ()
+                        (when (eq this-command cmd)
+                          (deactivate-mark)))))
+        (unwind-protect
+            (progn
+              (add-hook 'pre-command-hook sabotage)
+              (donkey-mark-test--keys "for text that is"
+                  (concat "w w l " fwd " " bwd)
+                (should (equal (list fwd bwd (donkey-mark-test--selection))
+                               (list fwd bwd expected)))))
+          (remove-hook 'pre-command-hook sabotage))))))
+
+(ert-deftest donkey-mark-extending-p-companions-only-through-the-command-loop ()
+  "COMPANIONS extend a run only under the same guards as a repeat.
+
+The companion arm sits inside the guards the plain test already has:
+`this-command' must be set (a Lisp call is never a continuation, however
+the mark got there) and a mark must exist.  And membership is checked
+against the list the CALLER passes, so a command outside the pair does
+not continue the run however recently it made a selection."
+  (with-temp-buffer
+    (insert "alpha beta gamma")
+    (goto-char (point-min))
+    (push-mark (point-max) t t)
+    ;; Outside the command loop: no continuation, companions or not.
+    (let ((this-command nil) (last-command 'donkey-mark-word))
+      (should-not (donkey--mark-extending-p '(donkey-mark-word))))
+    ;; Through the keymap, the companion continues the run...
+    (let ((this-command 'donkey-mark-word-backward)
+          (last-command 'donkey-mark-word))
+      (should (donkey--mark-extending-p '(donkey-mark-word))))
+    ;; ...and a command outside the pair does not.
+    (let ((this-command 'donkey-mark-word-backward)
+          (last-command 'donkey-mark-sentence))
+      (should-not (donkey--mark-extending-p '(donkey-mark-word))))))
 
 (ert-deftest donkey-mark-extending-p-is-nil-outside-the-command-loop ()
   "A Lisp call is never a repeat, whatever mark happens to be set.
