@@ -3290,6 +3290,20 @@ full suite."
            (execute-kbd-macro (kbd ,keys))
            ,@body))
      (when (get-buffer "*donkey-mark-test*") (kill-buffer "*donkey-mark-test*"))
+     ;; A macro that ends on a mark-run-mode letter leaves the transient
+     ;; map armed GLOBALLY: `donkey--mark-run-mode-keep-p' is only
+     ;; consulted on the next command, and `execute-kbd-macro' runs no
+     ;; further command to consult it on.  Killing the buffer does not
+     ;; help -- `overriding-terminal-local-map' is terminal-wide -- so
+     ;; the next test's bare "w" would MARK instead of moving.  In live
+     ;; use the mode self-heals on any other key; between tests, pop it
+     ;; here.  A no-op when the map was never pushed.
+     (internal-pop-keymap donkey-mark-run-mode-map
+                          'overriding-terminal-local-map)
+     ;; The hint hook leaves through the transient map's ON-EXIT, which
+     ;; a manual pop bypasses; remove it here for the same reason the
+     ;; map is popped.  A no-op when the mode never ran.
+     (remove-hook 'post-command-hook #'donkey--mark-run-mode-show-hint)
      (donkey-mode -1)))
 
 (defun donkey-mark-test--selection ()
@@ -3668,77 +3682,137 @@ case that shows the difference, because the family test
     (should (equal backward "Two thing."))
     (should (equal backward forward))))
 
-(ert-deftest donkey-mark-run-toggle-anchors-an-empty-run-the-mark-keys-grow ()
-  "`M' starts from nothing; the next mark key grows from its anchor.
+(ert-deftest donkey-mark-run-mode-is-the-m-prefix-held-down ()
+  "`M w w b' selects exactly what `m w m w m b' selects.
 
-The anchor sits MID-WORD deliberately: growing from the anchor gives
-\"hat\", while a fresh `m w' would normalize onto the word and give
-\"that\" -- the case that tells membership of
-`donkey--mark-run-commands' apart from a fresh mark.  The backward
-case anchors on the word's first letter, where growing back takes the
-word BEFORE the anchor and a fresh `m b' would take the word under
-it."
-  (donkey-mark-test--keys "for text that is" "w w l l M m w"
-    (should (equal (donkey-mark-test--selection) "hat")))
-  (donkey-mark-test--keys "for text that is" "w w l M m b"
-    (should (equal (donkey-mark-test--selection) "text "))))
+The headline of mark run mode: each letter of
+`donkey-mark-run-mode-map' is bound to the very command its
+`m'-prefixed key runs, so the two spellings cannot drift apart.
+Asserted against the literal expectation AND against the prefixed run
+on the same text, so a change to either spelling that the other does
+not follow fails here."
+  (let ((moded (donkey-mark-test--keys "for text that is not saved"
+                   "w w l M w w b" (donkey-mark-test--selection)))
+        (prefixed (donkey-mark-test--keys "for text that is not saved"
+                      "w w l m w m w m b" (donkey-mark-test--selection))))
+    (should (equal moded "text that is"))
+    (should (equal moded prefixed))))
 
-(ert-deftest donkey-mark-run-toggle-toggles ()
-  "A second `M' cancels the empty run; `M' cancels any selection.
+(ert-deftest donkey-mark-run-mode-first-letter-marks-afresh ()
+  "`M w' equals a fresh `m w': the mode plants no anchor.
 
-Mirrors `donkey-visual-line-toggle'.  The cancel arm keys on
-`region-active-p' rather than on whose selection it is -- state to
-verify over state to trust -- so a selection built by `m w' or by `v'
-is dropped the same way the toggle's own is.
-
-The first press must leave an ACTIVE empty selection -- activation is
-what makes the second press read as a cancel rather than another
-start, and what announces the run on screen machinery that shows
-regions."
-  (donkey-mark-test--keys "for text that is" "w w l M"
-    (should (region-active-p))
-    (should (= (region-beginning) (region-end))))
-  (donkey-mark-test--keys "for text that is" "w w l M M"
-    (should-not (region-active-p)))
-  (donkey-mark-test--keys "for text that is" "w w l m w M"
-    (should-not (region-active-p)))
-  (donkey-mark-test--keys "for text that is" "v l l M"
-    (should-not (region-active-p))))
-
-(ert-deftest donkey-a-mark-key-after-a-cancel-starts-fresh ()
-  "The cancel press does not hand its run to the next mark key.
-
-`donkey-mark-run-toggle' is a family member, so without the
-`this-command' rename on its cancel branch, the mark a canceled
-selection leaves behind would qualify the next mark key as a
-continuation: `m w M m b' would silently grow the selection the user
-just dropped -- to \"text that\" here, invisible until re-activated --
-instead of marking \"that\" afresh."
-  (donkey-mark-test--keys "for text that is" "w w l m w M m b"
+An earlier design pushed an empty anchored selection at `M' and grew
+from it, which made `M w' from MID-WORD select the tail of the word.
+The mode form marks the whole object from anywhere inside it, exactly
+as the prefixed key does -- the same behavior, minus the prefix.  The
+mid-word start is what tells the two designs apart."
+  (donkey-mark-test--keys "for text that is" "w w l l M w"
     (should (equal (donkey-mark-test--selection) "that"))))
 
-(ert-deftest donkey-c-g-drops-a-toggled-run ()
-  "`keyboard-quit' deactivates a toggled run; nothing of ours resists.
+(ert-deftest donkey-mark-run-mode-takes-counts ()
+  "A count inside the mode matches its prefixed spelling.
 
-Stock behavior, recounted because the docs claim it: `C-g' lets go of
-an `M' run the way it lets go of a `v' selection, alongside the
-toggle's own cancel press.  The function is called directly -- `C-g'
-cannot travel inside a keyboard macro, being Emacs's interrupt
-character before it is a key: it sets `quit-flag' without ever
-becoming an input event -- and the `quit' it signals is caught here
-the way the command loop would catch it.  A live press also leaves
-`keyboard-quit' in `last-command', no family member, so the run ends
-with the region; `donkey-a-key-in-between-ends-a-mark-run' pins that
-rule."
-  (donkey-mark-test--keys "for text that is" "w w l M m w"
+`C-u 3' then `w' inside the mode selects what `C-u 3 m w' selects.
+`donkey--mark-run-mode-keep-p' keeps the transient map alive through
+`universal-argument' and its digits; without that arm the mode would
+lapse on the count and the `w' would be a plain motion."
+  (let ((moded (donkey-mark-test--keys "alpha beta gamma delta" "M C-u 3 w"
+                 (donkey-mark-test--selection)))
+        (prefixed (donkey-mark-test--keys "alpha beta gamma delta" "C-u 3 m w"
+                    (donkey-mark-test--selection))))
+    (should (equal moded "alpha beta gamma"))
+    (should (equal moded prefixed))))
+
+(ert-deftest donkey-a-foreign-key-lapses-the-mode-and-still-works ()
+  "`M w w d' selects two words and deletes them; no explicit exit.
+
+`d' is not in `donkey-mark-run-mode-map', so the transient map lapses
+in that press's pre-command and the key does its ordinary job on the
+selection the mode built.  And once lapsed, the letters are plain
+keys again: `M', a motion, then `w' moves and marks nothing."
+  (donkey-mark-test--keys "for text that is" "w l M w w d"
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "for  is")))
+  (donkey-mark-test--keys "for text that is" "w w l M l w"
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-mark-run-mode-mixes-objects ()
+  "`M w s' grows the word to its sentence's end, like `m w m s'.
+
+The cross-object family rule reaches inside the mode unchanged --
+the letters are the family commands, so nothing new has to."
+  (donkey-mark-test--keys "One thing.  Two thing.  Three thing."
+      "w w w w M w s"
+    (should (equal (donkey-mark-test--selection) "thing."))))
+
+(ert-deftest donkey-mark-run-mode-cancels-on-m-and-on-c-g ()
+  "`M' inside the mode drops selection and mode; `keyboard-quit' too.
+
+The in-mode `M' runs `donkey-mark-run-cancel', which is deliberately
+no family member, so `donkey--mark-run-mode-keep-p' lets the map go
+with the selection -- the `w' that follows is a plain motion, pinned
+by point landing at the end of the word rather than a region
+appearing.  `C-g' cannot travel inside a keyboard macro, being
+Emacs's interrupt character before it is a key, so `keyboard-quit' is
+called as the command loop would; a live press also leaves it in
+`last-command', ending the run by the family rule."
+  (donkey-mark-test--keys "for text that is" "w w l M w M w"
+    (should-not (region-active-p))
+    (should (= (point) 14)))
+  (donkey-mark-test--keys "for text that is" "w w l M w"
     (condition-case nil (keyboard-quit) (quit nil))
     (should-not (region-active-p))))
 
-(ert-deftest donkey-a-motion-ends-a-toggled-run ()
-  "`M', a motion, then a mark key marks fresh; the anchor is forgotten.
+(ert-deftest donkey-mark-run-mode-keeps-its-hint-visible ()
+  "The mode reminder is re-shown after every letter of the run.
 
-The rule is `last-command', for the toggle as for every family member."
-  (donkey-mark-test--keys "for text that is" "w w l M l m w"
+A single flash at entry vanished under the first \"Word marked\";
+`donkey--mark-run-mode-show-hint' paints the reminder back after each
+family command, and after nothing else -- during count entry the echo
+area belongs to the keystroke echo, so across `M', a `C-u 3' and a
+`w' the hint must appear exactly twice: at entry and after the
+letter.  Messages
+are captured by stubbing `message', because batch Emacs has no echo
+area for `current-message' to read."
+  (let (msgs)
+    (cl-letf (((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (when fmt (push (apply #'format fmt args) msgs))
+                 nil)))
+      (donkey-mark-test--keys "for text that is not saved" "w w l M w w"
+        nil))
+    (should (equal (car msgs) donkey--mark-run-mode-hint)))
+  (let (msgs)
+    (cl-letf (((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (when fmt (push (apply #'format fmt args) msgs))
+                 nil)))
+      (donkey-mark-test--keys "alpha beta gamma delta" "M C-u 3 w"
+        nil))
+    (should (= 2 (seq-count (lambda (m) (equal m donkey--mark-run-mode-hint))
+                            msgs)))))
+
+(ert-deftest donkey-the-hint-hook-leaves-with-the-mode ()
+  "A key that lapses the mode takes the reminder hook with it.
+
+The hook rides `post-command-hook' globally; the transient map's
+ON-EXIT removes it, so whichever key ends the mode -- a motion here --
+must leave the hook gone, or every later mark command in the session
+would re-paint a reminder for a mode that is over."
+  (donkey-mark-test--keys "for text that is" "w w l M w l"
+    (should-not (memq #'donkey--mark-run-mode-show-hint
+                      post-command-hook))))
+
+(ert-deftest donkey-the-toggle-is-no-family-member ()
+  "A letter after `M' marks afresh even with an old mark lying around.
+
+`m w M M b': the first `M' cancels the word selection, leaving its
+mark at the word's end; the second enters the mode.  Were
+`donkey-mark-run-toggle' in `donkey--mark-run-commands', that stale
+mark would qualify `b' as a continuation -- point walks back and
+re-activates \"text that\", a selection the user had just dropped.
+Fresh, `b' marks the word at point."
+  (donkey-mark-test--keys "for text that is" "w w l m w M M b"
     (should (equal (donkey-mark-test--selection) "that"))))
 
 (ert-deftest donkey-mark-extending-p-companions-only-through-the-command-loop ()

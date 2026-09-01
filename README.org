@@ -232,7 +232,7 @@ process interaction.
 | =K= | =donkey-visual-previous-line= | Move up, extending visual selection   |
 | =V= | =donkey-visual-line-toggle=   | Toggle visual line selection          |
 | =v= | =donkey-set-mark=           | Drop a mark and start selecting; =C-g= lets go |
-| =M= | =donkey-mark-run-toggle=    | Anchor an empty mark run / cancel the selection |
+| =M= | =donkey-mark-run-toggle=    | Toggle mark run mode: bare =w W b B s S p P= mark and grow |
 | =(= =[= ={= ="= ='= =`= | =donkey-wrap-region= | Wrap active region with delimiter, see below |
 
 =V=, =M= and =m v= toggle: pressing any of them a second time cancels
@@ -700,15 +700,18 @@ kind first reaches that object's start — =m B= after marking the word
 =two= inside =b-two= completes the symbol backward — and the next
 press adds a whole one.
 
-=M= starts a run from nothing: it anchors an *empty* selection at the
-cursor for the mark keys to grow — =M m w= takes to the end of the
-word, =M m b= a word back, =M m s= to the end of the sentence. Pressed
-again, or with any active selection, =M= drops the selection: the same
-toggle shape as =V= for lines. =C-g= lets go too, as it does for every
-selection. A motion in between ends the run as it
-ends every mark run. Only these eight keys are in the family: =m i=
-and =m a= count levels rather than objects, and a selection started
-with =v= is still never grown by a mark key.
+=M= is the =m= prefix held down for you: it enters *mark run mode*,
+where the bare letters =w W b B s S p P= run exactly what their
+=m=-prefixed keys run, so =M w w b= selects what =m w m w m b=
+selects. The first letter marks afresh, later letters grow the one
+selection, counts work (=M C-u 3 w=), and objects mix as above. Any
+other key ends the mode and then does its ordinary job in the same
+press — =M w w d= selects two words and deletes them. =M= pressed
+again drops the selection and the mode, and =C-g= does the same, as
+it does for every selection. The echo-area reminder stays visible for
+as long as the mode is active. Only these eight keys are in the family:
+=m i= and =m a= count levels rather than objects, and a selection
+started with =v= is still never grown by a mark key.
 
 Any other key in between ends the run — =m w l m w= marks a single word
 again rather than two. An active selection made some other way is left
