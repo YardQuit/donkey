@@ -44,7 +44,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned: @master executes whatever that branch holds on the day.
-      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
+      - uses: purcell/setup-emacs@34c6ded44899fd1bf74d2889558befd1750e61a7 # master, audited
         with:
           version: ${{ matrix.emacs_version }}
 
@@ -77,7 +77,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned: @master executes whatever that branch holds on the day.
-      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
+      - uses: purcell/setup-emacs@34c6ded44899fd1bf74d2889558befd1750e61a7 # master, audited
         with:
           version: '31.1'
 
@@ -124,7 +124,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned: @master executes whatever that branch holds on the day.
-      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
+      - uses: purcell/setup-emacs@34c6ded44899fd1bf74d2889558befd1750e61a7 # master, audited
         with:
           version: '31.1'
 
@@ -211,7 +211,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned: @master executes whatever that branch holds on the day.
-      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
+      - uses: purcell/setup-emacs@34c6ded44899fd1bf74d2889558befd1750e61a7 # master, audited
         with:
           version: '31.1'
 
@@ -281,7 +281,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned: @master executes whatever that branch holds on the day.
-      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
+      - uses: purcell/setup-emacs@34c6ded44899fd1bf74d2889558befd1750e61a7 # master, audited
         with:
           version: '31.1'
 
@@ -335,7 +335,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned: @master executes whatever that branch holds on the day.
-      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69 # master, audited
+      - uses: purcell/setup-emacs@34c6ded44899fd1bf74d2889558befd1750e61a7 # master, audited
         with:
           version: '31.1'
 
