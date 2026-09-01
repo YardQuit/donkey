@@ -3729,12 +3729,73 @@ lapse on the count and the `w' would be a plain motion."
 `d' is not in `donkey-mark-run-mode-map', so the transient map lapses
 in that press's pre-command and the key does its ordinary job on the
 selection the mode built.  And once lapsed, the letters are plain
-keys again: `M', a motion, then `w' moves and marks nothing."
+keys again: the `w' after the delete moves and marks nothing.  (The
+lapse can no longer be shown with a motion -- `h' `j' `k' `l' are the
+mode's own keys now.)"
   (donkey-mark-test--keys "for text that is" "w l M w w d"
     (should (equal (buffer-substring-no-properties (point-min) (point-max))
-                   "for  is")))
-  (donkey-mark-test--keys "for text that is" "w w l M l w"
+                   "for  is"))
+    (execute-kbd-macro (kbd "w"))
     (should-not (region-active-p))))
+
+(ert-deftest donkey-hjkl-adjust-the-run-without-ending-it ()
+  "Inside the mode, `h' `j' `k' `l' move point and the run carries on.
+
+Through the `donkey-mark-run-' wrappers, which are family members --
+the plain motions cannot be, or `m w l m w' would stop marking a
+single word afresh, a pinned rule.  After `M w l', the region's near
+end has moved one character in and the next `w' still EXTENDS: \"hat
+is\", not a fresh \"is\".  `h' walks the near end outward instead,
+counts pass through, and the vertical pair adjusts by lines with
+`next-line's own column behavior, `j'/`k' being what they stand in
+for."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w l w"
+    (should (equal (donkey-mark-test--selection) "hat is")))
+  (donkey-mark-test--keys "for text that is" "w w l M w h"
+    (should (equal (donkey-mark-test--selection) " that")))
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w C-u 2 l w"
+    (should (equal (donkey-mark-test--selection) "at is")))
+  (donkey-mark-test--keys "one\ntwo\nthree\n" "j M w k"
+    (should (equal (donkey-mark-test--selection) "one\ntwo")))
+  ;; The column survives the vertical move -- `next-line', not
+  ;; `forward-line', as the wrappers' docstrings promise: from column 2
+  ;; of "y two", `k' lands on column 2 of "x one".
+  (donkey-mark-test--keys "x one\ny two\n" "j l l M w k"
+    (should (equal (donkey-mark-test--selection) "one\ny two"))))
+
+(ert-deftest donkey-g-h-and-g-l-reach-the-line-ends-in-the-mode ()
+  "`g h' and `g l' jump to the line's ends without ending the run.
+
+Wrapped like the letter motions, and the run carries on across them:
+after `M w g h' the selection runs from the line's start to the
+word's end, and a `w' after that still EXTENDS to the whole line's
+text.  `g l' shows the freeform the motions share with `v': the jump
+may cross the mark, and the region between mark and point is what
+shows.  Unmatched `g' sequences are deliberately NOT shadowed -- the
+transient map defines only these two, so `g q' still resolves to its
+normal-state command and lapses the mode like any foreign key."
+  (donkey-mark-test--keys "for text that is" "w w l M w g h"
+    (should (equal (donkey-mark-test--selection) "for text that")))
+  (donkey-mark-test--keys "for text that is" "w w l M w g h w"
+    (should (equal (donkey-mark-test--selection) "for text that is")))
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w g l"
+    (should (equal (donkey-mark-test--selection) " is")))
+  (donkey-mark-test--keys "for text that is" "w w l M w"
+    (should (eq (key-binding (kbd "g q")) 'fill-region))
+    (should (eq (key-binding (kbd "g h")) 'donkey-mark-run-line-start))))
+
+(ert-deftest donkey-a-mode-motion-continues-only-a-visible-run ()
+  "A wrapper motion beside a stale mark does not conjure a selection.
+
+The object members of `donkey--mark-run-commands' may revive a region
+a hook deactivated mid-run; the `donkey--mark-run-motions' members
+are held to `region-active-p' as well, or `M l w' next to the mark a
+canceled selection left behind grew a selection from wherever that
+mark lay.  Here: `m w' leaves its mark, `M' cancels, `M l' moves
+beside the stale mark, and `w' must mark the word at point afresh --
+\"that\", not the \"hat\" that growing from the stale mark gave."
+  (donkey-mark-test--keys "for text that is" "w w l m w M M l w"
+    (should (equal (donkey-mark-test--selection) "that"))))
 
 (ert-deftest donkey-mark-run-mode-mixes-objects ()
   "`M w s' grows the word to its sentence's end, like `m w m s'.
@@ -3759,6 +3820,17 @@ called as the command loop would; a live press also leaves it in
   (donkey-mark-test--keys "for text that is" "w w l M w M w"
     (should-not (region-active-p))
     (should (= (point) 14)))
+  ;; The cancel wording matches its sibling toggle: "Mark run: canceled"
+  ;; beside V's "Visual line: canceled".  Recounted here because the
+  ;; docstring promises it.
+  (let (msgs)
+    (cl-letf (((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (when fmt (push (apply #'format fmt args) msgs))
+                 nil)))
+      (donkey-mark-test--keys "for text that is" "w w l M w M"
+        nil))
+    (should (equal (car msgs) "Mark run: canceled")))
   (donkey-mark-test--keys "for text that is" "w w l M w"
     (condition-case nil (keyboard-quit) (quit nil))
     (should-not (region-active-p))))
@@ -3796,10 +3868,11 @@ area for `current-message' to read."
   "A key that lapses the mode takes the reminder hook with it.
 
 The hook rides `post-command-hook' globally; the transient map's
-ON-EXIT removes it, so whichever key ends the mode -- a motion here --
-must leave the hook gone, or every later mark command in the session
-would re-paint a reminder for a mode that is over."
-  (donkey-mark-test--keys "for text that is" "w w l M w l"
+ON-EXIT removes it, so whichever key ends the mode -- a delete here,
+since the motions joined the mode's own keys -- must leave the hook
+gone, or every later mark command in the session would re-paint a
+reminder for a mode that is over."
+  (donkey-mark-test--keys "for text that is" "w w l M w d"
     (should-not (memq #'donkey--mark-run-mode-show-hint
                       post-command-hook))))
 
