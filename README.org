@@ -232,10 +232,12 @@ process interaction.
 | =K= | =donkey-visual-previous-line= | Move up, extending visual selection   |
 | =V= | =donkey-visual-line-toggle=   | Toggle visual line selection          |
 | =v= | =donkey-set-mark=           | Drop a mark and start selecting; =C-g= lets go |
+| =M= | =donkey-mark-run-toggle=    | Anchor an empty mark run / cancel the selection |
 | =(= =[= ={= ="= ='= =`= | =donkey-wrap-region= | Wrap active region with delimiter, see below |
 
-=V= and =m v= toggle: pressing either a second time cancels the
-selection it started. =v= does not. It is =set-mark-command=, so a
+=V=, =M= and =m v= toggle: pressing any of them a second time cancels
+the selection it started (=M= cancels any active selection, however it
+was made). =v= does not. It is =set-mark-command=, so a
 second press drops a fresh mark where point is standing and begins
 selecting again from there — the old selection is gone, but you are
 still selecting. Use =C-g= to let go of a =v= selection.
@@ -688,9 +690,25 @@ and either direction continues the same run. Starting on =that= in
 "This buffer is for text that is not saved", =m w m w m b= selects
 =text that is= — two words forward, one back. Pressed fresh, with no
 run to continue, each backward key selects exactly what its forward
-partner would; the two differ only in the direction further presses
-grow. The run never changes object mid-flight: =m w= then =m B= marks
-a fresh symbol rather than growing the word selection.
+partner would; the two differ only in the direction further presses grow.
+
+Runs mix objects freely: each press adds one object of its own kind at
+its own end, so =m w m s= grows the word selection forward to the end
+of its sentence, and =m s m b= takes the sentence plus the word before
+it. A backward press whose end sits inside a larger object of its own
+kind first reaches that object's start — =m B= after marking the word
+=two= inside =b-two= completes the symbol backward — and the next
+press adds a whole one.
+
+=M= starts a run from nothing: it anchors an *empty* selection at the
+cursor for the mark keys to grow — =M m w= takes to the end of the
+word, =M m b= a word back, =M m s= to the end of the sentence. Pressed
+again, or with any active selection, =M= drops the selection: the same
+toggle shape as =V= for lines. =C-g= lets go too, as it does for every
+selection. A motion in between ends the run as it
+ends every mark run. Only these eight keys are in the family: =m i=
+and =m a= count levels rather than objects, and a selection started
+with =v= is still never grown by a mark key.
 
 Any other key in between ends the run — =m w l m w= marks a single word
 again rather than two. An active selection made some other way is left

@@ -3512,14 +3512,44 @@ walk point FORWARD, past the mark."
           (should (equal (list bwd prefix (donkey-mark-test--selection))
                          (list bwd prefix expected))))))))
 
-(ert-deftest donkey-a-backward-key-does-not-cross-object-types ()
-  "`m w' then `m B' marks a fresh symbol, not a backward word.
+(ert-deftest donkey-a-mark-run-crosses-object-types ()
+  "Any family member continues a run, adding one object of its own kind.
 
-Each backward key companions only its own forward partner: \"the
-symbol before the current WORD selection\" is not a length the word
-run ever promised, so switching objects starts over instead."
-  (donkey-mark-test--keys "for that is" "w l m w m B"
-    (should (equal (donkey-mark-test--selection) "that"))))
+The reversal of a decision this test used to pin the other way round:
+runs were confined to a forward/backward pair per object, on the
+argument that \"the symbol before the current WORD selection\" is not
+a length the word run promised.  The family's shared selection shape
+makes the meaning plain -- forward keys push the mark by their object,
+backward keys walk point by theirs -- and the pair rule made `m w m s'
+silently discard a selection instead.  See `donkey--mark-run-commands'.
+
+Eight cases, arranged so every member appears once as the first press
+and once as the second: each case pins the SECOND command's family
+list at its `donkey--mark-extending-p' call site, and dropping any
+member from `donkey--mark-run-commands' breaks the case where it goes
+first.
+
+Two of them also pin the mid-object rule: a backward press whose
+region start sits inside a larger object of its own kind first reaches
+THAT object's start -- `m w m B' from the word \"two\" completes the
+symbol backward to \"b-two\", and `m B m P' from mid-paragraph reaches
+the paragraph's start -- and the next press adds a whole one."
+  (dolist (case '(("m S m w" "w w w " sent "Two thing.  Three")
+                  ("m s m b" "w w w " sent "thing.  Two thing.")
+                  ("m b m W" "w w w w " sym "two c-three")
+                  ("m w m B" "w w w w " sym "b-two")
+                  ("m W m s" "w w w " sent "Two thing.")
+                  ("m p m S" "j j " para "Alpha one.\n\nBeta two.\n")
+                  ("m B m P" "j j " para "\nBeta")
+                  ("m P m p" "j j " para "\nBeta two.\n\nGamma three.\n")))
+    (cl-destructuring-bind (keys lead text-key expected) case
+      (let ((text (pcase text-key
+                    ('sent "One thing.  Two thing.  Three thing.")
+                    ('sym "a-one b-two c-three d-four")
+                    ('para "Alpha one.\n\nBeta two.\n\nGamma three.\n"))))
+        (donkey-mark-test--keys text (concat lead keys)
+          (should (equal (cons keys (donkey-mark-test--selection))
+                         (cons keys expected))))))))
 
 (ert-deftest donkey-an-interposed-key-ends-a-backward-run ()
   "Any other key between presses of `m b' starts a fresh selection.
@@ -3604,6 +3634,23 @@ in."
                                (list fwd bwd expected)))))
           (remove-hook 'pre-command-hook sabotage))))))
 
+(ert-deftest donkey-a-continuation-does-not-renormalize-the-sentence-start ()
+  "`m s' growing another object's run leaves the region's start alone.
+
+`donkey-mark-sentence' normalizes onto a sentence start before it
+marks, and on a pure `m s' run that re-normalization was harmless --
+the region start IS a sentence start there.  On a cross-object run it
+is not: from the word \"thing\" inside \"Two thing.\", a continuation
+that still normalized walked the region's start silently back to
+\"Two\", growing the selection at an end the press never named.  The
+extending branch skips normalization, like every sibling; this is the
+case that shows the difference, because the family test
+`donkey-a-mark-run-crosses-object-types' happens to start its own
+`m W m s' case on a word that begins its sentence."
+  (donkey-mark-test--keys "One thing.  Two thing.  Three thing."
+      "w w w w m w m s"
+    (should (equal (donkey-mark-test--selection) "thing."))))
+
 (ert-deftest donkey-mark-sentence-backward-repeats-grow-backward ()
   "`m S m S' takes the sentence at point and the one before it."
   (donkey-mark-test--keys "One thing.  Two thing.  Three thing." "w w w m S m S"
@@ -3620,6 +3667,79 @@ in."
                    (donkey-mark-test--selection))))
     (should (equal backward "Two thing."))
     (should (equal backward forward))))
+
+(ert-deftest donkey-mark-run-toggle-anchors-an-empty-run-the-mark-keys-grow ()
+  "`M' starts from nothing; the next mark key grows from its anchor.
+
+The anchor sits MID-WORD deliberately: growing from the anchor gives
+\"hat\", while a fresh `m w' would normalize onto the word and give
+\"that\" -- the case that tells membership of
+`donkey--mark-run-commands' apart from a fresh mark.  The backward
+case anchors on the word's first letter, where growing back takes the
+word BEFORE the anchor and a fresh `m b' would take the word under
+it."
+  (donkey-mark-test--keys "for text that is" "w w l l M m w"
+    (should (equal (donkey-mark-test--selection) "hat")))
+  (donkey-mark-test--keys "for text that is" "w w l M m b"
+    (should (equal (donkey-mark-test--selection) "text "))))
+
+(ert-deftest donkey-mark-run-toggle-toggles ()
+  "A second `M' cancels the empty run; `M' cancels any selection.
+
+Mirrors `donkey-visual-line-toggle'.  The cancel arm keys on
+`region-active-p' rather than on whose selection it is -- state to
+verify over state to trust -- so a selection built by `m w' or by `v'
+is dropped the same way the toggle's own is.
+
+The first press must leave an ACTIVE empty selection -- activation is
+what makes the second press read as a cancel rather than another
+start, and what announces the run on screen machinery that shows
+regions."
+  (donkey-mark-test--keys "for text that is" "w w l M"
+    (should (region-active-p))
+    (should (= (region-beginning) (region-end))))
+  (donkey-mark-test--keys "for text that is" "w w l M M"
+    (should-not (region-active-p)))
+  (donkey-mark-test--keys "for text that is" "w w l m w M"
+    (should-not (region-active-p)))
+  (donkey-mark-test--keys "for text that is" "v l l M"
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-a-mark-key-after-a-cancel-starts-fresh ()
+  "The cancel press does not hand its run to the next mark key.
+
+`donkey-mark-run-toggle' is a family member, so without the
+`this-command' rename on its cancel branch, the mark a canceled
+selection leaves behind would qualify the next mark key as a
+continuation: `m w M m b' would silently grow the selection the user
+just dropped -- to \"text that\" here, invisible until re-activated --
+instead of marking \"that\" afresh."
+  (donkey-mark-test--keys "for text that is" "w w l m w M m b"
+    (should (equal (donkey-mark-test--selection) "that"))))
+
+(ert-deftest donkey-c-g-drops-a-toggled-run ()
+  "`keyboard-quit' deactivates a toggled run; nothing of ours resists.
+
+Stock behavior, recounted because the docs claim it: `C-g' lets go of
+an `M' run the way it lets go of a `v' selection, alongside the
+toggle's own cancel press.  The function is called directly -- `C-g'
+cannot travel inside a keyboard macro, being Emacs's interrupt
+character before it is a key: it sets `quit-flag' without ever
+becoming an input event -- and the `quit' it signals is caught here
+the way the command loop would catch it.  A live press also leaves
+`keyboard-quit' in `last-command', no family member, so the run ends
+with the region; `donkey-a-key-in-between-ends-a-mark-run' pins that
+rule."
+  (donkey-mark-test--keys "for text that is" "w w l M m w"
+    (condition-case nil (keyboard-quit) (quit nil))
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-a-motion-ends-a-toggled-run ()
+  "`M', a motion, then a mark key marks fresh; the anchor is forgotten.
+
+The rule is `last-command', for the toggle as for every family member."
+  (donkey-mark-test--keys "for text that is" "w w l M l m w"
+    (should (equal (donkey-mark-test--selection) "that"))))
 
 (ert-deftest donkey-mark-extending-p-companions-only-through-the-command-loop ()
   "COMPANIONS extend a run only under the same guards as a repeat.
