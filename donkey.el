@@ -3117,9 +3117,17 @@ right way round, which is nearly every press.
 
 Called from the EXTENDING branches only.  A fresh press builds its own
 layout, and the motions and \`*' must keep theirs, or trading ends
-would trade them straight back."
-  (when (and (mark t) (> (point) (mark)))
-    (let ((start (mark)))
+would trade them straight back.
+
+Every read here is `(mark t)', never `(mark)'.  A run reaches this
+with its region DEACTIVATED whenever a hook took the highlight away
+mid-way -- the case the extending branches re-assert the mark for --
+and plain `mark' refuses to answer for an inactive region unless
+`mark-even-if-inactive' is on.  It is on by default, which is why
+turning it off was all it took to make three of this file's own tests
+signal `mark-inactive' instead of growing the selection."
+  (when (and (mark t) (> (point) (mark t)))
+    (let ((start (mark t)))
       (set-mark (point))
       (goto-char start))))
 
@@ -3277,7 +3285,7 @@ end of the line the cursor happens to sit in."
       (progn
         (donkey--normalize-mark-run)
         (set-mark (save-excursion
-                    (goto-char (mark))
+                    (goto-char (mark t))
                     (move-end-of-line count)
                     (point))))
     (move-end-of-line count)))
@@ -3321,7 +3329,7 @@ backward keys give theirs -- the other direction is \`K'."
           ;; way.  At the end of a buffer with no final newline it
           ;; stops at `point-max', keeping what is selected.
           (set-mark (save-excursion
-                      (goto-char (mark))
+                      (goto-char (mark t))
                       (forward-line n)
                       (point)))
           (message "Line marked"))
@@ -3805,7 +3813,15 @@ matching how `mark-word' itself reads its argument."
     ;; the identity on a plain repeat.
     (when extend
       (donkey--normalize-mark-run))
-    (let ((last-command (if extend this-command last-command)))
+    (let ((last-command (if extend this-command last-command))
+          ;; `mark-word' reads the mark with plain `mark' -- twice, to
+          ;; pick its direction and to measure from -- and a run whose
+          ;; region a hook deactivated arrives here with the mark set
+          ;; and inactive, where plain `mark' refuses to answer unless
+          ;; this is on.  It is on by default; turning it off was all
+          ;; it took to make the extension signal `mark-inactive'
+          ;; instead of growing.  See `donkey--normalize-mark-run'.
+          (mark-even-if-inactive t))
       (mark-word (or count 1) extend)))
   (message "Word marked"))
 
@@ -4009,7 +4025,10 @@ continuation reaches `mark-end-of-sentence's own test."
   ;; native extension fire from the mark instead of collapsing the far
   ;; end back to the first sentence; the binding is the identity on a
   ;; plain repeat.
-  (let ((last-command (if extending this-command last-command)))
+  (let ((last-command (if extending this-command last-command))
+        ;; See `donkey-mark-word': `mark-end-of-sentence' reads the mark
+        ;; with plain `mark' too, and a deactivated run must still grow.
+        (mark-even-if-inactive t))
     (condition-case nil
         (mark-end-of-sentence (max 1 (or count 1)))
       ;; A count running past the last sentence marks what there is and
@@ -4155,7 +4174,7 @@ marks nothing, matching how `forward-paragraph' reads its argument."
           (donkey--normalize-mark-run)
           (set-mark (save-excursion
                       (let ((start (point)))
-                        (goto-char (mark))
+                        (goto-char (mark t))
                         (forward-paragraph n)
                         (donkey--absorb-paragraph-blank start n)
                         (point)))))
@@ -4238,7 +4257,7 @@ matching how `forward-sexp' reads its argument."
       (let ((n (or count 1)))
         (donkey--normalize-mark-run)
         (set-mark (save-excursion
-                    (goto-char (mark))
+                    (goto-char (mark t))
                     (forward-sexp n)
                     (when (> n 0)
                       (donkey--trim-symbol-punctuation))

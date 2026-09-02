@@ -3670,6 +3670,57 @@ Staged from `pre-command-hook' for the reason the backward test gives:
             (should (equal (donkey-mark-test--selection) "that is"))))
       (remove-hook 'pre-command-hook sabotage))))
 
+(ert-deftest donkey-a-deactivated-run-grows-whatever-mark-reads ()
+  "Every key that revives a deactivated run does so with the mark off.
+
+The extending branches exist partly to bring back a region some hook
+took the highlight from, and they read the mark to do it.  Plain `mark'
+refuses to answer for an INACTIVE region unless `mark-even-if-inactive'
+is on -- it is on by default, so turning it off was all it took to make
+three of this file\'s tests signal `mark-inactive' instead of growing:
+`donkey--normalize-mark-run' and four branches asked with `mark', and
+the two native extensions donkey borrows, `mark-word' and
+`mark-end-of-sentence', ask with `mark' inside where donkey cannot
+reach and are handed the binding instead.
+
+Run over BOTH values, since the point is that the answer does not
+depend on the setting.  The staging is the one
+donkey-a-backward-press-revives-a-deactivated-run explains:
+`pre-command-hook' fires while the run is still live, and
+`last-command' cannot survive a second `execute-kbd-macro'."
+  (dolist (inactive '(t nil))
+    (dolist (case '(("w w l m b m w" donkey-mark-word
+                     "for text that is not saved" "that is")
+                    ("w w l m w m b" donkey-mark-word-backward
+                     "for text that is not saved" "text that")
+                    ("w w l m W m W" donkey-mark-symbol
+                     "for text that is not saved" "that is")
+                    ("w w w m S m s" donkey-mark-sentence
+                     "One thing here.  Two thing there.  Three thing."
+                     "One thing here.  Two thing there.")
+                    ("w w l m p m p" donkey-mark-paragraph
+                     "for text that is not saved"
+                     "for text that is not saved")
+                    ("M w J" donkey-mark-run-line-forward
+                     "one\ntwo\nthree\n" "one\n")
+                    ("w w l M w g h" donkey-mark-run-line-start
+                     "for text that is not saved" "for text that")
+                    ("w w l M w g l" donkey-mark-run-line-end
+                     "for text that is not saved" "that is not saved")))
+      (cl-destructuring-bind (keys cmd text expected) case
+        (let ((sabotage (lambda ()
+                          (when (eq this-command cmd)
+                            (deactivate-mark))))
+              (mark-even-if-inactive inactive))
+          (unwind-protect
+              (progn
+                (add-hook 'pre-command-hook sabotage)
+                (donkey-mark-test--keys text keys
+                  (should (equal (list inactive keys
+                                       (donkey-mark-test--selection))
+                                 (list inactive keys expected)))))
+            (remove-hook 'pre-command-hook sabotage)))))))
+
 (ert-deftest donkey-a-continuation-does-not-renormalize-the-sentence-start ()
   "`m s' growing another object's run leaves the region's start alone.
 
