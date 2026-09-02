@@ -4229,6 +4229,112 @@ must refuse and the region must stay gone."
     (should-error (donkey-mark-run-exchange) :type 'user-error)
     (should-not (region-active-p))))
 
+(ert-deftest donkey-an-object-key-trades-the-ends-back-before-growing ()
+  "After `*', an object key grows the run instead of destroying it.
+
+The object keys own fixed ends -- mark forward, point backward -- so
+a swap is not theirs to honor.  Left unhandled it was not merely
+awkward: `M w * w' pushed the mark forward from the region\'s own
+START and collapsed the selection to nothing, still reporting \"Word
+marked\"; `M w * s' replaced it with a span on the other side of
+point.  `donkey--normalize-mark-run' trades the ends back first, so
+each of the eight reads exactly as its unswapped spelling does --
+asserted against that spelling, key by key, rather than against
+literals that could drift apart from it.
+
+The motions keep the swap, which is what `*' is for; those are pinned
+by donkey-star-trades-the-end-the-motions-hold."
+  (dolist (key '("w" "b" "W" "B" "s" "S" "J" "K"))
+    (let ((swapped (donkey-mark-test--keys "for text that is not saved"
+                       (format "w w l M w * %s" key)
+                     (donkey-mark-test--selection)))
+          (plain (donkey-mark-test--keys "for text that is not saved"
+                     (format "w w l M w %s" key)
+                   (donkey-mark-test--selection))))
+      (should (equal (list key swapped) (list key plain)))))
+  ;; The paragraph pair is asserted on a buffer with paragraphs to
+  ;; cross, and through the `m' prefix its keys keep inside the mode.
+  (dolist (key '("m p" "m P"))
+    (let ((swapped (donkey-mark-test--keys
+                       "Alpha one.\n\nBeta two.\n\nGamma three.\n"
+                       (format "j j M w * %s" key)
+                     (donkey-mark-test--selection)))
+          (plain (donkey-mark-test--keys
+                     "Alpha one.\n\nBeta two.\n\nGamma three.\n"
+                     (format "j j M w %s" key)
+                   (donkey-mark-test--selection))))
+      (should (equal (list key swapped) (list key plain)))))
+  ;; Two literals, so the pairs cannot agree on something wrong.
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w * w"
+    (should (equal (donkey-mark-test--selection) "that is")))
+  (donkey-mark-test--keys "Alpha one.\n\nBeta two.\n\nGamma three.\n"
+      "j j M w * m p"
+    (should (equal (donkey-mark-test--selection) "Beta two.\n\n"))))
+
+(ert-deftest donkey-a-crossing-motion-leaves-a-run-the-keys-can-grow ()
+  "A motion may walk point past the mark; the object keys still grow.
+
+`donkey-mark-run-toggle' promises the freeform a `v' region has --
+\"a motion may even cross the mark, passing the selection through
+empty before the object keys grow it again\" -- and before
+`donkey--normalize-mark-run' the second half of that was not true.
+With point six characters past the mark, `w' pushed the mark forward
+from BEHIND point and left \"s\", a span with nothing to do with what
+was on screen; `b' walked point back into the region and shrank it to
+\" \".  Both now grow the visible selection from its far end."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w C-u 6 l"
+    (should (equal (donkey-mark-test--selection) " i")))
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w C-u 6 l w"
+    (should (equal (donkey-mark-test--selection) " is")))
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w C-u 6 l b"
+    (should (equal (donkey-mark-test--selection) "that i"))))
+
+(ert-deftest donkey-a-negative-count-leaves-a-run-the-next-key-grows ()
+  "A count reaching behind point still leaves a run that grows forward.
+
+`donkey-mark-word' reads a negative COUNT as marking the words BEFORE
+the one point normalizes onto, which finishes with the mark at the
+selection\'s start -- the family layout inside out.  The next `w' then
+walked the mark forward from there and ate into the selection instead
+of extending it.  Pinned in both spellings, the mode\'s and the
+prefix\'s, since the count belongs to the mark command rather than to
+the mode."
+  (donkey-mark-test--keys "for text that is not saved" "w w w l M C-u -3 w"
+    (should (equal (donkey-mark-test--selection) "for text that ")))
+  (donkey-mark-test--keys "for text that is not saved" "w w w l M C-u -3 w w"
+    (should (equal (donkey-mark-test--selection) "for text that is")))
+  (donkey-mark-test--keys "for text that is not saved"
+      "w w w l C-u -3 m w m w"
+    (should (equal (donkey-mark-test--selection) "for text that is"))))
+
+(ert-deftest donkey-normalizing-a-run-touches-only-an-inverted-one ()
+  "`donkey--normalize-mark-run\' is a no-op unless the ends are reversed.
+
+The helper runs on every extending press, so what it does when there
+is nothing to do matters as much as the swap itself: a run already
+laid out point-at-start must come through untouched, mark included,
+or every ordinary press would re-assert a mark it had no business
+touching.  With no mark at all there is nothing to compare and
+nothing to move."
+  (with-temp-buffer
+    (insert "alpha beta gamma")
+    ;; Already the right way round: nothing moves.
+    (goto-char 7)
+    (push-mark 11 t t)
+    (donkey--normalize-mark-run)
+    (should (equal (list (point) (mark)) (list 7 11)))
+    ;; Inverted: the ends trade.
+    (goto-char 11)
+    (set-mark 7)
+    (donkey--normalize-mark-run)
+    (should (equal (list (point) (mark)) (list 7 11)))
+    ;; No mark: nothing to do, and no error.
+    (deactivate-mark)
+    (set-mark nil)
+    (goto-char 3)
+    (donkey--normalize-mark-run)
+    (should (equal (list (point) (mark t)) (list 3 nil)))))
+
 (ert-deftest donkey-a-rectangle-is-canceled-not-adopted ()
   "`M' over a rectangle drops it; there is no forward end to own.
 

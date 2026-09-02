@@ -3062,6 +3062,37 @@ marking tests ran first."
            (region-active-p))
        t))
 
+(defun donkey--normalize-mark-run ()
+  "Put point back at the selection's start and the mark at its far end.
+
+The layout every object mark command relies on: point at the start,
+mark at the forward end, so the forward keys grow a run by pushing the
+mark and the backward keys by walking point.  Three things break it,
+all of them deliberately, and all of them leaving the next object key
+holding the selection by the wrong ends:
+
+\`*' trades the ends so the motions adjust the other one, which is
+what it is for.  A motion may walk point PAST the mark -- the freeform
+a `v' region has always had.  And a negative count reaches behind
+point, so `C-u -3 m w' finishes with the mark at the START.
+
+In all three the object key that followed did not grow the selection,
+it destroyed it: `M w * w' pushed the mark forward from the region's
+own start and collapsed the selection to nothing, while still
+reporting \"Word marked\"; `M w * s' replaced it with a span on the
+other side of point.  Swapping back first makes every object key mean
+the one thing it means everywhere else, and costs the swap only when
+there is one to undo -- this is a no-op on a run already laid out the
+right way round, which is nearly every press.
+
+Called from the EXTENDING branches only.  A fresh press builds its own
+layout, and the motions and \`*' must keep theirs, or trading ends
+would trade them straight back."
+  (when (and (mark t) (> (point) (mark)))
+    (let ((start (mark)))
+      (set-mark (point))
+      (goto-char start))))
+
 (defun donkey-mark-run-cancel ()
   "Drop the active selection and let mark run mode lapse.
 
@@ -3181,6 +3212,7 @@ backward keys give theirs -- the other direction is \`K'."
   (let ((n (max 1 (or count 1))))
     (if (donkey--mark-extending-p donkey--mark-run-commands)
         (progn
+          (donkey--normalize-mark-run)
           (set-mark (save-excursion
                       (goto-char (mark))
                       (end-of-line (if (eolp) (1+ n) n))
@@ -3204,6 +3236,7 @@ COUNT lines; a COUNT below 1 is treated as 1."
   (let ((n (max 1 (or count 1))))
     (if (donkey--mark-extending-p donkey--mark-run-commands)
         (progn
+          (donkey--normalize-mark-run)
           (if (bolp)
               (forward-line (- n))
             (beginning-of-line)
@@ -3227,11 +3260,13 @@ move point and point sits there -- this press trades ends, putting
 point (and so \`h' \`j' \`k' \`l', `g h', `g l') at the other one.
 Press again to trade back.
 
-The OBJECT keys are untouched by the swap -- they own fixed ends,
-mark forward and point backward, wherever the cursor sits -- so after
-a swap `w' grows what is now the mark end: the selection's start.
-Growing by objects reads best from the unswapped orientation; swap
-back first.
+The OBJECT keys own fixed ends -- mark forward, point backward -- so
+a swap is not theirs to honor: they call `donkey--normalize-mark-run'
+and trade back before they grow.  `M w * w' therefore selects what
+`M w w' selects.  It used to push the mark forward from the region's
+own start and collapse the selection to nothing while still reporting
+\"Word marked\", which was the swap's one sharp edge; growing by
+objects now reads the same whichever way round the ends are.
 
 A member of `donkey--mark-run-motions', so the run carries on and the
 visible-run guard applies to what follows.  Refuses without an active
@@ -3460,7 +3495,10 @@ which the visible selection already repeats -- see
 run, adjusting the selection's near end the way `j'/`k' adjust a
 visual-line session; a motion may even cross the mark, passing the
 selection through empty before the object keys grow it again -- the
-freeform a `v' region has always had.
+freeform a `v' region has always had.  The object keys really do grow
+it again: whichever way round a motion, a \`*' or a negative count
+has left the ends, `donkey--normalize-mark-run' puts them back before
+the next object is added.
 
 The mode needs no explicit exit: any key outside the mode's own lets
 it lapse and then does its ordinary job -- `M w w d' selects two
@@ -3574,6 +3612,8 @@ matching how `mark-word' itself reads its argument."
     ;; the run is live, is what `donkey-mark-sentence' does for
     ;; `mark-end-of-sentence' and for the same reason; the binding is
     ;; the identity on a plain repeat.
+    (when extend
+      (donkey--normalize-mark-run))
     (let ((last-command (if extend this-command last-command)))
       (mark-word (or count 1) extend)))
   (message "Word marked"))
@@ -3618,6 +3658,7 @@ of the buffer."
   (let ((n (max 1 (or count 1))))
     (if (donkey--mark-extending-p donkey--mark-run-commands)
         (progn
+          (donkey--normalize-mark-run)
           (funcall motion n)
           (activate-mark)
           (message "%s marked" label))
@@ -3708,6 +3749,8 @@ continuation reaches `mark-end-of-sentence's own test."
   (donkey--ensure-non-rectangle-selection)
   (let ((origin (point))
         (extending (donkey--mark-extending-p donkey--mark-run-commands)))
+   (when extending
+     (donkey--normalize-mark-run))
    ;; A fresh press normalizes onto a sentence start; a run in progress
    ;; must not, or growing a WORD selection with `m s' would silently
    ;; walk the region's start back to its sentence's start as a side
@@ -3917,12 +3960,14 @@ marks nothing, matching how `forward-paragraph' reads its argument."
         ;; paragraph gave one blank fewer than `C-u 2 m p', because only
         ;; the fresh branch below knew to absorb one.  Caught by the
         ;; test named donkey-repeating-a-mark-key-equals-a-count.
-        (set-mark (save-excursion
-                    (let ((start (point)))
-                      (goto-char (mark))
-                      (forward-paragraph n)
-                      (donkey--absorb-paragraph-blank start n)
-                      (point))))
+        (progn
+          (donkey--normalize-mark-run)
+          (set-mark (save-excursion
+                      (let ((start (point)))
+                        (goto-char (mark))
+                        (forward-paragraph n)
+                        (donkey--absorb-paragraph-blank start n)
+                        (point)))))
       ;; Point ends at the START, mark at the end.  It used to be the
       ;; other way round, which made this the only mark command that
       ;; inverted native: `mark-paragraph' finishes with
@@ -4000,6 +4045,7 @@ matching how `forward-sexp' reads its argument."
       ;; extend branch, and the punctuation trim has to run again because
       ;; the new end is a new symbol with its own possible trailing "."
       (let ((n (or count 1)))
+        (donkey--normalize-mark-run)
         (set-mark (save-excursion
                     (goto-char (mark))
                     (forward-sexp n)

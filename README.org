@@ -724,8 +724,10 @@ mode: fresh, either marks the current line, and further presses grow
 by whole lines — =J= at the bottom end, =K= at the top, a mark
 mid-line completing its own line first. =*= swaps point and mark, so
 the motions adjust the selection's *other* end — vi's =o= in visual
-mode; the object keys keep their fixed ends, so swap back before
-growing by objects. Pressed with a selection already active — a
+mode. The object keys own fixed ends and simply trade back before they
+grow, so =M w * w= selects what =M w w= selects; the same goes for a
+motion that has walked point past the mark, and for a selection a
+negative count left inside out. Pressed with a selection already active — a
 =V= session, a =v= region, or one the =m=-prefixed keys built — =M=
 *adopts* it into the mode rather than dropping it: =m w M w= extends
 the marked word, and a =V J= selection keeps its lines while the
