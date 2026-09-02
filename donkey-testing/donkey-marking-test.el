@@ -3796,22 +3796,69 @@ for."
     (should (= (current-column) 6))))
 
 (ert-deftest donkey-g-h-and-g-l-reach-the-line-ends-in-the-mode ()
-  "`g h' and `g l' jump to the line's ends without ending the run.
+  "`g h' and `g l' stretch the run to the line's ends and add up.
 
-Wrapped like the letter motions, and the run carries on across them:
-after `M w g h' the selection runs from the line's start to the
-word's end, and a `w' after that still EXTENDS to the whole line's
-text.  `g l' shows the freeform the motions share with `v': the jump
-may cross the mark, and the region between mark and point is what
-shows.  Unmatched `g' sequences are deliberately NOT shadowed -- the
-transient map defines only these two, so `g q' still resolves to its
-normal-state command and lapses the mode like any foreign key."
+The pair owns FIXED ENDS -- `g h' the selection's start, `g l' its
+end -- where \`h' \`j' \`k' \`l' all move point.  Both moved point
+once, which made them cancel each other: `M w g h' reached back to
+the line's start, and the `g l' after it dragged point across the
+mark to the line's end and left the beginning behind, leaving \" is\"
+where the whole line was asked for.  Now they add, in either order,
+and a `w' after either still EXTENDS.
+
+With nothing selected the key is the plain motion it is outside the
+mode, which is what `M g l w' relies on.  Unmatched `g' sequences are
+deliberately NOT shadowed -- the transient map defines only these
+two, so `g q' still resolves to its normal-state command and lapses
+the mode like any foreign key."
   (donkey-mark-test--keys "for text that is" "w w l M w g h"
     (should (equal (donkey-mark-test--selection) "for text that")))
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w g l"
+    (should (equal (donkey-mark-test--selection) "that is")))
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w g h g l"
+    (should (equal (donkey-mark-test--selection) "for text that is")))
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w g l g h"
+    (should (equal (donkey-mark-test--selection) "for text that is")))
   (donkey-mark-test--keys "for text that is" "w w l M w g h w"
     (should (equal (donkey-mark-test--selection) "for text that is")))
-  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w g l"
-    (should (equal (donkey-mark-test--selection) " is")))
+  ;; `g l' pushes the mark, so it measures from the end the selection
+  ;; already reaches rather than from the cursor, and cannot shrink a
+  ;; run that spans lines.
+  (donkey-mark-test--keys "one\ntwo\nthree\nfour\n" "M J J g l"
+    (should (equal (donkey-mark-test--selection) "one\ntwo\nthree")))
+  ;; Fresh, both are still motions: nothing is marked, point moves.
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M g l"
+    (should-not (region-active-p))
+    (should (= (point) (line-end-position))))
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M g h w"
+    (should (equal (donkey-mark-test--selection) "for")))
+  ;; A swap is not theirs to honor either -- they own fixed ends, so
+  ;; they trade back first, exactly as the object keys do.
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w * g h"
+    (should (equal (donkey-mark-test--selection) "for text that")))
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w * g l"
+    (should (equal (donkey-mark-test--selection) "that is")))
+  ;; And both bring a region back that a hook deactivated mid-run: the
+  ;; extending branch is reached because `last-command' names a family
+  ;; member that is no motion, so the visible-run guard does not apply,
+  ;; and a selection growing invisibly is the thing that guard exists
+  ;; to prevent everywhere else.  Staged from `pre-command-hook' for
+  ;; the reason donkey-a-backward-press-revives-a-deactivated-run
+  ;; gives: `last-command' cannot survive a second `execute-kbd-macro'.
+  (dolist (case '(("g h" donkey-mark-run-line-start "for text that")
+                  ("g l" donkey-mark-run-line-end "that is")))
+    (cl-destructuring-bind (keys cmd expected) case
+      (let ((sabotage (lambda ()
+                        (when (eq this-command cmd)
+                          (deactivate-mark)))))
+        (unwind-protect
+            (progn
+              (add-hook 'pre-command-hook sabotage)
+              (donkey-mark-test--keys "for text that is\nnot saved\n"
+                  (concat "w w l M w " keys)
+                (should (equal (list keys (donkey-mark-test--selection))
+                               (list keys expected)))))
+          (remove-hook 'pre-command-hook sabotage)))))
   (donkey-mark-test--keys "for text that is" "w w l M w"
     (should (eq (key-binding (kbd "g q")) 'fill-region))
     (should (eq (key-binding (kbd "g h")) 'donkey-mark-run-line-start))))

@@ -722,9 +722,12 @@ grow the run by paragraphs. Lettering them cost the mode the one
 ordinary edit it could not otherwise make — =d=, =y=, =x= and =c= all
 act on a mark run selection, and only pasting had nowhere to go. =h j k l= move
 point without ending the run, adjusting the selection's near end the
-way =j=/=k= adjust a =V= session, and =g h= / =g l= reach the line's
-ends the same way; other =g= keys are not shadowed and end the mode
-like any foreign key. =J= and =K= make lines a growable object of the
+way =j=/=k= adjust a =V= session. =g h= and =g l= reach the line's
+ends, and unlike =h j k l= they own an end apiece rather than both
+moving point, so they add up: =M w g h g l= selects the whole line's
+text, in either order. With nothing selected yet they are still plain
+motions, for placing the cursor before marking. Other =g= keys are
+not shadowed and end the mode like any foreign key. =J= and =K= make lines a growable object of the
 mode: fresh, either marks the current line, and further presses grow
 by whole lines — =J= at the bottom end, =K= at the top, a mark
 mid-line completing its own line first. Whole lines means the newline

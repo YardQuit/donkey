@@ -2962,11 +2962,18 @@ one before marking it."
     donkey-mark-run-down donkey-mark-run-up
     donkey-mark-run-line-start donkey-mark-run-line-end
     donkey-mark-run-exchange)
-  "The mark run mode motions: point adjusters, not object marks.
+  "The mark run mode motions: the keys that are not object marks.
 
 `donkey-mark-run-exchange' rides in this list too: it moves point
 \(to the other end) and needs the same visible-run guard -- a swap
 beside a stale mark would be as conjured as a motion's continuation.
+
+`donkey-mark-run-line-start' and `donkey-mark-run-line-end' are here
+for the guard rather than for the description: with a run in progress
+they own an END apiece and stretch it to the line's edge, the way the
+object keys own theirs, and only a bare press with nothing selected
+is the plain motion the key is outside the mode.  Either way a stale
+mark must not be grown from, which is what membership buys.
 
 Members of `donkey--mark-run-commands', so a run carries on across
 them -- but `donkey--mark-extending-p' holds them to a stricter test
@@ -3174,20 +3181,56 @@ See `donkey-mark-run-left' for why the mode wraps its motions."
       (previous-line count))))
 
 (defun donkey-mark-run-line-start (&optional count)
-  "Move point to the start of the line without ending the mark run.
+  "Stretch the run back to the line start, or move there.
 With COUNT, the start of the line COUNT - 1 lines down.  Stands in
 for `g h'; see `donkey-mark-run-left' for why the mode wraps its
-motions."
+motions.
+
+The pair owns FIXED ENDS, the way the object keys do rather than the
+way \`h' \`j' \`k' \`l' do: this one takes the selection'''s start,
+`donkey-mark-run-line-end' its end.  They were plain motions once,
+and both moved POINT, which made them cancel each other -- `M w g h'
+reached back to the line'''s start, and the `g l' after it dragged
+point across the mark to the line'''s end and left the beginning
+behind, so the pair could never build the whole line.  Owning an end
+apiece, they add: `M w g h g l' is the line'''s text from one edge to
+the other, in either order.
+
+With no run in progress the key is still just a motion.  Nothing is
+lost by that -- `v g l' has always been the way to select to the
+line'''s end from scratch -- and it keeps the pair usable for placing
+the cursor before marking, which is what `M g l w' does."
   (interactive "p")
-  (beginning-of-line count))
+  (if (donkey--mark-extending-p donkey--mark-run-commands)
+      (progn
+        (donkey--normalize-mark-run)
+        (beginning-of-line count)
+        ;; Moving point activates nothing; the same re-assertion the
+        ;; backward object keys make, for the same reason.
+        (activate-mark))
+    (beginning-of-line count)))
 
 (defun donkey-mark-run-line-end (&optional count)
-  "Move point to the end of the line without ending the mark run.
+  "Stretch the run forward to the line end, or move there.
 With COUNT, the end of the line COUNT - 1 lines down.  Stands in for
-`g l'; see `donkey-mark-run-left' for why the mode wraps its
-motions."
+`g l'; see `donkey-mark-run-left' for why the mode wraps its motions,
+and `donkey-mark-run-line-start' for why the pair owns fixed ends.
+
+This one pushes the MARK, the forward end, so it cannot shrink what
+is selected: the end of a line is never behind the position it is
+measured from.  Measured from the MARK rather than from point, which
+is what makes it the forward end'''s key -- on a run already spanning
+lines it reaches the end of the line the selection stops on, not the
+end of the line the cursor happens to sit in."
   (interactive "p")
-  (move-end-of-line count))
+  (if (donkey--mark-extending-p donkey--mark-run-commands)
+      (progn
+        (donkey--normalize-mark-run)
+        (set-mark (save-excursion
+                    (goto-char (mark))
+                    (move-end-of-line count)
+                    (point))))
+    (move-end-of-line count)))
 
 
 (defun donkey-mark-run-line-forward (&optional count)
@@ -3563,7 +3606,10 @@ which the visible selection already repeats -- see
 run, adjusting the selection's near end the way `j'/`k' adjust a
 visual-line session; a motion may even cross the mark, passing the
 selection through empty before the object keys grow it again -- the
-freeform a `v' region has always had.  The object keys really do grow
+freeform a `v' region has always had.  `g h' and `g l' are the
+exception among the motions: with a run live they own an end apiece
+and stretch it to the line's edge, so `M w g h g l' takes the whole
+line's text rather than each undoing the other.  The object keys really do grow
 it again: whichever way round a motion, a \`*' or a negative count
 has left the ends, `donkey--normalize-mark-run' puts them back before
 the next object is added.
