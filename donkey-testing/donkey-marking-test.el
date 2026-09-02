@@ -3296,14 +3296,10 @@ full suite."
      ;; further command to consult it on.  Killing the buffer does not
      ;; help -- `overriding-terminal-local-map' is terminal-wide -- so
      ;; the next test's bare "w" would MARK instead of moving.  In live
-     ;; use the mode self-heals on any other key; between tests, pop it
-     ;; here.  A no-op when the map was never pushed.
-     (internal-pop-keymap donkey-mark-run-mode-map
-                          'overriding-terminal-local-map)
-     ;; The hint hook leaves through the transient map's ON-EXIT, which
-     ;; a manual pop bypasses; remove it here for the same reason the
-     ;; map is popped.  A no-op when the mode never ran.
-     (remove-hook 'post-command-hook #'donkey--mark-run-mode-show-hint)
+     ;; use `donkey--mark-run-mode-post-command' catches this on the
+     ;; command that ran the macro; there is no such command here, so
+     ;; the mode is taken down directly.  A no-op when it never ran.
+     (donkey--mark-run-exit)
      (donkey-mode -1)))
 
 (defun donkey-mark-test--selection ()
@@ -3648,6 +3644,31 @@ in."
                                (list fwd bwd expected)))))
           (remove-hook 'pre-command-hook sabotage))))))
 
+(ert-deftest donkey-a-forward-word-press-grows-a-deactivated-run ()
+  "`m w' onto an invisible run grows it rather than starting over.
+
+The mirror of `donkey-a-backward-press-revives-a-deactivated-run', on
+the one member that does not grow the region itself: `donkey-mark-word'
+hands the job to `mark-word', whose ALLOW-EXTEND branch has its own
+test -- `last-command' equal to `this-command', or a visible region
+beginning at point -- and a COMPANION press onto a run some hook
+deactivated satisfies neither.  It pushed a fresh mark there, quietly
+losing the word `m b' had just added.  The press is presented to it as
+a repeat instead, exactly when `donkey--mark-extending-p' says the run
+is live.
+
+Staged from `pre-command-hook' for the reason the backward test gives:
+`last-command' cannot survive a second `execute-kbd-macro'."
+  (let ((sabotage (lambda ()
+                    (when (eq this-command 'donkey-mark-word)
+                      (deactivate-mark)))))
+    (unwind-protect
+        (progn
+          (add-hook 'pre-command-hook sabotage)
+          (donkey-mark-test--keys "for text that is not saved" "w w l m b m w"
+            (should (equal (donkey-mark-test--selection) "that is"))))
+      (remove-hook 'pre-command-hook sabotage))))
+
 (ert-deftest donkey-a-continuation-does-not-renormalize-the-sentence-start ()
   "`m s' growing another object's run leaves the region's start alone.
 
@@ -3761,7 +3782,17 @@ for."
   ;; `forward-line', as the wrappers' docstrings promise: from column 2
   ;; of "y two", `k' lands on column 2 of "x one".
   (donkey-mark-test--keys "x one\ny two\n" "j l l M w k"
-    (should (equal (donkey-mark-test--selection) "one\ny two"))))
+    (should (equal (donkey-mark-test--selection) "one\ny two")))
+  ;; And it survives a SECOND press over a line too short to hold it,
+  ;; which is the whole of what `donkey--line-move-last-command' buys:
+  ;; `line-move' keeps the starting column only while `last-command'
+  ;; names one of the two motions the wrappers stand in for, so without
+  ;; the binding each press reset it and the run walked down the ragged
+  ;; edge.  Pinned against the plain `j j' it must agree with.
+  (donkey-mark-test--keys "alpha beta\nxy\ngamma delta\n" "M C-u 6 l j j"
+    (should (= (current-column) 6)))
+  (donkey-mark-test--keys "alpha beta\nxy\ngamma delta\n" "C-u 6 l j j"
+    (should (= (current-column) 6))))
 
 (ert-deftest donkey-g-h-and-g-l-reach-the-line-ends-in-the-mode ()
   "`g h' and `g l' jump to the line's ends without ending the run.
@@ -3809,6 +3840,29 @@ the letters are the family commands, so nothing new has to."
       "w w w w M w s"
     (should (equal (donkey-mark-test--selection) "thing."))))
 
+(ert-deftest donkey-a-blank-run-grows-instead-of-being-refused ()
+  "`M J s' on a blank line extends the run rather than dropping it.
+
+`donkey-mark-sentence' and `donkey-mark-paragraph' both refuse a
+selection holding nothing but whitespace, which is right for a FRESH
+press -- an empty buffer has no sentence to mark, and the motions
+would otherwise \"mark\" the blank silently.  On a continuation it was
+wrong twice over: the run may legitimately hold blank, `J' on an
+indented empty line being one way to get there, and the refusal
+deactivated the mark, so a key asked to GROW the selection threw it
+away instead.  The siblings simply extend; these two now do too.
+
+A fresh press in a buffer of nothing but whitespace must still
+report, which is the guard the continuation case had to be carved out
+of rather than deleted."
+  (donkey-mark-test--keys "Word.\n\n   \n" "j j M J s"
+    (should (equal (donkey-mark-test--selection) "   \n")))
+  (donkey-mark-test--keys "Word.\n\n   \n" "j j M J p"
+    (should (equal (donkey-mark-test--selection) "   \n")))
+  (donkey-mark-test--keys "   \n\n" "M"
+    (should-error (donkey-mark-sentence) :type 'user-error)
+    (should-error (donkey-mark-paragraph) :type 'user-error)))
+
 (ert-deftest donkey-mark-run-mode-cancels-on-m-and-on-c-g ()
   "`M' inside the mode drops selection and mode; `keyboard-quit' too.
 
@@ -3842,7 +3896,7 @@ called as the command loop would; a live press also leaves it in
   "The mode reminder is re-shown after every letter of the run.
 
 A single flash at entry vanished under the first \"Word marked\";
-`donkey--mark-run-mode-show-hint' paints the reminder back after each
+`donkey--mark-run-mode-post-command' paints the reminder back after each
 family command, and after nothing else -- during count entry the echo
 area belongs to the keystroke echo, so across `M', a `C-u 3' and a
 `w' the hint must appear exactly twice: at entry and after the
@@ -3870,14 +3924,69 @@ area for `current-message' to read."
 (ert-deftest donkey-the-hint-hook-leaves-with-the-mode ()
   "A key that lapses the mode takes the reminder hook with it.
 
-The hook rides `post-command-hook' globally; the transient map's
-ON-EXIT removes it, so whichever key ends the mode -- a delete here,
-since the motions joined the mode's own keys -- must leave the hook
-gone, or every later mark command in the session would re-paint a
-reminder for a mode that is over."
+The hook rides `post-command-hook' globally; `donkey--mark-run-exit'
+removes it, reached as the transient map's ON-EXIT, so whichever key
+ends the mode -- a delete here, since the motions joined the mode's
+own keys -- must leave the hook gone, or every later mark command in
+the session would re-paint a reminder for a mode that is over.
+
+The map's ON-EXIT is asserted separately, by calling the exit
+function the way the paths with no following command reach it --
+`set-transient-map-timeout' deactivates on an idle timer, where
+`donkey--mark-run-mode-post-command' never fires to notice."
   (donkey-mark-test--keys "for text that is" "w w l M w d"
-    (should-not (memq #'donkey--mark-run-mode-show-hint
+    (should-not (memq #'donkey--mark-run-mode-post-command
+                      post-command-hook)))
+  (donkey-mark-test--keys "for text that is" "w w l M w"
+    (funcall donkey--mark-run-exit-function)
+    (should-not (memq #'donkey--mark-run-mode-post-command
                       post-command-hook))))
+
+(ert-deftest donkey-a-command-that-outlived-the-map-ends-the-mode ()
+  "The reminder hook disarms a mode the transient map cannot.
+
+`set-transient-map' consults `donkey--mark-run-mode-keep-p' from
+`pre-command-hook', which is one command too late for anything that
+armed the map while it was already running: a keyboard macro ending
+on `M' and a letter arms the mode inside `kmacro-end-and-call-macro',
+whose own key lookup happened long before, so the mode outlived the
+macro and the user's next bare `w' MARKED instead of moving.
+`donkey--mark-run-mode-post-command' ends it on any command that is
+no family member, no part of a count, and not the toggle itself.
+
+Staged by calling the hook with the outer command's name bound, the
+way the command loop would: `execute-kbd-macro' from Lisp runs no
+outer command to name."
+  (donkey-mark-test--keys "for text that is" "w w l M w"
+    (should (eq (key-binding "w") 'donkey-mark-word))
+    (let ((this-command 'kmacro-end-and-call-macro))
+      (donkey--mark-run-mode-post-command))
+    (should (eq (key-binding "w") 'forward-word))
+    (should-not (memq #'donkey--mark-run-mode-post-command
+                      post-command-hook))))
+
+(ert-deftest donkey-a-repainted-reminder-is-never-logged ()
+  "The reminders both modes keep up leave *Messages* alone.
+
+`donkey--repaint-hint' is called after every motion of a live session
+or run, so a logged reminder would fill the log with copies of one
+line and bury whatever was worth reading there.
+
+Asserted at the call rather than against the log's own size: the
+whole suite runs once inside a live frame under a stubbed `message',
+where nothing reaches *Messages* to be counted and a size check would
+pass for the wrong reason.  What the repaint owes is the binding, so
+the binding is what the stub reads -- with a flag beside it, since a
+repaint that messaged nothing at all would otherwise look clean."
+  (let ((message-log-max 1000) called logging)
+    (cl-letf (((symbol-function 'message)
+               (lambda (&rest _)
+                 (setq called t
+                       logging message-log-max)
+                 nil)))
+      (donkey--repaint-hint "donkey reminder probe"))
+    (should called)
+    (should-not logging)))
 
 (ert-deftest donkey-visual-line-keeps-its-hint-visible ()
   "The visual-line reminder is repainted after the session's motions.
@@ -3889,7 +3998,9 @@ after `J' -- which also catches the hook falling out of
 `donkey--global-hooks', since entry alone still shows it once.  And a
 message painted mid-session must be REPLACED by the next motion's
 repaint: after a foreign `message' call, one `j' brings the reminder
-back."
+back -- and so does a `g h', the line and buffer jumps having joined
+`donkey--visual-line-hint-motions' after a session that used one went
+quiet for the rest of its life."
   (let (msgs)
     (cl-letf (((symbol-function 'message)
                (lambda (fmt &rest args)
@@ -3907,6 +4018,15 @@ back."
       (donkey-mark-test--keys "one\ntwo\nthree\nfour\n" "V J"
         (message "foreign")
         (execute-kbd-macro (kbd "j"))))
+    (should (equal (car msgs) donkey--visual-line-hint)))
+  (let (msgs)
+    (cl-letf (((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (when fmt (push (apply #'format fmt args) msgs))
+                 nil)))
+      (donkey-mark-test--keys "one two\nthree four\nfive\n" "V J"
+        (message "foreign")
+        (execute-kbd-macro (kbd "g h"))))
     (should (equal (car msgs) donkey--visual-line-hint))))
 
 (ert-deftest donkey-the-visual-hint-never-paints-over-foreign-echo ()
@@ -3962,11 +4082,13 @@ all carry over, and the object keys grow them: `m w M w' extends the
 marked word, and a `V J' selection keeps both lines when a word is
 added.  The adopted region is normalized to the family layout --
 point at the start, where a downward `V' session had it at the end --
-pinned by point sitting at `region-beginning' after `V J M'.  The
-visual-line session itself ends at adoption, anchor cleared, so its
-reminder cannot resurrect over a selection the run now owns.  And the
-toggle is still a toggle: the in-mode `M' after an adoption cancels,
-one key as ever."
+pinned by point sitting at `region-beginning' after `V J M'.  A
+visual-line session also arrives WHOLE-LINED, final newline and all,
+which is why the bare `V M' case expects one; every other selection
+is adopted exactly as it shows.  The session itself ends at adoption,
+anchor cleared, so its reminder cannot resurrect over a selection the
+run now owns.  And the toggle is still a toggle: the in-mode `M'
+after an adoption cancels, one key as ever."
   (donkey-mark-test--keys "for text that is not saved" "w w l m w M w"
     (should (equal (donkey-mark-test--selection) "that is")))
   (donkey-mark-test--keys "for text that is" "v l l M w"
@@ -3977,10 +4099,74 @@ one key as ever."
   (donkey-mark-test--keys "one two\nthree four\n" "V J M"
     (should (= (point) (region-beginning))))
   (donkey-mark-test--keys "one two\nthree four\n" "V M"
-    (should (equal (donkey-mark-test--selection) "one two"))
+    (should (equal (donkey-mark-test--selection) "one two\n"))
     (should-not (donkey--visual-line-session-active-p)))
   (donkey-mark-test--keys "for text that is" "w w l m w M M"
     (should-not (region-active-p))))
+
+(ert-deftest donkey-adopting-a-visual-line-session-takes-whole-lines ()
+  "A `V' session carries its final newline into the run.
+
+Visual-line sessions leave the newline that ends the last line
+OUTSIDE the region deliberately -- the highlight stops where the text
+does -- and their own `y' and `d' widen through
+`donkey--visual-line-region-bounds' to make up for it.  A run that
+inherited the region raw did not: `V J M d' removed the text of two
+lines and left behind the blank line their newline still ended, where
+`V J d' removes both lines outright.  Adoption goes through the same
+widening, so the two agree.
+
+Only for a live session.  A `v' region means the characters it covers
+and is adopted untouched, which is what tells the widening from a
+blanket one."
+  (donkey-mark-test--keys "one two\nthree four\nrest\n" "V J M d"
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "rest\n")))
+  (donkey-mark-test--keys "for text that is" "v l l M"
+    (should (equal (donkey-mark-test--selection) "fo"))))
+
+(ert-deftest donkey-an-empty-selection-is-not-adopted ()
+  "`v M w' marks the whole word, as `M w' alone does.
+
+`donkey-set-mark' activates a mark without covering anything yet, and
+`region-active-p' says yes to that empty region.  Adopting it made
+the first object key grow from the CURSOR -- `v M w' from mid-word
+took the tail of the word, \"hat\" for \"that\" -- which is the very
+design `donkey-mark-run-mode-first-letter-marks-afresh' pins the
+toggle against.  The toggle drops such a region and enters
+empty-handed instead, and the command itself refuses outright, being
+reachable by name.
+
+Dropping it, rather than merely declining to adopt it: an empty
+region left ACTIVE is a selection to everything that asks, so `v M d'
+deleted nothing at all where it should take the character at point,
+and \\`*' had ends to trade where there is nothing between them."
+  (donkey-mark-test--keys "for text that is" "w w l l v M w"
+    (should (equal (donkey-mark-test--selection) "that")))
+  (donkey-mark-test--keys "for text that is" "w w l l v M"
+    (should-not (region-active-p))
+    (should-error (donkey-mark-run-exchange) :type 'user-error))
+  (donkey-mark-test--keys "for text that is" "w w l l v M d"
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "for text tat is")))
+  (donkey-mark-test--keys "for text that is" "w w l l v"
+    (should-error (donkey-mark-run-adopt) :type 'user-error))
+  (donkey-mark-test--keys "for text that is" "w"
+    (should-error (donkey-mark-run-adopt) :type 'user-error)))
+
+(ert-deftest donkey-the-m-prefix-still-works-inside-the-mode ()
+  "`m w' inside the mode runs the mode's own `w' and keeps the run.
+
+`m' is bound in neither the mode map nor the family, so the press
+falls through to the normal map's prefix -- and lands on
+`donkey-mark-word', which the bare `w' here runs too.  Both the keep
+test and the extending test are about COMMANDS, so nothing has to
+arrange this: the mode survives the press and the run grows.  Pinned
+because the two spellings being interchangeable mid-run is what the
+mode promises, and a keep test written against KEYS would quietly
+break it."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w m w w"
+    (should (equal (donkey-mark-test--selection) "that is not"))))
 
 (ert-deftest donkey-j-and-k-grow-the-run-by-lines ()
   "Inside the mode, `J' and `K' make lines a growable object.
