@@ -2939,8 +2939,13 @@ one before marking it."
 (defconst donkey--mark-run-motions
   '(donkey-mark-run-left donkey-mark-run-right
     donkey-mark-run-down donkey-mark-run-up
-    donkey-mark-run-line-start donkey-mark-run-line-end)
+    donkey-mark-run-line-start donkey-mark-run-line-end
+    donkey-mark-run-exchange)
   "The mark run mode motions: point adjusters, not object marks.
+
+`donkey-mark-run-exchange' rides in this list too: it moves point
+\(to the other end) and needs the same visible-run guard -- a swap
+beside a stale mark would be as conjured as a motion's continuation.
 
 Members of `donkey--mark-run-commands', so a run carries on across
 them -- but `donkey--mark-extending-p' holds them to a stricter test
@@ -3169,6 +3174,32 @@ COUNT lines; a COUNT below 1 is treated as 1."
         (forward-line (- (1- n))))
       (message "Line marked"))))
 
+(defun donkey-mark-run-exchange ()
+  "Swap point and mark, so the motions adjust the run's other end.
+
+Bound to \`*' inside `donkey-mark-run-mode-map', the mode's version
+of vi's \`o' in visual mode: growing with `w w w' and trimming with
+`l l l' both work the START of the selection, because the motions
+move point and point sits there -- this press trades ends, putting
+point (and so \`h' \`j' \`k' \`l', `g h', `g l') at the other one.
+Press again to trade back.
+
+The OBJECT keys are untouched by the swap -- they own fixed ends,
+mark forward and point backward, wherever the cursor sits -- so after
+a swap `w' grows what is now the mark end: the selection's start.
+Growing by objects reads best from the unswapped orientation; swap
+back first.
+
+A member of `donkey--mark-run-motions', so the run carries on and the
+visible-run guard applies to what follows.  Refuses without an active
+selection: `exchange-point-and-mark' would leap to some stale mark
+and re-activate whatever lies between, which is not what a key for
+trading the ends of a VISIBLE selection can mean."
+  (interactive)
+  (if (region-active-p)
+      (exchange-point-and-mark)
+    (user-error "No selection to swap ends of")))
+
 (defvar donkey-mark-run-mode-map
   (let ((map (make-sparse-keymap)))
     (keymap-set map "w" #'donkey-mark-word)
@@ -3188,6 +3219,7 @@ COUNT lines; a COUNT below 1 is treated as 1."
     (keymap-set map "g l" #'donkey-mark-run-line-end)
     (keymap-set map "J" #'donkey-mark-run-line-forward)
     (keymap-set map "K" #'donkey-mark-run-line-backward)
+    (keymap-set map "*" #'donkey-mark-run-exchange)
     map)
   "The keys live during mark run mode -- see `donkey-mark-run-toggle'.
 
@@ -3205,7 +3237,7 @@ key does its ordinary job in the same press -- `M w w d' selects two
 words and deletes them, with no explicit exit.")
 
 (defvar donkey--mark-run-mode-hint
-  "Mark run: w/b words, W/B symbols, s/S sentences, p/P paragraphs, J/K lines, hjkl move, M to cancel"
+  "Mark run: w/b words, W/B symbols, s/S sentences, p/P paragraphs, J/K lines, hjkl move, * other end, M to cancel"
   "The echo-area reminder shown while mark run mode is active.
 
 Styled after `donkey-visual-line-toggle's message, and kept VISIBLE
@@ -4886,7 +4918,8 @@ grows the word selection forward to the end of its sentence.  And
 \\[donkey-mark-run-toggle] holds the prefix down for you: in mark run mode the bare
 letters w W b B s S p P mark and grow the same way, J and K grow by
 whole lines, h j k l and
-g h / g l adjust the near end without ending the run, any other key
+g h / g l adjust the near end -- * trades which end that is -- and
+any other key
 returns to normal and does its job, and \\[donkey-mark-run-toggle] again -- or \\`C-g' -- drops the
 selection.  A selection you already have -- from \\[donkey-set-mark], \\[donkey-visual-line-toggle] or the
 mark keys -- is ADOPTED by \\[donkey-mark-run-toggle] rather than dropped, and the object

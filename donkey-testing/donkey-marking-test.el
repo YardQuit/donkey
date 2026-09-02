@@ -4017,6 +4017,32 @@ mode is untouched -- still `donkey-visual-next-line', V's key."
   (donkey-mark-test--keys "one two\nthree four\n" "J"
     (should-not (region-active-p))))
 
+(ert-deftest donkey-star-trades-the-end-the-motions-hold ()
+  "`*' swaps point and mark, so the motions adjust the other end.
+
+Vi's `o' in visual mode: the motions move point, and point sits at
+the selection's start, so trimming or growing the FAR end meant
+walking the near one -- `M w w * l l' now grows past the far end
+instead, `* h' trims it, and a second `*' trades back, pinned by the
+un-swapped `l' shrinking the start again.  A member of
+`donkey--mark-run-motions', so the run carries on across it.
+
+Refused without an ACTIVE selection, and the stale mark is the case
+that separates the guard from what `exchange-point-and-mark' refuses
+on its own: with no mark at all the native command already signals,
+but beside the mark a canceled run left behind it would leap there
+and re-activate whatever lies between -- so after cancel, the swap
+must refuse and the region must stay gone."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w w * l l"
+    (should (equal (donkey-mark-test--selection) "that is n")))
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w * h"
+    (should (equal (donkey-mark-test--selection) "tha")))
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w * * l"
+    (should (equal (donkey-mark-test--selection) "hat")))
+  (donkey-mark-test--keys "for text that is" "w w l M w M"
+    (should-error (donkey-mark-run-exchange) :type 'user-error)
+    (should-not (region-active-p))))
+
 (ert-deftest donkey-a-rectangle-is-canceled-not-adopted ()
   "`M' over a rectangle drops it; there is no forward end to own.
 
