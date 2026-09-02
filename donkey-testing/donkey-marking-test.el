@@ -3857,7 +3857,7 @@ report, which is the guard the continuation case had to be carved out
 of rather than deleted."
   (donkey-mark-test--keys "Word.\n\n   \n" "j j M J s"
     (should (equal (donkey-mark-test--selection) "   \n")))
-  (donkey-mark-test--keys "Word.\n\n   \n" "j j M J p"
+  (donkey-mark-test--keys "Word.\n\n   \n" "j j M J m p"
     (should (equal (donkey-mark-test--selection) "   \n")))
   (donkey-mark-test--keys "   \n\n" "M"
     (should-error (donkey-mark-sentence) :type 'user-error)
@@ -4166,7 +4166,73 @@ because the two spellings being interchangeable mid-run is what the
 mode promises, and a keep test written against KEYS would quietly
 break it."
   (donkey-mark-test--keys "for text that is not saved" "w w l M w m w w"
-    (should (equal (donkey-mark-test--selection) "that is not"))))
+    (should (equal (donkey-mark-test--selection) "that is not")))
+  ;; The paragraph pair has no bare letter here -- `p' and `P' are the
+  ;; paste keys -- so the prefix is the ONLY way it reaches the mode,
+  ;; and the run has to survive it like any other family press.
+  (donkey-mark-test--keys "Alpha one.\n\nBeta two.\n\nGamma.\n" "j j M w m p"
+    (should (equal (donkey-mark-test--selection) "Beta two.\n\n")))
+  (donkey-mark-test--keys "Alpha one.\n\nBeta two.\n\nGamma.\n" "j j M w m p w"
+    (should (equal (donkey-mark-test--selection) "Beta two.\n\nGamma")))
+  (donkey-mark-test--keys "Alpha one.\n\nBeta two.\n\nGamma.\n"
+      "j j j j M w m P"
+    (should (equal (donkey-mark-test--selection) "\nGamma"))))
+
+(ert-deftest donkey-the-mode-hint-names-only-keys-the-mode-owns ()
+  "Every key the reminder advertises is a key of the mode map.
+
+The reminder is the only place most people will read the mode's key
+list, so a letter named there that the mode does not bind is a
+promise the next press breaks -- which is exactly what happened when
+the paragraph pair gave its letters back to pasting: `p/P
+paragraphs' stayed in the hint while `p' had become
+`donkey-yank'.  The pairs are read out of the hint itself rather
+than listed again here, so the two cannot drift apart."
+  (let ((keys '("h" "j" "k" "l" "*" "M"))
+        (start 0))
+    (while (string-match "\\([a-zA-Z*]\\)/\\([a-zA-Z*]\\)"
+                         donkey--mark-run-mode-hint start)
+      (push (match-string 1 donkey--mark-run-mode-hint) keys)
+      (push (match-string 2 donkey--mark-run-mode-hint) keys)
+      (setq start (match-end 0)))
+    ;; The pairs really were found -- a regexp that matched nothing
+    ;; would leave this passing on the six literals alone.
+    (should (> (length keys) 6))
+    (dolist (key keys)
+      (should (equal (list key (and (keymap-lookup donkey-mark-run-mode-map key) t))
+                     (list key t))))))
+
+(ert-deftest donkey-p-and-P-keep-their-paste-jobs-inside-the-mode ()
+  "`M w p' replaces the marked word; the mode letters no paragraph.
+
+Every other ordinary edit already reached a mark run selection --
+`d', `y', `x' and `c' are all foreign keys that lapse the mode and
+act on what it built -- but `p' and `P' were the paragraph keys here,
+so the one thing the mode could not do was paste over its own
+selection: `M w p' grew the selection to its paragraph and pasted
+nothing, and there was no key sequence that would.  The pair passes
+through now, and the objects they used to name are still one prefix
+away, at `m p' and `m P'.
+
+`P' is `donkey-yank-rectangle' as it is everywhere else, which does
+nothing without a banked rectangle -- what matters is that the press
+no longer marks, and that it lets the mode go."
+  (let* ((kill-ring (list "XX"))
+         (kill-ring-yank-pointer kill-ring))
+    (donkey-mark-test--keys "for text that is" "w w l M w p"
+      (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                     "for text XX is"))
+      (should-not (region-active-p))
+      (should (eq (key-binding "w") 'forward-word))))
+  (donkey-mark-test--keys "for text that is" "w w l M w P"
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "for text that is"))
+    (should (eq (key-binding "w") 'forward-word)))
+  ;; Mid-run, with the map armed, the two keys are still the paste ones.
+  (donkey-mark-test--keys "for text that is" "w w l M w"
+    (should (eq (key-binding "w") 'donkey-mark-word))
+    (should (eq (key-binding "p") 'donkey-yank))
+    (should (eq (key-binding "P") 'donkey-yank-rectangle))))
 
 (ert-deftest donkey-j-and-k-grow-the-run-by-lines ()
   "Inside the mode, `J' and `K' make lines a growable object.

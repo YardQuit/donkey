@@ -232,7 +232,7 @@ process interaction.
 | =K= | =donkey-visual-previous-line= | Move up, extending visual selection   |
 | =V= | =donkey-visual-line-toggle=   | Toggle visual line selection          |
 | =v= | =donkey-set-mark=           | Drop a mark and start selecting; =C-g= lets go |
-| =M= | =donkey-mark-run-toggle=    | Toggle mark run mode: bare =w W b B s S p P= mark and grow |
+| =M= | =donkey-mark-run-toggle=    | Toggle mark run mode: bare =w W b B s S= mark and grow |
 | =(= =[= ={= ="= ='= =`= | =donkey-wrap-region= | Wrap active region with delimiter, see below |
 
 =V=, =M= and =m v= toggle: pressing any of them a second time cancels
@@ -706,7 +706,7 @@ kind first reaches that object's start — =m B= after marking the word
 press adds a whole one.
 
 =M= is the =m= prefix held down for you: it enters *mark run mode*,
-where the bare letters =w W b B s S p P= run exactly what their
+where the bare letters =w W b B s S= run exactly what their
 =m=-prefixed keys run, so =M w w b= selects what =m w m w m b=
 selects. The first letter marks afresh, later letters grow the one
 selection, counts work (=M C-u 3 w=), and objects mix as above. Any
@@ -715,7 +715,12 @@ press — =M w w d= selects two words and deletes them. The =m= prefix
 is the exception, and needs no thinking about: =m w= inside the mode
 runs the very command the bare =w= runs, so the mode survives it and
 the run keeps growing — =M w m w w= selects three words, and the two
-spellings can be mixed mid-run. =h j k l= move
+spellings can be mixed mid-run. Paragraphs are reached that way and
+only that way: =p= and =P= stay the *paste* keys inside the mode, so
+=M w p= replaces the marked word with the kill ring, and =m p= / =m P=
+grow the run by paragraphs. Lettering them cost the mode the one
+ordinary edit it could not otherwise make — =d=, =y=, =x= and =c= all
+act on a mark run selection, and only pasting had nowhere to go. =h j k l= move
 point without ending the run, adjusting the selection's near end the
 way =j=/=k= adjust a =V= session, and =g h= / =g l= reach the line's
 ends the same way; other =g= keys are not shadowed and end the mode
@@ -741,7 +746,9 @@ selection and the mode, and =C-g= does the same, as it does for every
 selection. The echo-area reminder stays visible for
 as long as the mode is active. Only these eight keys are in the family:
 =m i= and =m a= count levels rather than objects, and a selection
-started with =v= is still never grown by a mark key.
+started with =v= is still never grown by a mark key. All eight grow a
+run inside =M= too; six of them have a bare letter there, and the
+paragraph pair keeps its =m= prefix.
 
 Any other key in between ends the run — =m w l m w= marks a single word
 again rather than two. An active selection made some other way is left

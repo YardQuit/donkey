@@ -3286,8 +3286,6 @@ trading the ends of a VISIBLE selection can mean."
     (keymap-set map "B" #'donkey-mark-symbol-backward)
     (keymap-set map "s" #'donkey-mark-sentence)
     (keymap-set map "S" #'donkey-mark-sentence-backward)
-    (keymap-set map "p" #'donkey-mark-paragraph)
-    (keymap-set map "P" #'donkey-mark-paragraph-backward)
     (keymap-set map "M" #'donkey-mark-run-cancel)
     (keymap-set map "h" #'donkey-mark-run-left)
     (keymap-set map "l" #'donkey-mark-run-right)
@@ -3314,20 +3312,33 @@ Every other key is missing on purpose.  Pressing one fails
 key does its ordinary job in the same press -- `M w w d' selects two
 words and deletes them, with no explicit exit.
 
-\`m' is missing too, and that one is worth knowing: it still reaches
-the normal map's prefix, so `m w' inside the mode runs
+\`p' and \`P' are missing DELIBERATELY, though their objects belong
+to the family.  Holding them here shadowed the two paste keys, and
+the mode has no other way to reach them: `d', `y', `x' and `c' all
+act on a mark run selection, so replacing one with the kill ring was
+the single ordinary edit the mode made unreachable -- `M w p' grew
+the selection to its paragraph and pasted nothing.  Paragraphs are
+one keystroke away either way, and pasting was none.
+
+\`m' is missing too, and that one is what makes the trade cheap: it
+still reaches the normal map's prefix, so `m w' inside the mode runs
 `donkey-mark-word' -- the same command the bare `w' here runs -- and
 both the keep test and the family test are about COMMANDS, so the
 mode survives the press and the run grows.  `M w m w w' selects three
-words.")
+words, and `m p' and `m P' grow a run by paragraphs from inside the
+mode exactly as the bare letters used to.")
 
 (defvar donkey--mark-run-mode-hint
-  "Mark run: w/b words, W/B symbols, s/S sentences, p/P paragraphs, J/K lines, hjkl move, * other end, M to cancel"
+  "Mark run: w/b words, W/B symbols, s/S sentences, J/K lines, hjkl move, * other end, M to cancel"
   "The echo-area reminder shown while mark run mode is active.
 
 Styled after `donkey-visual-line-toggle's message, and kept VISIBLE
 for the whole mode by `donkey--mark-run-mode-post-command' -- a single
-flash at entry disappeared under the first \"Word marked\".")
+flash at entry disappeared under the first \"Word marked\".
+
+Paragraphs are absent because their keys are: `p' and `P' pass
+through to the paste commands here, and `m p' reaches the object --
+see `donkey-mark-run-mode-map'.")
 
 (defun donkey--mark-run-mode-post-command ()
   "Repaint the mark run reminder, or end a mode that outlived its map.
@@ -3478,13 +3489,19 @@ progress instead of marking afresh over it."
 (defun donkey-mark-run-toggle ()
   "Enter mark run mode, adopting any active selection; \`M' again cancels.
 
-Mark run mode is the `m' prefix held down for you: the eight object
-keys \`w' \`W' \`b' \`B' \`s' \`S' \`p' \`P' run exactly the
-commands their `m'-prefixed keys run, through
-`donkey-mark-run-mode-map'.  `M w w b' selects what `m w m w m b'
-selects: two words forward and one back.  The first letter marks
-afresh, later letters grow the one selection, counts work, and
-objects mix mid-run, all per `donkey--mark-run-commands'.
+Mark run mode is the `m' prefix held down for you: the object keys
+\`w' \`W' \`b' \`B' \`s' \`S' run exactly the commands their
+`m'-prefixed keys run, through `donkey-mark-run-mode-map'.  `M w w b'
+selects what `m w m w m b' selects: two words forward and one back.
+The first letter marks afresh, later letters grow the one selection,
+counts work, and objects mix mid-run, all per
+`donkey--mark-run-commands'.
+
+The paragraph pair is the one the mode does not letter.  \`p' and
+\`P' stay the paste keys here, because a selection you cannot paste
+over is a worse loss than a paragraph you have to spell `m p' -- and
+`m p' and `m P' do grow a run from inside the mode, being the same
+family commands.
 
 The reminder in the echo area stays up for the whole mode: each
 letter re-shows it (unlogged) over the mark command's own message,
@@ -3511,7 +3528,9 @@ still reaches the normal map, so `m w' inside the mode runs
 `donkey-mark-word' -- the very command the bare `w' runs here -- and
 the mode's tests are about COMMANDS, not keys, so the run simply
 carries on.  `M w m w w' selects three words, and the two spellings
-can be mixed mid-run.
+can be mixed mid-run.  It is also how paragraphs are reached, their
+letters having been given back to pasting: `M w m p' grows the word
+to its paragraph and stays in the mode.
 
 Pressed with an active selection this ADOPTS it into the mode instead
 of entering empty-handed -- see `donkey-mark-run-adopt': a
@@ -5070,12 +5089,14 @@ same thing its forward partner would.  Runs mix objects, too: each
 press adds one object of its own kind at its own end, so \\[donkey-mark-word] \\[donkey-mark-sentence]
 grows the word selection forward to the end of its sentence.  And
 \\[donkey-mark-run-toggle] holds the prefix down for you: in mark run mode the bare
-letters w W b B s S p P mark and grow the same way, J and K grow by
+letters w W b B s S mark and grow the same way, J and K grow by
 whole lines, h j k l and
 g h / g l adjust the near end -- * trades which end that is -- and
 any other key
 returns to normal and does its job, and \\[donkey-mark-run-toggle] again -- or \\`C-g' -- drops the
-selection.  A selection you already have -- from \\[donkey-set-mark], \\[donkey-visual-line-toggle] or the
+selection.  Paragraphs keep their m prefix there, since p and P
+stay the paste keys inside the mode: m p and m P grow a run just as
+the bare letters do.  A selection you already have -- from \\[donkey-set-mark], \\[donkey-visual-line-toggle] or the
 mark keys -- is ADOPTED by \\[donkey-mark-run-toggle] rather than dropped, and the object
 keys grow it from there.
 
