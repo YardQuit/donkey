@@ -2984,6 +2984,28 @@ and the mark it finds next to `last-command' could be anything --
 without the distinction, `M l w' beside a stale mark grew a surprise
 selection from wherever that mark lay.")
 
+(defconst donkey--mark-run-inert-commands
+  '(undefined ignore donkey-mark-run-refuse)
+  "The commands that change nothing, so a mark run survives them.
+
+Every printable key the normal state leaves unbound resolves to
+`undefined' through `suppress-keymap's remap of `self-insert-command',
+and \`DEL' to `ignore'.  Both used to end a run and lapse the mode, so
+a mistyped \`0' mid-run threw the selection away and rang the bell
+about it.  A press that changes nothing should change nothing: listed
+here, they satisfy `donkey--mark-run-mode-keep-p' so the mode stays,
+and they count as companions in `donkey--mark-extending-p' so the next
+object key still EXTENDS rather than marking afresh -- the typo costs
+a beep and nothing else.
+
+`donkey-mark-run-refuse' is here for the same reason from the other
+direction: it exists to leave a run standing, so it must not be the
+thing that breaks it.
+
+Membership is why they are appended to `donkey--mark-run-commands'
+rather than tested separately: that list IS the companion set, and a
+command transparent to the mode has to be transparent to the run.")
+
 (defconst donkey--mark-run-commands
   (append
    '(donkey-mark-word donkey-mark-word-backward
@@ -2992,7 +3014,8 @@ selection from wherever that mark lay.")
      donkey-mark-paragraph donkey-mark-paragraph-backward
      donkey-mark-run-line-forward donkey-mark-run-line-backward
      donkey-mark-run-adopt)
-   donkey--mark-run-motions)
+   donkey--mark-run-motions
+   donkey--mark-run-inert-commands)
   "The commands that grow ONE selection between them -- the mark run family.
 
 Membership is what makes a press CONTINUE the current mark run rather
@@ -3119,6 +3142,33 @@ consistency is worth it."
   (interactive)
   (deactivate-mark)
   (message "Mark run: canceled"))
+
+(defun donkey-mark-run-refuse ()
+  "Refuse a key that would silently throw the mark run away.
+
+Bound to \`V' inside `donkey-mark-run-mode-map'.  A visual-line
+session and a mark run are two ways of owning one selection, and the
+key that starts the one has no honest reading over the other: pressed
+mid-run, `donkey-visual-line-toggle' dropped the run and anchored a
+fresh line session on whatever line the cursor sat in -- `M w V' over
+a marked word came back holding that word's whole line, with the run
+gone and nothing said.  Rather than guess between adopting the run and
+discarding it, the key says which presses do end a run and leaves
+everything else standing.
+
+Those presses are unchanged: \`M' or \`C-g' drops the selection, and
+any key that USES it -- `d', `y', `p', `c', `x' -- takes it and goes.
+Only a key that would discard the run without using it is refused, and
+`donkey-set-mark' is deliberately not among them: re-anchoring is what
+\`v' means everywhere else, and it stays that here.
+
+Allowed by `donkey--mark-run-mode-keep-p', so the refusal leaves the
+mode exactly as it found it.  The `user-error' also keeps its own
+echo, `post-command-hook' not running after a signal, so the reminder
+cannot paint over the complaint."
+  (interactive)
+  (user-error "%s would drop the mark run: leave with M, C-g or an action key"
+              (key-description (this-command-keys))))
 
 (defun donkey-mark-run-left (&optional count)
   "Move point back COUNT characters without ending the mark run.
@@ -3358,6 +3408,7 @@ trading the ends of a VISIBLE selection can mean."
     (keymap-set map "J" #'donkey-mark-run-line-forward)
     (keymap-set map "K" #'donkey-mark-run-line-backward)
     (keymap-set map "*" #'donkey-mark-run-exchange)
+    (keymap-set map "V" #'donkey-mark-run-refuse)
     map)
   "The keys live during mark run mode -- see `donkey-mark-run-toggle'.
 
@@ -3372,7 +3423,12 @@ motions must keep ending runs everywhere else.  \`M' inside the mode cancels.
 Every other key is missing on purpose.  Pressing one fails
 `donkey--mark-run-mode-keep-p', so the transient map lapses and the
 key does its ordinary job in the same press -- `M w w d' selects two
-words and deletes them, with no explicit exit.
+words and deletes them, with no explicit exit.  Two kinds of press are
+exempt.  A key that does nothing -- unbound, or \`DEL' -- leaves the
+run alone rather than throwing it away over a typo, which
+`donkey--mark-run-mode-keep-p' arranges without a binding here.  And
+\`V' IS bound here, to `donkey-mark-run-refuse', because it is the one
+key whose ordinary job would discard the run silently.
 
 \`p' and \`P' are missing DELIBERATELY, though their objects belong
 to the family.  Holding them here shadowed the two paste keys, and
@@ -3466,7 +3522,17 @@ The mode lives while the command about to run is a mark run family
 member -- which is what the letters of `donkey-mark-run-mode-map'
 resolve to -- or part of entering a count, which must not end the mode
 or \`C-u 3 w' inside it would fall apart between the \`C-u' and the
-\`w'."
+\`w'.
+
+A key that DOES NOTHING does not end it either -- see
+`donkey--mark-run-inert-commands' for which those are and why a
+mistyped key should cost a beep rather than the selection.
+
+`donkey-mark-run-refuse' is allowed for the same reason from the other
+direction: it exists to leave the run standing, so it must not be the
+thing that ends it.  Both arrive through
+`donkey--mark-run-inert-commands', which the family list already
+appends, so the first test below covers them."
   (or (memq this-command donkey--mark-run-commands)
       (memq this-command '(universal-argument universal-argument-more
                            digit-argument negative-argument))))
@@ -3619,6 +3685,15 @@ it lapse and then does its ordinary job -- `M w w d' selects two
 words and deletes them.  \`M' pressed again cancels the selection and the
 mode with it, and \`C-g' does the same, as it does for every
 selection.
+
+Two presses are held back from ending it.  A key that does nothing at
+all -- one the normal state leaves unbound, or \`DEL' -- leaves the
+run standing, so a mistyped key costs a beep rather than the
+selection.  And \`V' is refused outright by `donkey-mark-run-refuse':
+a visual-line session cannot own a mark run's selection, and the press
+used to drop the run and anchor a fresh line session without saying
+so.  Leave the run first -- \`M', \`C-g', or any key that uses the
+selection -- and \`V' is itself again.
 
 The `m' prefix is the one key that neither runs nor ends the mode: it
 still reaches the normal map, so `m w' inside the mode runs

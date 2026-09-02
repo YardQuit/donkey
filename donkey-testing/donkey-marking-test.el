@@ -4553,6 +4553,72 @@ nothing to move."
     (donkey--normalize-mark-run)
     (should (equal (list (point) (mark t)) (list 3 nil)))))
 
+(ert-deftest donkey-a-key-that-does-nothing-costs-the-run-nothing ()
+  "A dead key leaves both the mode and the run exactly as they were.
+
+Every printable key the normal state leaves unbound resolves to
+`undefined', and \`DEL' to `ignore'.  Both used to fail the keep test,
+so the transient map lapsed and the next bare letter was a plain
+motion again -- a mistyped \`0' in the middle of a run threw the
+selection away and rang the bell about it.  They are inert now: the
+mode stays, and because `donkey--mark-run-inert-commands' rides in
+`donkey--mark-run-commands' they count as companions too, so the
+object key after one still EXTENDS instead of marking afresh.
+
+\`DEL' carries the end-to-end case because it is the one dead key that
+does not ring: `execute-kbd-macro' stops on a command that dings, so
+`undefined' cannot be driven through the harness and is asserted
+against the predicate directly."
+  (donkey-mark-test--keys "for text that is" "w w l M w DEL"
+    (should (eq (key-binding "w") 'donkey-mark-word))
+    (should (equal (donkey-mark-test--selection) "that")))
+  (donkey-mark-test--keys "for text that is" "w w l M w DEL w"
+    (should (equal (donkey-mark-test--selection) "that is")))
+  (dolist (cmd '(undefined ignore))
+    (let ((this-command cmd))
+      (should (equal (list cmd (and (donkey--mark-run-mode-keep-p) t))
+                     (list cmd t)))))
+  (should (memq 'undefined donkey--mark-run-commands))
+  (should (memq 'ignore donkey--mark-run-commands))
+  ;; A key that really does something still ends the run, which is the
+  ;; rule the exemption is carved out of.
+  (donkey-mark-test--keys "for text that is" "w w l M w"
+    (let ((this-command 'transpose-chars))
+      (should-not (donkey--mark-run-mode-keep-p)))))
+
+(ert-deftest donkey-V-is-refused-inside-a-mark-run ()
+  "`V' says to leave the run first instead of silently taking it.
+
+A visual-line session and a mark run are two ways of owning one
+selection, and `donkey-visual-line-toggle' pressed mid-run dropped the
+run and anchored a fresh line session on whatever line the cursor sat
+in: `M w V' over a marked word came back holding that word's whole
+line, with the run gone and nothing said.  The key is bound to
+`donkey-mark-run-refuse' inside the mode, which signals and changes
+nothing -- the mode is still armed and the selection still there when
+the complaint lands, so the ways out that DO work are still one press
+away.
+
+Outside the mode `V' is untouched, which is the point of refusing
+rather than rebinding."
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w"
+    (should (eq (key-binding "V") 'donkey-mark-run-refuse))
+    (should-error (donkey-mark-run-refuse) :type 'user-error)
+    ;; Nothing moved: the mode is armed and the run is intact.
+    (should (eq (key-binding "w") 'donkey-mark-word))
+    (should (equal (donkey-mark-test--selection) "that")))
+  ;; The refusal is inert, so it does not break the run either.
+  (should (memq 'donkey-mark-run-refuse donkey--mark-run-commands))
+  (let ((this-command 'donkey-mark-run-refuse))
+    (should (donkey--mark-run-mode-keep-p)))
+  ;; Outside the mode the key is `donkey-visual-line-toggle' as ever.
+  (donkey-mark-test--keys "one two\nthree four\n" "V"
+    (should (equal (donkey-mark-test--selection) "one two")))
+  ;; And after a legal exit it works again: the delete takes the run,
+  ;; and the `V' after it starts its session on what is left.
+  (donkey-mark-test--keys "one two\nthree four\n" "M w d V"
+    (should (equal (donkey-mark-test--selection) " two"))))
+
 (ert-deftest donkey-a-rectangle-is-canceled-not-adopted ()
   "`M' over a rectangle drops it; there is no forward end to own.
 

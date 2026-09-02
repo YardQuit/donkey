@@ -711,7 +711,13 @@ where the bare letters =w W b B s S= run exactly what their
 selects. The first letter marks afresh, later letters grow the one
 selection, counts work (=M C-u 3 w=), and objects mix as above. Any
 other key ends the mode and then does its ordinary job in the same
-press — =M w w d= selects two words and deletes them. The =m= prefix
+press — =M w w d= selects two words and deletes them. Two are held
+back. A key that does nothing — one that is unbound, or =DEL= — leaves
+the run standing, so a mistyped key costs a beep rather than the
+selection. And =V= is refused: a visual line session cannot own a mark
+run's selection, and the press used to drop the run and anchor a fresh
+one without saying so, which is worse than being told to leave the
+mode first. The =m= prefix
 is the exception, and needs no thinking about: =m w= inside the mode
 runs the very command the bare =w= runs, so the mode survives it and
 the run keeps growing — =M w m w w= selects three words, and the two
