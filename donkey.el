@@ -3201,10 +3201,18 @@ sitting mid-line -- a word selection's end, say -- first completes its
 own line, the way a backward symbol press from mid-symbol first
 reaches that symbol's start; the next press adds a whole one.
 
-Unlike `donkey-visual-line-toggle's sessions there is no anchor and no
-whole-line widening on `y'/`d': this is a plain character region that
-happens to end at line boundaries.  \`V' remains the tool for
-line-exact work, and an `M' over its session adopts the lines whole.
+The mark lands at the START OF THE NEXT LINE rather than at the end of
+this one, so the newline that ends the selection is inside it.  That
+one character is the difference between a line selection and the text
+of a line: without it `M J d' deleted the words and left the blank
+line their newline still ended, where `V d' removes the line outright,
+and `M J y' produced a kill that the next `p' spliced into whatever
+line it landed in.  `donkey-visual-line-toggle' answers the same
+problem from the other side -- it keeps the highlight tight and widens
+at `y'/`d' through `donkey--visual-line-region-bounds' -- which it can
+do because it has an anchor to widen from and this has none.  The
+visible difference is that the highlight here reaches the next line's
+first column; the deletions and the kills now agree.
 
 COUNT lines; a COUNT below 1 is treated as 1, the reading the
 backward keys give theirs -- the other direction is \`K'."
@@ -3213,14 +3221,20 @@ backward keys give theirs -- the other direction is \`K'."
     (if (donkey--mark-extending-p donkey--mark-run-commands)
         (progn
           (donkey--normalize-mark-run)
+          ;; `forward-line' from the mark does both jobs the old
+          ;; end-of-line dance did: from a mark at a line start it adds
+          ;; N whole lines, and from one sitting mid-line it completes
+          ;; that line first, landing on the next line's start either
+          ;; way.  At the end of a buffer with no final newline it
+          ;; stops at `point-max', keeping what is selected.
           (set-mark (save-excursion
                       (goto-char (mark))
-                      (end-of-line (if (eolp) (1+ n) n))
+                      (forward-line n)
                       (point)))
           (message "Line marked"))
       (donkey--ensure-non-rectangle-selection)
       (beginning-of-line)
-      (push-mark (save-excursion (end-of-line n) (point)) t t)
+      (push-mark (save-excursion (forward-line n) (point)) t t)
       (message "Line marked"))))
 
 (defun donkey-mark-run-line-backward (&optional count)
@@ -3230,6 +3244,11 @@ Bound to \`K' inside `donkey-mark-run-mode-map'; the other end of
 `donkey-mark-run-line-forward's pair.  A fresh press selects the line
 point is on; each further press walks POINT up a line, first
 completing a partial line the way its partner does at the mark end.
+
+A fresh press marks the whole line, newline included -- see its
+partner for why the character matters.  The extending branch needs no
+counterpart: it walks POINT, which sits at a line START already, so
+the end the newline belongs to is the one the partner owns.
 
 COUNT lines; a COUNT below 1 is treated as 1."
   (interactive "p")
@@ -3245,7 +3264,7 @@ COUNT lines; a COUNT below 1 is treated as 1."
           (message "Line marked"))
       (donkey--ensure-non-rectangle-selection)
       (beginning-of-line)
-      (push-mark (line-end-position) t t)
+      (push-mark (save-excursion (forward-line 1) (point)) t t)
       (when (> n 1)
         (forward-line (- (1- n))))
       (message "Line marked"))))

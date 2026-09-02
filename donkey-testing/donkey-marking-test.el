@@ -4243,31 +4243,85 @@ the family's fixed ends.  A mark sitting mid-line first completes its
 own line -- the mid-object rule words and symbols already follow --
 so `M w J' takes the word's whole line, and objects keep mixing:
 `M J w' is the line plus a word.  Counts work, and `J' outside the
-mode is untouched -- still `donkey-visual-next-line', V's key."
+mode is untouched -- still `donkey-visual-next-line', V's key.
+
+A whole line here includes its NEWLINE, which is why every expectation
+below that ends at a line boundary ends with one -- see
+`donkey-line-runs-take-the-newline-with-them' for what that buys."
   (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
       "j M J"
-    (should (equal (donkey-mark-test--selection) "three four")))
+    (should (equal (donkey-mark-test--selection) "three four\n")))
   (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
       "j M J J"
-    (should (equal (donkey-mark-test--selection) "three four\nfive six")))
+    (should (equal (donkey-mark-test--selection) "three four\nfive six\n")))
   (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
       "j M J K"
-    (should (equal (donkey-mark-test--selection) "one two\nthree four")))
+    (should (equal (donkey-mark-test--selection) "one two\nthree four\n")))
   (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
       "j M w J"
-    (should (equal (donkey-mark-test--selection) "three four")))
+    (should (equal (donkey-mark-test--selection) "three four\n")))
   (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
       "j M J w"
     (should (equal (donkey-mark-test--selection) "three four\nfive")))
   (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
       "j M C-u 2 J"
-    (should (equal (donkey-mark-test--selection) "three four\nfive six")))
+    (should (equal (donkey-mark-test--selection) "three four\nfive six\n")))
   (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
       "V J M J"
     (should (equal (donkey-mark-test--selection)
-                   "one two\nthree four\nfive six")))
+                   "one two\nthree four\nfive six\n")))
+  ;; The last line of a buffer with no final newline has none to take;
+  ;; `forward-line' stops at `point-max' and the selection keeps what
+  ;; there is.
+  (donkey-mark-test--keys "one\ntwo" "j M J"
+    (should (equal (donkey-mark-test--selection) "two")))
   (donkey-mark-test--keys "one two\nthree four\n" "J"
     (should-not (region-active-p))))
+
+(ert-deftest donkey-line-runs-take-the-newline-with-them ()
+  "`M J d' removes the line; it used to leave the blank one behind.
+
+`J' and `K' put the mark at the START OF THE NEXT LINE rather than at
+the end of this one, so the newline that ends the selection is inside
+it.  Without that character the run was the TEXT of a line rather than
+a line: `M J d' deleted the words and left the empty line their
+newline still ended, and `M J y' produced a kill with no line break,
+which the next `p' spliced into whatever line it landed in.
+
+Pinned against `donkey-visual-line-toggle', which answers the same
+problem from the other side -- it keeps the highlight tight and
+widens at `y'/`d' through `donkey--visual-line-region-bounds', having
+an anchor to widen from where this has none.  The two now agree on
+what they leave behind, which is the whole point of the change.
+
+`V M J d' is the case that made it worth doing: adopting a visual-line
+session brings its lines over whole, and before this the very next
+`J' handed the newline straight back."
+  (donkey-mark-test--keys "one two\nthree four\nrest\n" "M J d"
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "three four\nrest\n")))
+  (donkey-mark-test--keys "one two\nthree four\nrest\n" "M J J d"
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "rest\n")))
+  (donkey-mark-test--keys "one two\nthree four\nrest\n" "j M K d"
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "one two\nrest\n")))
+  (donkey-mark-test--keys "one two\nthree four\nrest\n" "V M J d"
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "rest\n")))
+  ;; A delete through the mode and one through a `V' session leave the
+  ;; same buffer, and a yank through either pastes back as a line.
+  (let ((moded (donkey-mark-test--keys "one two\nthree four\nrest\n" "M J J d"
+                 (buffer-substring-no-properties (point-min) (point-max))))
+        (visual (donkey-mark-test--keys "one two\nthree four\nrest\n" "V J d"
+                  (buffer-substring-no-properties (point-min) (point-max)))))
+    (should (equal moded visual)))
+  (let ((moded (donkey-mark-test--keys "one two\nthree\n" "M J y G p"
+                 (buffer-substring-no-properties (point-min) (point-max))))
+        (visual (donkey-mark-test--keys "one two\nthree\n" "V y G p"
+                  (buffer-substring-no-properties (point-min) (point-max)))))
+    (should (equal moded "one two\nthree\none two\n"))
+    (should (equal moded visual))))
 
 (ert-deftest donkey-star-trades-the-end-the-motions-hold ()
   "`*' swaps point and mark, so the motions adjust the other end.

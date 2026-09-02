@@ -727,7 +727,10 @@ ends the same way; other =g= keys are not shadowed and end the mode
 like any foreign key. =J= and =K= make lines a growable object of the
 mode: fresh, either marks the current line, and further presses grow
 by whole lines — =J= at the bottom end, =K= at the top, a mark
-mid-line completing its own line first. =*= swaps point and mark, so
+mid-line completing its own line first. Whole lines means the newline
+too, so =M J d= removes the line outright rather than leaving the
+blank one behind, and =M J y= yanks back as a line. The highlight
+reaches the next line's first column to show it. =*= swaps point and mark, so
 the motions adjust the selection's *other* end — vi's =o= in visual
 mode. The object keys own fixed ends and simply trade back before they
 grow, so =M w * w= selects what =M w w= selects; the same goes for a
