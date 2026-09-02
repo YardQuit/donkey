@@ -3359,6 +3359,15 @@ Paragraphs are absent because their keys are: `p' and `P' pass
 through to the paste commands here, and `m p' reaches the object --
 see `donkey-mark-run-mode-map'.")
 
+(defvar donkey--mark-run-armed-in-macro nil
+  "Non-nil when mark run mode was armed from inside a keyboard macro.
+
+Read by `donkey--mark-run-mode-post-command' to end the mode when the
+macro that armed it is over -- see there for why `this-command' cannot
+be asked instead.  Set at entry from `executing-kbd-macro' and cleared
+by `donkey--mark-run-exit', so a mode armed by a live keypress carries
+nil and is never touched by the rule.")
+
 (defun donkey--mark-run-mode-post-command ()
   "Repaint the mark run reminder, or end a mode that outlived its map.
 
@@ -3373,17 +3382,32 @@ while during count entry the echo area belongs to the keystroke echo.
 The exit is the transient map's backstop.  `set-transient-map' asks
 `donkey--mark-run-mode-keep-p' from `pre-command-hook', which is one
 command too late for anything that armed the map while it was already
-running: a keyboard macro ending on \`M' and a letter arms the mode
-inside `kmacro-end-and-call-macro', that command's own key lookup
-having happened long before, so the mode outlived the macro and the
-next bare `w' the user typed marked a word instead of moving.  A
-command that is neither a family member, nor part of entering a count,
-nor `donkey-mark-run-toggle' itself -- the press that arms the map,
-and deliberately no family member -- ends the mode here.
+running: a command whose own key lookup happened long before leaves
+the mode armed behind it, and the next bare `w' the user typed marked
+a word instead of moving.  A command that is neither a family member,
+nor part of entering a count, nor `donkey-mark-run-toggle' itself --
+the press that arms the map, and deliberately no family member -- ends
+the mode here.
+
+A REPLAYED MACRO needs the extra arm above, because
+`this-command' cannot see it.  `kmacro-call-macro' and
+`kmacro-end-and-call-macro' deliberately leave `this-command' set to
+the macro'''s LAST command so that `last-command' chaining and the
+repeat key keep working; a macro ending on \`M' and a letter therefore
+reaches this hook with `this-command' naming a family member, and the
+test below reads it as an ordinary press of the mode'''s own key.
+`executing-kbd-macro' is the honest signal: the mode was armed while a
+macro ran, and the first command to finish outside one is the macro'''s
+own caller.  Noted at entry in `donkey--mark-run-armed-in-macro'.
+\(A command that merely calls `execute-kbd-macro' comes back with
+`this-command' nil and would have been caught anyway; kmacro is the
+one that restores it.)
 
 Guarded, not signaling: a function that errors on `post-command-hook'
 is silently removed for the session."
   (cond
+   ((and donkey--mark-run-armed-in-macro (not executing-kbd-macro))
+    (donkey--mark-run-exit))
    ((memq this-command donkey--mark-run-commands)
     (donkey--repaint-hint donkey--mark-run-mode-hint))
    ((or (donkey--mark-run-mode-keep-p)
@@ -3427,6 +3451,7 @@ leaves the map armed with no further command to lapse it.
 call runs the map's ON-EXIT, which is this function again, and the nil
 is what stops the second pass.  Harmless when the mode is not armed."
   (remove-hook 'post-command-hook #'donkey--mark-run-mode-post-command)
+  (setq donkey--mark-run-armed-in-macro nil)
   (let ((exit donkey--mark-run-exit-function))
     (setq donkey--mark-run-exit-function nil)
     (when exit
@@ -3442,8 +3467,15 @@ ON-EXIT and which the reminder hook calls for the map that outlives
 its command.
 
 Re-entry cannot double anything: any previous arming is taken down
-first, so one exit function and one hook are all there ever are."
+first, so one exit function and one hook are all there ever are.
+
+Whether a keyboard macro is running is noted here rather than asked
+later: by the time the macro'''s caller reaches
+`donkey--mark-run-mode-post-command', `executing-kbd-macro' has gone
+back to nil and the only way to tell an armed-by-macro mode from an
+armed-by-keypress one is to have written it down."
   (donkey--mark-run-exit)
+  (setq donkey--mark-run-armed-in-macro (and executing-kbd-macro t))
   (add-hook 'post-command-hook #'donkey--mark-run-mode-post-command)
   (setq donkey--mark-run-exit-function
         (set-transient-map donkey-mark-run-mode-map

@@ -5,6 +5,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'rect)
+(require 'kmacro)
 (require 'donkey)
 
 ;;; ---------------------------------------------------------------------------
@@ -3947,23 +3948,73 @@ function the way the paths with no following command reach it --
 
 `set-transient-map' consults `donkey--mark-run-mode-keep-p' from
 `pre-command-hook', which is one command too late for anything that
-armed the map while it was already running: a keyboard macro ending
-on `M' and a letter arms the mode inside `kmacro-end-and-call-macro',
-whose own key lookup happened long before, so the mode outlived the
-macro and the user's next bare `w' MARKED instead of moving.
-`donkey--mark-run-mode-post-command' ends it on any command that is
-no family member, no part of a count, and not the toggle itself.
+armed the map while it was already running: its own key lookup
+happened long before, so the mode outlives it and the user's next bare
+`w' MARKS instead of moving.  `donkey--mark-run-mode-post-command'
+ends it on any command that is no family member, no part of a count,
+and not the toggle itself.
 
-Staged by calling the hook with the outer command's name bound, the
-way the command loop would: `execute-kbd-macro' from Lisp runs no
-outer command to name."
+Staged by calling the hook the way the command loop would: a command
+that plays a macro through `execute-kbd-macro' comes back with
+`this-command' nil, the inner loop having cleared it, so nil is what
+the outer post-command sees.  \(`kmacro-call-macro' is the exception
+that restores it -- see
+donkey-a-replayed-macro-does-not-outlive-its-mode.)"
   (donkey-mark-test--keys "for text that is" "w w l M w"
     (should (eq (key-binding "w") 'donkey-mark-word))
-    (let ((this-command 'kmacro-end-and-call-macro))
+    (let ((this-command nil))
       (donkey--mark-run-mode-post-command))
     (should (eq (key-binding "w") 'forward-word))
     (should-not (memq #'donkey--mark-run-mode-post-command
                       post-command-hook))))
+
+(ert-deftest donkey-a-replayed-macro-does-not-outlive-its-mode ()
+  "A macro ending in mark run mode takes the mode with it.
+
+The case `donkey-a-command-that-outlived-the-map-ends-the-mode' does
+NOT cover, and the reason `donkey--mark-run-armed-in-macro' exists.
+`kmacro-call-macro' and `kmacro-end-and-call-macro' deliberately leave
+`this-command' set to the macro\'s LAST command, so that
+`last-command' chaining and the repeat key keep working -- which means
+a macro ending on `M' and a letter reaches the hook with
+`this-command' naming a family member, and a test on `this-command'
+alone reads it as an ordinary press of the mode\'s own key and keeps
+the mode.  The user\'s next bare `w' then marked a word instead of
+moving, which is the whole complaint.
+
+`executing-kbd-macro' is the signal that does not lie: the mode was
+armed while a macro ran, and the first command to finish outside one
+is the macro\'s own caller.
+
+Driven as one turn of the command loop, from OUTSIDE any macro --
+`donkey-mark-test--keys' has finished its own by the time the body
+runs -- because the whole distinction is between commands that end
+inside a macro and the one that ends outside it."
+  (donkey-mark-test--keys "for text that is not saved" "w w l"
+    (let ((this-command 'kmacro-call-macro) (last-command nil))
+      (run-hooks 'pre-command-hook)
+      (kmacro-call-macro 1 t nil (kbd "M w w"))
+      ;; The trap, asserted rather than described: the macro left one
+      ;; of the mode\'s own commands in `this-command'.
+      (should (memq this-command donkey--mark-run-commands))
+      (should (eq (key-binding "w") 'donkey-mark-word))
+      (run-hooks 'post-command-hook))
+    (should (eq (key-binding "w") 'forward-word))
+    (should-not (memq #'donkey--mark-run-mode-post-command
+                      post-command-hook))
+    (should-not donkey--mark-run-armed-in-macro))
+  ;; The control the harness cannot stage: it drives every key through
+  ;; `execute-kbd-macro', where the flag is always set.  Entered with no
+  ;; macro running it stays nil, so a mode armed by a live keypress is
+  ;; never touched by the rule and survives its own commands.
+  (unwind-protect
+      (progn
+        (donkey--mark-run-enter)
+        (should-not donkey--mark-run-armed-in-macro)
+        (let ((this-command 'donkey-mark-word))
+          (donkey--mark-run-mode-post-command))
+        (should (eq (key-binding "w") 'donkey-mark-word)))
+    (donkey--mark-run-exit)))
 
 (ert-deftest donkey-a-repainted-reminder-is-never-logged ()
   "The reminders both modes keep up leave *Messages* alone.
