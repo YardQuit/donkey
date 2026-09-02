@@ -3918,7 +3918,7 @@ the mode like any foreign key."
   "A wrapper motion beside a stale mark does not conjure a selection.
 
 The object members of `donkey--mark-run-commands' may revive a region
-a hook deactivated mid-run; the `donkey--mark-run-motions' members
+a hook deactivated mid-run; the `donkey--mark-run-adjusters' members
 are held to `region-active-p' as well, or `M l w' next to the mark a
 canceled selection left behind grew a selection from wherever that
 mark lay.  Here: a run is marked and canceled from inside the mode --
@@ -4480,7 +4480,7 @@ the selection's start, so trimming or growing the FAR end meant
 walking the near one -- `M w w * l l' now grows past the far end
 instead, `* h' trims it, and a second `*' trades back, pinned by the
 un-swapped `l' shrinking the start again.  A member of
-`donkey--mark-run-motions', so the run carries on across it.
+`donkey--mark-run-adjusters', so the run carries on across it.
 
 Refused without an ACTIVE selection, and the stale mark is the case
 that separates the guard from what `exchange-point-and-mark' refuses

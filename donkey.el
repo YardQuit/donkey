@@ -2957,23 +2957,18 @@ one before marking it."
 ;; word.  That is a change to a flow nobody asked about, and it is not
 ;; what `m s' does today: `m s l m s' starts over.  Matching `m s'
 ;; exactly keeps the family uniform without disturbing `v'.
-(defconst donkey--mark-run-motions
+(defconst donkey--mark-run-adjusters
   '(donkey-mark-run-left donkey-mark-run-right
     donkey-mark-run-down donkey-mark-run-up
     donkey-mark-run-line-start donkey-mark-run-line-end
     donkey-mark-run-exchange)
-  "The mark run mode motions: the keys that are not object marks.
+  "The mark run keys that adjust a selection instead of marking one.
 
-`donkey-mark-run-exchange' rides in this list too: it moves point
-\(to the other end) and needs the same visible-run guard -- a swap
-beside a stale mark would be as conjured as a motion's continuation.
-
-`donkey-mark-run-line-start' and `donkey-mark-run-line-end' are here
-for the guard rather than for the description: with a run in progress
-they own an END apiece and stretch it to the line's edge, the way the
-object keys own theirs, and only a bare press with nothing selected
-is the plain motion the key is outside the mode.  Either way a stale
-mark must not be grown from, which is what membership buys.
+\`h' \`j' \`k' \`l' move point, `g h' and `g l' stretch an end to the
+line's edge, and \`*' trades which end is which.  None of them names
+an object, and that is the whole of what they have in common -- the
+list was called the mode's \"motions\" while the line-edge pair still
+was one, and had to explain itself once the pair grew fixed ends.
 
 Members of `donkey--mark-run-commands', so a run carries on across
 them -- but `donkey--mark-extending-p' holds them to a stricter test
@@ -3014,7 +3009,7 @@ command transparent to the mode has to be transparent to the run.")
      donkey-mark-paragraph donkey-mark-paragraph-backward
      donkey-mark-run-line-forward donkey-mark-run-line-backward
      donkey-mark-run-adopt)
-   donkey--mark-run-motions
+   donkey--mark-run-adjusters
    donkey--mark-run-inert-commands)
   "The commands that grow ONE selection between them -- the mark run family.
 
@@ -3028,7 +3023,7 @@ back by its own, and no two ever contend over an end.
 The eight object commands are also exactly what
 `donkey-mark-run-mode-map' offers without their `m' prefix, and the
 whole list is what `donkey--mark-run-mode-keep-p' holds mark run mode
-open for.  The `donkey--mark-run-motions' tail is included so that
+open for.  The `donkey--mark-run-adjusters' tail is included so that
 adjusting point mid-run -- possible only inside the mode, where alone
 those commands are bound -- reads as the run continuing, the way
 `j'/`k' keep a visual-line session; the PLAIN motions stay out, so
@@ -3088,7 +3083,7 @@ marking tests ran first."
        ;; anything: without this, `M l w' beside a stale mark grew a
        ;; selection from wherever that mark lay instead of marking the
        ;; word at point.
-       (or (not (memq last-command donkey--mark-run-motions))
+       (or (not (memq last-command donkey--mark-run-adjusters))
            (region-active-p))
        t))
 
@@ -3130,6 +3125,26 @@ signal `mark-inactive' instead of growing the selection."
     (let ((start (mark t)))
       (set-mark (point))
       (goto-char start))))
+
+(defun donkey--mark-run-continuing-p ()
+  "Return non-nil when this press continues a run, squaring it up first.
+
+Every mark run key asks the same two things in the same order: is this
+a continuation, and if so are the ends the right way round?  They were
+two calls at each of nine sites, and nothing but habit kept them
+together -- the `*' bug got in exactly because an object key grew a
+run whose ends had been traded and nobody had put them back.  One call
+makes the pairing structural: a key that continues a run cannot see it
+sideways, and the next key added to the mode inherits that without
+being told.
+
+`donkey--mark-extending-p' stays separate and stays pure.
+`donkey-mark-inner' and `donkey-mark-sexp-inner' ask it with no
+companions and must NOT be squared up: they count levels rather than
+objects, and their state is their own."
+  (when (donkey--mark-extending-p donkey--mark-run-commands)
+    (donkey--normalize-mark-run)
+    t))
 
 (defun donkey-mark-run-cancel ()
   "Drop the active selection and let mark run mode lapse.
@@ -3175,13 +3190,20 @@ mode exactly as it found it.  The `user-error' also keeps its own
 echo, `post-command-hook' not running after a signal, so the reminder
 cannot paint over the complaint."
   (interactive)
-  (user-error "%s would drop the mark run: leave with M, C-g or an action key"
-              (key-description (this-command-keys))))
+  ;; Named after the key that reached it, so a second key bound here
+  ;; later reports itself.  Called from Lisp there is no such key --
+  ;; `this-command-keys' answers with whatever ran last -- so the
+  ;; sentence starts with \"That\" rather than a lie.
+  (let ((key (key-description (this-command-keys))))
+    (user-error "%s would drop the mark run: leave with M, C-g or an action key"
+                (if (or (string-empty-p key) (not (called-interactively-p 'any)))
+                    "That"
+                  key))))
 
 (defun donkey-mark-run-left (&optional count)
   "Move point back COUNT characters without ending the mark run.
 
-The `donkey--mark-run-motions' wrappers exist because the PLAIN
+The `donkey--mark-run-adjusters' wrappers exist because the PLAIN
 motions must keep ending runs: `m w l m w' marking a single word afresh is
 pinned behavior, so `forward-char' and friends cannot join
 `donkey--mark-run-commands'.  Bound only inside
@@ -3259,14 +3281,12 @@ lost by that -- `v g l' has always been the way to select to the
 line'''s end from scratch -- and it keeps the pair usable for placing
 the cursor before marking, which is what `M g l w' does."
   (interactive "p")
-  (if (donkey--mark-extending-p donkey--mark-run-commands)
-      (progn
-        (donkey--normalize-mark-run)
-        (beginning-of-line count)
-        ;; Moving point activates nothing; the same re-assertion the
-        ;; backward object keys make, for the same reason.
-        (activate-mark))
-    (beginning-of-line count)))
+  (let ((extending (donkey--mark-run-continuing-p)))
+    (beginning-of-line count)
+    ;; Moving point activates nothing; the same re-assertion the
+    ;; backward object keys make, for the same reason.
+    (when extending
+      (activate-mark))))
 
 (defun donkey-mark-run-line-end (&optional count)
   "Stretch the run forward to the line end, or move there.
@@ -3281,13 +3301,11 @@ is what makes it the forward end'''s key -- on a run already spanning
 lines it reaches the end of the line the selection stops on, not the
 end of the line the cursor happens to sit in."
   (interactive "p")
-  (if (donkey--mark-extending-p donkey--mark-run-commands)
-      (progn
-        (donkey--normalize-mark-run)
-        (set-mark (save-excursion
-                    (goto-char (mark t))
-                    (move-end-of-line count)
-                    (point))))
+  (if (donkey--mark-run-continuing-p)
+      (set-mark (save-excursion
+                  (goto-char (mark t))
+                  (move-end-of-line count)
+                  (point)))
     (move-end-of-line count)))
 
 
@@ -3319,24 +3337,21 @@ COUNT lines; a COUNT below 1 is treated as 1, the reading the
 backward keys give theirs -- the other direction is \`K'."
   (interactive "p")
   (let ((n (max 1 (or count 1))))
-    (if (donkey--mark-extending-p donkey--mark-run-commands)
-        (progn
-          (donkey--normalize-mark-run)
-          ;; `forward-line' from the mark does both jobs the old
-          ;; end-of-line dance did: from a mark at a line start it adds
-          ;; N whole lines, and from one sitting mid-line it completes
-          ;; that line first, landing on the next line's start either
-          ;; way.  At the end of a buffer with no final newline it
-          ;; stops at `point-max', keeping what is selected.
-          (set-mark (save-excursion
-                      (goto-char (mark t))
-                      (forward-line n)
-                      (point)))
-          (message "Line marked"))
+    (if (donkey--mark-run-continuing-p)
+        ;; `forward-line' from the mark does both jobs the old
+        ;; end-of-line dance did: from a mark at a line start it adds
+        ;; N whole lines, and from one sitting mid-line it completes
+        ;; that line first, landing on the next line's start either
+        ;; way.  At the end of a buffer with no final newline it
+        ;; stops at `point-max', keeping what is selected.
+        (set-mark (save-excursion
+                    (goto-char (mark t))
+                    (forward-line n)
+                    (point)))
       (donkey--ensure-non-rectangle-selection)
       (beginning-of-line)
-      (push-mark (save-excursion (forward-line n) (point)) t t)
-      (message "Line marked"))))
+      (push-mark (save-excursion (forward-line n) (point)) t t))
+    (message "Line marked")))
 
 (defun donkey-mark-run-line-backward (&optional count)
   "Mark the current line, or grow the run's backward end by whole lines.
@@ -3354,21 +3369,19 @@ the end the newline belongs to is the one the partner owns.
 COUNT lines; a COUNT below 1 is treated as 1."
   (interactive "p")
   (let ((n (max 1 (or count 1))))
-    (if (donkey--mark-extending-p donkey--mark-run-commands)
+    (if (donkey--mark-run-continuing-p)
         (progn
-          (donkey--normalize-mark-run)
           (if (bolp)
               (forward-line (- n))
             (beginning-of-line)
             (forward-line (- (1- n))))
-          (activate-mark)
-          (message "Line marked"))
+          (activate-mark))
       (donkey--ensure-non-rectangle-selection)
       (beginning-of-line)
       (push-mark (save-excursion (forward-line 1) (point)) t t)
       (when (> n 1)
-        (forward-line (- (1- n))))
-      (message "Line marked"))))
+        (forward-line (- (1- n)))))
+    (message "Line marked")))
 
 (defun donkey-mark-run-exchange ()
   "Swap point and mark, so the motions adjust the run's other end.
@@ -3388,7 +3401,7 @@ own start and collapse the selection to nothing while still reporting
 \"Word marked\", which was the swap's one sharp edge; growing by
 objects now reads the same whichever way round the ends are.
 
-A member of `donkey--mark-run-motions', so the run carries on and the
+A member of `donkey--mark-run-adjusters', so the run carries on and the
 visible-run guard applies to what follows.  Refuses without an active
 selection: `exchange-point-and-mark' would leap to some stale mark
 and re-activate whatever lies between, which is not what a key for
@@ -3425,7 +3438,7 @@ not to a re-implementation, so the two spellings cannot drift apart:
 `M w w b' selects exactly what `m w m w m b' selects.  \\`h' \\`j'
 \\`k' \\`l' move point without ending the run, adjusting the
 selection's near end the way `j'/`k' adjust a visual-line session --
-through the `donkey--mark-run-motions' wrappers, since the plain
+through the `donkey--mark-run-adjusters' wrappers, since the plain
 motions must keep ending runs everywhere else.  \`M' inside the mode cancels.
 
 Every other key is missing on purpose.  Pressing one fails
@@ -3600,6 +3613,18 @@ armed-by-keypress one is to have written it down."
                            #'donkey--mark-run-exit))
   (message "%s" donkey--mark-run-mode-hint))
 
+(defun donkey--adoptable-selection-p ()
+  "Return non-nil when there is a selection worth taking into a run.
+
+Active and not empty.  `donkey-set-mark' activates a mark without
+covering anything yet, and `region-active-p' says yes to that: adopting
+it made the first object key grow from the CURSOR, so `v M w' from
+mid-word took the tail of the word.  Asked by `donkey-mark-run-toggle'
+to decide whether to adopt and by `donkey-mark-run-adopt' to refuse
+when it should not have been called -- one test, so the two cannot
+drift into disagreeing about what a selection is."
+  (and (region-active-p) (/= (point) (mark))))
+
 (defun donkey-mark-run-adopt ()
   "Adopt the active selection into a mark run and enter the mode.
 
@@ -3643,7 +3668,7 @@ press to this name in `this-command', and membership is what lets the
 object key that follows read the adopted selection as a run in
 progress instead of marking afresh over it."
   (interactive)
-  (unless (and (region-active-p) (/= (point) (mark)))
+  (unless (donkey--adoptable-selection-p)
     (user-error "No selection to adopt"))
   ;; One call does both jobs: the car is the region's start and the cdr
   ;; its end whichever side point was on, and a live visual-line session
@@ -3743,7 +3768,7 @@ this key makes: the same behavior, minus the prefix."
     (cond
      (was-rectangle
       (donkey-mark-run-cancel))
-     ((and (region-active-p) (/= (point) (mark)))
+     ((donkey--adoptable-selection-p)
       ;; The rename is what makes the adoption stick: this command is
       ;; no family member, and without it the object key that follows
       ;; would mark afresh over the selection just adopted.
@@ -3782,7 +3807,7 @@ before the one point normalizes onto, and a COUNT of zero marks nothing,
 matching how `mark-word' itself reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (let ((extend (donkey--mark-extending-p donkey--mark-run-commands)))
+  (let ((extend (donkey--mark-run-continuing-p)))
     (unless extend
       (unless (donkey--point-on-word-or-symbol-char-p)
         (backward-word 1))
@@ -3797,10 +3822,12 @@ matching how `mark-word' itself reads its argument."
                                                   #'backward-word))
         (user-error "No word at or before point"))
       (beginning-of-thing 'word))
-    ;; The normalization above is skipped when extending: it walks point
-    ;; back to the START of the word already selected, and `mark-word'
-    ;; measures its extension from there, so running it would grow the
-    ;; region by nothing and then by one word from the wrong end.
+    ;; Walking point onto the word's start is skipped when extending:
+    ;; it would land on the START of the word already selected, and
+    ;; `mark-word' measures its extension from there, so running it
+    ;; would grow the region by nothing and then by one word from the
+    ;; wrong end.  (Squaring the RUN's ends up is a different job, and
+    ;; `donkey--mark-run-continuing-p' has already done it.)
     ;;
     ;; ALLOW-EXTEND only permits the extension; `mark-word' still decides
     ;; for itself, and its test is `(eq last-command this-command)' or a
@@ -3811,8 +3838,6 @@ matching how `mark-word' itself reads its argument."
     ;; the run is live, is what `donkey-mark-sentence' does for
     ;; `mark-end-of-sentence' and for the same reason; the binding is
     ;; the identity on a plain repeat.
-    (when extend
-      (donkey--normalize-mark-run))
     (let ((last-command (if extend this-command last-command))
           ;; `mark-word' reads the mark with plain `mark' -- twice, to
           ;; pick its direction and to measure from -- and a run whose
@@ -3863,9 +3888,8 @@ is nothing left for them to name here.  Running out of buffer stops
 and keeps what is selected, matching the forward direction at the end
 of the buffer."
   (let ((n (max 1 (or count 1))))
-    (if (donkey--mark-extending-p donkey--mark-run-commands)
+    (if (donkey--mark-run-continuing-p)
         (progn
-          (donkey--normalize-mark-run)
           (funcall motion n)
           (activate-mark)
           (message "%s marked" label))
@@ -3903,6 +3927,23 @@ it after the skip returned the skip's own position."
       (goto-char beg)
       (skip-chars-forward "[:space:]\n" end)
       (= (point) end))))
+
+(defun donkey--refuse-blank-mark (object)
+  "Drop the region and report when it is nothing but whitespace.
+
+OBJECT names what was asked for, so the message reads \"No sentence at
+or before point\" or \"No paragraph at or before point\" -- the two
+commands whose motions walk to the end of a blank buffer and back
+rather than signaling, and so end up \"marking\" the blank.
+
+For a FRESH press only, which is why the callers keep their own
+condition: a run may legitimately cover blank -- `M J' on an indented
+empty line marks whitespace, and the next object key is asked to grow
+it -- and refusing there deactivated the mark, throwing away a
+selection the user could see over the state the run started from."
+  (when (donkey--region-blank-p)
+    (deactivate-mark)
+    (user-error "No %s at or before point" object)))
 
 (defun donkey-mark-sentence (&optional count)
   "Select sentence at point.
@@ -3955,9 +3996,7 @@ continuation reaches `mark-end-of-sentence's own test."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (let ((origin (point))
-        (extending (donkey--mark-extending-p donkey--mark-run-commands)))
-   (when extending
-     (donkey--normalize-mark-run))
+        (extending (donkey--mark-run-continuing-p)))
    ;; A fresh press normalizes onto a sentence start; a run in progress
    ;; must not, or growing a WORD selection with `m s' would silently
    ;; walk the region's start back to its sentence's start as a side
@@ -4045,15 +4084,8 @@ continuation reaches `mark-end-of-sentence's own test."
   ;; holding nothing but whitespace -- they simply walk to its end and
   ;; back, "marking" the blank.  Reject that here so such a buffer still
   ;; reports rather than selecting nothing of substance.
-  ;;
-  ;; A FRESH press only.  A run may legitimately hold blank -- `M J' on
-  ;; an indented empty line marks whitespace, and this key is then asked
-  ;; to grow it -- and refusing there deactivated the mark and threw away
-  ;; a selection the user could see, over the state the run started
-  ;; from.  The siblings simply extend; so does this one now.
-  (when (and (not extending) (donkey--region-blank-p))
-    (deactivate-mark)
-    (user-error "No sentence at or before point"))
+  (unless extending
+    (donkey--refuse-blank-mark "sentence"))
   (message "Sentence marked")))
 
 (defun donkey-mark-sentence-backward (&optional count)
@@ -4159,7 +4191,7 @@ marks nothing, matching how `forward-paragraph' reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (let ((n (or count 1))
-        (extending (donkey--mark-extending-p donkey--mark-run-commands)))
+        (extending (donkey--mark-run-continuing-p)))
     (if extending
         ;; Grown by moving the MARK, which is the end this command owns
         ;; -- the same shape as `donkey-mark-symbol' and as
@@ -4170,14 +4202,12 @@ marks nothing, matching how `forward-paragraph' reads its argument."
         ;; paragraph gave one blank fewer than `C-u 2 m p', because only
         ;; the fresh branch below knew to absorb one.  Caught by the
         ;; test named donkey-repeating-a-mark-key-equals-a-count.
-        (progn
-          (donkey--normalize-mark-run)
-          (set-mark (save-excursion
-                      (let ((start (point)))
-                        (goto-char (mark t))
-                        (forward-paragraph n)
-                        (donkey--absorb-paragraph-blank start n)
-                        (point)))))
+        (set-mark (save-excursion
+                    (let ((start (point)))
+                      (goto-char (mark t))
+                      (forward-paragraph n)
+                      (donkey--absorb-paragraph-blank start n)
+                      (point))))
       ;; Point ends at the START, mark at the end.  It used to be the
       ;; other way round, which made this the only mark command that
       ;; inverted native: `mark-paragraph' finishes with
@@ -4194,14 +4224,8 @@ marks nothing, matching how `forward-paragraph' reads its argument."
         (push-mark (point) nil t)
         (goto-char start))
       (activate-mark))
-    ;; A fresh press only, for the reason `donkey-mark-sentence' gives
-    ;; at its own copy of this guard: a run that has passed through
-    ;; blank is asked to grow, not to be thrown away.
-    (when (and (/= n 0)
-               (not extending)
-               (donkey--region-blank-p))
-      (deactivate-mark)
-      (user-error "No paragraph at or before point"))
+    (unless (or extending (= n 0))
+      (donkey--refuse-blank-mark "paragraph"))
     (message "Paragraph marked")))
 
 (defun donkey-mark-paragraph-backward (&optional count)
@@ -4248,20 +4272,19 @@ before the one point normalizes onto, and a COUNT of zero marks nothing,
 matching how `forward-sexp' reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (if (donkey--mark-extending-p donkey--mark-run-commands)
+  (let ((n (or count 1)))
+   (if (donkey--mark-run-continuing-p)
       ;; Grown by moving the MARK, which is where this command leaves the
       ;; far end of its selection -- it finishes with `backward-sexp', so
       ;; point sits at the START.  The same shape as `mark-word's own
       ;; extend branch, and the punctuation trim has to run again because
       ;; the new end is a new symbol with its own possible trailing "."
-      (let ((n (or count 1)))
-        (donkey--normalize-mark-run)
-        (set-mark (save-excursion
-                    (goto-char (mark t))
-                    (forward-sexp n)
-                    (when (> n 0)
-                      (donkey--trim-symbol-punctuation))
-                    (point))))
+      (set-mark (save-excursion
+                  (goto-char (mark t))
+                  (forward-sexp n)
+                  (when (> n 0)
+                    (donkey--trim-symbol-punctuation))
+                  (point)))
     (unless (donkey--point-on-word-or-symbol-char-p)
       (condition-case nil
           (backward-sexp 1)
@@ -4278,21 +4301,20 @@ matching how `forward-sexp' reads its argument."
                                                 #'backward-sexp))
       (user-error "No symbol at or before point"))
     (beginning-of-thing 'symbol)
-    (let ((n (or count 1)))
-      (forward-sexp n)
-      ;; Only a forward run leaves point at the far END of the selection,
-      ;; where a trailing "," or "." is the thing to drop.  A negative
-      ;; count leaves point at the region's START instead, and backing up
-      ;; over punctuation there would reach into the symbol before it.
-      (when (> n 0)
-        (donkey--trim-symbol-punctuation))
-      (push-mark (point) t)
-      ;; Back over the same number of symbols the first step covered.
-      ;; Going back one regardless left the region holding only the LAST
-      ;; symbol of a counted run -- a count of 2 over "foo-a bar-b"
-      ;; marked just "bar-b".
-      (backward-sexp n))
-    (activate-mark))
+    (forward-sexp n)
+    ;; Only a forward run leaves point at the far END of the selection,
+    ;; where a trailing "," or "." is the thing to drop.  A negative
+    ;; count leaves point at the region's START instead, and backing up
+    ;; over punctuation there would reach into the symbol before it.
+    (when (> n 0)
+      (donkey--trim-symbol-punctuation))
+    (push-mark (point) t)
+    ;; Back over the same number of symbols the first step covered.
+    ;; Going back one regardless left the region holding only the LAST
+    ;; symbol of a counted run -- a count of 2 over "foo-a bar-b"
+    ;; marked just "bar-b".
+    (backward-sexp n)
+    (activate-mark)))
   (message "Symbol marked"))
 
 (defun donkey-mark-symbol-backward (&optional count)
