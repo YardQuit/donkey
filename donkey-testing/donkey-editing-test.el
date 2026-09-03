@@ -2066,6 +2066,73 @@ are free to wrap."
      )
     (should-not offenders)))
 
+(ert-deftest donkey-no-docstring-sentence-is-cut-by-a-blank-line ()
+  "No docstring has a paragraph break dropped into a sentence.
+
+A blank line in the middle of a sentence is what an edit scripted
+against the wrong anchor leaves behind, and every other check here is
+blind to it: the file still reads, still byte-compiles, and checkdoc
+has nothing to say about prose.  It happened.  A paragraph went in
+ahead of the words \"open for\", and left `donkey--mark-run-commands'
+saying that the whole list is what the keep predicate \"holds mark run
+mode\" -- with the two words that finished the thought stranded a
+paragraph below, reading as a sentence of their own.
+
+Two halves of the same accident, so both are checked.  A paragraph
+that STOPS without ending a sentence is one; a paragraph that STARTS
+with a lowercase word is the other, and the break above went unseen
+until the second was added, since the text either side of it had been
+run together rather than split.
+
+An indented line is an example or a list item rather than prose, and a
+sentence that runs into one is finished on the far side of it, so a
+paragraph whose last line is indented is exempt from both -- that is
+how `donkey-mark-inner' and `donkey-decscusr-denied-terminals'
+introduce theirs.  \"vi\" is exempt as an opener because it is a name
+that is spelled lowercase; `donkey-join-line' opens a paragraph with
+it and is right to.  Anything else lowercase is a cut sentence."
+  ;; `case-fold-search' is t in batch, and with it [a-z] matches a
+  ;; capital too -- every paragraph in the package would be an
+  ;; offender, which is how the first draft of this test \"passed\"
+  ;; nothing and failed everything.
+  (let ((offenders nil)
+        (case-fold-search nil))
+    (mapatoms
+     (lambda (sym)
+       (let ((name (symbol-name sym))
+             (file (symbol-file sym)))
+         ;; Prose written here, not prose generated elsewhere.  A test
+         ;; helper defined with `define-derived-mode' carries a
+         ;; docstring Emacs appends boilerplate to, and that
+         ;; boilerplate breaks both rules -- and appears only once a
+         ;; test has run and pulled the parent mode in, so it failed
+         ;; the suite while passing this file on its own.
+         (when (and (string-prefix-p "donkey-" name)
+                    file
+                    (equal (file-name-nondirectory file) "donkey.el"))
+           (dolist (doc (list (and (fboundp sym) (documentation sym t))
+                              (documentation-property
+                               sym 'variable-documentation t)))
+             (when (stringp doc)
+               (let ((paras (split-string doc "\n[ \t]*\n" t)))
+                 (while (cdr paras)
+                   (let* ((here (string-trim-right (car paras)))
+                          (next (cadr paras))
+                          (tail (car (last (split-string here "\n")))))
+                     (unless (or (string-match-p "\\`[ \t]" tail)
+                                 (string-match-p "\\`[ \t]" next))
+                       (when (not (string-match-p "[.!?:][\"')]*\\'" here))
+                         (push (format "%s ends unfinished: ...%s" name
+                                       (substring here (max 0 (- (length here) 44))))
+                               offenders))
+                       (when (and (string-match-p "\\`[a-z]" next)
+                                  (not (string-match-p "\\`vi\\('s\\)?[ \t]" next)))
+                         (push (format "%s starts lowercase: %s..." name
+                                       (substring next 0 (min 44 (length next))))
+                               offenders))))
+                   (setq paras (cdr paras))))))))))
+    (should-not offenders)))
+
 (ert-deftest donkey-docstrings-carry-no-repeated-apostrophes ()
   "No docstring in donkey.el contains a run of apostrophes.
 

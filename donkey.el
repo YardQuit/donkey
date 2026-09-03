@@ -3026,15 +3026,6 @@ back by its own, and no two ever contend over an end.
 The eight object commands are also exactly what
 `donkey-mark-run-mode-map' offers without their `m' prefix, and the
 whole list is what `donkey--mark-run-mode-keep-p' holds mark run mode
-`donkey-mark-whole-buffer' is a member without being a growable
-object: \`%' replaces the selection rather than adding to it, and no
-press after it can grow what already covers everything.  It is here
-because it MARKS -- the mode has no business lapsing on a mark
-command, and membership is also what gets the press recorded, so \`u'
-takes it back.  It was the last of the keys that changed a run and
-left, and refusing it would have been the wrong answer to a key doing
-exactly what it says.
-
 open for.  The `donkey--mark-run-adjusters' tail is included so that
 adjusting point mid-run -- possible only inside the mode, where alone
 those commands are bound -- reads as the run continuing, the way
@@ -3045,6 +3036,15 @@ membership would let a mark left over from an older selection qualify
 the first letter after `M' as a continuation -- see its docstring.
 `donkey-mark-run-adopt' IS one: an adopting press hands the next key a
 live selection, and membership is what makes that key grow it.
+
+`donkey-mark-whole-buffer' is a member without being a growable
+object: \`%' replaces the selection rather than adding to it, and no
+press after it can grow what already covers everything.  It is here
+because it MARKS -- a mark mode has no business lapsing on a mark
+command -- and membership is also what gets the press recorded, so \`u'
+takes it back.  It was the last of the keys that changed a run and
+left, and refusing it would have been the wrong answer to a key doing
+exactly what it says.
 
 The delimiter marks (`donkey-mark-inner' and friends) are not members:
 they count LEVELS, not objects, and one level out is not one more of
