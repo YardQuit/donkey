@@ -3173,19 +3173,16 @@ objects, and their state is their own."
 (defun donkey-mark-run-cancel ()
   "Drop the active selection and let mark run mode lapse.
 
-Bound to \`M' inside `donkey-mark-run-mode-map', and called by
-`donkey-mark-run-toggle' for the one selection it refuses to adopt, a
-rectangle.  It is deliberately no member of
+Bound to \`M' inside `donkey-mark-run-mode-map'.  It is deliberately
+no member of
 `donkey--mark-run-commands' and no key of the mode map's family row,
 so running it fails `donkey--mark-run-mode-keep-p' and the transient
 map is gone by the next key.
 
 The message is worded like `donkey-visual-line-toggle's \"Visual
 line: canceled\", the pair being the two selection toggles.  Since
-adoption arrived, the selection it drops is nearly always a run this
-mode grew -- adopted or marked -- so the wording is also simply
-accurate; the rectangle case keeps the small imprecision, and the
-consistency is worth it."
+adoption arrived, the selection it drops is always a run this mode
+grew -- adopted or marked -- so the wording is also simply accurate."
   (interactive)
   (deactivate-mark)
   (message "Mark run: canceled"))
@@ -4036,10 +4033,13 @@ second-press shape `donkey-visual-line-toggle' has.  This press once
 canceled ANY active selection; adoption replaced that after live use,
 because \"transfer my selection into the mode\" kept being the
 intent and \"throw it away\" kept being the result.  There are two
-exceptions.  A rectangle has no forward end for the family to own, so
-a stale `rectangle-mark-mode' is disabled per
-`donkey--ensure-non-rectangle-selection' and the selection is canceled
-rather than adopted.  And an EMPTY active region -- a bare `v', which
+exceptions, and neither of them stops the mode starting.  A rectangle
+has no forward end for the family to own, so a stale
+`rectangle-mark-mode' is disabled per
+`donkey--ensure-non-rectangle-selection' and the block is dropped
+rather than adopted -- and then the press goes on to start a run as it
+would over nothing at all, which is what it used to return without
+doing.  And an EMPTY active region -- a bare `v', which
 has activated a mark but covered nothing yet -- is dropped rather than
 adopted, so the first object key marks the whole object at point:
 `v M w' mid-word takes the word, as `M w' alone does.
@@ -4057,9 +4057,7 @@ this key makes: the same behavior, minus the prefix."
   (let ((was-rectangle (bound-and-true-p rectangle-mark-mode)))
     (donkey--ensure-non-rectangle-selection)
     (cond
-     (was-rectangle
-      (donkey-mark-run-cancel))
-     ((donkey--adoptable-selection-p)
+     ((and (not was-rectangle) (donkey--adoptable-selection-p))
       ;; The rename is what makes the adoption stick: this command is
       ;; no family member, and without it the object key that follows
       ;; would mark afresh over the selection just adopted.
@@ -4068,7 +4066,16 @@ this key makes: the same behavior, minus the prefix."
      (t
       ;; Including an EMPTY active region, which is dropped rather than
       ;; adopted -- see `donkey-mark-run-adopt' for why `v M' must still
-      ;; mark the whole word rather than the tail of it.
+      ;; mark the whole word rather than the tail of it.  And a
+      ;; RECTANGLE, which has no forward end for the family to own:
+      ;; dropped like the rest, and then the mode starts here as it
+      ;; would over nothing at all.  It used to cancel and return
+      ;; without entering, the one selection whose `M' left the mode
+      ;; off -- so the press did nothing but clear, and the obvious
+      ;; second press found `last-command' equal to `this-command'
+      ;; and grew the head start from the mark the rectangle left,
+      ;; selecting from where the rectangle began to the word under
+      ;; point.
       (deactivate-mark)
       ;; Only when point is ON a word.  `donkey-mark-word' reaches for
       ;; the word BEHIND a gap, which is right for a key that says
@@ -4086,9 +4093,33 @@ this key makes: the same behavior, minus the prefix."
       ;; which is the promise the mode is named for.  Left alone, the
       ;; word is a free head start: press nothing and you have it,
       ;; press `w' and you have the word the prefix would have marked.
-      (donkey--mark-run-enter)
+      ;;
+      ;; `last-command' is bound away for the call.  Leaving
+      ;; `this-command' alone is what keeps the head start out of the
+      ;; run, but it also lets `donkey--mark-extending-p' match this
+      ;; command against ITSELF -- two `M' presses in a row are
+      ;; `(eq last-command this-command)', and the head start would
+      ;; then GROW whatever mark was lying about instead of marking
+      ;; the word under point.  Nothing else can reach that shape now
+      ;; that every branch here enters the mode, the second press
+      ;; being the map's own cancel; the binding is what makes it stay
+      ;; unreachable.
+      ;;
+      ;; Marked BEFORE the mode is armed, which is only about what is
+      ;; left on screen.  `donkey--mark-run-enter' ends by showing the
+      ;; reminder, and the head start's own "Word marked" used to land
+      ;; on top of it -- so the mode's only sign was missing for the
+      ;; whole first press of every run that starts on a word, which
+      ;; is most of them, and `M d' never showed it at all.  The
+      ;; post-command repaint cannot help here: it fires for family
+      ;; commands, and this press is deliberately none.  Widening it
+      ;; to the toggle is worse than it looks, `this-command' being
+      ;; set to `last-command' for the keys of a count, so the hint
+      ;; would paint over the `C-u 3-' echo as well.
       (when (donkey--point-on-word-or-symbol-char-p)
-        (donkey-mark-word))))))
+        (let ((last-command nil))
+          (donkey-mark-word)))
+      (donkey--mark-run-enter)))))
 
 (defun donkey-mark-word (&optional count)
   "Select the entire word at or adjacent to point.

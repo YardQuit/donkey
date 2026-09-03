@@ -4022,7 +4022,34 @@ area for `current-message' to read."
       (donkey-mark-test--keys "alpha beta gamma delta" "M C-u 3 w"
         nil))
     (should (= 2 (seq-count (lambda (m) (equal m donkey--mark-run-mode-hint))
-                            msgs)))))
+                            msgs))))
+  ;; The ENTRY press ends on the reminder too.  The head start says
+  ;; "Word marked" over the one `donkey--mark-run-enter' shows, and no
+  ;; repaint follows -- the toggle is deliberately no family member --
+  ;; so the mode's only sign on screen was missing for the whole first
+  ;; press of every run that starts on a word, which is most of them.
+  ;; `M d' is a complete interaction that never showed it.  Marking
+  ;; before arming is what puts the reminder last.
+  (dolist (keys '("M" "M w" "M C-u 3 w"))
+    (let (msgs)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (when fmt (push (apply #'format fmt args) msgs))
+                   nil)))
+        (donkey-mark-test--keys "alpha beta gamma delta" keys
+          nil))
+      (should (equal (list keys (car msgs))
+                     (list keys donkey--mark-run-mode-hint)))))
+  ;; On whitespace there is no head start to talk over, and the
+  ;; reminder is still the last thing said.
+  (let (msgs)
+    (cl-letf (((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (when fmt (push (apply #'format fmt args) msgs))
+                 nil)))
+      (donkey-mark-test--keys " alpha beta" "M"
+        nil))
+    (should (equal (car msgs) donkey--mark-run-mode-hint))))
 
 (ert-deftest donkey-the-hint-hook-leaves-with-the-mode ()
   "A key that lapses the mode takes the reminder hook with it.
@@ -5179,15 +5206,88 @@ nothing to do rather than anything surprising."
   ;; a region a hook deactivated, where a motion may not.
   (should-not (memq 'donkey-mark-whole-buffer donkey--mark-run-adjusters)))
 
-(ert-deftest donkey-a-rectangle-is-canceled-not-adopted ()
-  "`M' over a rectangle drops it; there is no forward end to own.
+(ert-deftest donkey-a-rectangle-is-dropped-and-the-mode-still-starts ()
+  "`M' over a rectangle drops it, then starts as it would over nothing.
 
 The one selection adoption refuses: the family's rule -- forward keys
 push the mark, backward keys walk point -- has no meaning across a
 block, so the stale `rectangle-mark-mode' is disabled and the
-selection canceled, as the toggle always did."
-  (donkey-mark-test--keys "for text that is\nnot saved\n" "m v j l M"
-    (should-not (region-active-p))))
+selection dropped.  What follows the drop is the point.  The press
+used to cancel and RETURN, leaving the mode off -- the only selection
+whose `M' did not start a run -- so the press did nothing but clear,
+and there was nothing to press a letter at.
+
+Pressing `M' again is the obvious answer to that, and it was the
+worst one.  With the mode still off the second press reached the
+toggle a second time, where `donkey--mark-extending-p' found
+`last-command' equal to `this-command' -- two toggles in a row are
+each other -- and the head start GREW from the mark the rectangle had
+left, selecting from where the rectangle began to the word under
+point.  A span across lines that nobody asked for, and `M M d' would
+have taken it.
+
+Both halves are fixed here: every branch of the toggle now enters, so
+that shape is unreachable, and the head start binds `last-command'
+away so it cannot match itself even if some later branch stops
+entering."
+  ;; The rectangle's span is not adopted -- the head start marks the
+  ;; word under point, exactly as it would have with no selection.
+  (donkey-mark-test--keys "abc def\nghi jkl\n" "m v j l M"
+    (should (eq (key-binding "w") 'donkey-mark-word))
+    (should-not (bound-and-true-p rectangle-mark-mode))
+    (should (equal (donkey-mark-test--selection) "ghi")))
+  ;; A letter after it marks afresh, the head start being no press.
+  (donkey-mark-test--keys "abc def\nghi jkl\n" "m v j l M w"
+    (should (equal (donkey-mark-test--selection) "ghi")))
+  ;; And the second `M' is the mode's own cancel now, not a second
+  ;; toggle growing a stale mark.
+  (donkey-mark-test--keys "abc def\nghi jkl\n" "m v j l M M"
+    (should-not (region-active-p))
+    (should-not (eq (key-binding "w") 'donkey-mark-word))))
+
+(ert-deftest donkey-the-head-start-never-grows-a-mark-it-found ()
+  "The head start marks afresh whatever `last-command' says.
+
+`donkey-mark-run-toggle' deliberately leaves `this-command' alone, so
+that the letter after `M' marks rather than grows -- see
+`donkey-the-toggle-is-no-family-member'.  The cost is that the toggle
+can match ITSELF: `donkey--mark-extending-p' asks
+`(eq last-command this-command)', and two toggles in a row satisfy it,
+so the head start would grow from whatever mark was lying about
+instead of marking the word under point.
+
+That shape was reachable through the rectangle branch, which canceled
+and returned without arming the map, leaving the second `M' to reach
+the toggle again -- see
+`donkey-a-rectangle-is-dropped-and-the-mode-still-starts'.  Every
+branch enters now, so no key sequence gets there, and this asks the
+command directly instead: the guard has to hold on its own, or the
+next branch that forgets to enter brings the bug back with it."
+  (let ((buf (get-buffer-create "*donkey-head-start-test*")))
+    (unwind-protect
+        (progn
+          (donkey-mode 1)
+          (let ((transient-mark-mode t))
+            (switch-to-buffer buf)
+            (fundamental-mode)
+            (erase-buffer)
+            (insert "abc def\nghi jkl\n")
+            ;; A mark left over at the buffer's start, inactive, with
+            ;; point on a word further down -- what the canceled
+            ;; rectangle used to leave behind.
+            (goto-char (point-min))
+            (push-mark (point) t nil)
+            (goto-char 10)
+            (deactivate-mark)
+            (let ((last-command 'donkey-mark-run-toggle)
+                  (this-command 'donkey-mark-run-toggle))
+              (donkey-mark-run-toggle))
+            (should (equal (buffer-substring-no-properties
+                            (region-beginning) (region-end))
+                           "ghi"))))
+      (donkey--mark-run-exit)
+      (when (buffer-live-p buf) (kill-buffer buf))
+      (donkey-mode -1))))
 
 (ert-deftest donkey-the-toggle-is-no-family-member ()
   "A letter after `M' marks afresh even with an old mark lying around.

@@ -788,9 +788,11 @@ rather than dropping it: =m w M w= extends the marked word, and a
 =V J= selection keeps its lines while the object keys grow it — whole
 lines, the final newline included, so =V J M d= removes both lines
 outright the way =V J d= does. A rectangle is the one selection =M=
-cancels rather than adopts, having no forward end for the family to
-own; and an *empty* selection is dropped rather than adopted, so after
-a bare =v= mid-word, =M w= still marks the whole word.
+drops rather than adopts, having no forward end for the family to own
+— and having dropped it, =M= starts a run as it would over nothing at
+all, so the press still leaves you somewhere to press a letter. An
+*empty* selection is dropped the same way, so after a bare =v=
+mid-word, =M w= still marks the whole word.
 
 Any other key ends the mode and then does its ordinary job in the same
 press — =M w w d= selects two words and deletes them. Two are held
