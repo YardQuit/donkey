@@ -4678,6 +4678,7 @@ rather than rebinding."
   ;; Outside the mode the key is `donkey-visual-line-toggle' as ever.
   (donkey-mark-test--keys "one two\nthree four\n" "V"
     (should (equal (donkey-mark-test--selection) "one two")))
+
   ;; And after a legal exit it works again: the delete takes the run,
   ;; and the `V' after it starts its session on what is left.
   (donkey-mark-test--keys "one two\nthree four\n" "M w d V"
@@ -4923,6 +4924,94 @@ and leave it standing."
     (should-not donkey--mark-run-history))
   (donkey-mark-test--keys "for text that is" "w w l"
     (should (eq (key-binding "u") 'undo))))
+
+(ert-deftest donkey-g-g-and-g-e-stretch-the-run-to-the-buffer-ends ()
+  "`g g' and `g e' own an end apiece, as `g h' and `g l' do.
+
+The buffer's edges are the line's written large.  Left as plain
+motions the two dragged the near end to `point-min' or `point-max' and
+lapsed the mode on the way out, which is the largest thing a single
+press can do to a run and gave no way back -- so they waited until
+\`u' existed and could take one off again.
+
+`G' is the same command as `g e', as it is in normal state."
+  (let ((text "one two three\nfour five six\nseven eight nine\n"))
+    (donkey-mark-test--keys text "j M w g g"
+      (should (equal (donkey-mark-test--selection) "one two three\nfour")))
+    (donkey-mark-test--keys text "j M w g e"
+      (should (equal (donkey-mark-test--selection)
+                     "four five six\nseven eight nine\n")))
+    (donkey-mark-test--keys text "j M w G"
+      (should (equal (donkey-mark-test--selection)
+                     "four five six\nseven eight nine\n")))
+    ;; An end apiece, so they add rather than cancel.
+    (donkey-mark-test--keys text "j M w g g g e"
+      (should (equal (donkey-mark-test--selection) text)))
+    ;; And the reason they could be adopted at all.
+    (donkey-mark-test--keys text "j M w g e u"
+      (should (equal (donkey-mark-test--selection) "four")))
+    ;; Fresh, both are the plain motions the keys are outside the mode
+    ;; -- and reach the very edge.  With \"p\" rather than \"P\" a bare
+    ;; press arrives as 1, which `beginning-of-buffer' reads as a tenth
+    ;; of the way in: `M g g' landed on the second line before the
+    ;; interactive spec matched the command being wrapped.
+    (donkey-mark-test--keys text "j w w M g g"
+      (should-not (region-active-p))
+      (should (= (point) (point-min))))
+    (donkey-mark-test--keys text "j w w M g e"
+      (should-not (region-active-p))
+      (should (= (point) (point-max))))
+    ;; A count still reaches the fraction it names when there is no run
+    ;; to stretch, and is ignored by one that has an edge to reach.
+    (donkey-mark-test--keys text "j w w M C-u 5 g g"
+      (should (> (point) (point-min))))
+    (donkey-mark-test--keys text "j M w C-u 5 g g"
+      (should (equal (donkey-mark-test--selection) "one two three\nfour")))
+    ;; `g g' brings back a region a hook deactivated mid-run, the way
+    ;; the backward object keys and `g h' do -- moving point activates
+    ;; nothing, so the branch has to re-assert it or the run would grow
+    ;; on invisibly.  Staged from `pre-command-hook' for the reason
+    ;; donkey-a-backward-press-revives-a-deactivated-run gives.
+    (let ((sabotage (lambda ()
+                      (when (eq this-command 'donkey-mark-run-buffer-start)
+                        (deactivate-mark)))))
+      (unwind-protect
+          (progn
+            (add-hook 'pre-command-hook sabotage)
+            (donkey-mark-test--keys text "j M w g g"
+              (should (equal (donkey-mark-test--selection)
+                             "one two three\nfour"))))
+        (remove-hook 'pre-command-hook sabotage)))
+    ;; Outside the mode the keys are untouched.
+    (donkey-mark-test--keys text "j w g g"
+      (should-not (region-active-p))
+      (should (= (point) (point-min))))
+    (donkey-mark-test--keys text "j w g e"
+      (should-not (region-active-p))
+      (should (= (point) (point-max)))))
+  ;; The edges are the ACCESSIBLE ones, as every other key in the mode
+  ;; already treats them.  Driven directly: the shared harness has no
+  ;; way to narrow before the keys run.
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (with-temp-buffer
+          (insert "one two three\nfour five six\nseven eight nine\n")
+          (narrow-to-region 15 28)
+          (goto-char (point-min))
+          (let ((transient-mark-mode t))
+            (donkey--mark-run-enter)
+            (donkey-mark-word)
+            ;; Staged as the command loop would leave it, so the press
+            ;; reads as a continuation and takes the extending branch.
+            (let ((last-command 'donkey-mark-word)
+                  (this-command 'donkey-mark-run-buffer-end))
+              (donkey-mark-run-buffer-end))
+            (should (equal (buffer-substring-no-properties
+                            (region-beginning) (region-end))
+                           "four five six")))))
+    (donkey--mark-run-exit)
+    (donkey-mode -1)))
 
 (ert-deftest donkey-a-rectangle-is-canceled-not-adopted ()
   "`M' over a rectangle drops it; there is no forward end to own.

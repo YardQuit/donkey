@@ -2961,12 +2961,14 @@ one before marking it."
   '(donkey-mark-run-left donkey-mark-run-right
     donkey-mark-run-down donkey-mark-run-up
     donkey-mark-run-line-start donkey-mark-run-line-end
+    donkey-mark-run-buffer-start donkey-mark-run-buffer-end
     donkey-mark-run-exchange donkey-mark-run-step-back)
   "The mark run keys that adjust a selection instead of marking one.
 
 \`h' \`j' \`k' \`l' move point, `g h' and `g l' stretch an end to the
-line's edge, \`*' trades which end is which, and \`u' puts the run
-back where the last press found it.  None of them names an object, and
+line's edge, `g g' and `g e' stretch one to the buffer's, \`*' trades
+which end is which, and \`u' puts the run back where the last press
+found it.  None of them names an object, and
 that is the whole of what they have in common -- the
 list was called the mode's \"motions\" while the line-edge pair still
 was one, and had to explain itself once the pair grew fixed ends.
@@ -3321,6 +3323,70 @@ end of the line the cursor happens to sit in."
     (move-end-of-line count)))
 
 
+(defun donkey-mark-run-buffer-start (&optional arg)
+  "Stretch the run back to the buffer's start, or jump there.
+
+Stands in for `g g'.  The buffer's edges are the line's edges written
+large, so the pair works the way `donkey-mark-run-line-start' and
+`donkey-mark-run-line-end' do: an end apiece, this one the start, and
+they add -- `M w g g g e' is the whole buffer from a word in the
+middle of it.
+
+A jump is the largest thing a single press can do to a run, which is
+why the mode had to grow \`u' before it could offer one.  Left as a
+plain motion the press dragged the near end to `point-max' or
+`point-min' and lapsed the mode on its way, giving no way back at all;
+adopted, it is a press like any other and one \`u' takes it off again.
+
+ARG is passed on when there is no run to stretch, where the key is the
+ordinary `beginning-of-buffer' and reads it as that command does --
+raw, and so with the interactive spec that command uses.  \"p\" would
+turn a bare press into 1, which `beginning-of-buffer' reads as a
+tenth of the way in rather than as the start: `M g g' landed on the
+second line of a short buffer before the spec was fixed.  A run
+reaches the edge, ARG or no ARG: there is no useful sense in which a
+continuation goes a tenth of the way there."
+  (interactive "P")
+  (if (donkey--mark-run-continuing-p)
+      (progn
+        ;; `goto-char', not the `beginning-of-buffer' the fresh branch
+        ;; uses: that command pushes a mark whenever no region is
+        ;; active, and a run whose region a hook deactivated mid-way
+        ;; arrives here exactly so.  The push put the mark at point and
+        ;; the extension came back holding the wrong end -- "one two
+        ;; three\n" where the run had reached "one two three\nfour".
+        ;; Caught by the test that deactivates the region on purpose.
+        (goto-char (point-min))
+        ;; Moving point activates nothing; the same re-assertion the
+        ;; backward object keys make, for the same reason.
+        (activate-mark))
+    ;; `beginning-of-buffer' deliberately here: a bare press must stand
+    ;; in for `g g' exactly, mark push, screen position and all.
+    (with-suppressed-warnings ((interactive-only beginning-of-buffer))
+      (beginning-of-buffer arg))))
+
+(defun donkey-mark-run-buffer-end (&optional arg)
+  "Stretch the run forward to the buffer's end, or jump there.
+
+Stands in for `g e' and \`G'; see `donkey-mark-run-buffer-start' for
+why the pair is adopted rather than left to lapse the mode.
+
+This one pushes the MARK, the forward end, so it cannot shrink what is
+selected -- `point-max' is never behind the position it is measured
+from.  Unlike `donkey-mark-run-line-end' it needs no measuring at all:
+a buffer has one end, wherever the mark happens to sit.
+
+ARG is passed on when there is no run to stretch, raw, for the reason
+`donkey-mark-run-buffer-start' gives."
+  (interactive "P")
+  (if (donkey--mark-run-continuing-p)
+      ;; `point-max', not `(point-max)' of the whole buffer: a narrowed
+      ;; buffer's end is the end of what is accessible, which is what
+      ;; every other key in the mode already respects.
+      (set-mark (point-max))
+    (with-suppressed-warnings ((interactive-only end-of-buffer))
+      (end-of-buffer arg))))
+
 (defun donkey-mark-run-line-forward (&optional count)
   "Mark the current line, or grow the run's forward end by whole lines.
 
@@ -3440,6 +3506,9 @@ trading the ends of a VISIBLE selection can mean."
     (keymap-set map "k" #'donkey-mark-run-up)
     (keymap-set map "g h" #'donkey-mark-run-line-start)
     (keymap-set map "g l" #'donkey-mark-run-line-end)
+    (keymap-set map "g g" #'donkey-mark-run-buffer-start)
+    (keymap-set map "g e" #'donkey-mark-run-buffer-end)
+    (keymap-set map "G" #'donkey-mark-run-buffer-end)
     (keymap-set map "J" #'donkey-mark-run-line-forward)
     (keymap-set map "K" #'donkey-mark-run-line-backward)
     (keymap-set map "*" #'donkey-mark-run-exchange)
@@ -3811,10 +3880,11 @@ which the visible selection already repeats -- see
 run, adjusting the selection's near end the way `j'/`k' adjust a
 visual-line session; a motion may even cross the mark, passing the
 selection through empty before the object keys grow it again -- the
-freeform a `v' region has always had.  `g h' and `g l' are the
-exception among the motions: with a run live they own an end apiece
-and stretch it to the line's edge, so `M w g h g l' takes the whole
-line's text rather than each undoing the other.  The object keys really do grow
+freeform a `v' region has always had.  The line and buffer edges are
+the exception among the motions: with a run live `g h', `g l', `g g'
+and `g e' own an end apiece and stretch it, so `M w g h g l' takes the
+whole line's text and `M w g g g e' the whole buffer, rather than each
+undoing the other.  The object keys really do grow
 it again: whichever way round a motion, a \`*' or a negative count
 has left the ends, `donkey--normalize-mark-run' puts them back before
 the next object is added.

@@ -737,9 +737,11 @@ nowhere to go.
 near end the way =j=/=k= adjust a =V= session. =g h= and =g l= reach
 the line's ends, and unlike =h j k l= they own an end apiece rather
 than both moving point, so they add up: =M w g h g l= selects the
-whole line's text, in either order. With nothing selected yet they are
-still plain motions, for placing the cursor before marking. Other =g=
-keys are not shadowed and end the mode like any foreign key.
+whole line's text, in either order. =g g= and =g e= (and =G=) do the
+same for the buffer's ends, so =M w g g g e= is everything from a word
+in the middle. With nothing selected yet all four are still plain
+motions, for placing the cursor before marking. Other =g= keys are not
+shadowed and end the mode like any foreign key.
 
 =J= and =K= make lines a growable object of the mode: fresh, either
 marks the current line, and further presses grow by whole lines — =J=
