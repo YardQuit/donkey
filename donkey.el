@@ -3076,15 +3076,26 @@ marking tests ran first."
        (or (eq last-command this-command)
            (memq last-command companions))
        (mark t)
-       ;; A motion member continues only a VISIBLE run.  The object
+       ;; A motion member continues only a LIVE run.  The object
        ;; members may revive a region a hook deactivated mid-run -- the
-       ;; run was theirs -- but a motion with no active region is just
-       ;; the cursor having moved, and the mark next to it could be
+       ;; run was theirs -- but a motion with no live mark is just the
+       ;; cursor having moved, and the mark next to it could be
        ;; anything: without this, `M l w' beside a stale mark grew a
        ;; selection from wherever that mark lay instead of marking the
        ;; word at point.
+       ;;
+       ;; `mark-active', not `region-active-p'.  The question is whether
+       ;; a selection is live, and `region-active-p' answers a different
+       ;; one -- it also demands `transient-mark-mode', which is on by
+       ;; default but need not be.  With it off the object keys grew
+       ;; runs as they always do while this test refused every one that
+       ;; had passed through a motion, so `M w l w' re-marked one word
+       ;; where `M w l w' with the mode on takes \"hat is\".  Half a mode,
+       ;; and by accident: `donkey-rectangle-mark-mode' asks
+       ;; `mark-active' for the same reason and says so.  Deactivating
+       ;; clears it either way, so the stale-mark protection stands.
        (or (not (memq last-command donkey--mark-run-adjusters))
-           (region-active-p))
+           mark-active)
        t))
 
 (defun donkey--normalize-mark-run ()
@@ -3407,7 +3418,9 @@ selection: `exchange-point-and-mark' would leap to some stale mark
 and re-activate whatever lies between, which is not what a key for
 trading the ends of a VISIBLE selection can mean."
   (interactive)
-  (if (region-active-p)
+  ;; `mark-active' rather than `region-active-p', so the key works with
+  ;; `transient-mark-mode' off -- see `donkey--mark-extending-p'.
+  (if (and mark-active (mark t))
       (exchange-point-and-mark)
     (user-error "No selection to swap ends of")))
 
@@ -3638,8 +3651,14 @@ it made the first object key grow from the CURSOR, so `v M w' from
 mid-word took the tail of the word.  Asked by `donkey-mark-run-toggle'
 to decide whether to adopt and by `donkey-mark-run-adopt' to refuse
 when it should not have been called -- one test, so the two cannot
-drift into disagreeing about what a selection is."
-  (and (region-active-p) (/= (point) (mark))))
+drift into disagreeing about what a selection is.
+
+`mark-active' rather than `region-active-p', so a selection made with
+`transient-mark-mode' off is still one to adopt -- see
+`donkey--mark-extending-p'.  `(mark t)' for the reading, since a mark
+that is live but not \"active\" in that mode's sense is exactly the
+case this exists to handle."
+  (and mark-active (mark t) (/= (point) (mark t))))
 
 (defun donkey-mark-run-adopt ()
   "Adopt the active selection into a mark run and enter the mode.

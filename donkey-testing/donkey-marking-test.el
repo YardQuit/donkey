@@ -4778,6 +4778,71 @@ Driven through stubs because batch Emacs has no echo area for
         (should (equal (list showing (and cleared t))
                        (list showing expected)))))))
 
+(defun donkey-mark-test--span-with-tmm (tmm text keys)
+  "Run KEYS over TEXT with `transient-mark-mode' TMM; return the marked span.
+
+`donkey-mark-test--keys' binds `transient-mark-mode' to t for
+determinism, which is exactly the binding the caller of this needs to
+vary, so the setup is repeated here rather than parameterized into a
+macro two hundred tests depend on.  The span is read from point and
+the mark rather than through `region-active-p', which refuses to
+report one with the mode off and would hide what is being measured."
+  (unwind-protect
+      (progn
+        (when (get-buffer "*donkey-tmm-test*") (kill-buffer "*donkey-tmm-test*"))
+        (donkey-mode 1)
+        (let ((transient-mark-mode tmm)
+              (prefix-arg nil) (current-prefix-arg nil)
+              (this-command nil) (last-command nil))
+          (switch-to-buffer (get-buffer-create "*donkey-tmm-test*"))
+          (fundamental-mode)
+          (erase-buffer)
+          (insert text)
+          (goto-char (point-min))
+          (donkey-enter-normal)
+          (execute-kbd-macro (kbd keys))
+          (and mark-active (mark t)
+               (buffer-substring-no-properties (min (point) (mark t))
+                                               (max (point) (mark t))))))
+    (when (get-buffer "*donkey-tmm-test*") (kill-buffer "*donkey-tmm-test*"))
+    (donkey--mark-run-exit)
+    (donkey-mode -1)))
+
+(ert-deftest donkey-a-run-does-not-need-transient-mark-mode ()
+  "The mode answers the same with `transient-mark-mode' off.
+
+Three guards asked `region-active-p', which is not the question they
+meant.  It answers whether region-aware commands should treat the
+region as active, and demands `transient-mark-mode' to say yes; what
+the guards mean is whether a selection is LIVE, which is `mark-active'.
+
+With the mode off the object keys grew runs exactly as ever -- donkey
+never refused to mark invisibly -- while the motions, `*' and adoption
+refused every time.  Half a mode, and by accident rather than by
+policy: `donkey-rectangle-mark-mode' had already reached for
+`mark-active' for this reason and written down why.
+
+Run over BOTH values, since the point is that the answer does not
+depend on the setting."
+  (dolist (case '(;; a run surviving one of its own motions
+                  ("w w l M w l w"        "hat is")
+                  ;; the swap, which used to refuse outright
+                  ("w w l M w *"          "that")
+                  ("w w l M w * w"        "that is")
+                  ("w w l M w * l l"      "that i")
+                  ;; adoption of a region `v' built
+                  ("w w l v C-u 5 l M b"  "text that ")
+                  ("w w l v C-u 5 l M w"  "that is")
+                  ;; and the line-edge pair, which owns ends
+                  ("w w l M w g h g l"    "for text that is not saved")))
+    (cl-destructuring-bind (keys expected) case
+      (dolist (tmm '(t nil))
+        (should (equal
+                 (list tmm keys
+                       (donkey-mark-test--span-with-tmm
+                        tmm "for text that is not saved\nsecond line\n" keys))
+                 (list tmm keys expected)))))))
+
 (ert-deftest donkey-a-rectangle-is-canceled-not-adopted ()
   "`M' over a rectangle drops it; there is no forward end to own.
 
