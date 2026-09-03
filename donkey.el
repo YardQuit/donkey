@@ -5300,18 +5300,42 @@ Either direction continues the same run, so \\[donkey-mark-word] \\[donkey-mark-
 two words forward and then one back.  Pressed fresh, each selects the
 same thing its forward partner would.  Runs mix objects, too: each
 press adds one object of its own kind at its own end, so \\[donkey-mark-word] \\[donkey-mark-sentence]
-grows the word selection forward to the end of its sentence.  And
-\\[donkey-mark-run-toggle] holds the prefix down for you: in mark run mode the bare
-letters w W b B s S mark and grow the same way, J and K grow by
-whole lines, h j k l and
-g h / g l adjust the near end -- * trades which end that is -- and
-any other key
-returns to normal and does its job, and \\[donkey-mark-run-toggle] again -- or \\`C-g' -- drops the
-selection.  Paragraphs keep their m prefix there, since p and P
-stay the paste keys inside the mode: m p and m P grow a run just as
-the bare letters do.  A selection you already have -- from \\[donkey-set-mark], \\[donkey-visual-line-toggle] or the
+grows the word selection forward to the end of its sentence.
+
+\\[donkey-mark-run-toggle] holds the prefix down for you.  In mark run mode the bare
+letters w W b B s S mark and grow exactly as their m-prefixed keys do,
+so \\`M' \\`w' \\`w' \\`b' selects what three prefixed presses select.  A
+reminder of the keys stays in the echo area for as long as the mode is
+on.
+
+>> Put the cursor on \"three\" in the ---> line and press \\[donkey-mark-run-toggle], then
+   \\`w' \\`w': two words are selected, no prefix in sight.  Press \\`b'
+   and the word before joins them.  Now press DONKEY-DELETE-KEYS to take all
+   three.
+
+   ---> one two three four five six
+
+J and K grow the selection by whole lines, newline and all, so a
+delete after them removes the lines outright.  h j k l move point and
+adjust the selection's near end; g h and g l are the two that own an
+end apiece instead, so they add up -- \\`M' \\`w' \\`g' \\`h' \\`g' \\`l'
+takes the whole line's text, in either order.  * trades which end the
+motions hold; the object keys trade it back before they grow, so they
+never need thinking about.
+
+Paragraphs keep their m prefix there, since p and P stay the paste
+keys inside the mode: m p and m P grow a run just as the bare letters
+do.  A selection you already have -- from \\[donkey-set-mark], \\[donkey-visual-line-toggle] or the
 mark keys -- is ADOPTED by \\[donkey-mark-run-toggle] rather than dropped, and the object
 keys grow it from there.
+
+Any other key returns to normal state and does its ordinary job in the
+same press, so \\[donkey-mark-run-toggle] \\`w' \\`w' DONKEY-DELETE-KEYS selects two words and deletes
+them with no explicit exit.  Two presses are held back from that: a key
+that does nothing -- one that is unbound -- leaves the run standing, so
+a mistyped key costs a beep rather than the selection, and \\[donkey-visual-line-toggle] says
+to leave the run first rather than quietly taking it over.  \\[donkey-mark-run-toggle] again --
+or \\`C-g' -- drops the selection and the mode with it.
 
 A word stops at a hyphen or underscore; a symbol runs straight through
 one.  On a name held together by them the two select very different

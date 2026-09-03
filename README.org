@@ -709,54 +709,63 @@ press adds a whole one.
 where the bare letters =w W b B s S= run exactly what their
 =m=-prefixed keys run, so =M w w b= selects what =m w m w m b=
 selects. The first letter marks afresh, later letters grow the one
-selection, counts work (=M C-u 3 w=), and objects mix as above. Any
-other key ends the mode and then does its ordinary job in the same
+selection, counts work (=M C-u 3 w=), and objects mix as above. The
+echo-area reminder stays visible for as long as the mode is active.
+
+The =m= prefix still works inside the mode and needs no thinking
+about: =m w= runs the very command the bare =w= runs, so the mode
+survives it and the run keeps growing — =M w m w w= selects three
+words, and the two spellings can be mixed mid-run. Paragraphs are
+reached that way and only that way: =p= and =P= stay the *paste* keys
+inside the mode, so =M w p= replaces the marked word with the kill
+ring, and =m p= / =m P= grow the run by paragraphs. Lettering them
+cost the mode the one ordinary edit it could not otherwise make — =d=,
+=y=, =x= and =c= all act on a mark run selection, and only pasting had
+nowhere to go.
+
+=h j k l= move point without ending the run, adjusting the selection's
+near end the way =j=/=k= adjust a =V= session. =g h= and =g l= reach
+the line's ends, and unlike =h j k l= they own an end apiece rather
+than both moving point, so they add up: =M w g h g l= selects the
+whole line's text, in either order. With nothing selected yet they are
+still plain motions, for placing the cursor before marking. Other =g=
+keys are not shadowed and end the mode like any foreign key.
+
+=J= and =K= make lines a growable object of the mode: fresh, either
+marks the current line, and further presses grow by whole lines — =J=
+at the bottom end, =K= at the top, a mark mid-line completing its own
+line first. Whole lines means the newline too, so =M J d= removes the
+line outright rather than leaving the blank one behind, and =M J y=
+yanks back as a line. The highlight reaches the next line's first
+column to show it.
+
+=*= swaps point and mark, so the motions adjust the selection's
+*other* end — vi's =o= in visual mode. The object keys own fixed ends
+and simply trade back before they grow, so =M w * w= selects what
+=M w w= selects; the same goes for a motion that has walked point past
+the mark, and for a selection a negative count left inside out.
+
+Pressed with a selection already active — a =V= session, a =v= region,
+or one the =m=-prefixed keys built — =M= *adopts* it into the mode
+rather than dropping it: =m w M w= extends the marked word, and a
+=V J= selection keeps its lines while the object keys grow it — whole
+lines, the final newline included, so =V J M d= removes both lines
+outright the way =V J d= does. A rectangle is the one selection =M=
+cancels rather than adopts, having no forward end for the family to
+own; and an *empty* selection is dropped rather than adopted, so after
+a bare =v= mid-word, =M w= still marks the whole word.
+
+Any other key ends the mode and then does its ordinary job in the same
 press — =M w w d= selects two words and deletes them. Two are held
 back. A key that does nothing — one that is unbound, or =DEL= — leaves
 the run standing, so a mistyped key costs a beep rather than the
 selection. And =V= is refused: a visual line session cannot own a mark
 run's selection, and the press used to drop the run and anchor a fresh
 one without saying so, which is worse than being told to leave the
-mode first. The =m= prefix
-is the exception, and needs no thinking about: =m w= inside the mode
-runs the very command the bare =w= runs, so the mode survives it and
-the run keeps growing — =M w m w w= selects three words, and the two
-spellings can be mixed mid-run. Paragraphs are reached that way and
-only that way: =p= and =P= stay the *paste* keys inside the mode, so
-=M w p= replaces the marked word with the kill ring, and =m p= / =m P=
-grow the run by paragraphs. Lettering them cost the mode the one
-ordinary edit it could not otherwise make — =d=, =y=, =x= and =c= all
-act on a mark run selection, and only pasting had nowhere to go. =h j k l= move
-point without ending the run, adjusting the selection's near end the
-way =j=/=k= adjust a =V= session. =g h= and =g l= reach the line's
-ends, and unlike =h j k l= they own an end apiece rather than both
-moving point, so they add up: =M w g h g l= selects the whole line's
-text, in either order. With nothing selected yet they are still plain
-motions, for placing the cursor before marking. Other =g= keys are
-not shadowed and end the mode like any foreign key. =J= and =K= make lines a growable object of the
-mode: fresh, either marks the current line, and further presses grow
-by whole lines — =J= at the bottom end, =K= at the top, a mark
-mid-line completing its own line first. Whole lines means the newline
-too, so =M J d= removes the line outright rather than leaving the
-blank one behind, and =M J y= yanks back as a line. The highlight
-reaches the next line's first column to show it. =*= swaps point and mark, so
-the motions adjust the selection's *other* end — vi's =o= in visual
-mode. The object keys own fixed ends and simply trade back before they
-grow, so =M w * w= selects what =M w w= selects; the same goes for a
-motion that has walked point past the mark, and for a selection a
-negative count left inside out. Pressed with a selection already active — a
-=V= session, a =v= region, or one the =m=-prefixed keys built — =M=
-*adopts* it into the mode rather than dropping it: =m w M w= extends
-the marked word, and a =V J= selection keeps its lines while the
-object keys grow it — whole lines, the final newline included, so
-=V J M d= removes both lines outright the way =V J d= does. A
-rectangle is the one selection =M= cancels rather than adopts, having
-no forward end for the family to own; and an *empty* selection is
-dropped rather than adopted, so after a bare =v= mid-word, =M w= still
-marks the whole word. =M= pressed again, inside the mode, drops the
-selection and the mode, and =C-g= does the same, as it does for every
-selection. The echo-area reminder stays visible for
-as long as the mode is active. Only these eight keys are in the family:
+mode first. =M= pressed again, inside the mode, drops the selection
+and the mode, and =C-g= does the same, as it does for every selection.
+
+Only these eight keys are in the family:
 =m i= and =m a= count levels rather than objects, and a selection
 started with =v= is still never grown by a mark key. All eight grow a
 run inside =M= too; six of them have a bare letter there, and the

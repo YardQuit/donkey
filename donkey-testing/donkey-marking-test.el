@@ -4670,6 +4670,25 @@ rather than rebinding."
   (donkey-mark-test--keys "one two\nthree four\n" "M w d V"
     (should (equal (donkey-mark-test--selection) " two"))))
 
+(ert-deftest donkey-the-tutors-mark-run-walkthrough-is-true ()
+  "The tutor's `M' exercise does what the tutor says it does.
+
+The tutor teaches mark run mode by having the reader press the keys
+on a sample line, and a walkthrough that has drifted from the code
+teaches the wrong thing to exactly the people least able to spot it.
+The sequence is the one the tutor prints -- `M', two `w', a `b', then
+the delete -- and the assertions are the two claims it makes: that
+three words end up selected, and that the delete takes all three."
+  (donkey-mark-test--keys "one two three four five six" "w w l M w w b"
+    (should (equal (donkey-mark-test--selection) "two three four")))
+  (donkey-mark-test--keys "one two three four five six" "w w l M w w b d"
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "one  five six")))
+  ;; And the line-edge claim from the same section.
+  (donkey-mark-test--keys "one two three four five six" "w w l M w g h g l"
+    (should (equal (donkey-mark-test--selection)
+                   "one two three four five six"))))
+
 (ert-deftest donkey-a-rectangle-is-canceled-not-adopted ()
   "`M' over a rectangle drops it; there is no forward end to own.
 
