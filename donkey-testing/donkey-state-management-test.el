@@ -1548,6 +1548,60 @@ functions."
   (should-not (memq #'donkey--check-post-command-non-editing post-command-hook))
   (should-not (memq #'donkey--update-cursor-passive post-command-hook)))
 
+(ert-deftest donkey-mode-disable-disarms-mark-run-mode ()
+  "Disabling takes mark run mode down with it.
+
+The one piece of DONKEY state that is neither a hook nor
+buffer-local: `donkey-mark-run-mode-map' rides
+`overriding-terminal-local-map', which is terminal-wide.  A disable
+that happened mid-run left it armed, so `w' went on running
+`donkey-mark-word' in EVERY buffer with the mode off -- the disable
+promise broken as widely as it can be.  Reaching for \\[execute-extended-command] healed it
+by luck, that being a foreign command the reminder hook exits on; a
+Lisp call, an init hook or `unload-feature' did not.
+
+All four pieces are asserted, because `donkey--mark-run-exit' owns
+them together and a teardown that took only some would leave the mode
+half up."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (donkey--mark-run-enter)
+        (should (eq (key-binding "w") 'donkey-mark-word))
+        (donkey-mode -1)
+        (should-not (eq (key-binding "w") 'donkey-mark-word))
+        (should-not (memq #'donkey--mark-run-mode-post-command
+                          post-command-hook))
+        (should-not donkey--mark-run-exit-function)
+        (should-not donkey--mark-run-armed-in-macro))
+    (donkey--mark-run-exit)
+    (donkey-mode -1)))
+
+(ert-deftest donkey-mode-disable-clears-the-visual-anchor ()
+  "Disabling clears the anchor a live visual-line session left.
+
+`donkey--disable-in-buffer' removes `donkey--clear-visual-anchor' from
+this buffer's `deactivate-mark-hook', which means nothing can clear
+the anchor afterwards -- so it has to be cleared on the way out.  A
+session live at the moment of disabling left its anchor in the buffer
+for good and carried it into the next enable.
+
+`donkey--visual-line-session-active-p' checks the mark as well, so a
+stale anchor cannot resurrect a session; what this pins is the promise
+to leave nothing behind."
+  (let ((buf (generate-new-buffer "*donkey-anchor-teardown*")))
+    (unwind-protect
+        (with-current-buffer buf
+          (insert "one\ntwo\n")
+          (goto-char (point-min))
+          (donkey-mode 1)
+          (setq donkey-visual-anchor (line-beginning-position))
+          (should donkey-visual-anchor)
+          (donkey-mode -1)
+          (should-not donkey-visual-anchor))
+      (donkey-mode -1)
+      (kill-buffer buf))))
+
 (defun donkey-test--cancel-stray-resweep-timers ()
   "Cancel every pending `donkey--startup-resweep\\=' timer.
 

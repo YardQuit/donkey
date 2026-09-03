@@ -6976,6 +6976,13 @@ so one buffer's erroring hook cannot strand the rest."
   ;; it would keep running on every mark deactivation in this buffer
   ;; for the rest of the session, mode off or not.
   (remove-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor t)
+  ;; And the anchor that hook exists to clear.  With the hook just
+  ;; removed nothing else can, so a live \"V\" session at the moment of
+  ;; disabling left its anchor in the buffer for good and carried it
+  ;; into the next enable.  `donkey--visual-line-session-active-p'
+  ;; checks the mark as well, so a stale anchor cannot resurrect a
+  ;; session -- what it breaks is the promise to leave nothing behind.
+  (donkey--clear-visual-anchor)
   ;; Banked lines are Donkey state drawn on the buffer, and this
   ;; mode promises to clear all of it.  Left behind, the
   ;; highlights would be permanent: the only command that removes
@@ -7090,6 +7097,18 @@ donkey-mode' to toggle."
         ;; `donkey--recover-quit-in-insert'.
         (add-function :around command-error-function
                       #'donkey--recover-quit-in-insert))
+    ;; Mark run mode is the one piece of DONKEY state that is neither a
+    ;; hook nor buffer-local: its map lives in
+    ;; `overriding-terminal-local-map', which is terminal-wide.  Left
+    ;; armed by a disable that happened mid-run, `w' went on marking
+    ;; words in EVERY buffer with the mode off -- the promise above
+    ;; broken as widely as it can be.  Reaching for `M-x' healed it by
+    ;; luck, that being a foreign command the reminder hook exits on,
+    ;; but a Lisp call, an init hook or `unload-feature' left it.
+    ;; `donkey--mark-run-exit' owns all four pieces -- the map, the
+    ;; hook, the exit function and the macro flag -- and is a no-op
+    ;; when the mode was never armed.
+    (donkey--mark-run-exit)
     (donkey--remove-global-hooks)
     ;; A pending resweep would no-op behind its own donkey-mode guard,
     ;; but a timer left ticking for a switched-off mode is still state
