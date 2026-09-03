@@ -5016,6 +5016,38 @@ press can do to a run and gave no way back -- so they waited until
     (donkey--mark-run-exit)
     (donkey-mode -1)))
 
+(ert-deftest donkey-percent-keeps-the-mode-and-can-be-taken-back ()
+  "`%' marks the whole buffer without ending the run.
+
+The last of the keys that changed a selection and left.  Refusing it
+the way `v' and `V' are refused would have been the wrong answer to a
+key doing exactly what it says -- it marks, and a mark mode has no
+business lapsing on a mark command.  Membership in
+`donkey--mark-run-commands' is the whole change: no binding of its
+own, since `%' already falls through to normal state, and with it the
+mode stays and the press is recorded, so \\`u' takes it back.
+
+It is a member without being a growable object.  Nothing can add to a
+selection that already covers everything, and the press after it finds
+nothing to do rather than anything surprising."
+  (let ((text "one two three\nfour five six\n"))
+    (donkey-mark-test--keys text "M w %"
+      (should (equal (donkey-mark-test--selection) text))
+      (should (eq (key-binding "w") 'donkey-mark-word)))
+    (donkey-mark-test--keys text "M w % u"
+      (should (equal (donkey-mark-test--selection) "one")))
+    ;; Nothing left to grow: the press after it changes nothing.
+    (donkey-mark-test--keys text "M w % w"
+      (should (equal (donkey-mark-test--selection) text)))
+    ;; Outside the mode the key is untouched, and does not arm anything.
+    (donkey-mark-test--keys text "%"
+      (should (equal (donkey-mark-test--selection) text))
+      (should (eq (key-binding "w") 'forward-word))))
+  (should (memq 'donkey-mark-whole-buffer donkey--mark-run-commands))
+  ;; It marks, so it is no adjuster: an object key after it may revive
+  ;; a region a hook deactivated, where a motion may not.
+  (should-not (memq 'donkey-mark-whole-buffer donkey--mark-run-adjusters)))
+
 (ert-deftest donkey-a-rectangle-is-canceled-not-adopted ()
   "`M' over a rectangle drops it; there is no forward end to own.
 

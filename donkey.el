@@ -3011,7 +3011,7 @@ command transparent to the mode has to be transparent to the run.")
      donkey-mark-sentence donkey-mark-sentence-backward
      donkey-mark-paragraph donkey-mark-paragraph-backward
      donkey-mark-run-line-forward donkey-mark-run-line-backward
-     donkey-mark-run-adopt)
+     donkey-mark-whole-buffer donkey-mark-run-adopt)
    donkey--mark-run-adjusters
    donkey--mark-run-inert-commands)
   "The commands that grow ONE selection between them -- the mark run family.
@@ -3026,6 +3026,15 @@ back by its own, and no two ever contend over an end.
 The eight object commands are also exactly what
 `donkey-mark-run-mode-map' offers without their `m' prefix, and the
 whole list is what `donkey--mark-run-mode-keep-p' holds mark run mode
+`donkey-mark-whole-buffer' is a member without being a growable
+object: \`%' replaces the selection rather than adding to it, and no
+press after it can grow what already covers everything.  It is here
+because it MARKS -- the mode has no business lapsing on a mark
+command, and membership is also what gets the press recorded, so \`u'
+takes it back.  It was the last of the keys that changed a run and
+left, and refusing it would have been the wrong answer to a key doing
+exactly what it says.
+
 open for.  The `donkey--mark-run-adjusters' tail is included so that
 adjusting point mid-run -- possible only inside the mode, where alone
 those commands are bound -- reads as the run continuing, the way

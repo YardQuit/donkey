@@ -785,6 +785,10 @@ used to drop the run and start over without saying so, which is worse
 than being told to leave the mode first. =M= pressed again, inside the mode, drops the selection
 and the mode, and =C-g= does the same, as it does for every selection.
 
+=%= joins them at the far end of the scale: it marks the whole buffer,
+so the mode stays and =u= takes it back, but nothing can grow a
+selection that already covers everything.
+
 Only these eight keys are in the family:
 =m i= and =m a= count levels rather than objects, and a selection
 started with =v= is still never grown by a mark key. All eight grow a
