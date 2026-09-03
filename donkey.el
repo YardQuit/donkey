@@ -3290,18 +3290,18 @@ for `g h'; see `donkey-mark-run-left' for why the mode wraps its
 motions.
 
 The pair owns FIXED ENDS, the way the object keys do rather than the
-way \`h' \`j' \`k' \`l' do: this one takes the selection'''s start,
+way \`h' \`j' \`k' \`l' do: this one takes the selection's start,
 `donkey-mark-run-line-end' its end.  They were plain motions once,
 and both moved POINT, which made them cancel each other -- `M w g h'
-reached back to the line'''s start, and the `g l' after it dragged
-point across the mark to the line'''s end and left the beginning
+reached back to the line's start, and the `g l' after it dragged
+point across the mark to the line's end and left the beginning
 behind, so the pair could never build the whole line.  Owning an end
-apiece, they add: `M w g h g l' is the line'''s text from one edge to
+apiece, they add: `M w g h g l' is the line's text from one edge to
 the other, in either order.
 
 With no run in progress the key is still just a motion.  Nothing is
 lost by that -- `v g l' has always been the way to select to the
-line'''s end from scratch -- and it keeps the pair usable for placing
+line's end from scratch -- and it keeps the pair usable for placing
 the cursor before marking, which is what `M g l w' does."
   (interactive "p")
   (let ((extending (donkey--mark-run-continuing-p)))
@@ -3320,7 +3320,7 @@ and `donkey-mark-run-line-start' for why the pair owns fixed ends.
 This one pushes the MARK, the forward end, so it cannot shrink what
 is selected: the end of a line is never behind the position it is
 measured from.  Measured from the MARK rather than from point, which
-is what makes it the forward end'''s key -- on a run already spanning
+is what makes it the forward end's key -- on a run already spanning
 lines it reaches the end of the line the selection stops on, not the
 end of the line the cursor happens to sit in."
   (interactive "p")
@@ -3671,12 +3671,12 @@ the mode here.
 A REPLAYED MACRO needs the extra arm above, because
 `this-command' cannot see it.  `kmacro-call-macro' and
 `kmacro-end-and-call-macro' deliberately leave `this-command' set to
-the macro'''s LAST command so that `last-command' chaining and the
+the macro's LAST command so that `last-command' chaining and the
 repeat key keep working; a macro ending on \`M' and a letter therefore
 reaches this hook with `this-command' naming a family member, and the
-test below reads it as an ordinary press of the mode'''s own key.
+test below reads it as an ordinary press of the mode's own key.
 `executing-kbd-macro' is the honest signal: the mode was armed while a
-macro ran, and the first command to finish outside one is the macro'''s
+macro ran, and the first command to finish outside one is the macro's
 own caller.  Noted at entry in `donkey--mark-run-armed-in-macro'.
 \(A command that merely calls `execute-kbd-macro' comes back with
 `this-command' nil and would have been caught anyway; kmacro is the
@@ -3777,7 +3777,7 @@ Re-entry cannot double anything: any previous arming is taken down
 first, so one exit function and one hook are all there ever are.
 
 Whether a keyboard macro is running is noted here rather than asked
-later: by the time the macro'''s caller reaches
+later: by the time the macro's caller reaches
 `donkey--mark-run-mode-post-command', `executing-kbd-macro' has gone
 back to nil and the only way to tell an armed-by-macro mode from an
 armed-by-keypress one is to have written it down."

@@ -2066,6 +2066,57 @@ are free to wrap."
      )
     (should-not offenders)))
 
+(ert-deftest donkey-docstrings-carry-no-repeated-apostrophes ()
+  "No docstring in donkey.el contains a run of apostrophes.
+
+Ten did.  A patch script built the new text as a Python triple-quoted
+string, and every `it's' inside one came out as `it\'\'\'s' -- so
+`C-h f' showed \"the forward end\'\'\'s key\" and \"the macro\'\'\'s LAST
+command\" to anyone who looked.  Harmless to the code and invisible to
+the byte compiler, checkdoc and every other test here, which is
+exactly why it accumulated across four patches before anyone read the
+rendered output.
+
+A run of two is as wrong as a run of three: no English word wants one,
+and `\\='\\=' is spelled with the escape rather than doubled.  Scoped
+to donkey.el the way
+donkey-docstring-first-lines-are-complete-sentences is, and for the
+same reason."
+  (let ((package (expand-file-name "donkey.el"
+                                   (file-name-directory
+                                    (or (symbol-file 'donkey-copy 'defun)
+                                        default-directory))))
+        offenders)
+    (mapatoms
+     (lambda (sym)
+       (when (string-prefix-p "donkey" (symbol-name sym))
+         ;; RAW: `documentation' otherwise runs the text through
+         ;; `substitute-command-keys', which turns every apostrophe
+         ;; curly -- so a straight-quote search finds nothing and the
+         ;; guard passes over exactly the corruption it is for.
+         ;; Confirmed by re-corrupting a docstring and watching this
+         ;; test stay green until the RAW argument went in.
+         (dolist (entry (list (cons (and (fboundp sym)
+                                         (documentation sym t))
+                                    (symbol-file sym 'defun))
+                              (cons (get sym 'variable-documentation)
+                                    (symbol-file sym 'defvar))))
+           (let ((doc (car entry))
+                 (file (cdr entry)))
+             (when (and (stringp doc) file
+                        (equal (expand-file-name file) package))
+               (dolist (line (split-string doc "\n"))
+                 ;; Inside a WORD.  A docstring may legitimately end a
+                 ;; symbol reference next to a quote, and
+                 ;; `donkey-wrap-region' names the apostrophe character
+                 ;; itself as `\='\=' -- both of which a bare
+                 ;; two-apostrophe search reports.  What no English word
+                 ;; wants is a run of them between two letters.
+                 (when (string-match-p "[[:alnum:]]'+'[[:alnum:]]" line)
+                   (push (format "%s: %s" (symbol-name sym) line)
+                         offenders)))))))))
+    (should-not offenders)))
+
 (ert-deftest donkey-editing-commands-honor-a-count ()
   "`d'/`x', `y' and `c' act on COUNT characters.
 
