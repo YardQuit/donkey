@@ -5054,6 +5054,49 @@ test."
       (when (buffer-live-p buf) (kill-buffer buf))
       (donkey-mode -1))))
 
+(ert-deftest donkey-a-mistyped-sequence-costs-a-beep-not-the-run ()
+  "A key sequence that does nothing leaves the run exactly as it was.
+
+The promise for a mistype is a beep rather than the selection, and it
+held for a single unbound key only.  Emacs runs `undefined' for that
+one -- which is why \\`~' was already inert -- but a SEQUENCE that dies
+in a prefix map reaches no command at all: `this-command' is nil, and
+nil is not in any list.
+
+It cost the run twice over.  `donkey--mark-run-mode-keep-p' saw a
+command that was not a family member and let the mode lapse, and the
+command loop wrote that nil into `last-command', so the next object
+key found no run to continue and marked afresh over what the run had
+grown.  Two keys after the slip, the selection was gone and the
+letters were moving point.
+
+`m x' for `m w' is the way to do it by accident: `m' is the
+companion prefix the mode documents, and `g' has four two-key
+sequences of its own.
+
+`ding' is stubbed because `execute-kbd-macro' stops at the bell, and
+the key pressed AFTER the mistype is the whole point."
+  (cl-letf (((symbol-function 'ding) #'ignore))
+    (dolist (keys '("w w l M w g x w"      ; the mode's own prefix
+                    "w w l M w g ~ w"
+                    "w w l M w m x w"      ; the companion prefix
+                    "w w l M w z x w"      ; a normal-state prefix
+                    "w w l M w C-x C-\\ w" ; and a native one
+                    "w w l M w ~ w"))      ; the single key, as before
+      (donkey-mark-test--keys "for text that is not saved" keys
+        (should (equal (list keys (donkey-mark-test--selection))
+                       (list keys "that is")))
+        (should (equal (list keys (eq (key-binding "w") 'donkey-mark-word))
+                       (list keys t)))))
+    ;; The press is called what the other spelling is called, which is
+    ;; what carries the run across it.
+    (donkey-mark-test--keys "for text that is not saved" "w w l M w g x"
+      (should (eq last-command 'undefined))))
+  ;; And the predicate answers for the nil directly, since it is asked
+  ;; before the renaming above can happen.
+  (let ((this-command nil))
+    (should (donkey--mark-run-mode-keep-p))))
+
 (ert-deftest donkey-a-runs-history-does-not-outlive-it ()
   "The steps go when the mode does, and `u'/`U' are undo outside it.
 

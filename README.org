@@ -798,7 +798,8 @@ Any other key ends the mode and then does its ordinary job in the same
 press — =M w w d= selects two words and deletes them. Two are held
 back. A key that does nothing — one that is unbound, or =DEL= — leaves
 the run standing, so a mistyped key costs a beep rather than the
-selection. And =v= and =V= are refused: neither a fresh mark nor a
+selection. A mistyped *sequence* counts as one too: =m x= for =m w=,
+or a slip after =g=, beeps and leaves the run exactly as it was. And =v= and =V= are refused: neither a fresh mark nor a
 visual line session can own a mark run's selection, and both presses
 used to drop the run and start over without saying so, which is worse
 than being told to leave the mode first. =M= pressed again, inside the mode, drops the selection

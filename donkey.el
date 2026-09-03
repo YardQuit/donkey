@@ -3635,8 +3635,28 @@ neither `donkey-mark-run-step-back' nor `donkey-mark-run-step-forward'
 may record, each keeping the other's stack and neither able to make
 progress against its own.
 
+It also names the nameless press -- see the comment below -- which is
+the one thing here that is not about the history.
+
 Guarded, not signaling: a function that errors on `pre-command-hook'
 is silently removed for the session."
+  ;; Name the nameless press.  A key sequence that resolves to nothing
+  ;; runs no command at all and arrives with `this-command' nil, where
+  ;; a single unbound KEY runs `undefined' -- one accident with two
+  ;; spellings, and the difference showed twice.  The mode ended, which
+  ;; `donkey--mark-run-mode-keep-p' now answers for; and the command
+  ;; loop wrote that nil into `last-command', so the next object key
+  ;; found no run to continue and marked afresh, quietly throwing away
+  ;; what the run had grown.  Calling it what the other spelling is
+  ;; called settles both: `undefined' is already a family member, so
+  ;; the run carries across the beep exactly as it does across \`~'.
+  ;;
+  ;; Done here rather than in the keep predicate because that one runs
+  ;; FIRST -- `set-transient-map' adds its hook after this one, and
+  ;; `add-hook' prepends -- so it sees the nil and needs its own answer
+  ;; to it.  This is about what the press leaves behind.
+  (when (null this-command)
+    (setq this-command 'undefined))
   (when (and (memq this-command donkey--mark-run-commands)
              (not (memq this-command donkey--mark-run-inert-commands))
              (not (memq this-command '(donkey-mark-run-step-back
@@ -3780,7 +3800,9 @@ or \`C-u 3 w' inside it would fall apart between the \`C-u' and the
 
 A key that DOES NOTHING does not end it either -- see
 `donkey--mark-run-inert-commands' for which those are and why a
-mistyped key should cost a beep rather than the selection.
+mistyped key should cost a beep rather than the selection.  A mistyped
+SEQUENCE reaches no command at all and is checked separately below,
+the two spellings of one accident having arrived here differently.
 
 `donkey-mark-run-refuse' is allowed for the same reason from the other
 direction: it exists to leave the run standing, so it must not be the
@@ -3788,6 +3810,15 @@ thing that ends it.  Both arrive through
 `donkey--mark-run-inert-commands', which the family list already
 appends, so the first test below covers them."
   (or (memq this-command donkey--mark-run-commands)
+      ;; A key sequence that resolves to NOTHING never reaches a
+      ;; command, and arrives here as nil.  Emacs runs `undefined' for
+      ;; a single unbound key -- which is why \`~' was already inert --
+      ;; but a sequence that dies in a prefix map is just a beep, and
+      ;; `this-command' keeps whatever it held before.  Both are the
+      ;; same mistype, and the difference cost the run: \`m x' for
+      ;; \`m w' ended the mode silently, and the next letter then moved
+      ;; point and left an empty highlight behind it.
+      (null this-command)
       (memq this-command '(universal-argument universal-argument-more
                            digit-argument negative-argument))))
 
