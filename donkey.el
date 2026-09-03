@@ -2961,12 +2961,13 @@ one before marking it."
   '(donkey-mark-run-left donkey-mark-run-right
     donkey-mark-run-down donkey-mark-run-up
     donkey-mark-run-line-start donkey-mark-run-line-end
-    donkey-mark-run-exchange)
+    donkey-mark-run-exchange donkey-mark-run-step-back)
   "The mark run keys that adjust a selection instead of marking one.
 
 \`h' \`j' \`k' \`l' move point, `g h' and `g l' stretch an end to the
-line's edge, and \`*' trades which end is which.  None of them names
-an object, and that is the whole of what they have in common -- the
+line's edge, \`*' trades which end is which, and \`u' puts the run
+back where the last press found it.  None of them names an object, and
+that is the whole of what they have in common -- the
 list was called the mode's \"motions\" while the line-edge pair still
 was one, and had to explain itself once the pair grew fixed ends.
 
@@ -3442,6 +3443,7 @@ trading the ends of a VISIBLE selection can mean."
     (keymap-set map "J" #'donkey-mark-run-line-forward)
     (keymap-set map "K" #'donkey-mark-run-line-backward)
     (keymap-set map "*" #'donkey-mark-run-exchange)
+    (keymap-set map "u" #'donkey-mark-run-step-back)
     (keymap-set map "V" #'donkey-mark-run-refuse)
     map)
   "The keys live during mark run mode -- see `donkey-mark-run-toggle'.
@@ -3481,7 +3483,7 @@ words, and `m p' and `m P' grow a run by paragraphs from inside the
 mode exactly as the bare letters used to.")
 
 (defvar donkey--mark-run-mode-hint
-  "Mark run: w/b words, W/B symbols, s/S sentences, J/K lines, hjkl move, * other end, M to cancel"
+  "Mark run: w/b words, W/B symbols, s/S sentences, J/K lines, hjkl move, * other end, u back, M to cancel"
   "The echo-area reminder shown while mark run mode is active.
 
 Styled after `donkey-visual-line-toggle's message, and kept VISIBLE
@@ -3492,6 +3494,23 @@ Paragraphs are absent because their keys are: `p' and `P' pass
 through to the paste commands here, and `m p' reaches the object --
 see `donkey-mark-run-mode-map'.")
 
+(defvar donkey--mark-run-history nil
+  "The run's earlier shapes, newest first, for \`u' to step back to.
+
+Each entry is (POINT MARK ACTIVE), the selection as it stood BEFORE
+one press changed it.  Pushed by `donkey--mark-run-mode-pre-command',
+popped by `donkey-mark-run-step-back', and emptied whenever the mode is
+disarmed, a run's history meaning nothing to the next run.
+
+A run is otherwise one-way.  Every object key GROWS -- `b' after `w'
+adds a word at the other end rather than taking one back, which is the
+fixed-ends rule and worth keeping -- so before this there was no way
+to take a press back at all: `m p' over a long paragraph, a count with
+a digit too many, or a reach that simply went further than it looked,
+left cancelling and starting again as the only way out.  Small steps
+are cheap to redo and large ones are not, and the mode cannot tell in
+advance which a press will be.")
+
 (defvar donkey--mark-run-armed-in-macro nil
   "Non-nil when mark run mode was armed from inside a keyboard macro.
 
@@ -3500,6 +3519,54 @@ macro that armed it is over -- see there for why `this-command' cannot
 be asked instead.  Set at entry from `executing-kbd-macro' and cleared
 by `donkey--mark-run-exit', so a mode armed by a live keypress carries
 nil and is never touched by the rule.")
+
+(defun donkey--mark-run-mode-pre-command ()
+  "Record the run's shape before a press that is about to change it.
+
+On `pre-command-hook' for the life of the mode, that being the only
+moment at which the state before a press is still the state.  Records
+for the family presses alone: the inert commands change nothing, so
+stepping back to what they left would spend a press on nothing, and
+`donkey-mark-run-step-back' itself must not record or it could never
+make progress.
+
+Guarded, not signaling: a function that errors on `pre-command-hook'
+is silently removed for the session."
+  (when (and (memq this-command donkey--mark-run-commands)
+             (not (memq this-command donkey--mark-run-inert-commands))
+             (not (eq this-command 'donkey-mark-run-step-back)))
+    (push (list (point) (mark t) (and mark-active t))
+          donkey--mark-run-history)))
+
+(defun donkey-mark-run-step-back ()
+  "Put the run back where the last press found it.
+
+Bound to \`u' inside `donkey-mark-run-mode-map'.  One press, one step:
+`M w w s' and three of these is the first word again, a fourth
+reporting rather than guessing.  Every press the mode counts as its
+own steps back this way, the motions and \`*' included -- a simpler
+rule to hold than one that undid the object keys only.
+
+The key is free.  Inside a run \`u' otherwise reaches `undo', which
+sees an active region, tries a region undo and reports \"No further
+undo information for region\": one of the three keys in normal state
+that fail against a live run and leave it standing.  Nothing anyone
+uses is displaced.
+
+Point, the mark and whether the mark was active are all restored, so
+the shape before the first object key -- the head start
+`donkey-mark-run-toggle' takes on the way in, or nothing at all --
+comes back as it was.  A member of `donkey--mark-run-commands', so the
+run carries on: `M w w u w' grows from the restored selection instead
+of marking afresh."
+  (interactive)
+  (unless donkey--mark-run-history
+    (user-error "No earlier step in this run"))
+  (cl-destructuring-bind (pt mk active) (pop donkey--mark-run-history)
+    (goto-char pt)
+    (if (and mk active)
+        (set-mark mk)
+      (deactivate-mark))))
 
 (defun donkey--mark-run-mode-post-command ()
   "Repaint the mark run reminder, or end a mode that outlived its map.
@@ -3599,7 +3666,9 @@ map's ON-EXIT fires from `pre-command-hook', before that command can
 message, and the reminder hook fires after, when anything the command
 said is already in the echo area.  The clearing test reads correctly
 either way."
+  (remove-hook 'pre-command-hook #'donkey--mark-run-mode-pre-command)
   (remove-hook 'post-command-hook #'donkey--mark-run-mode-post-command)
+  (setq donkey--mark-run-history nil)
   ;; The reminder is the only sign on screen that the mode is on, so it
   ;; must not outlive it.  A foreign key that neither messages nor
   ;; signals -- `g q', `z z', a recenter -- left the echo area still
@@ -3635,6 +3704,8 @@ back to nil and the only way to tell an armed-by-macro mode from an
 armed-by-keypress one is to have written it down."
   (donkey--mark-run-exit)
   (setq donkey--mark-run-armed-in-macro (and executing-kbd-macro t))
+  (setq donkey--mark-run-history nil)
+  (add-hook 'pre-command-hook #'donkey--mark-run-mode-pre-command)
   (add-hook 'post-command-hook #'donkey--mark-run-mode-post-command)
   (setq donkey--mark-run-exit-function
         (set-transient-map donkey-mark-run-mode-map
@@ -3762,6 +3833,12 @@ a visual-line session cannot own a mark run's selection, and the press
 used to drop the run and anchor a fresh line session without saying
 so.  Leave the run first -- \`M', \`C-g', or any key that uses the
 selection -- and \`V' is itself again.
+
+\`u' puts the run back where the last press found it, one press per
+step.  A run only ever grows -- `b' after `w' adds a word at the other
+end rather than taking one back -- so without it a press that reached
+further than it looked left cancelling and starting again as the only
+way out.
 
 The `m' prefix is the one key that neither runs nor ends the mode: it
 still reaches the normal map, so `m w' inside the mode runs

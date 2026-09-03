@@ -749,6 +749,14 @@ line outright rather than leaving the blank one behind, and =M J y=
 yanks back as a line. The highlight reaches the next line's first
 column to show it.
 
+=u= puts the run back where the last press found it, one press per
+step, the motions and =*= included. A run only ever grows — =b= after
+=w= adds a word at the other end rather than taking one back — so
+without it a press that reached further than it looked left cancelling
+and starting again as the only way out. The key is free inside the
+mode: it otherwise reaches =undo=, which fails against a live region
+anyway.
+
 =*= swaps point and mark, so the motions adjust the selection's
 *other* end — vi's =o= in visual mode. The object keys own fixed ends
 and simply trade back before they grow, so =M w * w= selects what

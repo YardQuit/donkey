@@ -4843,6 +4843,87 @@ depend on the setting."
                         tmm "for text that is not saved\nsecond line\n" keys))
                  (list tmm keys expected)))))))
 
+(ert-deftest donkey-u-steps-a-run-back-one-press ()
+  "`u' puts the run back where the last press found it.
+
+A run only ever grows.  Every object key adds at its own end -- `b'
+after `w' takes a word at the other end rather than giving one back,
+which is the fixed-ends rule and worth keeping -- so a press that
+reached further than it looked left cancelling and starting again as
+the only way out.  That is cheap for a word and expensive for a
+paragraph, and the mode cannot tell in advance which a press will be.
+
+One press, one step, and the ladder is walked all the way down: `M w
+w s' is the sentence, and three steps back is the first word.  A
+fourth reports rather than guessing, and leaves the selection alone
+while it does."
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w w s"
+    (should (equal (donkey-mark-test--selection) "that is not saved here today")))
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w w s u"
+    (should (equal (donkey-mark-test--selection) "that is")))
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w w s u u"
+    (should (equal (donkey-mark-test--selection) "that")))
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w w s u u u"
+    ;; A fourth finds nothing to undo and says so, leaving the run it
+    ;; could not step still standing.  Called rather than pressed: the
+    ;; signal would abort the macro and take the assertions with it.
+    (should (equal (donkey-mark-test--selection) "that"))
+    (should (eq (key-binding "w") 'donkey-mark-word))
+    (should-error (donkey-mark-run-step-back) :type 'user-error))
+  ;; The run carries on across a step back rather than starting over.
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w w u w"
+    (should (equal (donkey-mark-test--selection) "that is")))
+  ;; Every press the mode owns is a step, the motions and `*' included.
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w l l u"
+    (should (equal (donkey-mark-test--selection) "hat")))
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w * u"
+    (should (equal (donkey-mark-test--selection) "that")))
+  ;; A counted press is one press, so one step takes all of it back.
+  (donkey-mark-test--keys "for text that is not saved here today"
+      "w w l M w C-u 5 w u"
+    (should (equal (donkey-mark-test--selection) "that")))
+  ;; A key that changed nothing recorded nothing, so the step goes past
+  ;; it to the press that did.
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w DEL u"
+    (should (equal (donkey-mark-test--selection) "that"))
+    (should-error (donkey-mark-run-step-back) :type 'user-error))
+  ;; The head start is not a recorded press: `M' alone has nothing
+  ;; before it to go back to, and cancelling is what undoes it.
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M"
+    (should-error (donkey-mark-run-step-back) :type 'user-error))
+  ;; Entered from whitespace there is no head start, so the first
+  ;; press records a state with NO mark -- and stepping back to it has
+  ;; to put the selection away rather than leave the last one showing.
+  (donkey-mark-test--keys "for text that is not saved here today" "w w M w"
+    (should (equal (donkey-mark-test--selection) "text")))
+  (donkey-mark-test--keys "for text that is not saved here today" "w w M w u"
+    (should-not (region-active-p))
+    (should (eq (key-binding "w") 'donkey-mark-word))))
+
+(ert-deftest donkey-a-runs-history-does-not-outlive-it ()
+  "The steps go when the mode does, and `u' is `undo' outside it.
+
+A run's history means nothing to the next run -- stepping back into a
+selection the previous run left would be worse than having no step
+back at all -- so `donkey--mark-run-enter' empties it on the way in
+and `donkey--mark-run-exit' on the way out.
+
+And the key is only borrowed.  In normal state `u' is `undo', which is
+what makes it free to take: inside a run it reaches `undo' anyway and
+fails there, one of the three keys that error against a live region
+and leave it standing."
+  (donkey-mark-test--keys "for text that is" "w w l M w w"
+    (should donkey--mark-run-history))
+  (donkey-mark-test--keys "for text that is" "w w l M w w M"
+    (should-not donkey--mark-run-history))
+  (donkey-mark-test--keys "for text that is" "w w l M w w d"
+    (should-not donkey--mark-run-history))
+  ;; A second run starts empty rather than inheriting the first's.
+  (donkey-mark-test--keys "for text that is" "w w l M w w M M"
+    (should-not donkey--mark-run-history))
+  (donkey-mark-test--keys "for text that is" "w w l"
+    (should (eq (key-binding "u") 'undo))))
+
 (ert-deftest donkey-a-rectangle-is-canceled-not-adopted ()
   "`M' over a rectangle drops it; there is no forward end to own.
 
