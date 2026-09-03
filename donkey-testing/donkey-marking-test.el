@@ -4340,29 +4340,62 @@ break it."
       "j j j j M w m P"
     (should (equal (donkey-mark-test--selection) "\nGamma"))))
 
-(ert-deftest donkey-the-mode-hint-names-only-keys-the-mode-owns ()
-  "Every key the reminder advertises is a key of the mode map.
+(ert-deftest donkey-the-mode-hint-names-only-keys-that-work ()
+  "Every key the reminder advertises does what it says inside a run.
 
 The reminder is the only place most people will read the mode's key
-list, so a letter named there that the mode does not bind is a
-promise the next press breaks -- which is exactly what happened when
-the paragraph pair gave its letters back to pasting: `p/P
-paragraphs' stayed in the hint while `p' had become
-`donkey-yank'.  The pairs are read out of the hint itself rather
-than listed again here, so the two cannot drift apart."
-  (let ((keys '("h" "j" "k" "l" "*" "M"))
-        (start 0))
-    (while (string-match "\\([a-zA-Z*]\\)/\\([a-zA-Z*]\\)"
-                         donkey--mark-run-mode-hint start)
-      (push (match-string 1 donkey--mark-run-mode-hint) keys)
-      (push (match-string 2 donkey--mark-run-mode-hint) keys)
-      (setq start (match-end 0)))
-    ;; The pairs really were found -- a regexp that matched nothing
+list, so a letter named there that does not work is a promise the
+next press breaks -- which is exactly what happened when the
+paragraph pair gave its letters back to pasting: `p/P paragraphs'
+stayed in the hint while `p' had become `donkey-yank'.  The pairs are
+read out of the hint itself rather than listed again here, so the two
+cannot drift apart.
+
+Two kinds of key are named, and they are checked differently.  A bare
+letter has to be in `donkey-mark-run-mode-map'.  An `m'-prefixed
+spelling must NOT be -- it reaches normal state, the mode being
+transparent to the prefix -- and must run a `donkey--mark-run-commands'
+member when it gets there, which is what makes it grow a run.
+
+The width is pinned too.  The line names the object keys and leaves
+out the ones that keep their normal-state meaning, and it does that
+to stay readable at a glance; a later entry put back without thought
+would undo the trim silently."
+  (let* ((hint donkey--mark-run-mode-hint)
+         (rest hint)
+         (prefixed nil)
+         (keys '("h" "j" "k" "l" "*" "M")))
+    ;; The `m'-prefixed spellings first, and out of the string: the
+    ;; plain-pair regexp below would otherwise read the "p/m" that
+    ;; spans the middle of "m p/m P" as a pair of its own.
+    (while (string-match "m \\([a-zA-Z]\\)/m \\([a-zA-Z]\\)" rest)
+      (push (concat "m " (match-string 1 rest)) prefixed)
+      (push (concat "m " (match-string 2 rest)) prefixed)
+      (setq rest (replace-match "" t t rest)))
+    (let ((start 0))
+      (while (string-match "\\([a-zA-Z*]\\)/\\([a-zA-Z*]\\)" rest start)
+        (push (match-string 1 rest) keys)
+        (push (match-string 2 rest) keys)
+        (setq start (match-end 0))))
+    ;; The pairs really were found -- regexps that matched nothing
     ;; would leave this passing on the six literals alone.
     (should (> (length keys) 6))
+    (should prefixed)
     (dolist (key keys)
       (should (equal (list key (and (keymap-lookup donkey-mark-run-mode-map key) t))
-                     (list key t))))))
+                     (list key t))))
+    (dolist (key prefixed)
+      ;; Asked for a command, not for nil: `keymap-lookup' answers a
+      ;; NUMBER for a multi-key sequence whose first key the map does
+      ;; not bind -- "m P" reads as 1 here, the count of events that
+      ;; made a complete key -- so a nil test would fail on a map that
+      ;; is behaving exactly as it should.
+      (should (equal (list key (commandp
+                                (keymap-lookup donkey-mark-run-mode-map key)))
+                     (list key nil)))
+      (should (memq (keymap-lookup donkey-normal-mode-map key)
+                    donkey--mark-run-commands)))
+    (should (<= (length hint) 100))))
 
 (ert-deftest donkey-p-and-P-keep-their-paste-jobs-inside-the-mode ()
   "`M w p' replaces the marked word; the mode letters no paragraph.
@@ -4904,29 +4937,127 @@ while it does."
     (should-not (region-active-p))
     (should (eq (key-binding "w") 'donkey-mark-word))))
 
+(ert-deftest donkey-U-steps-a-run-forward-again ()
+  "`U' puts the run back where `u' stepped it out of.
+
+The other half of the pair, and one press per step like its sibling:
+`M w w u u' is the first word, and two of these is two words again.
+A press that is neither of the two ends the redo -- a new branch has
+nothing to redo onto, which is the bargain every undo system strikes
+-- and with nothing left it reports rather than guessing.
+
+`U' records no step of its own, or it would undo its own move: after
+`u U' the history stands exactly where it did, and `u' steps back
+again."
+  (let ((text "for text that is not saved here today"))
+    (donkey-mark-test--keys text "w w l M w w u U"
+      (should (equal (donkey-mark-test--selection) "that is")))
+    (donkey-mark-test--keys text "w w l M w w u u U U"
+      (should (equal (donkey-mark-test--selection) "that is")))
+    ;; `U' left the history alone, so `u' still walks back down it.
+    (donkey-mark-test--keys text "w w l M w w u U u"
+      (should (equal (donkey-mark-test--selection) "that")))
+    ;; The run carries on from what came back.
+    (donkey-mark-test--keys text "w w l M w w u U w"
+      (should (equal (donkey-mark-test--selection) "that is not")))
+    ;; The mode is still on, and `U' is its key while it is.
+    (donkey-mark-test--keys text "w w l M w w u U"
+      (should (eq (key-binding "w") 'donkey-mark-word))
+      (should (eq (key-binding "U") 'donkey-mark-run-step-forward)))
+    ;; Nothing stepped back, nothing to step forward to.  Called
+    ;; rather than pressed: the signal would abort the macro.
+    (donkey-mark-test--keys text "w w l M w w"
+      (should-error (donkey-mark-run-step-forward) :type 'user-error))
+    ;; A press off the path drops the redo.
+    (donkey-mark-test--keys text "w w l M w w u w"
+      (should (equal (donkey-mark-test--selection) "that is"))
+      (should-error (donkey-mark-run-step-forward) :type 'user-error))
+    ;; Even a motion, which is a press like any other here.
+    (donkey-mark-test--keys text "w w l M w w u l"
+      (should-error (donkey-mark-run-step-forward) :type 'user-error)))
+  (should (memq 'donkey-mark-run-step-forward donkey--mark-run-commands))
+  (should (memq 'donkey-mark-run-step-forward donkey--mark-run-adjusters)))
+
+(ert-deftest donkey-U-in-a-run-does-not-redo-a-text-edit ()
+  "`U' inside a run touches the selection, never the buffer.
+
+This is why the key needed taking over at all.  Outside the mode `u'
+and `U' are `undo' and `undo-redo'; inside it `u' had been taken for
+the run while `U' still meant the buffer, so the press anyone would
+reach for after `u' redid a TEXT EDIT, dropped the selection and
+lapsed the mode, none of it announced.  It was worst exactly where it
+was likeliest -- straight after `u', from someone reading the pair
+the way the pair reads everywhere else.
+
+Driven by hand rather than through `donkey-mark-test--keys', which
+gives its buffer no undo history to redo: the fixture is the whole
+test."
+  (let ((buf (get-buffer-create "*donkey-redo-test*")))
+    (unwind-protect
+        (progn
+          (donkey-mode 1)
+          (let ((transient-mark-mode t)
+                (prefix-arg nil) (current-prefix-arg nil)
+                (this-command nil) (last-command nil))
+            (switch-to-buffer buf)
+            (fundamental-mode)
+            (erase-buffer)
+            (buffer-enable-undo)
+            (setq buffer-undo-list nil)
+            (insert "one two three\n")
+            (undo-boundary)
+            (goto-char (point-max))
+            (insert "ADDED\n")
+            (undo-boundary)
+            ;; A real undo, so there is genuinely something to redo.
+            (let ((last-command 'ignore) (this-command 'undo))
+              (call-interactively #'undo))
+            (should-not (string-match-p "ADDED" (buffer-string)))
+            (goto-char (point-min))
+            (donkey-enter-normal)
+            (setq last-command nil)
+            (execute-kbd-macro (kbd "M w u U"))
+            ;; The selection came back and the buffer did not change.
+            (should (equal (buffer-substring-no-properties
+                            (region-beginning) (region-end))
+                           "one"))
+            (should-not (string-match-p "ADDED" (buffer-string)))
+            (should (eq (key-binding "w") 'donkey-mark-word))))
+      (donkey--mark-run-exit)
+      (when (buffer-live-p buf) (kill-buffer buf))
+      (donkey-mode -1))))
+
 (ert-deftest donkey-a-runs-history-does-not-outlive-it ()
-  "The steps go when the mode does, and `u' is `undo' outside it.
+  "The steps go when the mode does, and `u'/`U' are undo outside it.
 
 A run's history means nothing to the next run -- stepping back into a
 selection the previous run left would be worse than having no step
 back at all -- so `donkey--mark-run-enter' empties it on the way in
-and `donkey--mark-run-exit' on the way out.
+and `donkey--mark-run-exit' on the way out.  The redo stack goes with
+it: a run cannot step FORWARD into a shape another run stepped out of
+any more sensibly than it can step back into one.
 
-And the key is only borrowed.  In normal state `u' is `undo', which is
-what makes it free to take: inside a run it reaches `undo' anyway and
-fails there, one of the three keys that error against a live region
-and leave it standing."
+And the keys are only borrowed.  In normal state they are `undo' and
+`undo-redo', and both are given straight back when the mode ends --
+which matters more for `U', since what it means out there writes to
+the buffer."
   (donkey-mark-test--keys "for text that is" "w w l M w w"
     (should donkey--mark-run-history))
-  (donkey-mark-test--keys "for text that is" "w w l M w w M"
-    (should-not donkey--mark-run-history))
-  (donkey-mark-test--keys "for text that is" "w w l M w w d"
-    (should-not donkey--mark-run-history))
+  (donkey-mark-test--keys "for text that is" "w w l M w w u"
+    (should donkey--mark-run-redo))
+  (donkey-mark-test--keys "for text that is" "w w l M w w u M"
+    (should-not donkey--mark-run-history)
+    (should-not donkey--mark-run-redo))
+  (donkey-mark-test--keys "for text that is" "w w l M w w u d"
+    (should-not donkey--mark-run-history)
+    (should-not donkey--mark-run-redo))
   ;; A second run starts empty rather than inheriting the first's.
-  (donkey-mark-test--keys "for text that is" "w w l M w w M M"
-    (should-not donkey--mark-run-history))
+  (donkey-mark-test--keys "for text that is" "w w l M w w u M M"
+    (should-not donkey--mark-run-history)
+    (should-not donkey--mark-run-redo))
   (donkey-mark-test--keys "for text that is" "w w l"
-    (should (eq (key-binding "u") 'undo))))
+    (should (eq (key-binding "u") 'undo))
+    (should (eq (key-binding "U") 'undo-redo))))
 
 (ert-deftest donkey-g-g-and-g-e-stretch-the-run-to-the-buffer-ends ()
   "`g g' and `g e' own an end apiece, as `g h' and `g l' do.
