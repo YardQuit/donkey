@@ -3878,10 +3878,12 @@ the mode like any foreign key."
   (donkey-mark-test--keys "one\ntwo\nthree\nfour\n" "M J J g l"
     (should (equal (donkey-mark-test--selection) "one\ntwo\nthree")))
   ;; Fresh, both are still motions: nothing is marked, point moves.
-  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M g l"
+  ;; Entered from WHITESPACE, since `M' on a word marks it and the
+  ;; fresh branch would never be reached.
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w M g l"
     (should-not (region-active-p))
     (should (= (point) (line-end-position))))
-  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M g h w"
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w M g h w"
     (should (equal (donkey-mark-test--selection) "for")))
   ;; A swap is not theirs to honor either -- they own fixed ends, so
   ;; they trade back first, exactly as the object keys do.
@@ -3926,9 +3928,11 @@ its mark stays behind -- the mode is re-entered empty, `l' moves
 beside the stale mark, and `w' must mark the word at point afresh --
 \"that\", not the \"hat\" that growing from the stale mark gave.
 \(Staged through the in-mode cancel because `M' over a live
-selection now ADOPTS it rather than canceling.)"
-  (donkey-mark-test--keys "for text that is" "w w l M w M M l w"
-    (should (equal (donkey-mark-test--selection) "that"))))
+selection now ADOPTS it rather than canceling, and re-entered from
+WHITESPACE because `M' on a word marks it -- the head start would
+give `l' a live region to reshape and hide the case entirely.)"
+  (donkey-mark-test--keys "for text that is" "w w l M w M w M l w"
+    (should (equal (donkey-mark-test--selection) "is"))))
 
 (ert-deftest donkey-mark-run-mode-mixes-objects ()
   "`M w s' grows the word to its sentence's end, like `m w m s'.
@@ -4282,22 +4286,31 @@ blanket one."
 the first object key grow from the CURSOR -- `v M w' from mid-word
 took the tail of the word, \"hat\" for \"that\" -- which is the very
 design `donkey-mark-run-mode-first-letter-marks-afresh' pins the
-toggle against.  The toggle drops such a region and enters
-empty-handed instead, and the command itself refuses outright, being
-reachable by name.
+toggle against.  The toggle drops such a region and marks the word
+under the cursor in its place, and `donkey-mark-run-adopt' refuses
+outright, being reachable by name.
 
 Dropping it, rather than merely declining to adopt it: an empty
 region left ACTIVE is a selection to everything that asks, so `v M d'
-deleted nothing at all where it should take the character at point,
-and \\`*' had ends to trade where there is nothing between them."
+deleted nothing at all, and \\`*' had ends to trade where there is
+nothing between them.  The drop now shows as a whole word taking the
+empty region's place, so `v M d' deletes that word; from whitespace,
+where there is no word to stand in, it shows on its own."
   (donkey-mark-test--keys "for text that is" "w w l l v M w"
     (should (equal (donkey-mark-test--selection) "that")))
+  ;; The head start makes the point even plainer: the empty region is
+  ;; gone and a WHOLE word stands in its place, where adopting would
+  ;; have kept the cursor as one end.
   (donkey-mark-test--keys "for text that is" "w w l l v M"
+    (should (equal (donkey-mark-test--selection) "that")))
+  ;; From whitespace there is no word to stand in, so the drop shows on
+  ;; its own -- and `*' has nothing to trade.
+  (donkey-mark-test--keys "for text that is" "w w v M"
     (should-not (region-active-p))
     (should-error (donkey-mark-run-exchange) :type 'user-error))
   (donkey-mark-test--keys "for text that is" "w w l l v M d"
     (should (equal (buffer-substring-no-properties (point-min) (point-max))
-                   "for text tat is")))
+                   "for text  is")))
   (donkey-mark-test--keys "for text that is" "w w l l v"
     (should-error (donkey-mark-run-adopt) :type 'user-error))
   (donkey-mark-test--keys "for text that is" "w"
@@ -4688,6 +4701,82 @@ three words end up selected, and that the delete takes all three."
   (donkey-mark-test--keys "one two three four five six" "w w l M w g h g l"
     (should (equal (donkey-mark-test--selection)
                    "one two three four five six"))))
+
+(ert-deftest donkey-M-marks-the-word-under-the-cursor ()
+  "`M' arrives holding a word, and changes nothing about the letters.
+
+Entering the mode used to leave the selection empty and wait, so the
+commonest run -- mark this word, then grow it -- cost a press that
+said nothing on screen.  `M' now marks the word under the cursor on
+its way in.
+
+Only UNDER the cursor.  `donkey-mark-word' reaches for the word behind
+a gap, which is right for a key that says \"word\" and wrong for one
+that says \"start selecting\": from a blank line the head start would
+have jumped the selection up to the paragraph above, and in a buffer
+with no word at all it would have reported instead of entering.
+
+And the head start is not the run's first press: the toggle stays out
+of `donkey--mark-run-commands', so the object key after it still marks
+afresh.  `M w' is the word the prefix would have marked, `M w w b' is
+`m w m w m b' still, and nothing about the letters moves."
+  (donkey-mark-test--keys "for text that is" "w w l M"
+    (should (equal (donkey-mark-test--selection) "that"))
+    (should (eq (key-binding "w") 'donkey-mark-word)))
+  ;; Mid-word takes the whole word, not the tail.
+  (donkey-mark-test--keys "for text that is" "w w l l M"
+    (should (equal (donkey-mark-test--selection) "that")))
+  ;; On whitespace, and on a blank line with prose above it, the mode
+  ;; arrives empty rather than reaching for a distant word.
+  (donkey-mark-test--keys "for text that is" "w w M"
+    (should-not (region-active-p))
+    (should (eq (key-binding "w") 'donkey-mark-word)))
+  (donkey-mark-test--keys "Word.\n\n   \n" "j j M"
+    (should-not (region-active-p))
+    (should (eq (key-binding "w") 'donkey-mark-word)))
+  ;; The letters are untouched: the first one still marks afresh.
+  (let ((head (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+                (donkey-mark-test--selection)))
+        (prefixed (donkey-mark-test--keys "for text that is not saved" "w w l m w"
+                    (donkey-mark-test--selection))))
+    (should (equal head "that"))
+    (should (equal head prefixed)))
+  (let ((moded (donkey-mark-test--keys "for text that is not saved"
+                   "w w l M w w b" (donkey-mark-test--selection)))
+        (prefixed (donkey-mark-test--keys "for text that is not saved"
+                      "w w l m w m w m b" (donkey-mark-test--selection))))
+    (should (equal moded "text that is"))
+    (should (equal moded prefixed)))
+  ;; Which makes the shortest useful thing the mode can do one press
+  ;; and one key: take this word away.
+  (donkey-mark-test--keys "for text that is" "w w l M d"
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "for text  is"))))
+
+(ert-deftest donkey-the-reminder-does-not-outlive-the-mode ()
+  "The echo area stops advertising a mode that has ended.
+
+The reminder is the only sign on screen that the mode is on.  A
+foreign key that neither messages nor signals -- `g q', a recenter --
+left it up over a selection the mode no longer owned, and the next
+`w' moved instead of growing, with the screen still saying otherwise.
+
+Cleared only when the reminder is what is showing, which is the
+no-clobber rule `donkey--visual-line-hint-motions' keeps in the other
+direction: a command that said something of its own keeps its echo.
+Driven through stubs because batch Emacs has no echo area for
+`current-message' to read."
+  (dolist (case (list (list donkey--mark-run-mode-hint t)
+                      (list "a command said this" nil)
+                      (list nil nil)))
+    (cl-destructuring-bind (showing expected) case
+      (let (cleared)
+        (cl-letf (((symbol-function 'current-message) (lambda () showing))
+                  ((symbol-function 'message)
+                   (lambda (fmt &rest _) (when (null fmt) (setq cleared t)) nil)))
+          (donkey--mark-run-exit))
+        (should (equal (list showing (and cleared t))
+                       (list showing expected)))))))
 
 (ert-deftest donkey-a-rectangle-is-canceled-not-adopted ()
   "`M' over a rectangle drops it; there is no forward end to own.

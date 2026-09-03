@@ -3579,8 +3579,24 @@ leaves the map armed with no further command to lapse it.
 
 `donkey--mark-run-exit-function' is cleared BEFORE it is called: the
 call runs the map's ON-EXIT, which is this function again, and the nil
-is what stops the second pass.  Harmless when the mode is not armed."
+is what stops the second pass.  Harmless when the mode is not armed.
+
+Reached on both sides of the foreign command that ends the mode: the
+map's ON-EXIT fires from `pre-command-hook', before that command can
+message, and the reminder hook fires after, when anything the command
+said is already in the echo area.  The clearing test reads correctly
+either way."
   (remove-hook 'post-command-hook #'donkey--mark-run-mode-post-command)
+  ;; The reminder is the only sign on screen that the mode is on, so it
+  ;; must not outlive it.  A foreign key that neither messages nor
+  ;; signals -- `g q', `z z', a recenter -- left the echo area still
+  ;; advertising the mark run keys over a selection the mode no longer
+  ;; owned, and the next `w' moved instead of growing.  Cleared only
+  ;; when the reminder is what is showing: the same no-clobber rule
+  ;; `donkey--visual-line-hint-motions' keeps in the other direction,
+  ;; so a command that said something of its own keeps its echo.
+  (when (equal (current-message) donkey--mark-run-mode-hint)
+    (message nil))
   (setq donkey--mark-run-armed-in-macro nil)
   (let ((exit donkey--mark-run-exit-function))
     (setq donkey--mark-run-exit-function nil)
@@ -3737,6 +3753,23 @@ can be mixed mid-run.  It is also how paragraphs are reached, their
 letters having been given back to pasting: `M w m p' grows the word
 to its paragraph and stays in the mode.
 
+With nothing selected the press marks the WORD under the cursor on its
+way in, so the mode arrives holding the thing nearly every run starts
+from.  \`M' alone is a selected word.  Only when point is ON one:
+`donkey-mark-word' reaches for the word behind a gap, which is right
+for a key that says \"word\" and wrong for one that says \"start
+selecting\" -- from a blank line it would have jumped the selection to
+the paragraph above.  On whitespace the mode arrives empty, as it
+always did.
+
+The word is a head start rather than the run's first press: the object
+key after it still marks afresh, because this command stays out of
+`donkey--mark-run-commands' and the family test reads `last-command'.
+So \`M' \`w' is the word the prefix would have marked, \`M' \`s' is the
+whole sentence, and \`M' \`w' \`w' \`b' is `m w m w m b' still.  Nothing
+about the letters changes; there is simply already something selected
+when they arrive.
+
 Pressed with an active selection this ADOPTS it into the mode instead
 of entering empty-handed -- see `donkey-mark-run-adopt': a
 visual-line session, a `v' region, or a prefix-built selection all
@@ -3776,10 +3809,28 @@ this key makes: the same behavior, minus the prefix."
       (donkey-mark-run-adopt))
      (t
       ;; Including an EMPTY active region, which is dropped rather than
-      ;; adopted -- see `donkey-mark-run-adopt' for why `v M w' must
-      ;; still mark the whole word.
+      ;; adopted -- see `donkey-mark-run-adopt' for why `v M' must still
+      ;; mark the whole word rather than the tail of it.
       (deactivate-mark)
-      (donkey--mark-run-enter)))))
+      ;; Only when point is ON a word.  `donkey-mark-word' reaches for
+      ;; the word BEHIND a gap, which is right for a key that says
+      ;; "word" and wrong for one that says "start selecting": pressed
+      ;; on a blank line it would have jumped the selection to the end
+      ;; of the paragraph above, and in a buffer with no word at all it
+      ;; would have reported instead of entering.  On whitespace the
+      ;; mode simply arrives empty, as it always did.
+      ;;
+      ;; And NOT renamed to `donkey-mark-word' in `this-command', which
+      ;; is what adoption does.  The rename would make the object key
+      ;; that follows GROW this word instead of marking afresh, and
+      ;; every `M'-and-a-letter sequence would count from one word
+      ;; further along -- `M w w b' would stop being `m w m w m b',
+      ;; which is the promise the mode is named for.  Left alone, the
+      ;; word is a free head start: press nothing and you have it,
+      ;; press `w' and you have the word the prefix would have marked.
+      (donkey--mark-run-enter)
+      (when (donkey--point-on-word-or-symbol-char-p)
+        (donkey-mark-word))))))
 
 (defun donkey-mark-word (&optional count)
   "Select the entire word at or adjacent to point.
@@ -5306,7 +5357,13 @@ grows the word selection forward to the end of its sentence.
 letters w W b B s S mark and grow exactly as their m-prefixed keys do,
 so \\`M' \\`w' \\`w' \\`b' selects what three prefixed presses select.  A
 reminder of the keys stays in the echo area for as long as the mode is
-on.
+on, and goes when the mode does.
+
+The press arrives holding the word under the cursor, that being what
+nearly every run starts from -- so \\`M' alone is a selected word, and
+\\`M' DONKEY-DELETE-KEYS takes it.  On whitespace the mode arrives empty
+instead of reaching back for the word above.  The head start is not
+the run's first press: the letters behave exactly as they always did.
 
 >> Put the cursor on \"three\" in the ---> line and press \\[donkey-mark-run-toggle], then
    \\`w' \\`w': two words are selected, no prefix in sight.  Press \\`b'

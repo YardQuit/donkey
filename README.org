@@ -710,7 +710,17 @@ where the bare letters =w W b B s S= run exactly what their
 =m=-prefixed keys run, so =M w w b= selects what =m w m w m b=
 selects. The first letter marks afresh, later letters grow the one
 selection, counts work (=M C-u 3 w=), and objects mix as above. The
-echo-area reminder stays visible for as long as the mode is active.
+echo-area reminder stays visible for as long as the mode is active,
+and goes when the mode does.
+
+=M= arrives holding the word under the cursor, since that is what
+nearly every run starts from — pressed on =that=, the word is
+selected before you have touched a letter, so =M d= takes it and =M w=
+is the word the prefix would have marked. Only a word actually under
+the cursor: on whitespace, or a blank line, the mode arrives empty
+rather than reaching back for the word above. The head start is not
+the run's first press, so nothing about the letters changes — =M w w b=
+is still =m w m w m b=.
 
 The =m= prefix still works inside the mode and needs no thinking
 about: =m w= runs the very command the bare =w= runs, so the mode
