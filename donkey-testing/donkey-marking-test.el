@@ -4651,7 +4651,7 @@ against the predicate directly."
       (should-not (donkey--mark-run-mode-keep-p)))))
 
 (ert-deftest donkey-V-is-refused-inside-a-mark-run ()
-  "`V' says to leave the run first instead of silently taking it.
+  "`v' and `V' say to leave the run first instead of taking it.
 
 A visual-line session and a mark run are two ways of owning one
 selection, and `donkey-visual-line-toggle' pressed mid-run dropped the
@@ -4667,6 +4667,7 @@ Outside the mode `V' is untouched, which is the point of refusing
 rather than rebinding."
   (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w"
     (should (eq (key-binding "V") 'donkey-mark-run-refuse))
+    (should (eq (key-binding "v") 'donkey-mark-run-refuse))
     (should-error (donkey-mark-run-refuse) :type 'user-error)
     ;; Nothing moved: the mode is armed and the run is intact.
     (should (eq (key-binding "w") 'donkey-mark-word))
@@ -4675,9 +4676,11 @@ rather than rebinding."
   (should (memq 'donkey-mark-run-refuse donkey--mark-run-commands))
   (let ((this-command 'donkey-mark-run-refuse))
     (should (donkey--mark-run-mode-keep-p)))
-  ;; Outside the mode the key is `donkey-visual-line-toggle' as ever.
+  ;; Outside the mode both keys are themselves as ever.
   (donkey-mark-test--keys "one two\nthree four\n" "V"
     (should (equal (donkey-mark-test--selection) "one two")))
+  (donkey-mark-test--keys "for text that is" "w w l v l l"
+    (should (equal (donkey-mark-test--selection) "th")))
 
   ;; And after a legal exit it works again: the delete takes the run,
   ;; and the `V' after it starts its session on what is left.

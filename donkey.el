@@ -3183,21 +3183,21 @@ consistency is worth it."
 (defun donkey-mark-run-refuse ()
   "Refuse a key that would silently throw the mark run away.
 
-Bound to \`V' inside `donkey-mark-run-mode-map'.  A visual-line
-session and a mark run are two ways of owning one selection, and the
-key that starts the one has no honest reading over the other: pressed
-mid-run, `donkey-visual-line-toggle' dropped the run and anchored a
-fresh line session on whatever line the cursor sat in -- `M w V' over
-a marked word came back holding that word's whole line, with the run
-gone and nothing said.  Rather than guess between adopting the run and
-discarding it, the key says which presses do end a run and leaves
-everything else standing.
+Bound to \`V' and \`v' inside `donkey-mark-run-mode-map'.  Both start
+a selection of their own, and neither has an honest reading over a
+run.  Pressed mid-run, `donkey-visual-line-toggle' dropped the run and
+anchored a fresh line session on whatever line the cursor sat in --
+`M w V' over a marked word came back holding that word's whole line,
+with the run gone and nothing said.  `donkey-set-mark' re-anchors,
+which is what \`v' means everywhere else and reads as \"start again
+from here\" -- but mid-run it left an empty region at point where a
+selection had been, the run gone as quietly.  Rather than guess
+between adopting a run and discarding it, the key says which presses
+do end one and leaves everything else standing.
 
 Those presses are unchanged: \`M' or \`C-g' drops the selection, and
 any key that USES it -- `d', `y', `p', `c', `x' -- takes it and goes.
-Only a key that would discard the run without using it is refused, and
-`donkey-set-mark' is deliberately not among them: re-anchoring is what
-\`v' means everywhere else, and it stays that here.
+Only a key that would discard the run without using it is refused.
 
 Allowed by `donkey--mark-run-mode-keep-p', so the refusal leaves the
 mode exactly as it found it.  The `user-error' also keeps its own
@@ -3513,6 +3513,7 @@ trading the ends of a VISIBLE selection can mean."
     (keymap-set map "K" #'donkey-mark-run-line-backward)
     (keymap-set map "*" #'donkey-mark-run-exchange)
     (keymap-set map "u" #'donkey-mark-run-step-back)
+    (keymap-set map "v" #'donkey-mark-run-refuse)
     (keymap-set map "V" #'donkey-mark-run-refuse)
     map)
   "The keys live during mark run mode -- see `donkey-mark-run-toggle'.

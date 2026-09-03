@@ -779,10 +779,10 @@ Any other key ends the mode and then does its ordinary job in the same
 press — =M w w d= selects two words and deletes them. Two are held
 back. A key that does nothing — one that is unbound, or =DEL= — leaves
 the run standing, so a mistyped key costs a beep rather than the
-selection. And =V= is refused: a visual line session cannot own a mark
-run's selection, and the press used to drop the run and anchor a fresh
-one without saying so, which is worse than being told to leave the
-mode first. =M= pressed again, inside the mode, drops the selection
+selection. And =v= and =V= are refused: neither a fresh mark nor a
+visual line session can own a mark run's selection, and both presses
+used to drop the run and start over without saying so, which is worse
+than being told to leave the mode first. =M= pressed again, inside the mode, drops the selection
 and the mode, and =C-g= does the same, as it does for every selection.
 
 Only these eight keys are in the family:
