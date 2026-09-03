@@ -5083,34 +5083,78 @@ such as \"<backspace>\" -- is a single key."
    ((string= prefix "z")      "Scroll")
    (t (format "%s Prefix" (upcase prefix)))))
 
+(defun donkey--desc-bindings-insert-map (map)
+  "Insert MAP's leaf bindings at point, grouped by prefix.
+
+The rendering half of `donkey-describe-bindings', split out when the
+buffer grew a second map to show: the normal-state keys and mark run
+mode's, which are the same shape and want the same grouping, headers
+and clickable command names.
+
+Sorted by GROUP first, then by key within the group.  Sorting by key
+alone interleaves single keys with the prefix groups alphabetically
+\(\"h\" between \"g t\" and \"m a\"), and since a header is emitted on
+every group transition, \"Single Keys\" then appeared four separate
+times -- not the grouping the command promises.  Single keys lead,
+prefixes follow in alphabetical order."
+  (let ((sorted-raw
+         (sort (donkey--desc-bindings-collect-leaves map "")
+               (lambda (a b)
+                 (let ((ga (donkey--desc-bindings-group (car a)))
+                       (gb (donkey--desc-bindings-group (car b))))
+                   (cond
+                    ((string= ga gb) (string< (car a) (car b)))
+                    ((string= ga "single") t)
+                    ((string= gb "single") nil)
+                    (t (string< ga gb))))))))
+    (let ((prev-group nil)
+          (lines-added 0))
+      (dolist (entry sorted-raw)
+        (let* ((full-key (car entry))
+               (def      (cdr entry))
+               (group    (donkey--desc-bindings-group full-key))
+               (new-block-p (not (equal prev-group group))))
+          ;; Header for every group, including the first -- otherwise
+          ;; the leading block (single keys) is the one group left
+          ;; unlabelled.  The blank separator is only wanted between
+          ;; blocks, so it is skipped for the first.
+          (when new-block-p
+            (when (> lines-added 0) (insert "\n"))
+            (insert (propertize (format "  %s" (donkey--binding-group-name group))
+                                'face '(bold font-lock-comment-delimiter-face)))
+            (insert "\n")
+            (insert (propertize (make-string 50 ?-)
+                                'face 'font-lock-comment-face) "\n"))
+          ;; Key column
+          (insert (propertize (format "%-14s " full-key)
+                              'face 'font-lock-variable-name-face))
+          ;; Command name as clickable button
+          (if (symbolp def)
+              (insert-text-button (symbol-name def)
+                                  'action (lambda (_) (describe-function def))
+                                  'follow-link t
+                                  'help-echo (format "Describe %s" def))
+            (insert "[complex]"))
+          (insert "\n")
+          (setq lines-added (1+ lines-added)
+                prev-group  group))))))
+
 (defun donkey-describe-bindings ()
-  "Display all leaf keybindings in `donkey-normal-mode-map' with formatting.
+  "Display DONKEY's key bindings, normal state and mark run mode.
 
 Bindings are grouped by prefix, separated by blank rows and section
 headers.  Command names are clickable buttons that open their
-documentation."
+documentation.
+
+Mark run mode gets a section of its own because its keys are
+reachable from nowhere else: they live in a transient map that any
+foreign key lapses, so pressing \\[describe-bindings] from inside the
+mode ends it before the help can see it, and the reminder in the echo
+area cannot hold them all."
   (interactive)
   (unless (boundp 'donkey-normal-mode-map)
     (user-error "Variable `donkey-normal-mode-map' is not defined yet"))
-  (let* ((buf (get-buffer-create "*DONKEY Bindings*"))
-         (raw (donkey--desc-bindings-collect-leaves donkey-normal-mode-map ""))
-         ;; Sorted by GROUP first, then by key within the group.  Sorting
-         ;; by key alone interleaves single keys with the prefix groups
-         ;; alphabetically ("h" between "g t" and "m a"), and since a
-         ;; header is emitted on every group transition, "Single Keys"
-         ;; then appeared four separate times -- not the grouping the
-         ;; docstring promises.  Single keys lead, prefixes follow in
-         ;; alphabetical order.
-         (sorted-raw
-          (sort raw
-                (lambda (a b)
-                  (let ((ga (donkey--desc-bindings-group (car a)))
-                        (gb (donkey--desc-bindings-group (car b))))
-                    (cond
-                     ((string= ga gb) (string< (car a) (car b)))
-                     ((string= ga "single") t)
-                     ((string= gb "single") nil)
-                     (t (string< ga gb))))))))
+  (let ((buf (get-buffer-create "*DONKEY Bindings*")))
     (with-current-buffer buf
       (setq buffer-read-only nil)
       (erase-buffer)
@@ -5124,38 +5168,29 @@ documentation."
                           'face 'font-lock-keyword-face))
       (insert (propertize (make-string 50 ?-)
                           'face 'font-lock-comment-face) "\n")
-      ;; Binding entries
-      (let ((prev-group nil)
-            (lines-added 0))
-        (dolist (entry sorted-raw)
-          (let* ((full-key (car entry))
-                 (def      (cdr entry))
-                 (group    (donkey--desc-bindings-group full-key))
-                 (new-block-p (not (equal prev-group group))))
-            ;; Header for every group, including the first -- otherwise
-            ;; the leading block (single keys) is the one group left
-            ;; unlabelled.  The blank separator is only wanted between
-            ;; blocks, so it is skipped for the first.
-            (when new-block-p
-              (when (> lines-added 0) (insert "\n"))
-              (insert (propertize (format "  %s" (donkey--binding-group-name group))
-                                  'face '(bold font-lock-comment-delimiter-face)))
-              (insert "\n")
-              (insert (propertize (make-string 50 ?-)
-                                  'face 'font-lock-comment-face) "\n"))
-            ;; Key column
-            (insert (propertize (format "%-14s " full-key)
-                                'face 'font-lock-variable-name-face))
-            ;; Command name as clickable button
-            (if (symbolp def)
-                (insert-text-button (symbol-name def)
-                                    'action (lambda (_) (describe-function def))
-                                    'follow-link t
-                                    'help-echo (format "Describe %s" def))
-              (insert "[complex]"))
-            (insert "\n")
-            (setq lines-added (1+ lines-added)
-                  prev-group  group))))
+      (donkey--desc-bindings-insert-map donkey-normal-mode-map)
+      ;; Mark run mode, under a title of its own: these keys are live
+      ;; only while the mode is, and every one of them is a key that
+      ;; means something else in normal state.
+      (insert "\n")
+      (insert (propertize "Mark Run Mode Key Bindings\n"
+                          'face '(bold font-lock-function-name-face :height 1.2)))
+      (insert (propertize (make-string 50 ?=)
+                          'face 'font-lock-comment-face) "\n")
+      ;; The key is read out of `donkey-normal-mode-map' rather than
+      ;; written with \\=\\[...]: `substitute-command-keys' looks in the
+      ;; buffer's ACTIVE maps, and the buffer it runs in here is this
+      ;; help buffer, where donkey's maps are not on -- so the line came
+      ;; out as "M-x donkey-mark-run-toggle starts it" every time.
+      (insert (propertize
+               (format "Live only while the mode is on -- %s starts it.\n"
+                       (key-description
+                        (where-is-internal 'donkey-mark-run-toggle
+                                           donkey-normal-mode-map t)))
+               'face 'font-lock-comment-face))
+      (insert (propertize (make-string 50 ?-)
+                          'face 'font-lock-comment-face) "\n")
+      (donkey--desc-bindings-insert-map donkey-mark-run-mode-map)
       ;; Footer
       (insert "\n")
       (insert (propertize (make-string 50 ?=)

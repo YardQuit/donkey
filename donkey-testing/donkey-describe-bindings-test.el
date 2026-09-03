@@ -278,6 +278,51 @@ Expected: \"1 Prefix\"."
 (defconst donkey-describe-bindings-test--expected-title "DONKEY Normal Mode Key Bindings"
   "Title string expected in the *DONKEY Bindings* buffer.")
 
+(ert-deftest donkey-describe-bindings-lists-mark-run-mode ()
+  "The buffer shows mark run mode's keys, under a title of their own.
+
+Those keys are reachable from nowhere else.  They live in a transient
+map that any foreign key lapses, so \\[describe-bindings] pressed from
+inside the mode ends it before the help can see it, and the echo-area
+reminder has room for some of them but not all -- `g h' and `g l' are
+already left out.  Until this section existed the only record of them
+was the README.
+
+Every key the mode binds must appear, read out of the map rather than
+listed again here, so a key added to the mode cannot go undocumented."
+  (let ((buf (get-buffer "*DONKEY Bindings*")))
+    (when buf (kill-buffer buf)))
+  (save-window-excursion
+    (donkey-describe-bindings)
+    (with-current-buffer "*DONKEY Bindings*"
+      (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+        (should (string-match-p "Mark Run Mode Key Bindings" text))
+        ;; The normal-state title is still there: this is a section
+        ;; added, not a buffer replaced.
+        (should (string-match-p donkey-describe-bindings-test--expected-title
+                                text))
+        ;; The entry line names the key that starts the mode, and names
+        ;; it as a KEY -- `substitute-command-keys' would have said
+        ;; "M-x donkey-mark-run-toggle" here, this buffer having none of
+        ;; donkey's maps active.
+        (should (string-match-p
+                 (concat (regexp-quote
+                          (key-description
+                           (where-is-internal 'donkey-mark-run-toggle
+                                              donkey-normal-mode-map t)))
+                         " starts it")
+                 text))
+        (should-not (string-match-p "M-x donkey-mark-run-toggle" text))
+        ;; And every command the mode binds is listed.
+        (dolist (entry (donkey--desc-bindings-collect-leaves
+                        donkey-mark-run-mode-map ""))
+          (should (equal (list (car entry) t)
+                         (list (car entry)
+                               (and (string-match-p
+                                     (regexp-quote (symbol-name (cdr entry)))
+                                     text)
+                                    t)))))))))
+
 ;;; --- Pre-condition error ---
 
 (ert-deftest donkey-describe-bindings-errors-without-map ()
@@ -484,20 +529,34 @@ Regression: entries were sorted by key alone, so single keys interleaved
 with the prefix groups alphabetically -- \"h\" landing between \"g t\"
 and \"m a\".  A header is emitted on each group transition, so \"Single
 Keys\" appeared four separate times, which is not the grouping the
-docstring promises."
+docstring promises.
+
+Once per SECTION, since the buffer grew a second map to show: normal
+state and mark run mode each get their own run of groups, and both
+have single keys and a `g' prefix.  The headers are collected per
+section for that reason -- asserting uniqueness across the whole
+buffer would fail on a repetition that is the point."
   (donkey-describe-bindings)
   (unwind-protect
       (with-current-buffer "*DONKEY Bindings*"
         (goto-char (point-min))
-        (let (heads)
-          (while (re-search-forward "^  \\([A-Za-z/ ]+\\)$" nil t)
-            (push (substring-no-properties (match-string 1)) heads))
-          (setq heads (nreverse heads))
-          (should heads)
-          (should (equal heads (delete-dups (copy-sequence heads))))
-          ;; The leading block is labeled too, rather than being the one
-          ;; group left without a header.
-          (should (equal (car heads) "Single Keys"))))
+        (let ((sections nil) (heads nil))
+          (while (re-search-forward
+                  "^\\(?:  \\([A-Za-z/ ]+\\)\\|\\(.* Key Bindings\\)\\)$" nil t)
+            (if (match-string 2)
+                (progn (when heads (push (nreverse heads) sections))
+                       (setq heads nil))
+              (push (substring-no-properties (match-string 1)) heads)))
+          (when heads (push (nreverse heads) sections))
+          (setq sections (nreverse sections))
+          ;; Both maps are shown, and neither repeats a group.
+          (should (= (length sections) 2))
+          (dolist (section sections)
+            (should section)
+            (should (equal section (delete-dups (copy-sequence section))))
+            ;; The leading block is labeled too, rather than being the
+            ;; one group left without a header.
+            (should (equal (car section) "Single Keys")))))
     (when (get-buffer "*DONKEY Bindings*")
       (kill-buffer "*DONKEY Bindings*"))))
 
