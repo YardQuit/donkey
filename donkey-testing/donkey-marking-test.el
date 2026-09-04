@@ -4987,6 +4987,21 @@ afresh.  `M w' is the word the prefix would have marked, `M w w b' is
   ;; cursor stood and what the mark was doing is the whole of what a
   ;; reader needs, and a failure that has to be reproduced to be
   ;; understood is a failure nobody can act on.
+  ;; What the motions leave, before `M' is pressed at all.  The press
+  ;; adopts whatever selection it finds, so if this is not a bare
+  ;; cursor the next assertion cannot be read: it would be reporting
+  ;; what `M' did with someone else's region rather than what the head
+  ;; start does with none.  `w' and `l' are plain motions and leave no
+  ;; mark, in any frame -- if that ever stops being true, it is worth
+  ;; failing here, where it says so, rather than three lines down
+  ;; where it looks like a marking bug.
+  (donkey-mark-test--keys "for text that is" "w w l"
+    (should (equal (list :point (point) :mark (mark t)
+                         :active (and mark-active t)
+                         :armed (eq (key-binding "w") 'donkey-mark-word))
+                   (list :point 10 :mark nil
+                         :active nil
+                         :armed nil))))
   (donkey-mark-test--keys "for text that is" "w w l M"
     (should (equal (list :sel (donkey-mark-test--selection)
                          :point (point) :mark (mark t)

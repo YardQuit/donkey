@@ -348,7 +348,7 @@ jobs:
           if [ "$status" -ne 0 ]; then
             echo "::error::suite failed in a terminal frame"
             echo "--- every failure, with its assertion ---"
-            grep -E '^ *(FAILED|Test .* condition:)' -A 8 /tmp/nw-run.log || true
+            grep -E '^ *(FAILED|Test .* condition:)' -B 6 -A 8 /tmp/nw-run.log || true
             exit 1
           fi
           grep -E '^Ran ' /tmp/nw-run.log
