@@ -4162,14 +4162,20 @@ can be mixed mid-run.  It is also how paragraphs are reached, their
 letters having been given back to pasting: `M w m p' grows the word
 to its paragraph and stays in the mode.
 
-With nothing selected the press marks the WORD under the cursor on its
-way in, so the mode arrives holding the thing nearly every run starts
-from.  \`M' alone is a selected word.  Only when point is ON one:
-`donkey-mark-word' reaches for the word behind a gap, which is right
-for a key that says \"word\" and wrong for one that says \"start
-selecting\" -- from a blank line it would have jumped the selection to
-the paragraph above.  On whitespace the mode arrives empty, as it
-always did.
+With nothing selected the press marks a WORD on its way in, so the
+mode arrives holding the thing nearly every run starts from.  \`M'
+alone is a selected word.
+
+WHICH word is `donkey-mark-word's answer and not a second rule: the
+one under the cursor, or from a gap the one behind it.  The two agree
+because a reader who presses `m w' from a gap and gets the word behind
+expects `M' to do the same, and because the alternative bought
+nothing.  Declining on whitespace left an EMPTY run, and an empty run
+cannot be grown by moving -- the `donkey--mark-run-adjusters' continue
+a visible run only -- while the keys that can grow it mark afresh
+regardless.  Where `donkey-mark-word' itself refuses, in a buffer with
+no word in it at all, the mode still starts: entering is what the key
+is for.
 
 The word is a head start rather than the run's first press: the object
 key after it still marks afresh, because this command stays out of
@@ -4231,13 +4237,21 @@ this key makes: the same behavior, minus the prefix."
       ;; selecting from where the rectangle began to the word under
       ;; point.
       (deactivate-mark)
-      ;; Only when point is ON a word.  `donkey-mark-word' reaches for
-      ;; the word BEHIND a gap, which is right for a key that says
-      ;; "word" and wrong for one that says "start selecting": pressed
-      ;; on a blank line it would have jumped the selection to the end
-      ;; of the paragraph above, and in a buffer with no word at all it
-      ;; would have reported instead of entering.  On whitespace the
-      ;; mode simply arrives empty, as it always did.
+      ;; The head start IS `m w', with no position it declines from.
+      ;; It used to run only with point ON a word, so that from a gap
+      ;; the mode arrived empty rather than reaching for the word
+      ;; behind -- the reasoning being that a key which says "start
+      ;; selecting" should not reach the way one that says "word" may.
+      ;;
+      ;; That was wrong twice.  A reader who presses `m w' from a gap
+      ;; and gets the word behind expects `M' to agree, and there is no
+      ;; reading under which the two should differ.  And what the
+      ;; declining bought was an empty run, which turns out to be worth
+      ;; nothing: `h' `j' `k' `l', `g h', `g l' and `g e' all select
+      ;; NOTHING from one -- the adjusters continue a VISIBLE run only
+      ;; -- so an empty run cannot be grown by moving, and the keys
+      ;; that can grow it (`w', `J', `%') mark afresh whether it is
+      ;; there or not.  It was an affordance in name only.
       ;;
       ;; And NOT renamed to `donkey-mark-word' in `this-command', which
       ;; is what adoption does.  The rename would make the object key
@@ -4270,9 +4284,16 @@ this key makes: the same behavior, minus the prefix."
       ;; to the toggle is worse than it looks, `this-command' being
       ;; set to `last-command' for the keys of a count, so the hint
       ;; would paint over the `C-u 3-' echo as well.
-      (when (donkey--point-on-word-or-symbol-char-p)
-        (let ((last-command nil))
-          (donkey-mark-word)))
+      (condition-case nil
+          (let ((last-command nil))
+            (donkey-mark-word))
+        ;; Refused only where `m w' refuses: a buffer with no word in
+        ;; it at all, before point or after.  The mode still starts,
+        ;; empty, because entering is what the key is for and a buffer
+        ;; with nothing to mark is no reason to refuse the mode.  Only
+        ;; the refusal is caught; anything else going wrong in a mark
+        ;; command is worth hearing about.
+        (user-error nil))
       (donkey--mark-run-enter)))))
 
 (defun donkey-mark-word (&optional count)
@@ -5869,11 +5890,12 @@ marks one here -- while a key that keeps its subject is left out:
 h j k l still move, J and K still work on lines, u and U still step
 back and forward.  All of them are below.
 
-The press arrives holding the word under the cursor, that being what
-nearly every run starts from -- so \\`M' alone is a selected word, and \\`M' DONKEY-DELETE-KEYS
-takes it.  On whitespace the mode arrives empty instead of reaching
-back for the word above.  The head start is not the run's first press:
-the letters behave exactly as they always did.
+The press arrives holding a word, that being what nearly every run
+starts from -- so \\`M' alone is a selected word, and \\`M' DONKEY-DELETE-KEYS takes it.
+Which word is m w's answer exactly: the one under the cursor, or from
+a gap the one behind it, so the two keys never disagree.  The head
+start is not the run's first press: the letters behave as they always
+did.
 
 >> Put the cursor on \"three\" in the ---> line and press \\[donkey-mark-run-toggle], then
    \\`w' \\`w': two words are selected, no prefix in sight.  Press \\`b'

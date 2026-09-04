@@ -788,14 +788,22 @@ run rather than the buffer. Spelling those out spent the line on the
 keys least in need of it, and the line has to be taken in at a glance.
 The complete list is here and in the tutor.
 
-=M= arrives holding the word under the cursor, since that is what
-nearly every run starts from — pressed on =that=, the word is
-selected before you have touched a letter, so =M d= takes it and =M w=
-is the word the prefix would have marked. Only a word actually under
-the cursor: on whitespace, or a blank line, the mode arrives empty
-rather than reaching back for the word above. The head start is not
-the run's first press, so nothing about the letters changes — =M w w b=
-is still =m w m w m b=.
+=M= arrives holding a word, since that is what nearly every run starts
+from — pressed on =that=, the word is selected before you have touched
+a letter, so =M d= takes it and =M w= is the word the prefix would
+have marked.
+
+*Which* word is =m w='s answer, exactly: the one under the cursor, or
+from a gap the one behind it. The two keys agree because there is no
+reading under which they should differ — and because an empty run is
+worth nothing anyway. =h j k l=, =g h=, =g l= and =g e= all continue a
+*visible* run only, so they select nothing from an empty one, and the
+keys that can grow it (=w=, =J=, =%=) mark afresh whether it is there
+or not. Only where =m w= itself declines — a buffer with no word in it
+at all — does the mode arrive empty, and it still arrives.
+
+The head start is not the run's first press, so nothing about the
+letters changes — =M w w b= is still =m w m w m b=.
 
 The =m= prefix still works inside the mode and needs no thinking
 about: =m w= runs the very command the bare =w= runs, so the mode
