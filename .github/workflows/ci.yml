@@ -303,26 +303,52 @@ jobs:
                                         default-directory)))
             (load f nil t))
           (let ((log "") stats)
-            (cl-letf (((symbol-function 'message)
-                       (lambda (fmt &rest args)
-                         (when fmt
-                           (setq log (concat log (apply #'format fmt args) "\n"))))))
-              (setq stats (ert-run-tests-batch t)))
-            (with-temp-file "/tmp/nw-run.log" (insert log))
-            (kill-emacs (if (zerop (ert-stats-completed-unexpected stats)) 0 1)))
+            ;; The log is written whatever happens.  Without this, a run
+            ;; that died part way -- an error escaping a test, a command
+            ;; that waits for input -- took every line it had already
+            ;; collected with it, and the job could only report that
+            ;; Emacs had stopped.
+            (unwind-protect
+                (cl-letf (((symbol-function 'message)
+                           (lambda (fmt &rest args)
+                             (when fmt
+                               (setq log (concat log (apply #'format fmt args) "\n"))))))
+                  (setq stats (ert-run-tests-batch t)))
+              (with-temp-file "/tmp/nw-run.log"
+                (insert (format "frame %dx%d, Emacs %s\n\n"
+                                (frame-width) (frame-height) emacs-version)
+                        log)))
+            (kill-emacs (if (and stats
+                                 (zerop (ert-stats-completed-unexpected stats)))
+                            0 1)))
           ELISP
 
+      # `set +e' around the run, and it is load-bearing.  GitHub invokes
+      # this step as `bash -e', and `set -uo pipefail' does NOT turn that
+      # off -- so a failing run aborted the step at the `script' line,
+      # before `status' was ever read, and every line below it was dead.
+      # The job reported "exit code 1" and not one word about which test
+      # failed, which is the one thing it exists to say.  Found the first
+      # time it failed for real.
       - name: Run the suite in a terminal frame
         run: |
           set -uo pipefail
+          set +e
           TERM=xterm-256color script -qec \
             "emacs -nw -Q -L . -L donkey-testing -l /tmp/nw-driver.el" /dev/null \
             > /dev/null 2>&1
           status=$?
-          tail -n 40 /tmp/nw-run.log || true
+          set -e
+          if [ ! -f /tmp/nw-run.log ]; then
+            echo "::error::Emacs wrote no log; it died before the run finished"
+            exit 1
+          fi
+          echo "--- last 40 lines of the run ---"
+          tail -n 40 /tmp/nw-run.log
           if [ "$status" -ne 0 ]; then
             echo "::error::suite failed in a terminal frame"
-            grep -E '^ *FAILED' /tmp/nw-run.log || true
+            echo "--- every failure, with its assertion ---"
+            grep -E '^ *(FAILED|Test .* condition:)' -A 8 /tmp/nw-run.log || true
             exit 1
           fi
           grep -E '^Ran ' /tmp/nw-run.log
