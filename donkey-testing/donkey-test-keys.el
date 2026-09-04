@@ -58,6 +58,19 @@ user was told without silencing the run."
          (donkey-mode 1)
          (let ((transient-mark-mode t)
                (prefix-arg nil) (current-prefix-arg nil)
+               ;; No input from outside the test.  A terminal frame can
+               ;; leave bytes in the queue before anything here runs --
+               ;; `script', which the CI job uses to give Emacs a pty,
+               ;; leaves a NUL -- and `execute-kbd-macro' spends what is
+               ;; already pending BEFORE the keys it was given.  A NUL is
+               ;; `C-@' is `set-mark-command', so the first test in the
+               ;; run to type anything got a mark pushed at point and
+               ;; activated, and then its own first key on top.  That is
+               ;; how `M' came to adopt a selection its test never made.
+               ;; Only the first test paid, the queue being empty after,
+               ;; which is why it moved about and why no --batch job ever
+               ;; saw it.
+               (unread-command-events nil)
                (inhibit-message t)
                (kill-ring nil) (kill-ring-yank-pointer nil)
                (killed-rectangle nil)

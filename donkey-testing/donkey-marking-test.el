@@ -3294,6 +3294,19 @@ full suite."
          (donkey-mode 1)
          (let ((transient-mark-mode t)
                (prefix-arg nil) (current-prefix-arg nil)
+               ;; No input from outside the test.  A terminal frame can
+               ;; leave bytes in the queue before anything here runs --
+               ;; `script', which the CI job uses to give Emacs a pty,
+               ;; leaves a NUL -- and `execute-kbd-macro' spends what is
+               ;; already pending BEFORE the keys it was given.  A NUL is
+               ;; `C-@' is `set-mark-command', so the first test in the
+               ;; run to type anything got a mark pushed at point and
+               ;; activated, and then its own first key on top.  That is
+               ;; how `M' came to adopt a selection its test never made.
+               ;; Only the first test paid, the queue being empty after,
+               ;; which is why it moved about and why no --batch job ever
+               ;; saw it.
+               (unread-command-events nil)
                (this-command nil) (last-command nil))
            (switch-to-buffer (get-buffer-create "*donkey-mark-test*"))
            ;; Nothing from outside is allowed to be armed when the keys
@@ -5003,6 +5016,9 @@ apart, which is the whole reason this does its own setup."
           (donkey-mode 1)
           (unwind-protect
               (let ((transient-mark-mode t)
+                    ;; See `donkey-mark-test--keys' for the NUL a
+                    ;; terminal frame can leave in the queue.
+                    (unread-command-events nil)
                     (this-command nil) (last-command nil))
                 ;; SWITCHED to, not merely made current: the command
                 ;; loop acts on the selected window's buffer, so keys
