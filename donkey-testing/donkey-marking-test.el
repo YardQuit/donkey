@@ -4179,7 +4179,7 @@ after `J' -- which also catches the hook falling out of
 message painted mid-session must be REPLACED by the next motion's
 repaint: after a foreign `message' call, one `j' brings the reminder
 back -- and so does a `g h', the line and buffer jumps having joined
-`donkey--visual-line-hint-motions' after a session that used one went
+`donkey--hint-motions' after a session that used one went
 quiet for the rest of its life."
   (let (msgs)
     (cl-letf (((symbol-function 'message)
@@ -4209,10 +4209,184 @@ quiet for the rest of its life."
         (execute-kbd-macro (kbd "g h"))))
     (should (equal (car msgs) donkey--visual-line-hint))))
 
+(defmacro donkey-hint-test--msgs (text keys &rest body)
+  "Collect what is said while KEYS run over TEXT, newest first.
+
+`message' is stubbed rather than read back through `current-message',
+which batch Emacs has no echo area for -- and which reads nil
+throughout a keyboard macro even in a live frame, so a test that asked
+it would pass on every implementation."
+  (declare (indent 2))
+  `(let (msgs)
+     (cl-letf (((symbol-function 'message)
+                (lambda (fmt &rest args)
+                  (when fmt (push (apply #'format fmt args) msgs))
+                  nil)))
+       (donkey-mark-test--keys ,text ,keys ,@(or body '(nil))))
+     msgs))
+
+(ert-deftest donkey-a-linear-selection-says-so-and-keeps-saying-it ()
+  "`v' shows a reminder and keeps it up across the motions.
+
+The third of the selection reminders, after mark run mode's and the
+visual-line session's.  A linear selection had none, and it is the one
+with least to go on: no keys of its own to give it away, and nothing
+on screen but the highlight, so what it does and how to let go of it
+were the two things a reader could not find out by looking.
+
+Repainted after `donkey--hint-motions' like the visual-line one, which
+is what makes it survive the navigating it is for.
+
+A PREFIXED press is not a selection.  It pops the mark ring, and
+`set-mark-command' has already said which."
+  (should (member (car (donkey-hint-test--msgs "one two three\nfour\n" "v"))
+                  (list donkey--linear-selection-hint)))
+  ;; Up after each motion, not just at entry: three presses, three
+  ;; paintings.
+  (should (= 3 (seq-count
+                (lambda (m) (equal m donkey--linear-selection-hint))
+                (donkey-hint-test--msgs "one two three\nfour\n" "v l l"))))
+  (should (= 3 (seq-count
+                (lambda (m) (equal m donkey--linear-selection-hint))
+                (donkey-hint-test--msgs "one two three\nfour\n" "v w w"))))
+  ;; And it comes back over a foreign message, as the others do.
+  (should (equal (car (donkey-hint-test--msgs "one two three\nfour\n" "v"
+                        (message "foreign")
+                        (execute-kbd-macro (kbd "l"))))
+                 donkey--linear-selection-hint))
+  ;; The flag says whose selection it is.
+  (donkey-mark-test--keys "one two three\nfour\n" "v l"
+    (should donkey--linear-selection-active))
+  (donkey-mark-test--keys "one two three\nfour\n" "l l"
+    (should-not donkey--linear-selection-active)))
+
+(ert-deftest donkey-a-rectangle-says-so-and-keeps-saying-it ()
+  "`m v' shows a reminder, and `m v' again says it is canceled.
+
+`rectangle-mark-mode' says \"Mark set (rectangle mode)\" for itself,
+which names the state without saying anything about leaving it --
+and leaving is what a rectangle most needs to advertise, being the
+one selection several commands refuse outright.  The reminder is shown
+after that, so it is the one that stays.
+
+The cancel message matches its two neighbors, \"Visual line: canceled\"
+and \"Mark run: canceled\", the three being the selection toggles."
+  (let ((msgs (donkey-hint-test--msgs "one two\nthree four\n" "m v")))
+    (should (equal (car msgs) donkey--rectangle-hint))
+    ;; Said AFTER the mode's own announcement, not before it.
+    (should (member "Mark set (rectangle mode)" msgs)))
+  (should (= 2 (seq-count
+                (lambda (m) (equal m donkey--rectangle-hint))
+                (donkey-hint-test--msgs "one two\nthree four\n" "m v j"))))
+  (should (equal (car (donkey-hint-test--msgs "one two\nthree four\n" "m v m v"))
+                 "Rectangle: canceled")))
+
+(ert-deftest donkey-only-one-selection-reminder-speaks-at-a-time ()
+  "Each selection mode's reminder gives way to the one that took over.
+
+The three reminders share `post-command-hook' and their selections
+share the mark, so a mode entered over another leaves the older one's
+grounds intact: the linear flag survives a `V' or an `m v' that never
+deactivated the mark, and mark run mode ADOPTS a linear selection
+rather than replacing it.  Without a test each way, whichever hook ran
+last would win, which is not a rule anybody could hold."
+  (dolist (case (list (list "v l M"     donkey--mark-run-mode-hint)
+                      (list "v l M w"   donkey--mark-run-mode-hint)
+                      (list "v l V"     donkey--visual-line-hint)
+                      (list "v l V J"   donkey--visual-line-hint)
+                      (list "v l m v"   donkey--rectangle-hint)
+                      (list "v l m v j" donkey--rectangle-hint)
+                      (list "V m v j"   donkey--rectangle-hint)
+                      (list "V J"       donkey--visual-line-hint)))
+    (cl-destructuring-bind (keys expected) case
+      (should (equal (list keys (car (donkey-hint-test--msgs
+                                      "one two three\nfour five\n" keys)))
+                     (list keys expected)))))
+  ;; The linear reminder's two exclusions are asked of the hook
+  ;; directly.  Through the keys, hook ORDER answers for them instead:
+  ;; the three are registered in one list and `add-hook' prepends, so
+  ;; the visual-line hook runs last and would win whether or not this
+  ;; one stood aside -- and a guard that only looks right because of
+  ;; the order it is called in stops being right the day somebody
+  ;; reorders the list.
+  (with-temp-buffer
+    (insert "one two three")
+    (goto-char (point-min))
+    (setq donkey--linear-selection-active t)
+    (push-mark (point-max) t t)
+    (let ((this-command 'forward-char)
+          ;; `deactivate-mark' below is a no-op without this: it asks
+          ;; `region-active-p' first, which wants `transient-mark-mode',
+          ;; and batch Emacs has it off.
+          (transient-mark-mode t)
+          (painted nil))
+      (cl-letf (((symbol-function 'donkey--repaint-hint)
+                 (lambda (hint) (setq painted hint))))
+        ;; On its own it speaks.
+        (donkey--linear-selection-show-hint)
+        (should (equal painted donkey--linear-selection-hint))
+        ;; Over a visual-line session it does not.
+        (setq painted nil)
+        (let ((donkey-visual-anchor (point-min)))
+          (donkey--linear-selection-show-hint))
+        (should-not painted)
+        ;; Nor under a rectangle.
+        (setq painted nil)
+        (let ((rectangle-mark-mode t))
+          (donkey--linear-selection-show-hint))
+        (should-not painted)
+        ;; Nor once the mark is gone, flag or no flag.
+        (setq painted nil)
+        (deactivate-mark)
+        (let ((donkey--linear-selection-active t))
+          (donkey--linear-selection-show-hint))
+        (should-not painted)))))
+
+(ert-deftest donkey-a-selection-reminder-does-not-outlive-its-selection ()
+  "The reminder goes when the mark does, and only if it is what is showing.
+
+A reminder is the only sign on screen that a selection is live, so it
+must not outlive one: `d' or `y' over a linear selection ends it
+without a word, and the echo area went on advertising a selection that
+was already gone.  `donkey--clear-selection-hint' takes it down from
+`deactivate-mark-hook', whatever deactivated the mark.
+
+Cleared only when the reminder is what is showing -- the no-clobber
+rule `donkey--mark-run-exit' keeps -- so a command that said something
+of its own keeps its echo.
+
+`current-message' is stubbed: batch Emacs has no echo area, and a
+keyboard macro reads nil from it even in a live frame."
+  (dolist (hint (list donkey--linear-selection-hint donkey--rectangle-hint))
+    (let ((cleared nil))
+      (cl-letf (((symbol-function 'current-message) (lambda () hint))
+                ((symbol-function 'message)
+                 (lambda (fmt &rest _) (unless fmt (setq cleared t)))))
+        (with-temp-buffer
+          (setq donkey--linear-selection-active t)
+          (donkey--clear-selection-hint)
+          (should-not donkey--linear-selection-active)
+          (should cleared)))))
+  ;; Someone else's message is left alone.
+  (let ((cleared nil))
+    (cl-letf (((symbol-function 'current-message) (lambda () "Saved buffer"))
+              ((symbol-function 'message)
+               (lambda (fmt &rest _) (unless fmt (setq cleared t)))))
+      (with-temp-buffer
+        (setq donkey--linear-selection-active t)
+        (donkey--clear-selection-hint)
+        (should-not donkey--linear-selection-active)
+        (should-not cleared))))
+  ;; And the hook is really installed by the two commands that need it.
+  (donkey-mark-test--keys "one two three\n" "v"
+    (should (memq #'donkey--clear-selection-hint deactivate-mark-hook)))
+  (donkey-mark-test--keys "one two three\n" "m v"
+    (should (memq #'donkey--clear-selection-hint deactivate-mark-hook))))
+
 (ert-deftest donkey-the-visual-hint-never-paints-over-foreign-echo ()
   "The repaint fires only for listed motions in a genuinely live session.
 
-The whitelist in `donkey--visual-line-hint-motions' is the whole
+The whitelist in `donkey--hint-motions' is the whole
 no-clobber rule: a command that messaged must keep its echo, and
 whether one just did cannot be told after the fact, so anything not
 listed -- here a stand-in `save-buffer' -- must not repaint.  Nor may
@@ -4826,7 +5000,7 @@ left it up over a selection the mode no longer owned, and the next
 `w' moved instead of growing, with the screen still saying otherwise.
 
 Cleared only when the reminder is what is showing, which is the
-no-clobber rule `donkey--visual-line-hint-motions' keeps in the other
+no-clobber rule `donkey--hint-motions' keeps in the other
 direction: a command that said something of its own keeps its echo.
 Driven through stubs because batch Emacs has no echo area for
 `current-message' to read."

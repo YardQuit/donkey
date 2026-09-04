@@ -243,6 +243,24 @@ second press drops a fresh mark where point is standing and begins
 selecting again from there — the old selection is gone, but you are
 still selecting. Use =C-g= to let go of a =v= selection.
 
+All four selections keep an echo-area reminder up for as long as they
+are live, and it goes when they do:
+
+| =v=   | =Linear selection: any motion extends, v re-anchors, C-g to cancel= |
+| =V=   | =Visual line: J/K whole lines, j/k by char, V to cancel= |
+| =m v= | =Rectangle: any motion sizes the block, m v or C-g to cancel= |
+| =M=   | =Mark run: w/b words, W/B symbols, s/S sentences, m p/m P paragraphs, * other end, M to cancel= |
+
+Only one of them is ever on screen: a selection entered over another —
+=M= adopting a =v= region, =m v= reinterpreting one — hands the echo
+area to the mode that took over. A command that prints a message of
+its own keeps its echo, and the next motion brings the reminder back.
+
+The =v= and =m v= lines say what the other two do not have to. Those
+own their keys and can list them; these own none — every motion
+extends a =v= selection or sizes a rectangle — so what is worth saying
+is how to let go, which is the part neither key tells you.
+
 Within a visual-line session (started with =V=), =J= and =K= extend the
 selection by whole lines, always anchored to the line =V= was pressed
 on. Plain =j= and =k= still work too, extending character-wise from

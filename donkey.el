@@ -2100,13 +2100,22 @@ Shown by `donkey-visual-line-toggle' at entry and kept VISIBLE across
 the session's motions by `donkey--visual-line-show-hint', the way
 `donkey--mark-run-mode-hint' stays up for mark run mode.")
 
-(defconst donkey--visual-line-hint-motions
+(defconst donkey--hint-motions
   '(donkey-visual-next-line donkey-visual-previous-line
     next-line previous-line forward-char backward-char
     forward-word backward-word forward-sexp backward-sexp
     beginning-of-line move-end-of-line
-    beginning-of-buffer end-of-buffer)
-  "The commands after which the visual-line reminder is repainted.
+    beginning-of-buffer end-of-buffer
+    rectangle-forward-char rectangle-backward-char
+    rectangle-right-char rectangle-left-char
+    rectangle-next-line rectangle-previous-line
+    rectangle-exchange-point-and-mark)
+  "The commands after which a selection reminder is repainted.
+
+Shared by the three reminders that survive their own motions: a
+visual-line session, a linear selection and a rectangle.  Mark run
+mode does not use it -- its reminder follows family membership, every
+key of the mode being one of its own.
 
 Motions only, and only motions that never message: a command that DID
 message must keep its echo, and whether one just did cannot be told
@@ -2120,6 +2129,14 @@ the reminder should too -- it used to go quiet for the rest of a
 session that had used one.  The buffer pair messages \"Mark set\" only
 when there is no active region to push a mark for, which a live
 session always has.
+
+The `rectangle-' seven are the same motions again under another name.
+`rectangle-mark-mode' REMAPS the motion keys to its own commands, so a
+rectangle moving by `j' and `l' arrives here as `rectangle-next-line'
+and `rectangle-forward-char' -- and the reminder, matching on the
+names above, went quiet after the first press of a selection that had
+not moved yet.  They can only run inside a rectangle, so listing them
+costs the other reminders nothing.
 
 This is where the coverage stops: after any command not listed here,
 the reminder waits for the next listed motion instead of repainting,
@@ -2144,16 +2161,130 @@ On `post-command-hook' for the life of `donkey-mode' -- registered in
 `donkey--global-hooks' rather than added per session, so two sessions
 in two buffers cannot strand or double it -- and inert to the cheapest
 test first in every buffer without an anchor.  Repaints only after the
-motions in `donkey--visual-line-hint-motions', and only while
+motions in `donkey--hint-motions', and only while
 `donkey--visual-line-session-active-p' says the session is genuinely
 live, so a stale anchor cannot resurrect the reminder.  Painted
 through `donkey--repaint-hint', which mark run mode's reminder shares.
 Guarded, not signaling -- a function that errors on
 `post-command-hook' is silently removed for the session."
   (when (and donkey-visual-anchor
-             (memq this-command donkey--visual-line-hint-motions)
+             (not (bound-and-true-p rectangle-mark-mode))
+             (memq this-command donkey--hint-motions)
              (donkey--visual-line-session-active-p))
     (donkey--repaint-hint donkey--visual-line-hint)))
+
+(defvar donkey--linear-selection-hint
+  "Linear selection: any motion extends, v re-anchors, C-g to cancel"
+  "The echo-area reminder shown while a `donkey-set-mark' selection lives.
+
+Shown by `donkey-set-mark' at entry and kept VISIBLE across the
+selection's motions by `donkey--linear-selection-show-hint', the way
+`donkey--visual-line-hint' and `donkey--mark-run-mode-hint' stay up
+for their own modes.
+
+The wording says what the other two do not have to.  A visual-line
+session and a mark run each own their keys, so their reminders can
+list them; this one owns none -- every motion extends it, which is the
+whole of what it offers -- and the two things worth saying are that a
+second `v' re-anchors rather than cancels, and that
+\\[keyboard-quit] is what lets go.  Both are the questions the
+command's own docstring exists to answer.")
+
+(defvar donkey--rectangle-hint
+  "Rectangle: any motion sizes the block, m v or C-g to cancel"
+  "The echo-area reminder shown while `rectangle-mark-mode' is on.
+
+Shown by `donkey-rectangle-mark-mode' at entry and kept VISIBLE across
+the block's motions by `donkey--rectangle-show-hint'.
+
+It replaces the \"Mark set (rectangle mode)\" that
+`rectangle-mark-mode' says for itself, which names the state without
+saying anything about leaving it -- and leaving is the part a
+rectangle most needs to advertise, being the one selection that
+several commands refuse outright.")
+
+(defvar-local donkey--linear-selection-active nil
+  "Non-nil while a selection `donkey-set-mark' started is still live.
+
+A visual-line session has `donkey-visual-anchor' and a rectangle has
+`rectangle-mark-mode'; a linear selection is just an active mark, and
+nothing about the mark says which key made it.  So the key says so
+itself, and `donkey--clear-selection-hint' takes it back on
+`deactivate-mark-hook' -- whatever deactivated the mark, this command,
+\\[keyboard-quit], or an edit that consumed the selection.
+
+Buffer-local, because a selection is: two buffers can each hold one,
+and neither should speak for the other.")
+
+(defun donkey--clear-selection-hint ()
+  "Forget a linear selection, and take its reminder off the screen.
+
+On `deactivate-mark-hook', installed buffer-locally by
+`donkey-set-mark' and `donkey-rectangle-mark-mode' at the moment each
+starts a selection -- the same bargain `donkey--clear-visual-anchor'
+makes for the anchor, and for the same reason: the buffers holding a
+selection are exactly the buffers where the hook needs to exist.
+Adding a function already present is a no-op, so repeated selections
+do not grow the hook.
+
+A reminder is the only sign on screen that a selection is live, so it
+must not outlive one.  `d' or `y' over a linear selection ends it
+without a word, and the echo area went on advertising a selection that
+was already gone.  Cleared only when the reminder is what is showing:
+the same no-clobber rule `donkey--mark-run-exit' keeps, so a command
+that said something of its own keeps its echo.
+
+Both reminders are checked because both selections end here.  A
+rectangle canceled with `m v' says so for itself, but one consumed by
+an action key goes the same quiet way a linear selection does."
+  (setq donkey--linear-selection-active nil)
+  (when (member (current-message)
+                (list donkey--linear-selection-hint donkey--rectangle-hint))
+    (message nil)))
+
+(defun donkey--linear-selection-show-hint ()
+  "Keep the linear-selection reminder visible across its motions.
+
+On `post-command-hook' for the life of `donkey-mode', and inert to the
+cheapest test first in every buffer without a linear selection.
+
+Quiet whenever another selection is speaking.  A rectangle and a
+visual-line session each have a reminder of their own and can be
+entered over a linear selection without deactivating the mark, so the
+flag outlives the thing it named and each is a test here rather than a
+handover -- the flag is only ever cleared by the mark going away.
+
+Mark run mode needs no test of its own, though it adopts the selection
+and would have the better claim.  It rebinds every motion key it owns,
+so nothing in `donkey--hint-motions' can run while it is armed; and
+the key that ends it has already ended it by the time this runs, the
+map lapsing from `pre-command-hook'.  A guard here could not be
+reached, and an unreachable guard is a promise nothing keeps.
+
+Guarded, not signaling -- a function that errors on
+`post-command-hook' is silently removed for the session."
+  (when (and donkey--linear-selection-active
+             (not donkey-visual-anchor)
+             (not (bound-and-true-p rectangle-mark-mode))
+             (memq this-command donkey--hint-motions)
+             mark-active)
+    (donkey--repaint-hint donkey--linear-selection-hint)))
+
+(defun donkey--rectangle-show-hint ()
+  "Keep the rectangle reminder visible across the block's motions.
+
+On `post-command-hook' for the life of `donkey-mode', and inert to the
+cheapest test first in every buffer without a rectangle.  A rectangle
+needs no exclusions the way `donkey--linear-selection-show-hint' does:
+mark run mode cancels one rather than adopting it, and the visual-line
+reminder now stands aside for it.
+
+Guarded, not signaling -- a function that errors on
+`post-command-hook' is silently removed for the session."
+  (when (and (bound-and-true-p rectangle-mark-mode)
+             mark-active
+             (memq this-command donkey--hint-motions))
+    (donkey--repaint-hint donkey--rectangle-hint)))
 ;;
 ;; The highlight is left one character short deliberately -- see
 ;; `donkey--visual-line-region-bounds' for why the widening lives in the
@@ -2283,9 +2414,11 @@ whether a region was genuinely active."
   (if (bound-and-true-p rectangle-mark-mode)
       (progn
         (rectangle-mark-mode -1)
-        (deactivate-mark))
+        (deactivate-mark)
+        (message "Rectangle: canceled"))
     (let ((had-active-region mark-active))
       (rectangle-mark-mode 1)
+      (add-hook 'deactivate-mark-hook #'donkey--clear-selection-hint nil t)
       ;; Give the rectangle some initial width beyond the single starting
       ;; column, but only for a genuinely fresh selection.  At the very
       ;; end of the buffer there's nothing to widen into, and `right-char'
@@ -2308,7 +2441,11 @@ whether a region was genuinely active."
       (unless (or had-active-region (eolp))
         (condition-case nil
             (right-char 1)
-          (end-of-buffer nil))))))
+          (end-of-buffer nil)))
+      ;; Last, so it is what stays: `rectangle-mark-mode' says "Mark set
+      ;; (rectangle mode)" on the way in, and the widening above can
+      ;; speak too.
+      (message "%s" donkey--rectangle-hint))))
 
 (defcustom donkey-mark-pair-delimiters
   '((?\{ . ?\}) (?\[ . ?\]) (?\( . ?\)) (?\< . ?>)
@@ -3860,7 +3997,7 @@ either way."
   ;; advertising the mark run keys over a selection the mode no longer
   ;; owned, and the next `w' moved instead of growing.  Cleared only
   ;; when the reminder is what is showing: the same no-clobber rule
-  ;; `donkey--visual-line-hint-motions' keeps in the other direction,
+  ;; `donkey--hint-motions' keeps in the other direction,
   ;; so a command that said something of its own keeps its echo.
   (when (equal (current-message) donkey--mark-run-mode-hint)
     (message nil))
@@ -4737,7 +4874,20 @@ there, so the previous selection is discarded but the buffer is still in
 a selecting state.  \\[keyboard-quit] is what lets go."
   (interactive)
   (donkey--ensure-non-rectangle-selection)
-  (call-interactively #'set-mark-command))
+  (call-interactively #'set-mark-command)
+  ;; Only when a selection actually started.  A PREFIXED press pops the
+  ;; mark ring instead of setting the mark, and a second bare press over
+  ;; a live selection deactivates it -- neither leaves anything to
+  ;; advertise, and `set-mark-command' has already said which happened.
+  ;;
+  ;; `mark-active' rather than `region-active-p', for the reason
+  ;; `donkey-rectangle-mark-mode' gives: the latter also wants
+  ;; `transient-mark-mode', which is nil in a `--batch' Emacs and would
+  ;; read as no selection there however active the mark.
+  (when mark-active
+    (add-hook 'deactivate-mark-hook #'donkey--clear-selection-hint nil t)
+    (setq donkey--linear-selection-active t)
+    (message "%s" donkey--linear-selection-hint)))
 
 ;; "%" was the one selection key bound straight to a stock command, so it
 ;; was the one that did not clear a stale rectangle: one left active from an
@@ -5712,7 +5862,8 @@ grows the word selection forward to the end of its sentence.
 letters w W b B s S mark and grow exactly as their m-prefixed keys do,
 so \\`M' \\`w' \\`w' \\`b' selects what three prefixed presses select.  A
 reminder of the object keys stays in the echo area for as long as the
-mode is on, and goes when the mode does.  It names the keys whose
+mode is on, and goes when the mode does -- as one does for v, V and
+m v too, each naming what its own selection answers to.  It names the keys whose
 SUBJECT the mode changes and no others -- w moves by a word in normal
 state and marks one here -- while a key that keeps its subject is left
 out: h j k l still move, J and K still work on lines, u and U still
@@ -7461,6 +7612,8 @@ installed them for good."
   `((after-change-major-mode-hook . donkey--ensure-default-state)
     (post-command-hook . donkey--track-position)
     (post-command-hook . donkey--visual-line-show-hint)
+    (post-command-hook . donkey--linear-selection-show-hint)
+    (post-command-hook . donkey--rectangle-show-hint)
     (post-command-hook . donkey--check-post-command-non-editing)
     (post-command-hook . donkey--update-cursor-passive)
     (minibuffer-setup-hook . donkey--minibuffer-setup)
