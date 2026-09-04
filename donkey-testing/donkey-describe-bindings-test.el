@@ -2154,6 +2154,92 @@ anything."
         (should (equal numbers (sort (copy-sequence numbers)
                                      (lambda (a b) (version-list-< b a)))))))))
 
+(ert-deftest donkey-readme-fall-through-keys-are-untouched ()
+  "Every key the README calls untouched really is.
+
+The Overview's promise is that your existing keys survive, and the
+sentence beginning \"Everything else falls through\" is the list it
+makes that promise about.  A list like that rots the first time a
+binding is added without anyone rereading the prose, and nothing else
+here would notice: the key would work differently and the README would
+go on saying it does not.
+
+Read out of the README rather than repeated here, so the two cannot
+drift.  A key is untouched when Normal state resolves it to exactly
+what Emacs resolves it to with DONKEY off -- the same test a reader
+would run by turning the mode off and pressing it."
+  (let ((keys nil))
+    (with-temp-buffer
+      (insert-file-contents (expand-file-name "README.org" donkey-test--source-dir))
+      (goto-char (point-min))
+      (let* ((start (progn (search-forward "Everything else falls through:")
+                           (point)))
+             (end (progn (search-forward ".\n") (point)))
+             (text (buffer-substring-no-properties start end))
+             (from 0))
+        ;; The prose entries -- "arrows", "Home/End" -- are named in
+        ;; words rather than as keys, and are checked below by hand.
+        (while (string-match "=\\([^=]+\\)=" text from)
+          (setq from (match-end 0))
+          (let ((k (string-trim (match-string 1 text))))
+            (unless (string-suffix-p "…" k) (push k keys))))))
+    (setq keys (append (nreverse keys)
+                       '("<left>" "<right>" "<up>" "<down>"
+                         "<home>" "<end>" "<prior>" "<next>")))
+    ;; The list really was found; an empty one would pass on nothing.
+    (should (> (length keys) 12))
+    (let ((changed nil))
+      (with-temp-buffer
+        (fundamental-mode)
+        (donkey-mode 1)
+        (unwind-protect
+            (progn
+              (donkey-enter-normal)
+              (dolist (k keys)
+                (let ((with-donkey (key-binding (kbd k)))
+                      (without (let ((donkey-normal-mode nil)) (key-binding (kbd k)))))
+                  (unless (eq with-donkey without)
+                    (push (format "%s: %S with DONKEY, %S without" k with-donkey without)
+                          changed)))))
+          (donkey-mode -1)))
+      (should (equal changed nil)))))
+
+(ert-deftest donkey-a-major-modes-own-keys-survive-in-dired ()
+  "A key dired bound that DONKEY does not bind still runs dired's command.
+
+The claim the README makes about special buffers, asked of a real
+dired buffer rather than of the keymaps: suppression is done by
+remapping `self-insert-command', not by claiming every letter, so a
+letter DONKEY leaves alone reaches the major mode.
+
+The letters are not listed here.  Which ones dired keeps is dired's
+business and changes between Emacs versions; what must hold is the
+rule -- if DONKEY does not bind it, the mode still gets it."
+  (let ((buf (dired-noselect donkey-test--source-dir)))
+    (unwind-protect
+        (with-current-buffer buf
+          (donkey-mode 1)
+          (unwind-protect
+              (progn
+                (donkey-enter-normal)
+                (should-not (donkey--excluded-mode-p))
+                (let ((lost nil) (checked 0))
+                  (dolist (c (append "abcdefghijklmnopqrstuvwxyz" nil))
+                    (let* ((k (char-to-string c))
+                           (mine (keymap-lookup donkey-normal-mode-map k))
+                           (theirs (keymap-lookup dired-mode-map k)))
+                      (when (and theirs (not mine))
+                        (setq checked (1+ checked))
+                        (unless (eq (key-binding k) theirs)
+                          (push (format "%s: dired has %S, pressing gives %S"
+                                        k theirs (key-binding k))
+                                lost)))))
+                  ;; dired really does bind letters DONKEY leaves alone.
+                  (should (> checked 3))
+                  (should (equal lost nil))))
+            (donkey-mode -1)))
+      (when (buffer-live-p buf) (kill-buffer buf)))))
+
 (ert-deftest donkey-readme-binding-tables-match-the-keymap ()
   "Every \"| =KEY= | =donkey-command= |\" row in README.org is true.
 

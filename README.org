@@ -27,8 +27,15 @@
 * Overview
 
 Donkey is an opinionated modal editing minor-mode for Emacs, that
-leverages Emacs' own built-in functions wherever possible. There is no
-overlay state — just a minor-mode keymap that toggles on and off.
+leverages Emacs' own built-in functions wherever possible. Which state
+you are in is a minor-mode keymap that toggles on and off — there is
+no parallel model of the buffer keeping score beside it.
+
+Two things live outside that keymap, and both are visible while they
+last rather than kept in the dark: banked lines are drawn as overlays,
+and mark run mode holds a transient map for as long as a run does.
+Each is named where it is used, and each goes when the thing it serves
+does.
 
 It is meant to be an *addition* to Emacs rather than a replacement.
 What it provides are improvements layered on top of what is already
@@ -45,7 +52,9 @@ to be discovered.
   kept is named in full rather than left to surprise you
 - Leverage Emacs native commands and built-in functions wherever possible
 - Custom commands only where beneficial
-- No overlay-based state tracking — just minor-mode keymaps
+- State is a minor-mode keymap, not a model of the buffer kept
+  alongside it; the two things that need more — banked overlays and
+  mark run mode's transient map — are named where they are used
 - Graceful handling of optional dependencies (smartparens, org-mode)
 - Cross-platform support (Linux/Wayland/X11, macOS, Windows)
 - Terminal mode (=emacs -nw=) support with DECSCUSR cursor sequences
@@ -113,9 +122,14 @@ DONKEY is on there too, and its single-letter commands take precedence
 over the major mode's. A major-mode key that DONKEY does *not* bind
 still works — suppressing self-insertion is done by remapping
 =self-insert-command= rather than by claiming each letter, so anything
-the mode bound to a real command survives. In =dired=, for example,
-=n=, =t=, =q=, =^= and =+= all still do what dired means by them, while
-=p=, =m=, =u=, =d=, =x=, =g=, =v=, =o=, =i=, =l= and =w= are DONKEY's.
+the mode bound to a real command survives. In =dired=, =e=, =f=, =n=,
+=q=, =s=, =t=, =^= and =+= all still do what dired means by them; the
+other twenty letters are DONKEY's, including =M= and =%=.
+
+A major mode can also refine a key DONKEY bound, rather than losing it
+or keeping it. =dired= remaps =next-line=, =previous-line= and =undo=,
+so =j=, =k= and =u= stay DONKEY's keys and do dired's version of the
+job — moving by dired lines, undoing a dired operation.
 
 Modes where suppressing keys would break the underlying process —
 =eshell=, =term=, =vterm=, =comint= — stay in Insert passthrough
