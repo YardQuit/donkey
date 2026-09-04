@@ -5056,13 +5056,22 @@ afresh.  `M w' is the word the prefix would have marked, `M w w b' is
   ;; mark, in any frame -- if that ever stops being true, it is worth
   ;; failing here, where it says so, rather than three lines down
   ;; where it looks like a marking bug.
-  (donkey-mark-test--keys "for text that is" "w w l"
-    (should (equal (list :point (point) :mark (mark t)
-                         :active (and mark-active t)
-                         :armed (eq (key-binding "w") 'donkey-mark-word))
-                   (list :point 10 :mark nil
-                         :active nil
-                         :armed nil))))
+  ;; One key at a time, so a failure names the press that did it.
+  ;; Asked three times rather than once because the answer so far is
+  ;; that the motions are innocent when driven on their own
+  ;; \(`donkey-plain-motions-leave-no-mark') and guilty when driven
+  ;; through this harness, which cannot both be true of the same key
+  ;; -- and knowing WHICH key is the difference between a guess and a
+  ;; cause.
+  (dolist (case '(("w" 4) ("w w" 9) ("w w l" 10)))
+    (cl-destructuring-bind (keys expected-point) case
+      (donkey-mark-test--keys "for text that is" keys
+        (should (equal (list :keys keys :point (point) :mark (mark t)
+                             :active (and mark-active t)
+                             :armed (eq (key-binding "w") 'donkey-mark-word))
+                       (list :keys keys :point expected-point :mark nil
+                             :active nil
+                             :armed nil))))))
   (donkey-mark-test--keys "for text that is" "w w l M"
     (should (equal (list :sel (donkey-mark-test--selection)
                          :point (point) :mark (mark t)
