@@ -3309,6 +3309,17 @@ full suite."
            (donkey--mark-run-exit)
            (fundamental-mode)
            (erase-buffer)
+           ;; And no mark, active or otherwise.  A fresh buffer has
+           ;; none, so this is belt for a brace -- but the terminal
+           ;; frame CI job saw one at point-min, active, after three
+           ;; plain motions, and a harness that cannot say what the
+           ;; cursor was sitting in cannot say what a mark command did.
+           ;; `donkey-plain-motions-leave-no-mark' asks the same
+           ;; question of the commands themselves, without this
+           ;; harness, so cleaning here hides nothing: if a motion is
+           ;; setting a mark, that test says so.
+           (deactivate-mark)
+           (set-marker (mark-marker) nil)
            (insert ,text)
            (goto-char (point-min))
            (donkey-enter-normal)
@@ -4971,6 +4982,45 @@ three words end up selected, and that the delete takes all three."
   (donkey-mark-test--keys "one two three four five six" "w w l M w g h g l"
     (should (equal (donkey-mark-test--selection)
                    "one two three four five six"))))
+
+(ert-deftest donkey-plain-motions-leave-no-mark ()
+  "`w', `b' and `l' move the cursor and set no mark.
+
+Asked of the commands with no harness around them, because it is the
+harness the other tests trust.  `donkey-mark-test--keys' clears the
+mark before it sends anything, so nothing that runs through it can
+answer this question any more -- and the question was worth asking:
+the CI job that runs in a terminal frame reported a mark at
+ACTIVE, after `w' `w' `l' in a buffer whose own keys had set none.
+
+If a motion is doing that, it is a defect in the commands and belongs
+here, where it reads as one.  If it is not, this passes and the fault
+was never DONKEY's -- and the two cases are worth being able to tell
+apart, which is the whole reason this does its own setup."
+  (let ((buf (generate-new-buffer "*donkey-motion-test*")))
+    (unwind-protect
+        (progn
+          (donkey-mode 1)
+          (unwind-protect
+              (let ((transient-mark-mode t)
+                    (this-command nil) (last-command nil))
+                ;; SWITCHED to, not merely made current: the command
+                ;; loop acts on the selected window's buffer, so keys
+                ;; sent to a buffer that is only current land in
+                ;; whatever window is showing.  Written the other way
+                ;; first, and the three motions went to *scratch*.
+                (switch-to-buffer buf)
+                (fundamental-mode)
+                (insert "for text that is")
+                (goto-char (point-min))
+                (donkey-enter-normal)
+                (should-not (mark t))
+                (execute-kbd-macro (kbd "w w l"))
+                (should (equal (list :point (point) :mark (mark t)
+                                     :active (and mark-active t))
+                               (list :point 10 :mark nil :active nil))))
+            (donkey-mode -1)))
+      (when (buffer-live-p buf) (kill-buffer buf)))))
 
 (ert-deftest donkey-M-marks-the-word-under-the-cursor ()
   "`M' arrives holding a word, and changes nothing about the letters.
