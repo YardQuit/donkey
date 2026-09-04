@@ -6177,7 +6177,62 @@ Two things worth knowing before you rely on it:
     rather than half-applied.
 
 
-Lesson 10 -- when two selections disagree
+Lesson 10 -- changing your mind
+-------------------------------
+
+Four keys start a selection: \\`v', \\`V', \\[donkey-mark-run-toggle] and \\`m' \\`v'.  You can go from
+any one to any other without letting go first, and what becomes of the
+selection you already had is the whole of what there is to know.
+
+    \\[donkey-mark-run-toggle]     ADOPTS it.  It becomes the run's starting selection, and
+          the object keys grow it from there.
+    m v   REINTERPRETS it.  The region's corners become the block.
+    V     starts FRESH, anchored on the line the cursor is on.
+    v     RE-ANCHORS.  What you had is dropped and a new selection
+          starts, empty, where the cursor stands.
+
+>> Put the cursor on \"beta\" in the ---> line and press \\`v', then
+   \\`l' three times, which selects \"bet\".  Now press \\[donkey-mark-run-toggle] and then \\`w':
+   the run ADOPTED those three characters and grew them to the end of
+   the word they were part of.
+
+   ---> alpha beta gamma delta
+
+Three exceptions are worth knowing.
+
+Inside a mark run, \\`v' and \\`V' are REFUSED.  Neither can take a run's
+selection over honestly, and both used to drop it without saying so, so
+DONKEY says how to let go instead: \\[donkey-mark-run-toggle], \\`C-g', or any action key.
+
+>> With that run still up, press \\`v'.  The selection does not move,
+   and the echo area tells you how to leave.  Press \\[donkey-mark-run-toggle] to cancel.
+
+A rectangle is the one selection \\[donkey-mark-run-toggle] will not adopt: a block has no
+forward end for the object keys to own.  So it is dropped, and a fresh
+run starts on the word under the cursor.
+
+>> Draw a rectangle with \\`m' \\`v' \\`j' \\`l', then press \\[donkey-mark-run-toggle].  The block
+   is gone and a single word is selected in its place.
+
+   ---> one two three
+   ---> four five six
+
+And coming to \\`m' \\`v' FROM \\`V' gives a FULL-WIDTH block.  \\`V' selects
+whole lines, so the corners the rectangle inherits are the whole line's
+width -- not the narrow block you were drawing.  Start \\`m' \\`v' from
+nothing, or from a \\`v' selection, when you want a narrow one.
+
+The \\`m' keys end nothing.  \\`m' \\`w' inside a run grows the run, and
+outside one it marks and leaves you selecting.  Over a rectangle it
+clears the block first, no mark command being able to act on columns.
+\\`%' is the same: inside a run it takes the whole buffer, and the run
+carries on.
+
+Pressing a starter twice cancels it -- \\`V' \\`V', \\`m' \\`v' \\`m' \\`v',
+\\[donkey-mark-run-toggle] \\[donkey-mark-run-toggle] -- except \\`v', which re-anchors instead.
+
+
+Lesson 11 -- when two selections disagree
 -----------------------------------------
 
 Banked lines are whole lines.  A rectangle is columns.  No command can act

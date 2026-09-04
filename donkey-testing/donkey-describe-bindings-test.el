@@ -1102,7 +1102,7 @@ and to give `v\=' its own place in the selecting lesson."
               (dolist (heading '("Lesson 1 -- " "Lesson 2 -- " "Lesson 3 -- "
                                  "Lesson 4 -- " "Lesson 5 -- " "Lesson 6 -- "
                                  "Lesson 7 -- " "Lesson 8 -- " "Lesson 9 -- "
-                                 "Lesson 10 -- "))
+                                 "Lesson 10 -- " "Lesson 11 -- "))
                 (let ((at (funcall pos heading)))
                   (should at)
                   (should (> at n))
@@ -1428,12 +1428,21 @@ The behavioral tests drive keys directly, so they pass whatever the
 lesson happens to SAY -- both of this lesson's defects lived in the
 prose.  These two assertions are the ones that would have caught them:
 the reader is told to press the forward key twice, not three times, and
-is NOT told the rectangle survives the cut."
+is NOT told the rectangle survives the cut.
+
+Read from LESSON 9 alone, not the whole buffer.  A negative assertion
+over every word in the tutor belongs to no lesson in particular, and
+the first later lesson to tell a reader to press a key three times --
+for something else entirely -- failed a test about rectangles."
   (unwind-protect
       (progn
         (donkey-tutor)
         (with-current-buffer "*DONKEY Tutor*"
-          (let ((text (buffer-string)))
+          (let* ((whole (buffer-string))
+                 (from (string-match "Lesson 9 -- " whole))
+                 (to (string-match "Lesson 10 -- " whole))
+                 (text (progn (should from) (should to)
+                              (substring whole from to))))
             ;; Three presses takes the trailing space too.
             (should (string-match-p "twice and\n   l twice" text))
             (should-not (string-match-p "l three times" text))
@@ -1441,8 +1450,45 @@ is NOT told the rectangle survives the cut."
             (should-not (string-match-p "still selected after the cut" text)))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
-(ert-deftest donkey-tutor-lesson-10-prose-establishes-a-paste-source ()
-  "Lesson 10 tells the reader to make an ordinary copy before pasting.
+(ert-deftest donkey-tutor-lesson-10-states-all-four-rules ()
+  "Lesson 10 says what each starter does with the selection it finds.
+
+The lesson is a promise about every combination of four keys, and the
+behavioral tests pass whatever it happens to SAY -- the same gap that
+let two defects live in Lesson 9's prose.  So the four verbs are
+checked here, against
+`donkey-one-selection-becomes-another-by-four-rules', which pins that
+they are true.
+
+The exceptions are checked too.  They are the part a reader most needs
+and the part most likely to be trimmed by a later edit: `v' and `V'
+refused inside a run, the rectangle `M' will not adopt, and the
+full-width block that comes of reaching a rectangle through `V'."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let* ((whole (buffer-string))
+                 (from (string-match "Lesson 10 -- changing your mind" whole))
+                 (to (string-match "Lesson 11 -- " whole))
+                 (text (progn (should from) (should to)
+                              (substring whole from to))))
+            ;; One verb per starter, and each said of the right key.
+            (should (string-match-p "M *ADOPTS it" text))
+            (should (string-match-p "m v *REINTERPRETS it" text))
+            (should (string-match-p "V *starts FRESH" text))
+            (should (string-match-p "v *RE-ANCHORS" text))
+            ;; The three exceptions.
+            (should (string-match-p "v.+and.+V.+are REFUSED" text))
+            (should (string-match-p "rectangle is the one selection.+will not adopt" text))
+            (should (string-match-p "FULL-WIDTH block" text))
+            ;; And the exercises are exercises, not prose.
+            (should (<= 3 (cl-count ?> text)))
+            (should (string-match-p "---> alpha beta gamma delta" text)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-lesson-11-prose-establishes-a-paste-source ()
+  "Lesson 11 tells the reader to make an ordinary copy before pasting.
 
 Without it the paste has nothing to insert -- a rectangle copy never
 reaches the kill ring -- and the lesson's claim that the banked line is

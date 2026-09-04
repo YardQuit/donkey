@@ -244,6 +244,40 @@ second press drops a fresh mark where point is standing and begins
 selecting again from there — the old selection is gone, but you are
 still selecting. Use =C-g= to let go of a =v= selection.
 
+*** Changing your mind
+
+You can go from any of the four to any other without letting go first.
+What becomes of the selection you already had is the whole of what
+there is to know:
+
+| Press | What happens to what was selected |
+|-------+-----------------------------------|
+| =M=   | *Adopted.* It becomes the run's starting selection, and the object keys grow it from there. |
+| =m v= | *Reinterpreted.* The region's corners become the block. |
+| =V=   | *Dropped.* A fresh session anchors on the line the cursor is on. |
+| =v=   | *Dropped.* A new selection starts, empty, where the cursor stands. |
+
+So =v l l l= on the =b= of "beta" selects =bet=, and =M w= then grows
+it to =beta= — the run picked up what was there rather than starting
+over. =m w M w= extends the marked word the same way.
+
+Three exceptions:
+
+- Inside a mark run, =v= and =V= are *refused*. Neither can take a
+  run's selection over honestly, and both used to drop it without
+  saying so. Leave first with =M=, =C-g=, or any action key.
+- A *rectangle* is the one selection =M= will not adopt — a block has
+  no forward end for the object keys to own — so =M= drops it and
+  starts a fresh run on the word under the cursor.
+- Reaching =m v= *from* =V= gives a full-width block. =V= selects whole
+  lines, so the corners =m v= inherits are the whole line's width.
+  Start =m v= from nothing, or from a =v= selection, for a narrow one.
+
+The =m= keys end nothing: =m w= inside a run grows the run, and outside
+one it marks and leaves you selecting. Over a rectangle it clears the
+block first, no mark command being able to act on columns. =%= is the
+same — inside a run it takes the whole buffer and the run carries on.
+
 All four selections keep an echo-area reminder up for as long as they
 are live, and it goes when they do:
 

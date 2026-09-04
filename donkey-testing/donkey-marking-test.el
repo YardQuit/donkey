@@ -137,21 +137,34 @@ End-to-end regression test matching the exact live repro: a stale
 rectangle selection from an unrelated `m v' session must not corrupt
 the NEW multi-line selection `donkey-mark-paragraph' creates, and
 `donkey-delete' run right after must delete the whole paragraph, not a
-zero-width \"rectangle\" slice of it."
-  (with-temp-buffer
-    (insert "AABBCC\nDDEEFF\n\nfirst line of paragraph\nsecond line here\nthird line too\n\nlast\n")
-    (goto-char 1)
-    (rectangle-mark-mode 1)
-    (forward-line 1)
-    (forward-char 2)
-    (should (bound-and-true-p rectangle-mark-mode))
-    (goto-char (point-min))
-    (forward-line 3)
-    (forward-char 5)
-    (donkey-mark-paragraph)
-    (should-not (bound-and-true-p rectangle-mark-mode))
-    (donkey-delete)
-    (should (string= (buffer-string) "AABBCC\nDDEEFF\n\nlast\n"))))
+zero-width \"rectangle\" slice of it.
+
+`this-command' and `last-command' are bound because the marking runs
+from Lisp, where neither is this test's to assume:
+`donkey--mark-extending-p' reads a repeat off those two, and whatever
+ran BEFORE leaves them set.  With both holding `donkey-mark-paragraph'
+the call reads as a second press, grows from the rectangle's stale
+mark instead of marking the paragraph, and the delete then takes a
+single character -- which is this test's own bug report, arrived at
+from the wrong direction.  Found by the shuffle runner: the fragility
+was always here, and an unrelated test being added reordered every
+seed until one landed on it."
+  (let ((this-command nil)
+        (last-command nil))
+    (with-temp-buffer
+      (insert "AABBCC\nDDEEFF\n\nfirst line of paragraph\nsecond line here\nthird line too\n\nlast\n")
+      (goto-char 1)
+      (rectangle-mark-mode 1)
+      (forward-line 1)
+      (forward-char 2)
+      (should (bound-and-true-p rectangle-mark-mode))
+      (goto-char (point-min))
+      (forward-line 3)
+      (forward-char 5)
+      (donkey-mark-paragraph)
+      (should-not (bound-and-true-p rectangle-mark-mode))
+      (donkey-delete)
+      (should (string= (buffer-string) "AABBCC\nDDEEFF\n\nlast\n")))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-mark-word
@@ -5430,6 +5443,65 @@ nothing to do rather than anything surprising."
   ;; It marks, so it is no adjuster: an object key after it may revive
   ;; a region a hook deactivated, where a motion may not.
   (should-not (memq 'donkey-mark-whole-buffer donkey--mark-run-adjusters)))
+
+(ert-deftest donkey-one-selection-becomes-another-by-four-rules ()
+  "Each starter says what it does with the selection it finds.
+
+The four can be pressed in any order, and until this was written down
+the only way to find out what became of the selection you already had
+was to try it.  The README and the tutor now promise one rule per
+starter, and a promise about every combination is exactly the kind
+that goes quietly out of date.
+
+  `M'    ADOPTS -- the run starts from what was selected
+  `m v'  REINTERPRETS -- the region's corners become the block
+  `V'    starts FRESH, anchored on the current line
+  `v'    RE-ANCHORS -- what was there is dropped for an empty mark
+
+Checked from a `v' selection, a `V' session, an `m'-marked word and a
+`%' whole buffer, since a rule that held from only one of them would
+not be a rule.  The rectangle's own exceptions are pinned by
+`donkey-a-rectangle-is-dropped-and-the-mode-still-starts' and the
+refusals by `donkey-V-is-refused-inside-a-mark-run'."
+  (let ((text "alpha beta gamma\ndelta epsilon zeta\n"))
+    ;; `M' adopts, whatever made the selection.
+    (dolist (start '("v l l" "m w" "%"))
+      (let ((before (donkey-mark-test--keys text start
+                      (donkey-mark-test--selection))))
+        (donkey-mark-test--keys text (concat start " M")
+          (should (equal (list start (donkey-mark-test--selection))
+                         (list start before))))))
+    ;; A `V' session is adopted as whole lines -- the newline with it.
+    (donkey-mark-test--keys text "V M"
+      (should (equal (donkey-mark-test--selection) "alpha beta gamma\n")))
+    ;; `m v' takes over from any of them, as a rectangle.
+    (dolist (start '("v l l" "V" "m w" "M w"))
+      (donkey-mark-test--keys text (concat start " m v")
+        (should (equal (list start (and (bound-and-true-p rectangle-mark-mode) t))
+                       (list start t)))))
+    ;; `V' never adopts: from anywhere, it anchors on the line.
+    (dolist (start '("v l l" "m w" "%"))
+      (donkey-mark-test--keys text (concat start " V")
+        (should (equal (list start (donkey-mark-test--selection))
+                       (list start "alpha beta gamma")))))
+    ;; `v' drops what was there and starts empty.
+    (dolist (start '("V" "m w" "%" "m v j l"))
+      (donkey-mark-test--keys text (concat start " v")
+        (should (equal (list start (donkey-mark-test--selection))
+                       (list start "")))))
+    ;; The `m' keys end no run, and clear a block before marking.
+    (donkey-mark-test--keys text "M w m w"
+      (should (equal (donkey-mark-test--selection) "alpha beta"))
+      (should (eq (key-binding "w") 'donkey-mark-word)))
+    (donkey-mark-test--keys text "m v j l m w"
+      (should-not (bound-and-true-p rectangle-mark-mode)))
+    ;; And a starter pressed twice cancels -- except `v', which
+    ;; re-anchors and leaves you selecting.
+    (dolist (start '("V V" "m v j l m v" "M w M"))
+      (donkey-mark-test--keys text start
+        (should (equal (list start (region-active-p)) (list start nil)))))
+    (donkey-mark-test--keys text "v l l v"
+      (should (equal (donkey-mark-test--selection) "")))))
 
 (ert-deftest donkey-a-rectangle-is-dropped-and-the-mode-still-starts ()
   "`M' over a rectangle drops it, then starts as it would over nothing.
