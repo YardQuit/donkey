@@ -4303,6 +4303,7 @@ matching how `mark-word' itself reads its argument."
   (donkey--ensure-non-rectangle-selection)
   (let ((extend (donkey--mark-run-continuing-p)))
     (unless extend
+     (let ((origin (point)))
       (unless (donkey--point-on-word-or-symbol-char-p)
         (backward-word 1))
       ;; See `donkey-mark-symbol' for why this is a `user-error' rather
@@ -4311,11 +4312,20 @@ matching how `mark-word' itself reads its argument."
       ;; whitespace and punctuation) is a normal thing to press this on
       ;; by accident.  Reached only once there is no word ahead either --
       ;; see `donkey--mark-reach-forward-for'.
+      ;; The search is undone before reporting.  Both steps above move
+      ;; point looking for something to mark -- the step back onto a
+      ;; word, and the reach forward -- and a refusal that leaves it
+      ;; where the search gave up has moved the cursor and marked
+      ;; nothing, which reads as the key half working.  Live: in
+      ;; `help-mode' on the space after \=`press \=‘C-x C-f\=’ now\=',
+      ;; \=`m W\=' walked back over the whole quoted sequence and
+      ;; reported from there, nine characters from the key.
       (unless (or (donkey--real-thing-at-point 'word)
                   (donkey--mark-reach-forward-for 'word #'forward-word
                                                   #'backward-word))
+        (goto-char origin)
         (user-error "No word at or before point"))
-      (beginning-of-thing 'word))
+      (beginning-of-thing 'word)))
     ;; Walking point onto the word's start is skipped when extending:
     ;; it would land on the START of the word already selected, and
     ;; `mark-word' measures its extension from there, so running it
@@ -4779,7 +4789,8 @@ matching how `forward-sexp' reads its argument."
                   (when (> n 0)
                     (donkey--trim-symbol-punctuation))
                   (point)))
-    (unless (donkey--point-on-word-or-symbol-char-p)
+    (let ((origin (point)))
+     (unless (donkey--point-on-word-or-symbol-char-p)
       (condition-case nil
           (backward-sexp 1)
         (scan-error nil)))
@@ -4790,11 +4801,14 @@ matching how `forward-sexp' reads its argument."
     ;; point, which on a blank line in code is typically a bracket rather
     ;; than a symbol -- confirmed with point on the trailing empty line
     ;; of "(foo bar)".
+    ;; Undone before reporting -- see `donkey-mark-word' for the shape
+    ;; and for the press that showed it.
     (unless (or (donkey--real-thing-at-point 'symbol)
                 (donkey--mark-reach-forward-for 'symbol #'forward-sexp
                                                 #'backward-sexp))
+      (goto-char origin)
       (user-error "No symbol at or before point"))
-    (beginning-of-thing 'symbol)
+    (beginning-of-thing 'symbol))
     (forward-sexp n)
     ;; Only a forward run leaves point at the far END of the selection,
     ;; where a trailing "," or "." is the thing to drop.  A negative

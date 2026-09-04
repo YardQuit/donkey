@@ -5995,6 +5995,44 @@ its complement."
                                  (user-error (error-message-string e))))
                          (cons text expected))))))))
 
+(ert-deftest donkey-a-refusal-leaves-the-cursor-where-the-key-was-pressed ()
+  "A refused mark moves nothing, however far it looked.
+
+Both commands step point about before they know whether there is
+anything to mark -- back onto a word or sexp, then forward reaching
+for the next one -- and a refusal that leaves point where the search
+gave up has moved the cursor and marked nothing.  To the reader that
+is the key half working, and the further the search went the worse it
+reads.
+
+Reported from `help-mode', on the space inside a quoted key sequence
+-- the shape Emacs renders a binding as in its own help.  \\=`m W'
+walked back over the whole sequence and reported from its opening
+quote, nine characters from where the key was pressed.
+`donkey-mark-symbol-refusal-does-not-leave-point-where-it-searched'
+covers the other half of the same rule -- there the step back SIGNALS
+at the buffer edge, so point never moves and the restore is not what
+saves it."
+  (dolist (case (list
+                 ;; The reported shape: the step back succeeds, over a
+                 ;; whole quoted sequence, and then there is no symbol.
+                 (list 'emacs-lisp-mode "press ‘C-x C-f’ now" 11
+                       #'donkey-mark-symbol "No symbol at or before point")
+                 ;; And a buffer with no word in it at all, where the
+                 ;; step back walks to the beginning before refusing.
+                 (list 'fundamental-mode ",,, ... ;;;" 6
+                       #'donkey-mark-word "No word at or before point")))
+    (cl-destructuring-bind (mode text pos command expected) case
+      (with-temp-buffer
+        (funcall mode)
+        (let ((transient-mark-mode t) (this-command nil) (last-command nil))
+          (insert text)
+          (goto-char pos)
+          (let ((err (should-error (funcall command) :type 'user-error)))
+            (should (equal (list text (cadr err)) (list text expected))))
+          (should (equal (list text (point)) (list text pos)))
+          (should-not (region-active-p)))))))
+
 (ert-deftest donkey-mark-symbol-refusal-does-not-leave-point-where-it-searched ()
   "A refused forward reach puts the cursor back before reporting.
 
