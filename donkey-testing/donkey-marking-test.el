@@ -4979,12 +4979,28 @@ And the head start is not the run's first press: the toggle stays out
 of `donkey--mark-run-commands', so the object key after it still marks
 afresh.  `M w' is the word the prefix would have marked, `M w w b' is
 `m w m w m b' still, and nothing about the letters moves."
+  ;; Asserted with the state beside the answer.  A bare `equal' on the
+  ;; selection says what came out and nothing about how, and this one
+  ;; fails on a machine neither the author nor the reader has: it
+  ;; passes in every --batch job and in a terminal frame here, and
+  ;; fails in a terminal frame on the version CI pins.  Where the
+  ;; cursor stood and what the mark was doing is the whole of what a
+  ;; reader needs, and a failure that has to be reproduced to be
+  ;; understood is a failure nobody can act on.
   (donkey-mark-test--keys "for text that is" "w w l M"
-    (should (equal (donkey-mark-test--selection) "that"))
-    (should (eq (key-binding "w") 'donkey-mark-word)))
+    (should (equal (list :sel (donkey-mark-test--selection)
+                         :point (point) :mark (mark t)
+                         :active (and mark-active t)
+                         :w (key-binding "w"))
+                   (list :sel "that"
+                         :point 10 :mark 14
+                         :active t
+                         :w 'donkey-mark-word))))
   ;; Mid-word takes the whole word, not the tail.
   (donkey-mark-test--keys "for text that is" "w w l l M"
-    (should (equal (donkey-mark-test--selection) "that")))
+    (should (equal (list :sel (donkey-mark-test--selection)
+                         :point (point) :mark (mark t))
+                   (list :sel "that" :point 10 :mark 14))))
   ;; On whitespace, and on a blank line with prose above it, the mode
   ;; arrives empty rather than reaching for a distant word.
   (donkey-mark-test--keys "for text that is" "w w M"
