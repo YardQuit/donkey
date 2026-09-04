@@ -1980,6 +1980,78 @@ the shorter, wronger wording fails here."
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 
+(ert-deftest donkey-changelog-names-the-version-that-is-loaded ()
+  "CHANGELOG.org's newest entry is the version in the package header.
+
+A changelog goes stale in one direction only: the version gets bumped
+and the entry does not get written, so the newest heading names a
+release that shipped some time ago and the one in people's hands has
+no entry at all.  Nothing else notices -- the file still parses, the
+package still builds, and the mismatch is only visible to someone who
+compares two files nobody opens together.
+
+Pinned the same way the README's binding tables are: the document has
+to agree with the code, and the check is cheap enough to be worth
+running every time.
+
+The version comes from the header rather than `donkey-version', which
+reads the header of the file that was LOADED and would agree with
+itself in a byte-compiled test run."
+  (let ((header nil)
+        (newest nil))
+    (with-temp-buffer
+      (insert-file-contents (expand-file-name "donkey.el" donkey-test--source-dir))
+      (goto-char (point-min))
+      (when (re-search-forward "^;; Version: *\\([0-9][0-9.]*\\)" nil t)
+        (setq header (match-string 1))))
+    (with-temp-buffer
+      (insert-file-contents (expand-file-name "CHANGELOG.org" donkey-test--source-dir))
+      (goto-char (point-min))
+      (when (re-search-forward "^\\* \\([0-9][0-9.]*\\)" nil t)
+        (setq newest (match-string 1))))
+    (should header)
+    (should newest)
+    (should (equal (list :header header :changelog newest)
+                   (list :header header :changelog header)))))
+
+(ert-deftest donkey-changelog-lists-every-release-tag-once ()
+  "Each heading in CHANGELOG.org is a version, newest first.
+
+The order is the point of the file: a reader looking for what changed
+in the release they just installed reads from the top and stops.  A
+heading out of order, or one that is not a version at all, breaks that
+without breaking anything a parser would notice.
+
+Only the top-level headings are checked.  What a release says about
+itself is prose, and prose is not something a test can hold to
+anything."
+  (let (versions)
+    (with-temp-buffer
+      (insert-file-contents (expand-file-name "CHANGELOG.org" donkey-test--source-dir))
+      (goto-char (point-min))
+      (while (re-search-forward "^\\* \\(.*\\)$" nil t)
+        (push (match-string 1) versions)))
+    (setq versions (nreverse versions))
+    (should versions)
+    ;; Every heading is "VERSION — DATE".
+    (dolist (v versions)
+      (should (equal (list v (and (string-match-p
+                                   "\\`[0-9]+\\.[0-9]+\\.[0-9]+ — [0-9]\\{4\\}-[0-9][0-9]-[0-9][0-9]\\'" v)
+                                  t))
+                     (list v t))))
+    ;; No version appears twice.  Compared on the VERSION alone, not
+    ;; the whole heading: two entries for one release under different
+    ;; dates is exactly the mistake worth catching, and as whole
+    ;; strings they do not look alike.
+    (let ((only (mapcar (lambda (v) (car (split-string v " "))) versions)))
+      (should (equal only (delete-dups (copy-sequence only))))
+      ;; And they descend.
+      (let ((numbers (mapcar (lambda (v)
+                               (mapcar #'string-to-number (split-string v "\\.")))
+                             only)))
+        (should (equal numbers (sort (copy-sequence numbers)
+                                     (lambda (a b) (version-list-< b a)))))))))
+
 (ert-deftest donkey-readme-binding-tables-match-the-keymap ()
   "Every \"| =KEY= | =donkey-command= |\" row in README.org is true.
 

@@ -1,0 +1,218 @@
+#+TITLE: DONKEY changelog
+#+AUTHOR: Michael Jones (YardQuit)
+
+Newest first. Each heading is a release tag and the date it carries.
+
+Entries for 1.4.1 and earlier were written after the fact, from the
+git history. They say what changed for someone *using* the package
+rather than repeating every commit, so a release that was mostly
+internal work has a short entry even where the diff was large. The
+commits themselves remain the record of why.
+
+* 1.5.0 — 2026-09-04
+
+Mark run mode: =M= holds the =m= prefix down for you, so the bare
+letters mark and grow one selection. The rest of the release is that
+idea being finished — the keys it should own, the keys it must leave
+alone, and the promise that a slip costs a beep rather than the
+selection.
+
+*Added*
+
+- =M= starts *mark run mode*. Bare =w W b B s S= run exactly the
+  commands their =m=-prefixed keys run, so =M w w b= selects what
+  =m w m w m b= selects. Counts work, and object types mix mid-run.
+- =M= arrives holding the word under the cursor, so =M d= takes it.
+  On whitespace the mode arrives empty.
+- =M= *adopts* a selection that is already active — a =v= region, a
+  =V= session, or one the =m= keys built — instead of dropping it.
+- =J= and =K= grow a run by whole lines, the newline included, so
+  =M J d= removes the line outright.
+- =h j k l= adjust the near end without ending the run. =g h= and
+  =g l= own an end apiece, so they add up: =M w g h g l= takes the
+  whole line's text in either order.
+- =g g= and =g e= stretch a run to the buffer's ends, and =%= marks
+  the whole buffer, all three keeping the mode alive.
+- =*= trades which end the motions hold — vi's =o= in visual mode.
+- =u= steps a run back one press and =U= steps it forward again, the
+  motions and =*= included.
+- Backward growth for the =m= keys: =m b=, =m B=, =m S= and =m P=.
+- Echo-area reminders for =v= and =m v=, beside the two that already
+  had them. =m v= pressed again now says =Rectangle: canceled=.
+- Mark run mode's keys are listed in =donkey-describe-bindings=,
+  which is the only place they can be read: they live in a transient
+  map that =C-h b= would end before it could see them.
+- The tutor teaches mark run mode by hand, with exercises.
+
+*Changed*
+
+- =p= and =P= stay the *paste* keys inside mark run mode, so =M w p=
+  replaces the marked word. Paragraphs keep the =m= prefix there
+  (=m p=, =m P=), which is the one object the mode does not letter.
+- The reminder names the keys whose *subject* the mode changes and no
+  others. =h j k l=, =J=, =K=, =u= and =U= keep their normal-state
+  meaning and are documented in the README and tutor instead.
+- The visual-line reminder stays visible for the whole session rather
+  than flashing once, and the mark run cancel message matches =V='s
+  wording.
+
+*Fixed*
+
+- A mistyped key leaves the run standing. This held for single keys
+  only; a mistyped *sequence* — =m x= for =m w=, or a slip after =g=
+  — ended the mode, and the next letter then moved point and left an
+  empty highlight.
+- =v= and =V= are refused inside a run, with a message saying how to
+  leave, instead of silently dropping the selection and anchoring a
+  new one.
+- =M= over a rectangle drops the block and *still starts a run*. It
+  used to cancel and return, and the obvious second press then grew
+  from the mark the rectangle had left, selecting a span across lines
+  that nobody asked for.
+- The reminder is visible from the first press of a run. The head
+  start's own "Word marked" landed on top of it, so the mode's only
+  sign on screen was missing for every run that starts on a word.
+- A run that a replayed keyboard macro armed ends with the macro.
+- Mark commands ask for the mark in a way an inactive one can answer,
+  so they work with =mark-even-if-inactive= off.
+- Disabling =donkey-mode= leaves nothing behind: no hooks (including
+  the two installed buffer-locally on =deactivate-mark-hook=), no
+  live position-ring markers, no armed transient map, no timer, no
+  overlays, no advice.
+
+*Internal*
+
+- The three reminder hooks became one, with the precedence written in
+  one place instead of emerging from three sets of guards and the
+  order they happened to run in.
+- A test guards against a paragraph break landing inside a docstring
+  sentence, which nothing else could see: the file still reads, still
+  byte-compiles, and checkdoc says nothing about prose.
+
+* 1.4.1 — 2026-08-29
+
+Internals, almost entirely.
+
+- =donkey-mode= owns its global hooks and removes them on disable.
+  They used to be added at load time — some by a bare =require=,
+  before the mode was ever turned on — and never removed.
+- The terminal cursor is driven only for the buffer in the selected
+  window, and the per-keystroke path was trimmed of dead work.
+- The states got their hooks back, and the caches were made to tell
+  the truth.
+- Requires the released Emacs 31.
+
+* 1.4.0 — 2026-08-23
+
+- Added =donkey-version=, which reports the version actually loaded
+  rather than whatever is on disk now.
+- Sweeps stay out of an active minibuffer.
+
+* 1.3.4 — 2026-08-23
+
+- Recovers a =C-g= eaten mid-execution during Insert state, so the
+  quit is not simply lost. Documented in the README's Troubleshooting
+  section.
+
+* 1.3.3 — 2026-08-22
+
+- Buffers created during startup are swept on the first idle moment,
+  so they get their state like any other.
+- Fixed docstring escapes that rendered a stray =\==.
+
+* 1.3.2 — 2026-08-10
+
+- Pasting over a line selection replaces whole lines rather than
+  opening an empty one under it.
+
+* 1.3.1 — 2026-08-02
+
+- =y= and =d= share one no-width rectangle guard.
+- Dropped a clipboard branch that could never run.
+- CI: everything it executes is pinned, its token is capped, and
+  Dependabot keeps the pins current.
+
+* 1.3.0 — 2026-07-31
+
+- =S= and =m l= take a count.
+- A delimiter selection points to its start and grows on repeat.
+- =m w= and =m W= stop announcing absurd selections; the sentence
+  *behind* is marked from a gap, and the leading gap reaches forward.
+- =c= saves what it replaces, so =p= after changing a marked word
+  pastes what was there.
+- A rectangle press that does nothing no longer costs anything.
+- The cursor is checked in a real terminal, not only in batch.
+- American English throughout the source, tests and README.
+
+* 1.2.1 — 2026-07-29
+
+- Every mark key grows on a second press, not just =m s=.
+- Setting =donkey-excluded-modes= no longer permanently kills the
+  excluded-buffer guard.
+- Lowering =donkey-position-ring-max= takes effect: the ring is
+  trimmed down to the limit rather than by one entry per move.
+- A Lisp call with a stale mark is no longer read as a repeat.
+- The README says which wrap delimiters =electric-pair-mode= actually
+  handles.
+
+* 1.2.0 — 2026-07-28
+
+- Rectangles got their own paste key, completing the =p= / =P= split.
+- A zero-width rectangle at end of line: prefix and suffix in one
+  stroke. =m v= there no longer moves the block to column 0.
+- The tutor teaches rectangles, banks, and =m v c= — the one key that
+  edits every row at once.
+
+* 1.1.1 — 2026-07-27
+
+- Added =donkey-tutor=, a learn-by-doing tutorial, bound and taught
+  in dependency order.
+- =S= returns to the position just left, not the one before it.
+- Joining moved to =g j=, and joins the way a modal editor does,
+  without eating the buffer's final newline.
+- Excluded buffers report as =DONKEY[E]=.
+- BACKSPACE and DELETE are blocked in a terminal, and =C-g= no longer
+  leaves a macro recording.
+- A mis-set variable can no longer silently kill position tracking.
+
+* 1.1.0 — 2026-07-27
+
+The largest release before 1.5.0.
+
+- *Banked line selection* — =m l= to bank, =m u= / =m U= to unbank —
+  for non-contiguous copy and delete, with one rule settling bank
+  versus rectangle in all three commands.
+- Counts are honoured throughout donkey's own commands, including
+  levels for =m i= / =m a= and a count for =J= / =K=.
+- Sentence marking marks the sentence *under* the cursor, marks the
+  one coming from the gap after a sentence, and reports cleanly when
+  there is none.
+- Wrapping works with =electric-pair-mode= and over rectangles.
+- =G= is bound to =end-of-buffer=; the bindings screen is grouped by
+  prefix as documented.
+- Banking is linear rather than quadratic, and banked overlays
+  evaporate so a bank cannot outlive its text.
+- A CI workflow runs the suite, byte-compile, checkdoc and
+  package-lint.
+- Many =donkey-mark-inner= / =donkey-mark-outer= corrections: nested
+  same-type delimiters, closing delimiters, curly quotes, and no
+  silent jump when there is no match.
+
+* 1.0.1 — 2026-07-23
+
+- Added =donkey-wrap-region=, with a customizable delimiter set.
+- Rectangle round trip for =donkey-yank=, which used to truncate a
+  rectangle selection silently.
+- Position tracking is buffer-local.
+- Fixes across the cursor, the input method, =C-g= and Enter-DWIM —
+  including =C-g= resurrecting Normal state after =donkey-mode= was
+  disabled, and a stale visual anchor hijacking an unrelated region.
+
+* 1.0.0 — 2026-07-20
+
+First public release, renamed from "mule" shortly before it.
+
+Normal and Insert states as minor-mode keymaps with no overlay state,
+DWIM Enter with rule-based dispatch, cross-platform cursor management,
+clipboard detection, the position ring behind =S=, and excluded modes
+for dired, magit and other special buffers.

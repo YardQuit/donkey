@@ -19,6 +19,7 @@
 - [[*Tutor][Tutor]]
 - [[*Describe Bindings][Describe Bindings]]
 - [[*Version][Version]]
+- [[*Changelog][Changelog]]
 - [[*Customization Group][Customization Group]]
 - [[*Troubleshooting][Troubleshooting]]
 - [[*Development][Development]]
@@ -1522,6 +1523,15 @@ captured from the package header at load time, so after updating the
 file on disk it keeps reporting the version actually running until
 you reload. From Lisp, =(donkey-version)= returns the version string,
 or =nil= when no readable header was found at load time.
+
+What changed in each release is in [[file:CHANGELOG.org][CHANGELOG.org]], newest first.
+
+* Changelog
+
+[[file:CHANGELOG.org][CHANGELOG.org]] lists every release, newest first, with what changed
+for someone using the package. Entries for 1.4.1 and earlier were
+written after the fact from the git history; the commits remain the
+record of why.
 
 * Customization Group
 
