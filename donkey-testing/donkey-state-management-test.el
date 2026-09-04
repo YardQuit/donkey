@@ -1602,6 +1602,83 @@ to leave nothing behind."
       (donkey-mode -1)
       (kill-buffer buf))))
 
+(ert-deftest donkey-mode-disable-takes-both-mark-hooks-with-it ()
+  "Disabling leaves no DONKEY function on `deactivate-mark-hook'.
+
+Two are installed buffer-locally, and for the same reason: the anchor
+hook by `donkey-visual-line-toggle', and
+`donkey--clear-selection-hint' by `donkey-set-mark' and
+`donkey-rectangle-mark-mode'.  `donkey--disable-in-buffer' names each
+one it removes, which is why the second went missing when it arrived:
+a buffer that had ever held a linear selection or a rectangle went on
+running DONKEY code on every mark deactivation with the mode off, for
+the rest of the session.
+
+Little harm came of it -- the function clears a flag and blanks a
+message that cannot be showing once the mode is off -- but \"the mode
+is off\" has to mean the code stopped running, or nothing else the
+teardown promises is worth much either.
+
+The flag goes too: nothing is left to clear it once the hook is gone."
+  (dolist (starter '(donkey-set-mark donkey-rectangle-mark-mode))
+    (let ((buf (generate-new-buffer "*donkey-mark-hook-teardown*")))
+      (unwind-protect
+          (with-current-buffer buf
+            (insert "one two three\nfour five\n")
+            (goto-char (point-min))
+            (donkey-mode 1)
+            (let ((transient-mark-mode t))
+              (call-interactively starter)
+              (should (memq #'donkey--clear-selection-hint deactivate-mark-hook))
+              (donkey-mode -1)
+              (should (equal (list starter
+                                   (memq #'donkey--clear-selection-hint
+                                         deactivate-mark-hook)
+                                   donkey--linear-selection-active)
+                             (list starter nil nil)))))
+        (donkey-mode -1)
+        (kill-buffer buf)))))
+
+(ert-deftest donkey-mode-disable-releases-the-position-ring ()
+  "Disabling drops the ring and points its markers nowhere.
+
+A marker is not free.  Emacs walks a buffer's marker list on every
+insertion and deletion, so a ring left behind taxes editing in a
+buffer whose mode is off -- up to `donkey-position-ring-max' of them
+per buffer, in every buffer that was ever moved around in.  The same
+teardown cancels a timer and deletes bank overlays on the argument
+that state belonging to a switched-off mode is state to clear, and
+this is the same kind of thing.
+
+Pointed nowhere, not merely dropped: a marker only stops costing the
+buffer anything once it is detached, and the trimming in
+`donkey--track-position' already releases the entries it drops the
+same way.
+
+Nothing is lost by it -- the ring is a recovery key rather than a
+filing system, and a later enable starts recording again."
+  (let ((buf (generate-new-buffer "*donkey-ring-teardown*")))
+    (unwind-protect
+        (with-current-buffer buf
+          (insert "one two three four five six")
+          (donkey-mode 1)
+          (let ((donkey-position-ring-max 10))
+            (setq donkey--last-tracked-state 1)
+            (dotimes (i 5)
+              (goto-char (+ 2 i))
+              (donkey--track-position)))
+          (let ((markers (copy-sequence donkey--position-ring)))
+            (should (= 5 (length markers)))
+            (should (= 5 (seq-count #'marker-position markers)))
+            (donkey-mode -1)
+            (should-not donkey--position-ring)
+            (should (= 0 donkey--position-index))
+            (should-not donkey--last-tracked-state)
+            ;; The markers themselves, not just the list that held them.
+            (should (= 0 (seq-count #'marker-position markers)))))
+      (donkey-mode -1)
+      (kill-buffer buf))))
+
 (defun donkey-test--cancel-stray-resweep-timers ()
   "Cancel every pending `donkey--startup-resweep\\=' timer.
 

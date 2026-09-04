@@ -161,8 +161,7 @@ instead of just going to a line. Now rounded to the nearest whole line."
           (donkey-position-ring-max 10))
       (donkey--track-position)
       (should (null donkey--position-ring))
-      (should (equal donkey--last-tracked-state
-                     (cons (current-buffer) 3))))))
+      (should (equal donkey--last-tracked-state 3)))))
 
 (ert-deftest donkey-track-position-same-position-no-push ()
   "When buffer and point are unchanged, no marker is pushed."
@@ -515,8 +514,7 @@ the whole reason `S' exists is to take back the jump just made."
       (goto-char 5)
       (donkey--track-position)
       (donkey-jump-back)
-      (should (equal donkey--last-tracked-state
-                     (cons (current-buffer) 1))))))
+      (should (equal donkey--last-tracked-state 1)))))
 
 (ert-deftest donkey-jump-back-call-interactively ()
   "Can be called interactively."

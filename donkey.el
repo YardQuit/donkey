@@ -306,7 +306,12 @@ rather than rejected, since it already worked."
 recorded.")
 
 (defvar-local donkey--last-tracked-state nil
-  "Cons cell (BUFFER . POINT) captured after the previous command.")
+  "Where point stood after the previous command, or nil for not yet.
+
+A bare position.  It was a (BUFFER . POINT) cons, and nothing ever
+read the BUFFER: the variable is buffer-local, so the buffer is the
+one holding the value, and carrying it as well suggested a
+cross-buffer rule that does not exist.")
 
 (defun donkey--track-position ()
   "Record the previous cursor position.
@@ -321,10 +326,10 @@ where the one value a user can get wrong is made safe."
   (unless (minibufferp)
     (let ((now-pt (point)))
       (when (and donkey--last-tracked-state
-                 (/= (cdr donkey--last-tracked-state) now-pt))
+                 (/= donkey--last-tracked-state now-pt))
         (let ((m (make-marker))
               (limit (donkey--position-ring-limit)))
-          (set-marker m (cdr donkey--last-tracked-state))
+          (set-marker m donkey--last-tracked-state)
           (push m donkey--position-ring)
           ;; Trimmed DOWN TO the limit, not by one.  Dropping a single
           ;; entry per call cancels exactly against the one just pushed,
@@ -350,7 +355,7 @@ where the one value a user can get wrong is made safe."
                   (butlast donkey--position-ring
                            (- (length donkey--position-ring) limit)))))
         (setq donkey--position-index 0))
-      (setq donkey--last-tracked-state (cons (current-buffer) now-pt)))))
+      (setq donkey--last-tracked-state now-pt))))
 
 ;; Why narrowed-out positions are skipped:
 ;;
@@ -420,7 +425,7 @@ what pressing again will cycle through."
         (setq idx (mod (+ idx (1- (max 1 (or count 1)))) ring-len))
         (goto-char (nth idx visible))
         (setq donkey--position-index (1+ idx))
-        (setq donkey--last-tracked-state (cons (current-buffer) (point)))
+        (setq donkey--last-tracked-state (point))
         (message "Position %d/%d" (1+ idx) ring-len))))))
 
 (defun donkey-goto-line ()
@@ -2097,7 +2102,7 @@ the visual-line session's original anchor line instead of extending
   "The echo-area reminder shown while a visual-line session is active.
 
 Shown by `donkey-visual-line-toggle' at entry and kept VISIBLE across
-the session's motions by `donkey--visual-line-show-hint', the way
+the session's motions by `donkey--show-selection-hint', the way
 `donkey--mark-run-mode-hint' stays up for mark run mode.")
 
 (defconst donkey--hint-motions
@@ -2154,31 +2159,12 @@ reminder is what *Messages* would otherwise keep."
   (let ((message-log-max nil))
     (message "%s" hint)))
 
-(defun donkey--visual-line-show-hint ()
-  "Keep the visual-line reminder visible across the session's motions.
-
-On `post-command-hook' for the life of `donkey-mode' -- registered in
-`donkey--global-hooks' rather than added per session, so two sessions
-in two buffers cannot strand or double it -- and inert to the cheapest
-test first in every buffer without an anchor.  Repaints only after the
-motions in `donkey--hint-motions', and only while
-`donkey--visual-line-session-active-p' says the session is genuinely
-live, so a stale anchor cannot resurrect the reminder.  Painted
-through `donkey--repaint-hint', which mark run mode's reminder shares.
-Guarded, not signaling -- a function that errors on
-`post-command-hook' is silently removed for the session."
-  (when (and donkey-visual-anchor
-             (not (bound-and-true-p rectangle-mark-mode))
-             (memq this-command donkey--hint-motions)
-             (donkey--visual-line-session-active-p))
-    (donkey--repaint-hint donkey--visual-line-hint)))
-
 (defvar donkey--linear-selection-hint
   "Linear selection: any motion extends, v re-anchors, C-g to cancel"
   "The echo-area reminder shown while a `donkey-set-mark' selection lives.
 
 Shown by `donkey-set-mark' at entry and kept VISIBLE across the
-selection's motions by `donkey--linear-selection-show-hint', the way
+selection's motions by `donkey--show-selection-hint', the way
 `donkey--visual-line-hint' and `donkey--mark-run-mode-hint' stay up
 for their own modes.
 
@@ -2195,7 +2181,7 @@ command's own docstring exists to answer.")
   "The echo-area reminder shown while `rectangle-mark-mode' is on.
 
 Shown by `donkey-rectangle-mark-mode' at entry and kept VISIBLE across
-the block's motions by `donkey--rectangle-show-hint'.
+the block's motions by `donkey--show-selection-hint'.
 
 It replaces the \"Mark set (rectangle mode)\" that
 `rectangle-mark-mode' says for itself, which names the state without
@@ -2242,54 +2228,54 @@ an action key goes the same quiet way a linear selection does."
                 (list donkey--linear-selection-hint donkey--rectangle-hint))
     (message nil)))
 
-(defun donkey--linear-selection-show-hint ()
-  "Keep the linear-selection reminder visible across its motions.
+(defun donkey--show-selection-hint ()
+  "Keep the live selection's reminder visible across its own motions.
 
-On `post-command-hook' for the life of `donkey-mode', and inert to the
-cheapest test first in every buffer without a linear selection.
+On `post-command-hook' for the life of `donkey-mode' -- registered in
+`donkey--global-hooks' rather than per session, so two selections in
+two buffers cannot strand or double it.
 
-Quiet whenever another selection is speaking.  A rectangle and a
-visual-line session each have a reminder of their own and can be
-entered over a linear selection without deactivating the mark, so the
-flag outlives the thing it named and each is a test here rather than a
-handover -- the flag is only ever cleared by the mark going away.
+One function for all three selections, deciding once.  They were three
+hooks with a set of exclusions each, and the rule they add up to --
+that only one reminder is ever on screen -- was written nowhere and
+true only by arithmetic: every hook ran, and whichever painted last
+won.  Hook ORDER settled two of the cases, which is not a rule anybody
+can hold, and a guard removed from one of them went on looking right
+until somebody reordered the list.  Here the precedence IS the `cond',
+in order, and a case that cannot arise is absent rather than guarded.
 
-Mark run mode needs no test of its own, though it adopts the selection
-and would have the better claim.  It rebinds every motion key it owns,
-so nothing in `donkey--hint-motions' can run while it is armed; and
-the key that ends it has already ended it by the time this runs, the
-map lapsing from `pre-command-hook'.  A guard here could not be
-reached, and an unreachable guard is a promise nothing keeps.
+A rectangle comes first: it can be entered over either of the others
+without deactivating the mark, so their grounds survive underneath it
+and it has the better claim.  Then a visual-line session, which a
+linear selection likewise survives into.  A linear selection last,
+being the one the other two get built on top of.
 
-Guarded, not signaling -- a function that errors on
-`post-command-hook' is silently removed for the session."
-  (when (and donkey--linear-selection-active
-             (not donkey-visual-anchor)
-             (not (bound-and-true-p rectangle-mark-mode))
-             (memq this-command donkey--hint-motions)
-             mark-active)
-    (donkey--repaint-hint donkey--linear-selection-hint)))
+Mark run mode is not here at all.  It repaints from its own
+`donkey--mark-run-mode-post-command', by family membership rather than
+by motion, and nothing in `donkey--hint-motions' can run while it is
+armed -- the mode rebinds every motion key it owns.
 
-(defun donkey--rectangle-show-hint ()
-  "Keep the rectangle reminder visible across the block's motions.
-
-On `post-command-hook' for the life of `donkey-mode', and inert to the
-cheapest test first in every buffer without a rectangle.  A rectangle
-needs no exclusions the way `donkey--linear-selection-show-hint' does:
-mark run mode cancels one rather than adopting it, and the visual-line
-reminder now stands aside for it.
+The selection tests come before the motion test because most commands
+are neither: three variable reads answer for every keystroke in a
+buffer with nothing selected, and the list is only walked once
+something is.  Repaints after the motions in `donkey--hint-motions'
+and after nothing else, so a command that said something of its own
+keeps its echo and a count's keystroke echo is never painted over.
 
 Guarded, not signaling -- a function that errors on
 `post-command-hook' is silently removed for the session."
-  (when (and (bound-and-true-p rectangle-mark-mode)
-             mark-active
+  (when (and (or (bound-and-true-p rectangle-mark-mode)
+                 donkey-visual-anchor
+                 donkey--linear-selection-active)
              (memq this-command donkey--hint-motions))
-    (donkey--repaint-hint donkey--rectangle-hint)))
-;;
-;; The highlight is left one character short deliberately -- see
-;; `donkey--visual-line-region-bounds' for why the widening lives in the
-;; commands that consume the selection -- `donkey-copy', `donkey-delete'
-;; and `donkey-yank' -- rather than in the selection itself.
+    (cond
+     ((and (bound-and-true-p rectangle-mark-mode) mark-active)
+      (donkey--repaint-hint donkey--rectangle-hint))
+     ((and donkey-visual-anchor (donkey--visual-line-session-active-p))
+      (donkey--repaint-hint donkey--visual-line-hint))
+     ((and donkey--linear-selection-active mark-active)
+      (donkey--repaint-hint donkey--linear-selection-hint)))))
+
 (defun donkey-visual-line-toggle ()
   "Start/cancel visual line selection.
 
@@ -7554,6 +7540,15 @@ so one buffer's erroring hook cannot strand the rest."
   ;; it would keep running on every mark deactivation in this buffer
   ;; for the rest of the session, mode off or not.
   (remove-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor t)
+  ;; And its sibling, installed the same way by `donkey-set-mark' and
+  ;; `donkey-rectangle-mark-mode'.  It arrived after the line above and
+  ;; was not added to it, so a buffer that had ever held a linear
+  ;; selection or a rectangle went on running DONKEY code on every mark
+  ;; deactivation with the mode off -- the very thing the line above
+  ;; exists to prevent, missed because each names its own function
+  ;; rather than asking what is on the hook.
+  (remove-hook 'deactivate-mark-hook #'donkey--clear-selection-hint t)
+  (setq donkey--linear-selection-active nil)
   ;; And the anchor that hook exists to clear.  With the hook just
   ;; removed nothing else can, so a live \"V\" session at the moment of
   ;; disabling left its anchor in the buffer for good and carried it
@@ -7568,6 +7563,19 @@ so one buffer's erroring hook cannot strand the rest."
   ;; through a Normal-state key that no longer exists once the
   ;; mode is off.
   (donkey-clear-banked-selection)
+  ;; Markers are not free: Emacs walks a buffer's marker list on every
+  ;; insertion and deletion, so a ring left behind taxes editing in a
+  ;; buffer whose mode is off, up to `donkey-position-ring-max' of them
+  ;; per buffer.  Pointed nowhere first, the way the trimming in
+  ;; `donkey--track-position' releases the entries it drops; dropping
+  ;; the list alone would leave them live until the collector noticed.
+  ;; Nothing is lost by it -- the ring is a recovery key rather than a
+  ;; filing system, and a later enable starts recording again.
+  (dolist (m donkey--position-ring)
+    (set-marker m nil))
+  (setq donkey--position-ring nil
+        donkey--position-index 0
+        donkey--last-tracked-state nil)
   (donkey--apply-cursor-setting nil))
 
 (defconst donkey--state-hooks
@@ -7611,9 +7619,7 @@ installed them for good."
 (defconst donkey--global-hooks
   `((after-change-major-mode-hook . donkey--ensure-default-state)
     (post-command-hook . donkey--track-position)
-    (post-command-hook . donkey--visual-line-show-hint)
-    (post-command-hook . donkey--linear-selection-show-hint)
-    (post-command-hook . donkey--rectangle-show-hint)
+    (post-command-hook . donkey--show-selection-hint)
     (post-command-hook . donkey--check-post-command-non-editing)
     (post-command-hook . donkey--update-cursor-passive)
     (minibuffer-setup-hook . donkey--minibuffer-setup)

@@ -4302,13 +4302,11 @@ last would win, which is not a rule anybody could hold."
       (should (equal (list keys (car (donkey-hint-test--msgs
                                       "one two three\nfour five\n" keys)))
                      (list keys expected)))))
-  ;; The linear reminder's two exclusions are asked of the hook
-  ;; directly.  Through the keys, hook ORDER answers for them instead:
-  ;; the three are registered in one list and `add-hook' prepends, so
-  ;; the visual-line hook runs last and would win whether or not this
-  ;; one stood aside -- and a guard that only looks right because of
-  ;; the order it is called in stops being right the day somebody
-  ;; reorders the list.
+  ;; The precedence is asked of the dispatcher directly.  Through the
+  ;; keys it is only ever exercised in the combinations a person can
+  ;; type, and the `cond' is a claim about all of them: each selection
+  ;; can be live under either of the others, and which reminder speaks
+  ;; must not depend on the order anything ran in.
   (with-temp-buffer
     (insert "one two three")
     (goto-char (point-min))
@@ -4322,24 +4320,34 @@ last would win, which is not a rule anybody could hold."
           (painted nil))
       (cl-letf (((symbol-function 'donkey--repaint-hint)
                  (lambda (hint) (setq painted hint))))
-        ;; On its own it speaks.
-        (donkey--linear-selection-show-hint)
+        ;; A linear selection on its own.
+        (donkey--show-selection-hint)
         (should (equal painted donkey--linear-selection-hint))
-        ;; Over a visual-line session it does not.
+        ;; A visual-line session over it takes the echo area.
         (setq painted nil)
-        (let ((donkey-visual-anchor (point-min)))
-          (donkey--linear-selection-show-hint))
-        (should-not painted)
-        ;; Nor under a rectangle.
+        (let ((donkey-visual-anchor (mark)))
+          (donkey--show-selection-hint))
+        (should (equal painted donkey--visual-line-hint))
+        ;; And a rectangle outranks both.
+        (setq painted nil)
+        (let ((donkey-visual-anchor (mark))
+              (rectangle-mark-mode t))
+          (donkey--show-selection-hint))
+        (should (equal painted donkey--rectangle-hint))
         (setq painted nil)
         (let ((rectangle-mark-mode t))
-          (donkey--linear-selection-show-hint))
+          (donkey--show-selection-hint))
+        (should (equal painted donkey--rectangle-hint))
+        ;; A command that is not a motion says nothing at all.
+        (setq painted nil)
+        (let ((this-command 'donkey-delete))
+          (donkey--show-selection-hint))
         (should-not painted)
-        ;; Nor once the mark is gone, flag or no flag.
+        ;; Nor does anything once the mark is gone, flag or no flag.
         (setq painted nil)
         (deactivate-mark)
         (let ((donkey--linear-selection-active t))
-          (donkey--linear-selection-show-hint))
+          (donkey--show-selection-hint))
         (should-not painted)))))
 
 (ert-deftest donkey-a-selection-reminder-does-not-outlive-its-selection ()
@@ -4399,11 +4407,11 @@ reminder would be advertising keys that no longer extend anything."
                    (when fmt (push (apply #'format fmt args) msgs))
                    nil)))
         (let ((this-command 'save-buffer))
-          (donkey--visual-line-show-hint))
+          (donkey--show-selection-hint))
         (should-not msgs)
         (deactivate-mark)
         (let ((this-command 'next-line))
-          (donkey--visual-line-show-hint))
+          (donkey--show-selection-hint))
         (should-not msgs)))))
 
 (ert-deftest donkey-a-stale-visual-anchor-does-not-repaint-the-hint ()
@@ -4413,7 +4421,7 @@ A mark command mid-session repositions the region without ever
 deactivating it, so the anchor survives while the session is over --
 the exact state `donkey--visual-line-session-active-p' exists to
 reject, and the case that separates it from a bare anchor check in
-`donkey--visual-line-show-hint': anchor set, region active, mark on
+`donkey--show-selection-hint': anchor set, region active, mark on
 the marked word.  A motion here must not resurrect the visual-line
 reminder over a selection that is no longer a visual-line session."
   (donkey-mark-test--keys "one two\nthree four\n" "V J m w"
@@ -4423,7 +4431,7 @@ reminder over a selection that is no longer a visual-line session."
                    (when fmt (push (apply #'format fmt args) msgs))
                    nil)))
         (let ((this-command 'next-line))
-          (donkey--visual-line-show-hint))
+          (donkey--show-selection-hint))
         (should-not msgs)))))
 
 (ert-deftest donkey-m-adopts-an-existing-selection ()
