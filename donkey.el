@@ -2966,13 +2966,97 @@ COUNT selects how many levels out to go."
   (interactive "p")
   (donkey--mark-sexp-select nil count))
 
+(defun donkey--back-to-symbol-char ()
+  "Move point back onto the last symbol character before it.
+
+`donkey-mark-symbol\=' used `backward-sexp\=' to normalize point onto the
+symbol behind, and landed wherever a SEXP starts, which is not where a
+symbol starts.  Reported from a key sequence quoted in prose, of the
+shape `substitute-command-keys\=' renders a binding as -- curly quotes and
+all.  With point in the gap between its two halves that landing was the
+opening quote, punctuation with no symbol at point, and the mark was
+REFUSED although a symbol sat directly behind.  The same landing sent a
+press behind #\\='bar back to the symbol before it.
+
+Punctuation, quotes, and brackets are all crossed to reach the symbol,
+because none of them can be part of one; the search is for a character
+of word or symbol syntax and stops on the first.
+
+`skip-syntax-backward\=' stops in exactly two places here, at the first
+such character or at the start of the buffer, so a landing past
+`point-min\=' IS the character and needs no second test for it.  One was
+written and mutation testing showed it changed nothing.
+
+Nothing moves when there is no such character behind point at all.  The
+leading gap of a buffer is that case, and the caller answers it by
+reaching FORWARD instead -- see `donkey--mark-reach-forward-for\='.
+
+The guard is a rule about this function rather than about what the user
+sees.  `donkey-mark-symbol\=' puts point back before it reports a refusal,
+so leaving the cursor at `point-min\=' here would be invisible through the
+command -- checked, across five modes and every position of fourteen
+buffers, and nothing differed.  It is written anyway, because the restore
+belongs to the refusal and this belongs to the search: a step that only
+moves when it has found something cannot strand the cursor even if the
+restore is one day taken out.  The suite holds that contract by calling
+this function directly, for the same reason."
+  (let ((landing (save-excursion (skip-syntax-backward "^w_") (point))))
+    (when (> landing (point-min))
+      (goto-char (1- landing)))))
+
+(defun donkey--trim-symbol-prefix ()
+  "Move point forward over punctuation stuck to the front of the symbol ahead.
+
+The mirror of `donkey--trim-symbol-punctuation\=', called with point at
+the START of a backward symbol run.  `backward-sexp\=' stops where a sexp
+starts rather than where a symbol does, and scanning sweeps adjacent
+punctuation into the sexp, so a mark of a name quoted in prose came out
+holding the opening quote as well.
+
+Only PUNCTUATION syntax is shed.  An expression prefix -- \\=' and \\=`
+and # in Lisp -- introduces the form after it and belongs with it, so
+marking \\='bar still gives \\='bar; punctuation belongs to no symbol in
+any mode.  The distinction is the mode's own syntax table rather than a
+list of characters here, which is why the same rule serves prose and
+code: the curly quotes are punctuation in `text-mode\=' and
+`emacs-lisp-mode\=' alike, and in `help-mode\=', where they are brackets
+instead, sexp scanning already stopped in the right place and this finds
+nothing to do.
+
+The ceiling is the end of the sexp just traversed, so the rule reads the
+same as at the other end: never trim away the thing that was just added.
+A symbol that IS punctuation keeps itself that way."
+  (let ((start (point))
+        (sexp-end (save-excursion
+                    (condition-case nil
+                        (forward-sexp 1)
+                      (scan-error nil))
+                    (point))))
+    (while (and (char-after)
+                (eq (char-syntax (char-after)) ?.))
+      (forward-char 1))
+    (when (>= (point) sexp-end)
+      (goto-char start))))
+
 (defun donkey--trim-symbol-punctuation ()
-  "Move point back over a trailing comma or period on the symbol just passed.
+  "Move point back over trailing punctuation on the symbol just passed.
 
 Called with point at the END of a forward symbol run, where a trailing
 \".\" or \",\" is prose punctuation rather than part of the name --
 `donkey-mark-symbol\\=' drops it so that marking the symbol in \"see
 `foo\\=', bar.\" gives \"bar\" rather than \"bar.\".
+
+Anything of punctuation SYNTAX goes the same way, which is what carries
+the rule into modes whose punctuation is not those two characters.  The
+closing curly quote around a name quoted in prose is punctuation in
+`text-mode\\=' and `emacs-lisp-mode\\=' alike, and marking such a name
+gave it with that quote still attached until this counted it.  The two
+literal characters stay named because Lisp gives \".\" symbol syntax and
+\",\" the syntax of an expression prefix, so neither is punctuation in
+the mode this package is written in.
+
+`donkey--trim-symbol-prefix\\=' is the mirror at the other end, and the
+pair of them is why the command can promise a symbol rather than a sexp.
 
 Stops short when the symbol IS that punctuation.  In Lisp `.\\=' has
 symbol syntax, so \"...\" is a symbol in its own right, and trimming it
@@ -2992,7 +3076,9 @@ an extension: never trim away the thing that was just added."
                           (backward-sexp 1)
                         (scan-error nil))
                       (point))))
-    (while (memq (char-before) '(?, ?.))
+    (while (and (char-before)
+                (or (memq (char-before) '(?, ?.))
+                    (eq (char-syntax (char-before)) ?.)))
       (backward-char 1))
     (when (<= (point) sexp-start)
       (goto-char end))))
@@ -4775,7 +4861,10 @@ COUNT marks or extends by that many paragraphs."
 (defun donkey-mark-symbol (&optional count)
   "Select the entire symbol at or adjacent to point.
 
-Trailing commas or periods are omitted from the selection.
+Punctuation at either end is omitted from the selection -- a trailing
+comma or period, and the quotes around a name in prose.  An expression
+prefix is not punctuation and stays: \\='bar marks as \\='bar.  See
+`donkey--trim-symbol-punctuation\=' and `donkey--trim-symbol-prefix\='.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
@@ -4812,16 +4901,14 @@ matching how `forward-sexp' reads its argument."
                   (point)))
     (let ((origin (point)))
      (unless (donkey--point-on-word-or-symbol-char-p)
-      (condition-case nil
-          (backward-sexp 1)
-        (scan-error nil)))
+       (donkey--back-to-symbol-char))
     ;; `beginning-of-thing' signals a bare `error' when there is no
     ;; symbol to be found, which pops the debugger for anyone running
     ;; with `debug-on-error' on.  Reaching it is ordinary, not
-    ;; exceptional: `backward-sexp' above lands on whatever sexp precedes
-    ;; point, which on a blank line in code is typically a bracket rather
-    ;; than a symbol -- confirmed with point on the trailing empty line
-    ;; of "(foo bar)".
+    ;; exceptional: there is no symbol behind point at all in the leading
+    ;; gap of a buffer, and none on a blank line before an opening
+    ;; bracket -- confirmed with point on the trailing empty line of
+    ;; "(foo bar)".
     ;; Undone before reporting -- see `donkey-mark-word' for the shape
     ;; and for the press that showed it.
     (unless (or (donkey--real-thing-at-point 'symbol)
@@ -4831,18 +4918,28 @@ matching how `forward-sexp' reads its argument."
       (user-error "No symbol at or before point"))
     (beginning-of-thing 'symbol))
     (forward-sexp n)
-    ;; Only a forward run leaves point at the far END of the selection,
-    ;; where a trailing "," or "." is the thing to drop.  A negative
-    ;; count leaves point at the region's START instead, and backing up
-    ;; over punctuation there would reach into the symbol before it.
-    (when (> n 0)
-      (donkey--trim-symbol-punctuation))
+    ;; Each trim belongs to an END of the selection, and the sign of the
+    ;; count decides which end the motions reach first: a forward run
+    ;; leaves point at the far end, where a trailing "," or "." is the
+    ;; thing to drop, and a negative count leaves it at the start, where
+    ;; the thing to drop is a leading quote.  Running the wrong one here
+    ;; reaches into the symbol NEXT to the selection rather than trimming
+    ;; the selection's own edge.  A count of zero marks nothing and needs
+    ;; neither.
+    (if (> n 0)
+        (donkey--trim-symbol-punctuation)
+      (when (< n 0)
+        (donkey--trim-symbol-prefix)))
     (push-mark (point) t)
     ;; Back over the same number of symbols the first step covered.
     ;; Going back one regardless left the region holding only the LAST
     ;; symbol of a counted run -- a count of 2 over "foo-a bar-b"
     ;; marked just "bar-b".
     (backward-sexp n)
+    (if (> n 0)
+        (donkey--trim-symbol-prefix)
+      (when (< n 0)
+        (donkey--trim-symbol-punctuation)))
     (activate-mark)))
   (message "Symbol marked"))
 
@@ -4852,13 +4949,16 @@ matching how `forward-sexp' reads its argument."
 The other end of `donkey-mark-symbol's run, sharing
 `donkey--mark-backward' with the other three backward keys.
 
-No punctuation trim runs here.  `donkey--trim-symbol-punctuation' drops
-a trailing \".\" or \",\" because prose punctuation attaches to the END
-of a name; the backward walk lands on symbol STARTS, where there is
-nothing equivalent to shed, and whatever punctuation separated the
-symbols becomes interior to the selection -- confirmed by probe, growing
-back from \"baz\" over \"foo, bar baz\" selects all of it, comma in
-place.
+The trailing trim does not run here.  `donkey--trim-symbol-punctuation\='
+drops a trailing \".\" or \",\" because that punctuation attaches to the
+END of a name, and this walk lands on symbol STARTS; whatever punctuation
+separated the symbols becomes interior to the selection -- confirmed by
+probe, growing back from \"baz\" over \"foo, bar baz\" selects all of it,
+comma in place.
+
+`donkey--trim-symbol-prefix\=' does run, for the punctuation the walk
+lands ON rather than passes over.  `backward-sexp\=' stops where a sexp
+starts, which in prose is in front of the quote before the name.
 
 The delegate a fresh press goes through also brings the
 trailing-punctuation trim along with it.
@@ -4874,7 +4974,8 @@ COUNT marks or extends by that many symbols."
                            ;; the forward direction runs out of buffer.
                            (condition-case nil
                                (backward-sexp n)
-                             (scan-error nil)))
+                             (scan-error nil))
+                           (donkey--trim-symbol-prefix))
                          #'donkey-mark-symbol
                          "Symbol"))
 

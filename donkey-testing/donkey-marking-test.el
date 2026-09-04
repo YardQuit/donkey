@@ -477,17 +477,29 @@ Return list (POINT MARK TEXT) describing the resulting region."
   ;; This may error — testing graceful handling
   (should-error (donkey-test--symbol-result "," 1) :type 'error))
 
-(ert-deftest donkey-mark-symbol-blank-line-after-list-signals-user-error ()
-  "Point on a blank line after a list reports cleanly instead of erroring.
+(ert-deftest donkey-mark-symbol-blank-line-after-list-marks-the-last-symbol ()
+  "Point on a blank line after a list marks the symbol behind it.
 
-Regression: `backward-sexp' lands on the list's opening paren, which is
-no symbol, and `beginning-of-thing' signalled a bare `error' -- which
-pops the debugger for anyone running with `debug-on-error' on.  A blank
-line under an expression is an ordinary place to press this."
+The gap at the end of the buffer, where `donkey-mark-symbol' documents
+that the last symbol is the one marked -- and `donkey-mark-word' has
+always marked \"bar\" here.  The symbol key REFUSED instead, because the
+step back was `backward-sexp' and it landed on the list\\='s opening
+paren, which is no symbol.  Landing on a symbol character rather than on
+a sexp boundary is what made the two keys agree.
+
+Two regressions meet at this buffer, and the other one still holds:
+`beginning-of-thing' signals a bare `error' when there is no symbol,
+which pops the debugger for anyone running with `debug-on-error' on.
+`donkey-mark-symbol-whitespace-only-buffer-signals-user-error' is where
+that is checked now, on a buffer with no symbol anywhere to reach."
   (with-temp-buffer
+    (emacs-lisp-mode)
     (insert "(foo bar)\n\n")
     (goto-char (point-max))
-    (should-error (donkey-mark-symbol) :type 'user-error)))
+    (donkey-mark-symbol)
+    (should (equal (buffer-substring-no-properties
+                    (region-beginning) (region-end))
+                   "bar"))))
 
 (ert-deftest donkey-mark-symbol-whitespace-only-buffer-signals-user-error ()
   "A buffer with nothing to mark reports cleanly rather than signaling `error'."
@@ -502,6 +514,209 @@ line under an expression is an ordinary place to press this."
     (insert "   ")
     (goto-char (point-min))
     (should-error (donkey-mark-word) :type 'user-error)))
+
+(defun donkey-test--symbol-in (mode content pos &optional count backward)
+  "Mark in MODE, in a buffer of CONTENT with point at 1-based POS.
+Return the selected text, or nil when the mark is refused.  COUNT and
+BACKWARD choose the count and the backward key, as the two commands
+take them."
+  (with-temp-buffer
+    (insert content)
+    (let ((inhibit-read-only t)) (funcall mode))
+    (goto-char pos)
+    (condition-case nil
+        (progn
+          (if backward
+              (donkey-mark-symbol-backward count)
+            (donkey-mark-symbol count))
+          (buffer-substring-no-properties (region-beginning) (region-end)))
+      (user-error nil))))
+
+(ert-deftest donkey-mark-symbol-in-a-key-sequence-marks-the-symbol-behind ()
+  "The gap inside a quoted key sequence marks the symbol before it.
+
+Reported against a key sequence quoted in prose -- the shape
+`substitute-command-keys' renders a binding as, curly quotes and all.
+With point in the gap the key REFUSED, saying there was no symbol at or
+before point, while a name sat directly behind it; with point on that
+name it marked the opening quote along with it.
+
+Both came from delimiting with sexp motion.  `backward-sexp' stops where
+a sexp starts, not where a symbol starts, and the curly quotes are
+punctuation that scanning sweeps into the neighboring sexp -- so the step
+back landed on the quote, where there is no symbol, and the selection
+that did succeed reached out to the quote as well.  `thing-at-point'
+never agreed: it read the name, with the right bounds, throughout."
+  (dolist (mode '(emacs-lisp-mode text-mode org-mode fundamental-mode))
+    (let ((text "press ‘C-x C-f’ now"))
+      ;; In the gap between the two, and in the gap after the last.
+      (should (equal (list mode (donkey-test--symbol-in mode text 11))
+                     (list mode "C-x")))
+      (should (equal (list mode (donkey-test--symbol-in mode text 16))
+                     (list mode "C-f")))
+      ;; And on the names themselves, quotes shed at either end.
+      (should (equal (list mode (donkey-test--symbol-in mode text 9))
+                     (list mode "C-x")))
+      (should (equal (list mode (donkey-test--symbol-in mode text 13))
+                     (list mode "C-f"))))))
+
+(ert-deftest donkey-mark-symbol-keeps-an-expression-prefix ()
+  "An expression prefix is not punctuation and stays in the selection.
+
+The line the trim is drawn on.  A quote, a backquote, and a function
+quote introduce the form after them and read as part of it -- marking
+\\='bar to replace it wants the quote -- and Lisp gives all three the
+syntax of an expression prefix rather than of punctuation, which is what
+the trim tests.  A curly quote around a name in prose is punctuation in
+the same mode, and goes.
+
+Emacs Lisp is the mode that distinguishes them, so it is the mode this
+is checked in."
+  (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "(foo 'bar baz)" 7)
+                 "'bar"))
+  (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "(foo `bar baz)" 7)
+                 "`bar"))
+  (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "(foo #'bar baz)" 8)
+                 "#'bar"))
+  ;; From the gap after them, where the step back used to refuse
+  ;; outright, or reach past the prefix to the symbol before it.
+  (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "(foo 'bar baz)" 10)
+                 "'bar"))
+  (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "(foo #'bar baz)" 11)
+                 "#'bar")))
+
+(ert-deftest donkey-mark-symbol-backward-sheds-a-leading-quote ()
+  "The backward key stops at the symbol, not in front of the quote.
+
+`donkey--trim-symbol-prefix' is what makes it, and this is the end the
+trailing trim was never able to reach.
+
+A count above 1 is what this needs.  `donkey--mark-backward' marks a
+fresh press through its DELEGATE and walks with its MOTION only for the
+remaining COUNT - 1, so a press of 1 never reaches the motion at all --
+written that way first, the test passed with the motion\\='s trim deleted."
+  (let ((text "press ‘C-x C-f’ now"))
+    ;; Through the delegate.
+    (should (equal (donkey-test--symbol-in 'emacs-lisp-mode text 13 1 t)
+                   "C-f"))
+    ;; And through the motion, which is the trim this names.
+    (should (equal (donkey-test--symbol-in 'emacs-lisp-mode text 13 2 t)
+                   "C-x C-f"))
+    (should (equal (donkey-test--symbol-in 'emacs-lisp-mode text 13 3 t)
+                   "press ‘C-x C-f"))))
+
+(ert-deftest donkey-back-to-symbol-char-moves-only-onto-a-symbol ()
+  "The step back lands on a symbol character, or does not move.
+
+Held directly rather than through `donkey-mark-symbol', because the
+command cannot show either half: it puts point back before reporting a
+refusal, so a step that overshot to `point-min' would look the same to
+the user, and `thing-at-point' reads a symbol from the position just
+after it as readily as from inside, so a step that stopped one character
+short would mark the same text.  Both were tried as mutations and no test
+in the suite could tell.
+
+What the two halves are for is the function on its own terms.  A search
+that only moves when it has found something cannot strand the cursor, and
+a landing ON the character is what lets the caller take
+`beginning-of-thing' from a position that is unambiguously inside."
+  ;; Lands on the character, not after it.
+  (with-temp-buffer
+    (insert "ab ")
+    (goto-char 4)
+    (donkey--back-to-symbol-char)
+    (should (equal (point) 2)))
+  ;; Crosses whatever is in the way to reach it.
+  (with-temp-buffer
+    (insert "ab ‘’ ,.;")
+    (goto-char (point-max))
+    (donkey--back-to-symbol-char)
+    (should (equal (point) 2)))
+  ;; And stays put when there is nothing behind.
+  (dolist (text '("   " ",,, ;;;" "‘’‘’"))
+    (with-temp-buffer
+      (insert text)
+      (goto-char 3)
+      (donkey--back-to-symbol-char)
+      (should (equal (list text (point)) (list text 3))))))
+
+(ert-deftest donkey-trim-symbol-prefix-keeps-a-symbol-made-of-punctuation ()
+  "The prefix trim will not trim away the thing it was called to keep.
+
+The ceiling, and the mirror of the floor in
+`donkey--trim-symbol-punctuation' -- which has its own regression, from
+`m W' on a buffer of \"...\" marking an EMPTY region.  Nothing reaches
+this one through the command: a selection whose first character is
+punctuation is one the mark refused before it got here.  So it is called
+directly, on the buffer that would show it, rather than left as a claim.
+
+\"...\" in `text-mode' is that buffer.  Every character is punctuation
+there -- Lisp gives \".\" symbol syntax instead, which is why the mode
+matters -- so without the ceiling the trim walks the whole buffer and
+leaves point at the end of it."
+  (dolist (text '("..." "‘‘‘" ",,,"))
+    (with-temp-buffer
+      (insert text)
+      (text-mode)
+      (goto-char (point-min))
+      (donkey--trim-symbol-prefix)
+      (should (equal (list text (point)) (list text (point-min)))))))
+
+(ert-deftest donkey-mark-symbol-counts-trim-the-outer-ends ()
+  "A counted run trims its own two ends and keeps what is between them.
+
+The sign of the count decides which end each motion reaches first, so
+the trims are paired with the ENDS rather than with the motions.  Run
+the other way around, a negative count came out holding the quote it
+started behind.
+
+Punctuation BETWEEN two marked symbols is interior and stays, which is
+the rule `donkey-mark-symbol-backward' already documents."
+  (let ((text "press ‘C-x C-f’ now"))
+    (should (equal (donkey-test--symbol-in 'emacs-lisp-mode text 9 2)
+                   "C-x C-f"))
+    (should (equal (donkey-test--symbol-in 'emacs-lisp-mode text 13 -1)
+                   "C-x"))
+    (should (equal (donkey-test--symbol-in 'emacs-lisp-mode text 16 -1)
+                   "C-x"))
+    ;; Interior punctuation, both directions.
+    (should (equal (donkey-test--symbol-in 'emacs-lisp-mode text 9 3)
+                   "C-x C-f’ now"))
+    (should (equal (donkey-test--symbol-in 'emacs-lisp-mode text 13 -2)
+                   "press ‘C-x"))))
+
+(ert-deftest donkey-mark-symbol-and-mark-word-agree-about-the-gap ()
+  "The two mark keys answer the same question the same way.
+
+\\=`m w' and \\=`m W' both mark the thing BEHIND point from a gap, and
+they disagreed wherever punctuation sat between: the word key stepped
+back with `backward-word' and found its word, the symbol key stepped back
+with `backward-sexp' and landed on punctuation, where it refused.  The
+report that opened this was a user who had learned the word key\\='s reach
+and expected the symbol key to have it too.
+
+Where neither can find anything, they still both refuse."
+  (dolist (case (list
+                 (list 'emacs-lisp-mode "(foo bar)\n\n" 12 "bar" "bar")
+                 (list 'emacs-lisp-mode "press ‘C-x C-f’ now" 11 "x" "C-x")
+                 (list 'emacs-lisp-mode "(foo)\n\n" 8 "foo" "foo")
+                 (list 'fundamental-mode ",,, ... ;;;" 6 nil nil)
+                 (list 'text-mode "   " 2 nil nil)))
+    (cl-destructuring-bind (mode text pos word symbol) case
+      (should (equal (list text (donkey-test--symbol-in mode text pos))
+                     (list text symbol)))
+      (should (equal
+               (list text
+                     (with-temp-buffer
+                       (insert text)
+                       (let ((inhibit-read-only t)) (funcall mode))
+                       (goto-char pos)
+                       (condition-case nil
+                           (progn (donkey-mark-word)
+                                  (buffer-substring-no-properties
+                                   (region-beginning) (region-end)))
+                         (user-error nil))))
+               (list text word))))))
 
 (ert-deftest donkey-mark-symbol-bob-trailing-comma ()
   "Symbol at BOB with trailing comma."
@@ -6047,15 +6262,24 @@ quote, nine characters from where the key was pressed.
 `donkey-mark-symbol-refusal-does-not-leave-point-where-it-searched'
 covers the other half of the same rule -- there the step back SIGNALS
 at the buffer edge, so point never moves and the restore is not what
-saves it."
+saves it.
+
+That reported case is not a refusal any more, and no longer belongs
+here.  Point is put back onto a symbol CHARACTER now rather than onto a
+sexp boundary, which both marks the name where the report was filed and
+takes the displacement away: a step that only moves when it finds a symbol
+cannot strand the cursor on a refusal.  See
+`donkey-mark-symbol-in-a-key-sequence-marks-the-symbol-behind'.  The
+word key keeps its own step back, `backward-word', which still walks to
+the start of the buffer when there is no word to find -- measured, from
+position 6 to position 1 -- so the rule is still worth its test."
   (dolist (case (list
-                 ;; The reported shape: the step back succeeds, over a
-                 ;; whole quoted sequence, and then there is no symbol.
-                 (list 'emacs-lisp-mode "press ‘C-x C-f’ now" 11
-                       #'donkey-mark-symbol "No symbol at or before point")
-                 ;; And a buffer with no word in it at all, where the
-                 ;; step back walks to the beginning before refusing.
+                 ;; A buffer with no word in it at all, where the step
+                 ;; back walks to the beginning before refusing.
                  (list 'fundamental-mode ",,, ... ;;;" 6
+                       #'donkey-mark-word "No word at or before point")
+                 ;; The same, with the walk starting further in.
+                 (list 'text-mode ". . . . ." 5
                        #'donkey-mark-word "No word at or before point")))
     (cl-destructuring-bind (mode text pos command expected) case
       (with-temp-buffer

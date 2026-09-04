@@ -489,10 +489,27 @@ it while =m w= takes only =send=, =mail= or =to=.
 
 Periods and commas are the mode's call too, and modes disagree: in
 =emacs-lisp-mode= =m W= on =foo.bar= takes the whole of it, while in
-=python-mode= and =text-mode= it stops at =foo=. One part is DONKEY's
-own rather than the mode's — a trailing =.= or =,= is always dropped, so
-=m W= on the last name of a sentence gives you the name without its full
-stop even where the mode would have included it.
+=python-mode= and =text-mode= it stops at =foo=.
+
+One part is DONKEY's own rather than the mode's: punctuation at either
+END of the selection is dropped. A trailing =.= or =,= goes, so =m W= on
+the last name of a sentence gives you the name without its full stop even
+where the mode would have included it — and so do the quotes around a
+name written in prose, which is how Emacs prints one in its own help.
+=m W= on the second half of a quoted key sequence gives you that half,
+not that half and a curly quote.
+
+Punctuation is the test, and an expression prefix is not punctuation: in
+Lisp, =m W= on ='bar= still gives you ='bar=, backquote and =#'= the
+same, because those introduce the form after them and belong with it.
+Punctuation between two marked symbols is interior and stays, so
+=C-u 3 m W= across a quoted sequence keeps the quote in the middle of
+what it selected.
+
+The same rule decides where =m W= looks from a gap. It marks the symbol
+BEHIND point, the way =m w= marks the word behind, and it reaches across
+whatever punctuation is in the way to find it — standing between the two
+halves of a quoted key sequence, =m W= marks the half on the left.
 
 =m w=, =m W=, =m s= and =m p= all report =No ... at or before point=
 rather than marking nothing when there is nothing of substance to mark —
