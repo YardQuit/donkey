@@ -1548,6 +1548,88 @@ functions."
   (should-not (memq #'donkey--check-post-command-non-editing post-command-hook))
   (should-not (memq #'donkey--update-cursor-passive post-command-hook)))
 
+(ert-deftest donkey-mode-disable-takes-the-insert-exit-guard-with-it ()
+  "Disabling removes the exit guard's hook, and the flag it exists to clear.
+
+The third buffer-local hook of the same kind, and the last to be found.
+`donkey--intercept-quit-in-insert' puts `donkey--reset-exit-guard' on
+this buffer\\='s `pre-command-hook' when \\=`C-g' leaves Insert state, to
+run once and take itself off; disabling in the window between the two
+left it on the hook of a buffer whose mode is off.  Its two siblings on
+`deactivate-mark-hook' were swept when that hook was looked at -- this
+one is on a different hook, which is why looking at hooks one at a time
+missed it twice.
+
+The flag has to go with it.  Nothing else clears
+`donkey--just-exited-from-insert', so removing the hook by itself would
+strand it set for the life of the buffer, and
+`donkey--intercept-quit-in-insert' reads it before firing: with \\=`C-g'
+taken by another package -- the case that backup exists for -- a
+stranded flag means Insert state cannot be left that way at all.  Both
+halves measured before the fix was written."
+  (unwind-protect
+      (let ((buf (get-buffer-create "*donkey-exit-guard-test*")))
+        (with-current-buffer buf
+          (donkey-mode 1)
+          (donkey-insert-mode 1)
+          ;; The shape `donkey--intercept-quit-in-insert' leaves behind.
+          (add-hook 'pre-command-hook #'donkey--reset-exit-guard -100 t)
+          (setq donkey--just-exited-from-insert t)
+          (should (memq #'donkey--reset-exit-guard pre-command-hook))
+          (donkey-mode -1)
+          (should-not (memq #'donkey--reset-exit-guard pre-command-hook))
+          (should-not donkey--just-exited-from-insert)))
+    (when (get-buffer "*donkey-exit-guard-test*")
+      (kill-buffer "*donkey-exit-guard-test*"))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-mode-disable-cancels-the-overlay-cleanup-timer ()
+  "Disabling cancels the idle timer, and says nothing while doing it.
+
+`donkey--schedule-overlay-cleanup' arms an idle timer whose callback
+reaches into the overlay lists of Smartparens, `show-paren' and
+Highlight Parentheses.  Left pending, it fires after the mode is off and
+sweeps another package\\='s overlays on a disabled mode\\='s behalf.  It is
+cancelled rather than run out: those packages redraw their own overlays
+on the next command, and a mode being switched off has no business in
+their lists.
+
+The guard on the cancel is the other half, and is why the silence is
+asserted here.  `donkey--disable-in-buffer' visits EVERY buffer, almost
+none of which ever armed a timer, and `cancel-timer' signals
+`wrong-type-argument' on nil.  `donkey--sweep-buffers' catches that and
+reports it per buffer, so an unguarded cancel turned one pending timer
+into a message for every buffer open -- forty-four of them in the run
+that showed it."
+  (unwind-protect
+      (let ((buf (get-buffer-create "*donkey-timer-test*"))
+            (bulk nil)
+            (said nil))
+        (with-current-buffer buf
+          (donkey-mode 1)
+          (donkey--schedule-overlay-cleanup)
+          (let ((timer donkey--deferred-overlay-cleanup-timer))
+            (should timer)
+            (should (memq timer timer-idle-list))
+            ;; Buffers with no timer of their own, which the sweep also
+            ;; visits and which the guard is what protects.
+            (dotimes (i 5)
+              (push (get-buffer-create (format "*donkey-timer-bulk-%d*" i)) bulk))
+            (cl-letf (((symbol-function 'message)
+                       (lambda (fmt &rest args)
+                         (when fmt (push (apply #'format fmt args) said)))))
+              (donkey-mode -1))
+            (should-not (memq timer timer-idle-list))
+            (should-not donkey--deferred-overlay-cleanup-timer)
+            (should-not said)
+            (dolist (b bulk) (kill-buffer b)))))
+    (dotimes (i 5)
+      (when (get-buffer (format "*donkey-timer-bulk-%d*" i))
+        (kill-buffer (format "*donkey-timer-bulk-%d*" i))))
+    (when (get-buffer "*donkey-timer-test*")
+      (kill-buffer "*donkey-timer-test*"))
+    (donkey-mode -1)))
+
 (ert-deftest donkey-mode-disable-disarms-mark-run-mode ()
   "Disabling takes mark run mode down with it.
 

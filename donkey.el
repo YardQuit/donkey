@@ -7805,6 +7805,38 @@ so one buffer's erroring hook cannot strand the rest."
   ;; rather than asking what is on the hook.
   (remove-hook 'deactivate-mark-hook #'donkey--clear-selection-hint t)
   (setq donkey--linear-selection-active nil)
+  ;; The third of the same kind, on `pre-command-hook' rather than on
+  ;; `deactivate-mark-hook', which is why the sweep of that hook did not
+  ;; find it.  `donkey--intercept-quit-in-insert' installs it locally
+  ;; when \\=`C-g' leaves Insert state, to run once and take itself off;
+  ;; disabling in the window between the two left it on the hook of a
+  ;; buffer whose mode is off.
+  ;;
+  ;; The flag goes with it, and must: nothing else clears
+  ;; `donkey--just-exited-from-insert', so removing the hook alone would
+  ;; strand it set for the life of the buffer.  What that costs is the
+  ;; backup this pair exists for -- with \\=`C-g' bound by some other
+  ;; package, `donkey--intercept-quit-in-insert' tests the flag before
+  ;; it fires, and a stranded one means Insert state cannot be left that
+  ;; way at all.  Measured, both halves.  The states are swept off above
+  ;; and neither sets the flag, so here is late enough.
+  (remove-hook 'pre-command-hook #'donkey--reset-exit-guard t)
+  (setq donkey--just-exited-from-insert nil)
+  ;; And the idle timer `donkey--schedule-overlay-cleanup' arms, which
+  ;; otherwise fires after the mode is off and reaches into the overlay
+  ;; lists of `smartparens', `show-paren' and `highlight-parentheses'.
+  ;; It is cancelled rather than run: a mode being switched off has no
+  ;; business sweeping another package's overlays, and those packages
+  ;; redraw their own on the next command.
+  ;;
+  ;; Guarded, and the guard is the point: this sweep visits EVERY
+  ;; buffer, almost none of which ever armed a timer, and
+  ;; `cancel-timer' signals `wrong-type-argument' on nil -- which
+  ;; `donkey--sweep-buffers' would catch and report once per buffer,
+  ;; turning one stray timer into a screen of errors on disable.
+  (when donkey--deferred-overlay-cleanup-timer
+    (cancel-timer donkey--deferred-overlay-cleanup-timer)
+    (setq donkey--deferred-overlay-cleanup-timer nil))
   ;; And the anchor that hook exists to clear.  With the hook just
   ;; removed nothing else can, so a live \"V\" session at the moment of
   ;; disabling left its anchor in the buffer for good and carried it
