@@ -3150,12 +3150,82 @@ a sample, so adding a delimiter that a count cannot reach fails here."
 ;;; Zero and negative counts on the mark commands
 ;;; ---------------------------------------------------------------------------
 
+(ert-deftest donkey-mark-sentence-restores-point-when-its-motions-signal ()
+  "The sentence handlers put the cursor back too, not only the blank guard.
+
+`donkey-mark-sentence' has three ways to refuse.  The one every ordinary
+buffer reaches is the blank guard, and fourteen shapes were tried --
+empty, spaces, newlines, tabs, form feeds, narrowed to nothing, and with
+the variable `sentence-end' set to something that cannot match -- every
+one of which went that way.  The other two convert a bare signal from
+the sentence motions into a report, and nothing found here reaches
+them.
+
+They are held to the same rule by making the motion do what the handler
+exists for: walk, and then signal.  A stub that signals without moving
+would pass whether or not the restore is there, which is no test at
+all."
+  (dolist (case (list (cons 'forward-sentence #'donkey-mark-sentence)
+                      (cons 'mark-end-of-sentence #'donkey-mark-sentence)))
+    (with-temp-buffer
+      (insert "One here.  Two here.")
+      (text-mode)
+      (goto-char 12)
+      (let ((transient-mark-mode t) (this-command nil) (last-command nil))
+        (cl-letf (((symbol-function (car case))
+                   (lambda (&rest _)
+                     (goto-char (point-min))
+                     (error "Invalid search bound (wrong side of point)"))))
+          (should-error (funcall (cdr case)) :type 'user-error))
+        (should (equal (cons (car case) (point)) (cons (car case) 12)))))))
+
+(ert-deftest donkey-object-end-before-never-passes-its-origin ()
+  "The far end of a negative count stays behind the point it counts from.
+
+Going back one object and forward one lands on the end of the object
+behind, which is the answer whenever the caller has normalized point onto
+an object start -- and both callers do.  From anywhere else the forward
+step returns past where it started: measured across two modes and eleven
+buffers, 184 of 320 positions.  The clamp is what makes the helper answer
+its own question rather than its callers\\=' question, and mutation
+testing is what showed it is the callers, not the helper, keeping that
+true today.
+
+The exact answers below are the normalized case, which is the one the
+commands ask for."
+  (with-temp-buffer
+    (insert "one two three")
+    (text-mode)
+    ;; Normalized origins: the end of the object behind.
+    (should (equal (donkey--object-end-before 5 #'backward-word #'forward-word)
+                   4))
+    (should (equal (donkey--object-end-before 9 #'backward-word #'forward-word)
+                   8))
+    ;; Anywhere else: never past where it was asked from.
+    (dolist (origin '(1 2 3 4 6 7 8 10 11 12 13 14))
+      (should (equal (list origin
+                           (<= (donkey--object-end-before
+                                origin #'backward-word #'forward-word)
+                               origin))
+                     (list origin t))))))
+
 (ert-deftest donkey-mark-word-negative-count-marks-backward ()
   "A negative count marks that many words before the one point is on.
 
 Regression: the count was clamped with `(max 1 count)', so a negative
 count marked one word FORWARD -- the opposite direction from the one
-asked for.  `mark-word' reads the sign natively."
+asked for.  `mark-word' reads the sign natively.
+
+The selection used to arrive with a trailing space -- \"alpha beta \"
+where two words were asked for.  `mark-word' measures a negative count
+from POINT, and point is the START of the word being counted from, so
+the separator in front of it came along; the symbol key, doing its own
+arithmetic, gave \"foo-a bar-b\" from the same shape.  The two agree now
+-- see `donkey--object-end-before'.
+
+The layout came out inverted for the same reason, mark at the start and
+point at the end, and is the family's way round now: point at the start,
+mark at the far end, which is what the next key in a run grows from."
   (let ((transient-mark-mode t))
     (with-temp-buffer
       (insert "alpha beta gamma")
@@ -3163,7 +3233,70 @@ asked for.  `mark-word' reads the sign natively."
       (donkey-mark-word -2)
       (should (equal (buffer-substring-no-properties (region-beginning)
                                                      (region-end))
-                     "alpha beta ")))))
+                     "alpha beta"))
+      (should (equal (point) (region-beginning))))))
+
+(ert-deftest donkey-a-negative-count-stops-at-the-object-it-counts-from ()
+  "A negative count reaching past the buffer marks what there is and stops.
+
+The far end belongs to the object BEHIND point, so a count with nothing
+like enough room stops there rather than running on.  `donkey-mark-symbol'
+counted forward again from the start it had reached, which reaches PAST
+the position the count was measured from once the buffer runs out: asked
+for the three symbols before the second word of a five-word buffer it
+marked the second and third words too, the very words the count was
+counting away from.  `donkey-mark-word' clamped correctly and is here to
+say so.
+
+Every other counted command in this package marks what there is and
+stops, and these two say they do."
+  (let ((transient-mark-mode t))
+    (dolist (command (list #'donkey-mark-word #'donkey-mark-symbol))
+      ;; Point on the second word: only one word lies behind it.
+      (dolist (count '(-1 -2 -3))
+        (with-temp-buffer
+          (insert "one two three four five")
+          (goto-char 5)
+          (let ((this-command nil) (last-command nil))
+            (funcall command count))
+          (should (equal (list command count
+                               (buffer-substring-no-properties
+                                (region-beginning) (region-end)))
+                         (list command count "one")))))
+      ;; And on the third, where two lie behind.
+      (dolist (count '(-2 -3))
+        (with-temp-buffer
+          (insert "one two three four five")
+          (goto-char 9)
+          (let ((this-command nil) (last-command nil))
+            (funcall command count))
+          (should (equal (list command count
+                               (buffer-substring-no-properties
+                                (region-beginning) (region-end)))
+                         (list command count "one two"))))))))
+
+(ert-deftest donkey-the-two-object-keys-agree-about-a-negative-count ()
+  "\\=`m w' and \\=`m W' select the same text when the objects are the same.
+
+Plain words are both, so the two keys have no room to disagree about
+them, and they did: the word key took the separator with it and the
+symbol key did not.  Whatever else the count does, the pair of them
+answering differently is the part a reader would have to keep in mind."
+  (let ((transient-mark-mode t))
+    (dolist (count '(-1 -2 -3))
+      (let ((results
+             (mapcar
+              (lambda (command)
+                (with-temp-buffer
+                  (insert "one two three four five")
+                  (goto-char 15)
+                  (let ((this-command nil) (last-command nil))
+                    (funcall command count))
+                  (buffer-substring-no-properties
+                   (region-beginning) (region-end))))
+              (list #'donkey-mark-word #'donkey-mark-symbol))))
+        (should (equal (cons count results)
+                       (cons count (list (car results) (car results)))))))))
 
 (ert-deftest donkey-mark-word-zero-count-marks-nothing ()
   "A count of zero marks an empty region, as `mark-word' does."
@@ -5099,14 +5232,19 @@ was on screen; `b' walked point back into the region and shrank it to
   "A count reaching behind point still leaves a run that grows forward.
 
 `donkey-mark-word' reads a negative COUNT as marking the words BEFORE
-the one point normalizes onto, which finishes with the mark at the
-selection\'s start -- the family layout inside out.  The next `w' then
-walked the mark forward from there and ate into the selection instead
-of extending it.  Pinned in both spellings, the mode\'s and the
-prefix\'s, since the count belongs to the mark command rather than to
-the mode."
+the one point normalizes onto.  That used to finish with the mark at the
+selection\'s start -- the family layout inside out -- and the next `w'
+walked the mark forward from there and ate into the selection instead of
+extending it.  The layout is the family\'s way round now, and the
+extension it was written for is the same either way, which is the point:
+the next key grows the selection whichever end the count left the mark
+at.  Pinned in both spellings, the mode\'s and the prefix\'s, since the
+count belongs to the mark command rather than to the mode.
+
+The first selection lost a trailing space when the two object keys were
+made to agree about what a negative count reaches back to."
   (donkey-mark-test--keys "for text that is not saved" "w w w l M C-u -3 w"
-    (should (equal (donkey-mark-test--selection) "for text that ")))
+    (should (equal (donkey-mark-test--selection) "for text that")))
   (donkey-mark-test--keys "for text that is not saved" "w w w l M C-u -3 w w"
     (should (equal (donkey-mark-test--selection) "for text that is")))
   (donkey-mark-test--keys "for text that is not saved"
@@ -6280,7 +6418,27 @@ position 6 to position 1 -- so the rule is still worth its test."
                        #'donkey-mark-word "No word at or before point")
                  ;; The same, with the walk starting further in.
                  (list 'text-mode ". . . . ." 5
-                       #'donkey-mark-word "No word at or before point")))
+                       #'donkey-mark-word "No word at or before point")
+                 ;; The sentence and paragraph keys walk too -- forward
+                 ;; to a sentence end and back, or back to a paragraph
+                 ;; start -- and reported from wherever that left them.
+                 ;; Measured before the fix: pressed at 3, all four came
+                 ;; to rest at 1.
+                 (list 'text-mode "    " 3
+                       #'donkey-mark-sentence "No sentence at or before point")
+                 (list 'text-mode "    " 3
+                       #'donkey-mark-sentence-backward
+                       "No sentence at or before point")
+                 (list 'text-mode "    " 3
+                       #'donkey-mark-paragraph "No paragraph at or before point")
+                 (list 'text-mode "    " 3
+                       #'donkey-mark-paragraph-backward
+                       "No paragraph at or before point")
+                 (list 'text-mode "\n\n\n\n" 3
+                       #'donkey-mark-sentence "No sentence at or before point")
+                 (list 'text-mode "\n\n\n\n" 3
+                       #'donkey-mark-paragraph
+                       "No paragraph at or before point")))
     (cl-destructuring-bind (mode text pos command expected) case
       (with-temp-buffer
         (funcall mode)

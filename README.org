@@ -747,6 +747,12 @@ stock =C-d=: =C-u -2 x= deletes the two characters *before* point, and
 with a positive count, running out of buffer stops at the edge and
 reports instead of erroring.
 
+The selection ends where the object behind the cursor ends, so it holds
+those objects and nothing else — no separator between the last of them
+and the one the count was measured from, and nothing at all from ahead
+of the cursor when the buffer runs out first. =m w= and =m W= answer
+alike.
+
 A count of *zero* does nothing at all — =C-u 0 x= deletes no characters,
 =C-u 0 y= leaves the kill ring untouched rather than pushing an empty
 string over whatever =p= was about to paste. =C-u 0 c= is the one
@@ -871,8 +877,8 @@ level down. Outside it they are untouched.
 =*= swaps point and mark, so the motions adjust the selection's
 *other* end — vi's =o= in visual mode. The object keys own fixed ends
 and simply trade back before they grow, so =M w * w= selects what
-=M w w= selects; the same goes for a motion that has walked point past
-the mark, and for a selection a negative count left inside out.
+=M w w= selects, and the same goes for a motion that has walked point
+past the mark.
 
 Pressed with a selection already active — a =V= session, a =v= region,
 or one the =m=-prefixed keys built — =M= *adopts* it into the mode

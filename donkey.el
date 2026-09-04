@@ -4457,8 +4457,21 @@ matching how `mark-word' itself reads its argument."
           ;; this is on.  It is on by default; turning it off was all
           ;; it took to make the extension signal `mark-inactive'
           ;; instead of growing.  See `donkey--normalize-mark-run'.
-          (mark-even-if-inactive t))
-      (mark-word (or count 1) extend)))
+          (mark-even-if-inactive t)
+          (n (or count 1)))
+      (if (and (not extend) (< n 0))
+          ;; `mark-word' measures a negative count from POINT, and point
+          ;; is the START of the word being counted from, so the
+          ;; separator in front of it came along -- see
+          ;; `donkey--object-end-before'.  Only the fresh press is taken
+          ;; over; a run continuing with a negative count is native's
+          ;; question and stays native's.
+          (let ((far (donkey--object-end-before
+                      (point) #'backward-word #'forward-word)))
+            (forward-word n)
+            (push-mark far t)
+            (activate-mark))
+        (mark-word n extend))))
   (message "Word marked"))
 
 (defun donkey--mark-backward (count motion delegate label)
@@ -4539,13 +4552,52 @@ it after the skip returned the skip's own position."
       (skip-chars-forward "[:space:]\n" end)
       (= (point) end))))
 
-(defun donkey--refuse-blank-mark (object)
+(defun donkey--object-end-before (origin backward forward)
+  "Return where the object just before ORIGIN ends.
+
+The far end of a selection a NEGATIVE count asks for.  Such a count
+names the objects BEHIND the one point normalizes onto, so the selection
+stops where the nearest of them ends: not at ORIGIN, which is the start
+of the object being counted from, and not wherever counting the same
+number of objects forward again happens to land.
+
+Both of those were tried, and each was wrong in its own direction.
+`donkey-mark-word\=' handed the negative case to `mark-word\=', which
+measures from point, so the separator came with it -- asked for the word
+before \"four\" it marked \"three \" rather than \"three\".
+`donkey-mark-symbol\=' counted forward again from the start it had
+reached, which overshoots as soon as the buffer runs out behind: asked
+for the three symbols before the second word of a five-word buffer, it
+marked the second and third words as well, reaching past the very point
+the count was measured from.
+
+BACKWARD and FORWARD are the object\\='s own motions.  Going back one and
+forward one lands on the end of the object behind, from any position a
+caller has normalized; the `min\=' is for a caller that has not, where
+FORWARD could return past where it started."
+  (save-excursion
+    (goto-char origin)
+    (funcall backward 1)
+    (funcall forward 1)
+    (min (point) origin)))
+
+(defun donkey--refuse-blank-mark (object &optional origin)
   "Drop the region and report when it is nothing but whitespace.
 
 OBJECT names what was asked for, so the message reads \"No sentence at
 or before point\" or \"No paragraph at or before point\" -- the two
 commands whose motions walk to the end of a blank buffer and back
 rather than signaling, and so end up \"marking\" the blank.
+
+ORIGIN is where the key was pressed, and point goes back there before
+the report.  Both callers walk point about looking for an object before
+they know whether there is one -- forward to a sentence end and back, or
+back to a paragraph start -- and a refusal that leaves it where the
+search gave up has moved the cursor and marked nothing, which reads as
+the key half working.  Measured on a buffer of whitespace with the key
+pressed at position 3: the cursor came to rest at position 1.
+`donkey-mark-word' and `donkey-mark-symbol' answer the same way, and
+did so first; this is the same rule reaching the other two keys.
 
 For a FRESH press only, which is why the callers keep their own
 condition: a run may legitimately cover blank -- `M J' on an indented
@@ -4554,6 +4606,8 @@ it -- and refusing there deactivated the mark, throwing away a
 selection the user could see over the state the run started from."
   (when (donkey--region-blank-p)
     (deactivate-mark)
+    (when origin
+      (goto-char origin))
     (user-error "No %s at or before point" object)))
 
 (defun donkey-mark-sentence (&optional count)
@@ -4666,7 +4720,12 @@ continuation reaches `mark-end-of-sentence's own test."
     (end-of-buffer
      (goto-char (point-max))
      (backward-sentence 1))
-    (error (user-error "No sentence at or before point")))
+    ;; Point goes back before reporting, for the reason
+    ;; `donkey--refuse-blank-mark' gives: the normalization above has
+    ;; already walked forward to a sentence end and back by the time this
+    ;; is reached.
+    (error (goto-char origin)
+           (user-error "No sentence at or before point")))
   ;; Continuing a run any other family member started or last grew:
   ;; the extension lives inside `mark-end-of-sentence', whose own test
   ;; is `(eq last-command this-command)' -- it cannot know about
@@ -4690,13 +4749,14 @@ continuation reaches `mark-end-of-sentence's own test."
       ;; FOUR, so `C-u m s' hit this on any buffer of three sentences or
       ;; fewer -- confirmed on "One thing.  Two thing.  Three thing.".
       (end-of-buffer (push-mark (point-max) nil t))
-      (error (user-error "No sentence at or before point"))))
+      (error (goto-char origin)
+             (user-error "No sentence at or before point"))))
   ;; Going forward first means the motions no longer signal in a buffer
   ;; holding nothing but whitespace -- they simply walk to its end and
   ;; back, "marking" the blank.  Reject that here so such a buffer still
   ;; reports rather than selecting nothing of substance.
   (unless extending
-    (donkey--refuse-blank-mark "sentence"))
+    (donkey--refuse-blank-mark "sentence" origin))
   (message "Sentence marked")))
 
 (defun donkey-mark-sentence-backward (&optional count)
@@ -4802,6 +4862,7 @@ marks nothing, matching how `forward-paragraph' reads its argument."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (let ((n (or count 1))
+        (origin (point))
         (extending (donkey--mark-run-continuing-p)))
     (if extending
         ;; Grown by moving the MARK, which is the end this command owns
@@ -4836,7 +4897,7 @@ marks nothing, matching how `forward-paragraph' reads its argument."
         (goto-char start))
       (activate-mark))
     (unless (or extending (= n 0))
-      (donkey--refuse-blank-mark "paragraph"))
+      (donkey--refuse-blank-mark "paragraph" origin))
     (message "Paragraph marked")))
 
 (defun donkey-mark-paragraph-backward (&optional count)
@@ -4917,29 +4978,34 @@ matching how `forward-sexp' reads its argument."
       (goto-char origin)
       (user-error "No symbol at or before point"))
     (beginning-of-thing 'symbol))
-    (forward-sexp n)
-    ;; Each trim belongs to an END of the selection, and the sign of the
-    ;; count decides which end the motions reach first: a forward run
-    ;; leaves point at the far end, where a trailing "," or "." is the
-    ;; thing to drop, and a negative count leaves it at the start, where
-    ;; the thing to drop is a leading quote.  Running the wrong one here
-    ;; reaches into the symbol NEXT to the selection rather than trimming
-    ;; the selection's own edge.  A count of zero marks nothing and needs
-    ;; neither.
-    (if (> n 0)
-        (donkey--trim-symbol-punctuation)
-      (when (< n 0)
+    ;; Each trim belongs to an END of the selection, and the two
+    ;; directions reach their ends differently.  A forward count walks to
+    ;; the far end and back, so both ends are positions the motions
+    ;; visit.  A negative count walks to the START and takes its far end
+    ;; from the object behind point -- counting forward again from that
+    ;; start reaches past point once the buffer runs out behind, which is
+    ;; what `donkey--object-end-before' exists to stop.  A count of zero
+    ;; marks nothing and needs neither trim.
+    (if (< n 0)
+        (let ((far (save-excursion
+                     (goto-char (donkey--object-end-before
+                                 (point) #'backward-sexp #'forward-sexp))
+                     (donkey--trim-symbol-punctuation)
+                     (point))))
+          (forward-sexp n)
+          (donkey--trim-symbol-prefix)
+          (push-mark far t))
+      (forward-sexp n)
+      (when (> n 0)
+        (donkey--trim-symbol-punctuation))
+      (push-mark (point) t)
+      ;; Back over the same number of symbols the first step covered.
+      ;; Going back one regardless left the region holding only the LAST
+      ;; symbol of a counted run -- a count of 2 over "foo-a bar-b"
+      ;; marked just "bar-b".
+      (backward-sexp n)
+      (when (> n 0)
         (donkey--trim-symbol-prefix)))
-    (push-mark (point) t)
-    ;; Back over the same number of symbols the first step covered.
-    ;; Going back one regardless left the region holding only the LAST
-    ;; symbol of a counted run -- a count of 2 over "foo-a bar-b"
-    ;; marked just "bar-b".
-    (backward-sexp n)
-    (if (> n 0)
-        (donkey--trim-symbol-prefix)
-      (when (< n 0)
-        (donkey--trim-symbol-punctuation)))
     (activate-mark)))
   (message "Symbol marked"))
 
