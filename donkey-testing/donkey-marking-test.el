@@ -3296,6 +3296,17 @@ full suite."
                (prefix-arg nil) (current-prefix-arg nil)
                (this-command nil) (last-command nil))
            (switch-to-buffer (get-buffer-create "*donkey-mark-test*"))
+           ;; Nothing from outside is allowed to be armed when the keys
+           ;; go in.  Mark run mode's map lives in
+           ;; `overriding-terminal-local-map', which is terminal-wide:
+           ;; a run left armed anywhere reaches every buffer, so a
+           ;; fresh one is no protection and the cleanup below only
+           ;; covers what THIS file left.  The terminal-frame CI job
+           ;; failed exactly this way -- `M' adopting a selection that
+           ;; the test's own keys had not made -- and the green that
+           ;; followed came of an unrelated test running the harness
+           ;; once more first, which is not a thing to rely on.
+           (donkey--mark-run-exit)
            (fundamental-mode)
            (erase-buffer)
            (insert ,text)

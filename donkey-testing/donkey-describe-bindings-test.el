@@ -2205,14 +2205,14 @@ would run by turning the mode off and pressing it."
       (should (equal changed nil)))))
 
 (ert-deftest donkey-a-major-modes-own-keys-survive-in-dired ()
-  "A key dired bound that DONKEY does not bind still runs dired's command.
+  "A key Dired bound that DONKEY does not bind still runs Dired's command.
 
 The claim the README makes about special buffers, asked of a real
-dired buffer rather than of the keymaps: suppression is done by
+Dired buffer rather than of the keymaps: suppression is done by
 remapping `self-insert-command', not by claiming every letter, so a
 letter DONKEY leaves alone reaches the major mode.
 
-The letters are not listed here.  Which ones dired keeps is dired's
+The letters are not listed here.  Which ones Dired keeps is Dired's
 business and changes between Emacs versions; what must hold is the
 rule -- if DONKEY does not bind it, the mode still gets it."
   (let ((buf (dired-noselect donkey-test--source-dir)))
