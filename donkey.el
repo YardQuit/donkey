@@ -5721,10 +5721,10 @@ Lesson 2 -- counts
 A count works wherever \"how many\" means something, and it always means
 exactly that.  Give it as C-u N before the key.
 
-Every motion takes one, and so does every \`m' key that selects a thing,
-along with \[donkey-delete], \[donkey-copy], \[donkey-change] and \[donkey-yank].  The keys with no \"how many\"
-in them -- entering INSERT, toggling a state, asking for help -- ignore a
-count rather than refusing it, so a guess there costs nothing.
+Every motion takes one, and so does every \\`m' key that selects a thing,
+along with DONKEY-DELETE-KEYS, \\[donkey-copy], \\[donkey-change] and \\[donkey-yank].  The keys with no \"how many\" in them --
+entering INSERT, toggling a state, asking for help -- ignore a count
+rather than refusing it, so a guess there costs nothing.
 
 If you are coming from vi, note the \\`C-u'.  A bare \\`3' does NOT start a
 count here -- digits are unbound in NORMAL state.  Worse than doing
@@ -5844,22 +5844,22 @@ same thing its forward partner would.  Runs mix objects, too: each
 press adds one object of its own kind at its own end, so \\[donkey-mark-word] \\[donkey-mark-sentence]
 grows the word selection forward to the end of its sentence.
 
-\\[donkey-mark-run-toggle] holds the prefix down for you.  In mark run mode the bare
-letters w W b B s S mark and grow exactly as their m-prefixed keys do,
-so \\`M' \\`w' \\`w' \\`b' selects what three prefixed presses select.  A
-reminder of the object keys stays in the echo area for as long as the
-mode is on, and goes when the mode does -- as one does for v, V and
-m v too, each naming what its own selection answers to.  It names the keys whose
-SUBJECT the mode changes and no others -- w moves by a word in normal
-state and marks one here -- while a key that keeps its subject is left
-out: h j k l still move, J and K still work on lines, u and U still
-step back and forward.  All of them are below.
+\\[donkey-mark-run-toggle] holds the prefix down for you.  In mark run mode the bare letters
+w W b B s S mark and grow exactly as their m-prefixed keys do, so \\`M' \\`w' \\`w' \\`b'
+selects what three prefixed presses select.  A reminder of the object
+keys stays in the echo area for as long as the mode is on, and goes
+when the mode does -- as one does for v, V and m v too, each naming
+what its own selection answers to.  It names the keys whose SUBJECT the
+mode changes and no others -- w moves by a word in normal state and
+marks one here -- while a key that keeps its subject is left out:
+h j k l still move, J and K still work on lines, u and U still step
+back and forward.  All of them are below.
 
 The press arrives holding the word under the cursor, that being what
-nearly every run starts from -- so \\`M' alone is a selected word, and
-\\`M' DONKEY-DELETE-KEYS takes it.  On whitespace the mode arrives empty
-instead of reaching back for the word above.  The head start is not
-the run's first press: the letters behave exactly as they always did.
+nearly every run starts from -- so \\`M' alone is a selected word, and \\`M' DONKEY-DELETE-KEYS
+takes it.  On whitespace the mode arrives empty instead of reaching
+back for the word above.  The head start is not the run's first press:
+the letters behave exactly as they always did.
 
 >> Put the cursor on \"three\" in the ---> line and press \\[donkey-mark-run-toggle], then
    \\`w' \\`w': two words are selected, no prefix in sight.  Press \\`b'
@@ -5871,10 +5871,10 @@ the run's first press: the letters behave exactly as they always did.
 J and K grow the selection by whole lines, newline and all, so a
 delete after them removes the lines outright.  h j k l move point and
 adjust the selection's near end; g h and g l are the two that own an
-end apiece instead, so they add up -- \\`M' \\`w' \\`g' \\`h' \\`g' \\`l'
-takes the whole line's text, in either order.  * trades which end the
-motions hold; the object keys trade it back before they grow, so they
-never need thinking about.
+end apiece instead, so they add up -- \\`M' \\`w' \\`g' \\`h' \\`g' \\`l' takes the whole
+line's text, in either order.  * trades which end the motions hold;
+the object keys trade it back before they grow, so they never need
+thinking about.
 
 \\`u' puts the run back where the last press found it and \\`U' puts it
 forward again, one press per step, the motions and * included.  A run
@@ -5889,16 +5889,15 @@ are the same idea one level down -- of the run rather than the buffer.
 
 Paragraphs keep their m prefix there, since p and P stay the paste
 keys inside the mode: m p and m P grow a run just as the bare letters
-do.  A selection you already have -- from \\[donkey-set-mark], \\[donkey-visual-line-toggle] or the
-mark keys -- is ADOPTED by \\[donkey-mark-run-toggle] rather than dropped, and the object
-keys grow it from there.
+do.  A selection you already have -- from \\[donkey-set-mark], \\[donkey-visual-line-toggle] or the mark keys -- is
+ADOPTED by \\[donkey-mark-run-toggle] rather than dropped, and the object keys grow it from there.
 
 Any other key returns to normal state and does its ordinary job in the
-same press, so \\[donkey-mark-run-toggle] \\`w' \\`w' DONKEY-DELETE-KEYS selects two words and deletes
-them with no explicit exit.  Two presses are held back from that: a key
-that does nothing -- one that is unbound -- leaves the run standing, so
-a mistyped key costs a beep rather than the selection, and \\[donkey-visual-line-toggle] says
-to leave the run first rather than quietly taking it over.  \\[donkey-mark-run-toggle] again --
+same press, so \\[donkey-mark-run-toggle] \\`w' \\`w' DONKEY-DELETE-KEYS selects two words and deletes them with
+no explicit exit.  Two presses are held back from that: a key that
+does nothing -- one that is unbound -- leaves the run standing, so a
+mistyped key costs a beep rather than the selection, and \\[donkey-visual-line-toggle] says to
+leave the run first rather than quietly taking it over.  \\[donkey-mark-run-toggle] again --
 or \\`C-g' -- drops the selection and the mode with it.
 
 A word stops at a hyphen or underscore; a symbol runs straight through
@@ -5916,8 +5915,8 @@ Which characters hold a name together is the major mode's decision, not
 DONKEY's.  Hyphen and underscore usually do.  Period and comma do in
 some code modes -- in Emacs Lisp, \\[donkey-mark-symbol] on \"foo.bar\" takes the whole
 of it -- and not in others.  One part is DONKEY's own: a period or comma
-at the END is always left out, so \\[donkey-mark-symbol] on the last name in a
-sentence gives you the name without the full stop.
+at the END is always left out, so \\[donkey-mark-symbol] on the last name in a sentence
+gives you the name without the full stop.
 
 This buffer is plain text, where neither counts, so there is nothing
 here to try that on.  It is worth knowing before the first time you
@@ -5955,10 +5954,10 @@ outer one.
 
    ---> outer (middle (deep) middle) outer
 
-\\[donkey-mark-sexp-inner] and \\[donkey-mark-sexp-outer] do the same job without asking.  They read the
-buffer's syntax table and find the enclosing brackets themselves,
-whatever kind those turn out to be -- useful in code, where the nearest
-pair is as likely to be square or curly as round.
+\\[donkey-mark-sexp-inner] and \\[donkey-mark-sexp-outer] do the same job without asking.  They read the buffer's
+syntax table and find the enclosing brackets themselves, whatever kind
+those turn out to be -- useful in code, where the nearest pair is as
+likely to be square or curly as round.
 
     \\[donkey-mark-inner] and \\[donkey-mark-outer]   you name the delimiter
     \\[donkey-mark-sexp-inner] and \\[donkey-mark-sexp-outer]   DONKEY works it out
@@ -6097,10 +6096,9 @@ a table, or the leading characters of a block of lines.
    ---> 333 gamma
 
 The selection is released by the cut, so you can put the cursor back on
-the first line and press \\[donkey-yank-rectangle] straight away -- the block goes
-back where it came from.  A rectangle has its own paste key:
-\\[donkey-yank] pastes ordinary text, \\[donkey-yank-rectangle] pastes columns,
-and neither has to guess which you meant.
+the first line and press \\[donkey-yank-rectangle] straight away -- the block goes back where
+it came from.  A rectangle has its own paste key: \\[donkey-yank] pastes ordinary
+text, \\[donkey-yank-rectangle] pastes columns, and neither has to guess which you meant.
 
 \\[donkey-change] on a rectangle replaces the block on EVERY line it spans, in one
 go.  It asks for the replacement in the minibuffer -- \"String rectangle:\"
@@ -6136,9 +6134,9 @@ width straight back off with \\[backward-char] before going down.
 
 A rectangle measures COLUMNS, though, and one character is not always
 one column.  On a TAB it is eight, and on a wide character -- CJK, say
--- it is two, so \\[donkey-rectangle-mark-mode] followed by \\[donkey-change] on a tab-indented line
-replaces the whole indent rather than one space of it.  Start from a
-character you can see if you want to change just it.
+-- it is two, so \\[donkey-rectangle-mark-mode] followed by \\[donkey-change] on a tab-indented line replaces
+the whole indent rather than one space of it.  Start from a character
+you can see if you want to change just it.
 
 >> Put the cursor on the \"r\" of \"red\" below, press \\[donkey-rectangle-mark-mode] then \\[backward-char],
    then \\[next-line] twice.  Press \\[donkey-change], type \"// \" and press RET.  Nothing is
@@ -6180,21 +6178,21 @@ Two things worth knowing before you rely on it:
 Lesson 10 -- changing your mind
 -------------------------------
 
-Four keys start a selection: \\`v', \\`V', \\[donkey-mark-run-toggle] and \\`m' \\`v'.  You can go from
-any one to any other without letting go first, and what becomes of the
+Four keys start a selection: \\`v', \\`V', \\[donkey-mark-run-toggle] and \\`m' \\`v'.  You can go from any one
+to any other without letting go first, and what becomes of the
 selection you already had is the whole of what there is to know.
 
-    \\[donkey-mark-run-toggle]     ADOPTS it.  It becomes the run's starting selection, and
-          the object keys grow it from there.
+    \\[donkey-mark-run-toggle]     ADOPTS it.  It becomes the run's starting selection,
+          and the object keys grow it from there.
     m v   REINTERPRETS it.  The region's corners become the block.
     V     starts FRESH, anchored on the line the cursor is on.
     v     RE-ANCHORS.  What you had is dropped and a new selection
           starts, empty, where the cursor stands.
 
->> Put the cursor on \"beta\" in the ---> line and press \\`v', then
-   \\`l' three times, which selects \"bet\".  Now press \\[donkey-mark-run-toggle] and then \\`w':
-   the run ADOPTED those three characters and grew them to the end of
-   the word they were part of.
+>> Put the cursor on \"beta\" in the ---> line and press \\`v', then \\`l' three
+   times, which selects \"bet\".  Now press \\[donkey-mark-run-toggle] and then \\`w': the run
+   ADOPTED those three characters and grew them to the end of the word
+   they were part of.
 
    ---> alpha beta gamma delta
 
@@ -6290,10 +6288,10 @@ the one key that clears banks WITHOUT using them, and
 Your Emacs still works
 ----------------------
 
-DONKEY is meant to be an addition, not a replacement.  In BOTH states your
-\\`C-x' and \\`C-c' prefixes, \\[execute-extended-command], \\`C-h', isearch, the arrow keys, every
-Meta binding and every package you have bound behave exactly as they always
-did.  Nothing was taken away to make room for the letters above.
+DONKEY is meant to be an addition, not a replacement.  In BOTH states
+your \\`C-x' and \\`C-c' prefixes, \\[execute-extended-command], \\`C-h', isearch, the arrow keys, every
+Meta binding and every package you have bound behave exactly as they
+always did.  Nothing was taken away to make room for the letters above.
 
 A modal editor cannot be entirely free, though, and the price is short
 enough to state in full.
@@ -6331,12 +6329,12 @@ changed.
 
 In dired and other special buffers DONKEY is on too, and its letters win
 where they collide -- but a key the mode bound that DONKEY does not use
-still works.  In dired, \\`n', \\`t', \\`q', \\`^' and \\`+' are still dired's.
-Terminals and shells (eshell, term, vterm) stay in INSERT throughout, so
-nothing is suppressed underneath a running process.  Their modeline says
+still works.  In dired, \\`n', \\`t', \\`q', \\`^' and \\`+' are still dired's.  Terminals
+and shells (eshell, term, vterm) stay in INSERT throughout, so nothing
+is suppressed underneath a running process.  Their modeline says
 DONKEY[E] rather than DONKEY[I]: still INSERT, but NORMAL state cannot
-be reached there at all, so \\`C-g' quits the way stock Emacs does instead
-of switching state.
+be reached there at all, so \\`C-g' quits the way stock Emacs does
+instead of switching state.
 
 
 That is the working set

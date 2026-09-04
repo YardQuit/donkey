@@ -1450,6 +1450,62 @@ for something else entirely -- failed a test about rectangles."
             (should-not (string-match-p "still selected after the cut" text)))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
+(ert-deftest donkey-tutor-renders-without-broken-lines ()
+  "The tutor reads as prose once its keys have been substituted.
+
+The source is wrapped by eye and the reader sees something else: a key
+reference is 25 characters of `\\[donkey-mark-run-toggle]' in the file
+and one character on screen, so a source line wrapped to a tidy 72 can
+render at 49, and a line carrying four of them rendered at 106.  Both
+happened, and neither is visible in the file.
+
+Three things are checked, all of them on the RENDERED buffer.
+
+No line over 79 columns, which wraps in a narrow window and undoes the
+careful layout of an exercise.
+
+No `[command]' left standing.  `\\[donkey-delete]' substitutes; `[donkey-delete]'
+with one backslash fewer does not, because Elisp reads \\[ in a string
+as a bare bracket -- so the tutor told four readers to press
+\"[donkey-delete]\" and nobody noticed, the file looking right.
+
+And no flush-left line much shorter than its paragraph's widest, which
+is what a collapsed key reference leaves behind.  Only flush-left
+lines: an indented one is a bullet or a rule in a list, and ends where
+its sentence ends."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((lines (split-string (buffer-string) "\n"))
+                (long nil) (literal nil) (ragged nil)
+                (para nil) (n 0))
+            (dolist (l lines)
+              (setq n (1+ n))
+              (when (> (length l) 79) (push (format "L%d (%d)" n (length l)) long))
+              (when (string-match "\\[\\(donkey-[a-z-]+\\)\\]" l)
+                (push (format "L%d %s" n (match-string 1 l)) literal)))
+            ;; Paragraphs, and the flush-left lines inside them.
+            (dolist (l (append lines '("")))
+              (if (string-match-p "\\`[ \t]*\\'" l)
+                  (progn
+                    (setq para (nreverse para))
+                    (when (cdr para)
+                      (let ((widest (apply #'max (mapcar #'length para))))
+                        (when (> widest 58)
+                          (dolist (p (butlast para))
+                            (when (and (not (string-match-p "\\`[ \t]" p))
+                                       (< (length p) (- widest 12)))
+                              (push (format "%d/%d %s" (length p) widest p)
+                                    ragged))))))
+                    (setq para nil))
+                (push l para)))
+            (should (equal (list :over-79 long) (list :over-79 nil)))
+            (should (equal (list :unsubstituted literal)
+                           (list :unsubstituted nil)))
+            (should (equal (list :ragged ragged) (list :ragged nil))))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
 (ert-deftest donkey-tutor-lesson-10-states-all-four-rules ()
   "Lesson 10 says what each starter does with the selection it finds.
 
