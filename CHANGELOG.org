@@ -9,6 +9,93 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.6.0 — 2026-09-05
+
+Mark run mode was released in 1.5.0 with the word =M= marks treated as
+a *head start* — something already selected when the first letter
+arrived, so that the letter still marked afresh. It is the run's first
+press now. That is a minor version rather than a patch because every
+=M= sequence 1.5.0 documented shifts by one press, and because two
+mark keys select something different than they did.
+
+*Changed*
+
+- =M= *is* =m w=, and each letter after it is one more =m=-prefixed
+  press. =M w= is two words, =M b= the word and the one before it,
+  =M s= the word grown to the end of its sentence, =M C-u 3 w= four
+  words, and =M w b= is what =m w m w m b= selects. Every sequence in
+  the 1.5.0 notes counts one press further along: =M w w b= is now
+  =M w b=, =M w p= is =M p=, and =M w g h g l= is =M g h g l=.
+- =J= and =K= reach an end apiece from the word =M= holds. =M J= is
+  the word grown to the end of its line — the whole line when the
+  word is the line's first — and =M K= reaches back to the line's
+  start. =M J K= is the whole line from anywhere, in either order, so
+  =M J K d= removes the line outright where =M J d= does it only from
+  the first word. =V= then =M= adopts a whole line, and where =M=
+  found no word to mark either key still marks the current one fresh.
+- =M= reaches the way =m w= reaches. From the gap between two words it
+  marks the word *behind*, where it used to arrive empty — the two
+  keys had no reading under which they should differ. The mode still
+  starts empty where =m w= itself refuses: a buffer with no word in it
+  at all.
+- =m W= marks by *symbol*, not by sexp. In the gap of a key sequence
+  quoted in prose it refused with a name directly behind it; on the
+  name it took the quote along; behind =#'bar= it skipped to the
+  symbol before. Both ends shed punctuation syntax now, while ='=,
+  =`= and =#= stay with the form they prefix, so ='bar= still marks
+  as ='bar=.
+- A negative count on =m w= no longer takes the separator with it, and
+  =m W= with one no longer reaches past the point it counted from —
+  asked for the three symbols before a word, it used to mark the words
+  it was counting away from. Both take their far end from where the
+  object behind point ends, point at the start.
+
+*Added*
+
+- Closing delimiters are accepted at the =m i= / =m a= prompt: =m i )=
+  means what =m i (= means, =m a ]= what =m a [= does. The cursor
+  sitting on either half was already understood; the typed key is now
+  too.
+- The =m i= / =m a= prompt names =donkey-mark-pair-delimiters= instead
+  of reciting it — nineteen characters that grow with every pair you
+  add. =C-h v= on the variable shows the pairs in force with your own
+  marked as customized, and the README lists the defaults.
+
+*Fixed*
+
+- =m i (= no longer edits the buffer. With the cursor on a delimiter
+  the pair is taken from the buffer and the command is finished, so
+  the =(= typed as the third key ran as a command of its own — every
+  delimiter is bound to =donkey-wrap-region=, which *inserts*. It
+  turned =call(alpha) end= into =call((alpha) end=, silently, from a
+  sequence meant to select. Both halves of every pair, both commands;
+  found by testing one rule — a selection key may not modify the
+  buffer — over 7840 key sequences. The press is swallowed once, so
+  pressing the delimiter a second time still wraps.
+- A refused mark puts the cursor back. =m w=, =m W=, =m s= and =m p=
+  and their backward companions step point about while they search and
+  reported from wherever the search gave up: on a buffer of whitespace
+  all four sentence and paragraph keys came to rest at position 1 from
+  a press at 3, and =m W= in =help-mode= reported nine characters from
+  where it was pressed.
+- =m i= / =m a= on an empty pair leaves the cursor where it was rather
+  than one character along.
+- The mark run reminder is not painted over a count as it is typed:
+  the keys of =C-u 3= arrive under the name of the command before
+  them, and the echo area is the keystroke echo's while a count is
+  being entered.
+- =donkey-mode= disabled in a buffer leaves nothing behind. Three
+  pieces dated to the first release survived the sweep: a
+  =pre-command-hook= entry, a flag and a timer.
+
+*Internal*
+
+- Test harnesses no longer reach the machine's clipboard. Nothing in
+  batch or a terminal frame can show it, but in a graphical frame
+  =yank= took the desktop selection over the test's own kill ring, and
+  a run left its last kill on the clipboard. The three bindings that
+  keep a test off it are one shared list now.
+
 * 1.5.1 — 2026-09-04
 
 Text, and only text: not a line of code differs from 1.5.0. Everything
