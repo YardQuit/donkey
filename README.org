@@ -3,28 +3,31 @@
 
 * Table of Contents
 
-- [[*Overview][Overview]]
-- [[*Installation][Installation]]
-- [[*Usage][Usage]]
-- [[*Default Keybindings][Default Keybindings]]
-- [[*Excluded Modes][Excluded Modes]]
-- [[*Customizing Keybindings][Customizing Keybindings]]
-- [[*Enter Key Rules (DWIM)][Enter Key Rules (DWIM)]]
-- [[*Cursor Management][Cursor Management]]
-- [[*Clipboard Integration][Clipboard Integration]]
-- [[*Input Method Management][Input Method Management]]
-- [[*Smartparens Integration][Smartparens Integration]]
-- [[*Position Tracking][Position Tracking]]
-- [[*Org-Scratch Buffer][Org-Scratch Buffer]]
-- [[*Tutor][Tutor]]
-- [[*Describe Bindings][Describe Bindings]]
-- [[*Version][Version]]
-- [[*Changelog][Changelog]]
-- [[*Customization Group][Customization Group]]
-- [[*Troubleshooting][Troubleshooting]]
-- [[*Development][Development]]
+- [[#overview][Overview]]
+- [[#installation][Installation]]
+- [[#usage][Usage]]
+- [[#default-keybindings][Default Keybindings]]
+- [[#excluded-modes][Excluded Modes]]
+- [[#customizing-keybindings][Customizing Keybindings]]
+- [[#enter-key-rules-dwim][Enter Key Rules (DWIM)]]
+- [[#cursor-management][Cursor Management]]
+- [[#clipboard-integration][Clipboard Integration]]
+- [[#input-method-management][Input Method Management]]
+- [[#smartparens-integration][Smartparens Integration]]
+- [[#position-tracking][Position Tracking]]
+- [[#org-scratch-buffer][Org-Scratch Buffer]]
+- [[#tutor][Tutor]]
+- [[#describe-bindings][Describe Bindings]]
+- [[#version][Version]]
+- [[#changelog][Changelog]]
+- [[#customization-group][Customization Group]]
+- [[#troubleshooting][Troubleshooting]]
+- [[#development][Development]]
 
 * Overview
+:PROPERTIES:
+:CUSTOM_ID: overview
+:END:
 
 Donkey is an opinionated modal editing minor-mode for Emacs, that
 leverages Emacs' own built-in functions wherever possible. Which state
@@ -136,6 +139,9 @@ Modes where suppressing keys would break the underlying process —
 entirely. See Excluded Modes.
 
 * Installation
+:PROPERTIES:
+:CUSTOM_ID: installation
+:END:
 
 Donkey isn't on MELPA, so pick whichever of these fits your setup.
 All are equivalent; they just differ in how =donkey.el= gets onto
@@ -204,6 +210,9 @@ and =quelpa-use-package= need to be installed first:
 #+end_src
 
 * Usage
+:PROPERTIES:
+:CUSTOM_ID: usage
+:END:
 
 Once =(donkey-mode 1)= has run (see Installation above), every buffer
 starts in DONKEY Normal state, with one exception: buffers whose major
@@ -229,6 +238,9 @@ process interaction.
 - New to DONKEY? Press =g ?= (or =M-x donkey-tutor=) — see Tutor below.
 
 * Default Keybindings
+:PROPERTIES:
+:CUSTOM_ID: default-keybindings
+:END:
 
 ** Navigation
 
@@ -1043,6 +1055,9 @@ These keys are explicitly suppressed to prevent unwanted behavior:
 | =_=           | Ignored |
 
 * Excluded Modes
+:PROPERTIES:
+:CUSTOM_ID: excluded-modes
+:END:
 
 DONKEY Normal state is permanently disabled in certain major modes where
 key suppression would break core functionality. In these modes, DONKEY
@@ -1112,6 +1127,9 @@ Verify the current exclusion list:
 #+end_src
 
 * Customizing Keybindings
+:PROPERTIES:
+:CUSTOM_ID: customizing-keybindings
+:END:
 
 You can override existing bindings or add new ones in your =config.el=
 by modifying =donkey-normal-mode-map=.
@@ -1150,6 +1168,9 @@ by modifying =donkey-normal-mode-map=.
 #+end_src
 
 * Enter Key Rules (DWIM)
+:PROPERTIES:
+:CUSTOM_ID: enter-key-rules-dwim
+:END:
 
 DONKEY's =donkey-enter-dwim= command dispatches the Enter (RET) key based
 on context. In editing modes, Enter is blocked to prevent accidental
@@ -1293,6 +1314,9 @@ Common org element types for rules:
 | =plain-list= | =nil=             | =org-toggle-item=                          |
 
 * Cursor Management
+:PROPERTIES:
+:CUSTOM_ID: cursor-management
+:END:
 
 DONKEY manages cursor shapes independently for Normal and Insert states.
 In terminal mode (=emacs -nw=), DECSCUSR escape sequences are used for
@@ -1339,6 +1363,9 @@ Run =M-x donkey-debug-platform= for a detailed report of:
 - Native compilation status
 
 * Clipboard Integration
+:PROPERTIES:
+:CUSTOM_ID: clipboard-integration
+:END:
 
 DONKEY's =donkey-yank= command integrates with the system clipboard,
 falling back to the kill ring when no clipboard tools are available.
@@ -1405,6 +1432,9 @@ recommendation: apply it only if you see the hang described above,
 and drop it once a stock Emacs no longer needs it.
 
 * Input Method Management
+:PROPERTIES:
+:CUSTOM_ID: input-method-management
+:END:
 
 DONKEY automatically saves and restores the active input method when
 transitioning between Normal and Insert states. This is useful for
@@ -1417,6 +1447,9 @@ This prevents input method key sequences from interfering with Normal
 mode keybindings.
 
 * Smartparens Integration
+:PROPERTIES:
+:CUSTOM_ID: smartparens-integration
+:END:
 
 DONKEY always, with no configuration needed:
 - Clears transient smartparens overlays on Insert-to-Normal transition
@@ -1542,6 +1575,9 @@ variable); change it before =donkey.el= loads to add or remove
 characters.
 
 * Position Tracking
+:PROPERTIES:
+:CUSTOM_ID: position-tracking
+:END:
 
 =M-x donkey-jump-back= (bound to =S=) rotates through a ring of
 previously recorded cursor positions in the current buffer. Positions
@@ -1577,11 +1613,17 @@ Unlike =donkey-wrap-delimiters=, this takes effect immediately —
 changed at any time, not just before =donkey.el= loads.
 
 * Org-Scratch Buffer
+:PROPERTIES:
+:CUSTOM_ID: org-scratch-buffer
+:END:
 
 =M-x donkey-org-scratch= creates or switches to a scratch buffer in
 =org-mode=. Useful for quick note-taking without creating a file.
 
 * Tutor
+:PROPERTIES:
+:CUSTOM_ID: tutor
+:END:
 
 =g ?= (or =M-x donkey-tutor=) opens a learn-by-doing buffer, the way =C-h t= and
 vimtutor do: the text holding the instructions is the text you practice
@@ -1608,6 +1650,9 @@ Running =M-x donkey-tutor= again returns you to the buffer as you left
 it. Kill the buffer to start over — nothing is written to disk.
 
 * Describe Bindings
+:PROPERTIES:
+:CUSTOM_ID: describe-bindings
+:END:
 
 Press =?= in Normal state to see all active DONKEY keybindings in a
 formatted, clickable buffer. Bindings are grouped by prefix with
@@ -1620,6 +1665,9 @@ section headers.
 #+end_src
 
 * Version
+:PROPERTIES:
+:CUSTOM_ID: version
+:END:
 
 =M-x donkey-version= shows the version of DONKEY that is *loaded* —
 captured from the package header at load time, so after updating the
@@ -1630,6 +1678,9 @@ or =nil= when no readable header was found at load time.
 What changed in each release is in [[file:CHANGELOG.org][CHANGELOG.org]], newest first.
 
 * Changelog
+:PROPERTIES:
+:CUSTOM_ID: changelog
+:END:
 
 [[file:CHANGELOG.org][CHANGELOG.org]] lists every release, newest first, with what changed
 for someone using the package. Entries for 1.4.1 and earlier were
@@ -1637,6 +1688,9 @@ written after the fact from the git history; the commits remain the
 record of why.
 
 * Customization Group
+:PROPERTIES:
+:CUSTOM_ID: customization-group
+:END:
 
 All DONKEY variables are under the =donkey= Customize group:
 
@@ -1659,6 +1713,9 @@ All DONKEY variables are under the =donkey= Customize group:
 | =donkey-mark-pair-delimiters=        | alist   | =(see above)=      | Delimiter pairs for mark-inner/outer   |
 
 * Troubleshooting
+:PROPERTIES:
+:CUSTOM_ID: troubleshooting
+:END:
 
 ** A =C-g= in Insert state that sometimes does nothing
 
@@ -1712,6 +1769,9 @@ all. Prevention where prevention is possible, recovery where only
 recovery is; together they collapse the frequency to rare.
 
 * Development
+:PROPERTIES:
+:CUSTOM_ID: development
+:END:
 
 ** Running the checks locally
 
