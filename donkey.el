@@ -1918,7 +1918,17 @@ iteration.
 
 vi's `J' stops at the last line for the same reason, and every other
 whole-line command here already leaves the final newline alone: `V d',
-`V y', a banked copy and `D' were all checked."
+`V y', a banked copy and `D' were all checked.
+
+A selection is not consulted.  With lines selected the command still
+joins the line point is on with the next, and the selection is
+dropped: `V J J g j' on four lines joins the third with the fourth,
+not the three selected into one.  Confirmed live for a `v' region and
+a `V' session alike.  COUNT is how several lines are joined at once.
+vi's `J' does read a selection and joins every line in it, so the
+difference is worth knowing about; it is recorded here rather than
+changed, because a key that today ignores the selection would start
+consuming it."
   (interactive "p")
   (let ((n (max 0 (or count 1)))
         (joined 0))
@@ -2034,10 +2044,14 @@ Which delimiters actually wrap is the pairing package's decision, not
 this command's, and `electric-pair-mode' does not cover all six
 defaults.  It wraps what its own rules treat as a pair -- `(', `[',
 `{' and `\"' -- and leaves `\\='' and `\\=`' alone, inserting the character
-at the region's start with the region unwrapped.  Confirmed in
-`fundamental-mode', `text-mode' and `emacs-lisp-mode' alike, so it is
-not the major mode's syntax table deciding; adding them to
-`electric-pair-pairs' is what changes it.
+at POINT with the region unwrapped: after the region's end for `v w',
+whose point is there, and before its start for `m w', whose point is
+at the start.  (This used to say \"at the region's start\", which is
+only the second of those.)  Confirmed in `fundamental-mode',
+`text-mode' and `emacs-lisp-mode' alike, so it is not the major mode's
+syntax table deciding; adding them to `electric-pair-pairs' is what
+changes it.  The rectangle path is not affected, doing its own
+insertion: `m v j l \\='' wraps every line of the block in quotes.
 
 Smartparens wraps all six out of the box, `\\='' and `\\=`' included.  It is
 the pair definition that decides, so excluding one -- `sp-local-pair'
