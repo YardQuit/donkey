@@ -2049,6 +2049,24 @@ there."
        (should (string-search "!" message))
        (should (string-search "donkey-mark-pair-delimiters" message))))))
 
+(ert-deftest donkey-mark-pair-delimiters-unsupported-error-spells-unprintable-keys ()
+  "A key that does not print is named the way a binding is.
+
+Regression test.  The character went into the message as itself, so
+\\`RET' broke the message across two lines, \\`SPC' and \\`TAB' showed
+an empty pair of quotes, \\`DEL' showed nothing, and a META key -- which
+`read-char' returns as a character with the modifier bit set -- was not
+a character to `format' and turned the typo into a bare
+`wrong-type-argument' in place of the `user-error' this function
+promises.  Each is asserted to come out as its key description, the
+printing case as itself, and every one as a `user-error'."
+  (dolist (case '((?\r . "RET") (?\s . "SPC") (?\t . "TAB") (127 . "DEL")
+                  (?\C-a . "C-a") (?\M-x . "M-x") (?z . "z")))
+    (let ((err (should-error (donkey--mark-pair-unsupported-error (car case))
+                             :type 'user-error)))
+      (should (string-search (cdr case) (error-message-string err)))
+      (should-not (string-search "\n" (error-message-string err))))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-mark-outer
 ;;; ---------------------------------------------------------------------------

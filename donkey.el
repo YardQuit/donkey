@@ -2612,9 +2612,21 @@ for anyone running with `debug-on-error' on.
 The message names `donkey-mark-pair-delimiters' rather than reciting it,
 for the reason `donkey--mark-pair-prompt' gives: the list is nineteen
 characters long, it grows with customization, and \\[describe-variable] on the
-variable shows the reader their own."
-  (user-error "Unsupported delimiter '%c'; see donkey-mark-pair-delimiters"
-              char))
+variable shows the reader their own.
+
+CHAR is spelled the way a key binding is -- `single-key-description'
+-- rather than inserted as itself.  It is whatever `read-char' handed
+back, and the keys a reader is likeliest to hit by accident at a
+prompt do not print: \\`RET' made the message wrap onto a second
+line, \\`SPC' and \\`TAB' showed an empty pair of quotes, \\`DEL' and
+the control characters showed nothing at all, and a META key, which
+`read-char' returns with the modifier bit set, was not a character to
+`format' at all and turned the typo into \"Wrong type argument:
+characterp, 134217848\" -- a bare error, popping the debugger this
+function exists to keep shut.  Confirmed live for all of them.  A
+printing character comes out as itself either way."
+  (user-error "Unsupported delimiter `%s'; see donkey-mark-pair-delimiters"
+              (single-key-description char)))
 
 (defun donkey--mark-pair-open-for (char)
   "Return the OPEN character of the pair CHAR belongs to.
