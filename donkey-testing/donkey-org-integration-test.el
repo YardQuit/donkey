@@ -62,6 +62,20 @@
     (should (search-forward "PRE-EXISTING" nil t))
     (should (search-forward "# This buffer is for scribbling in org-mode." nil t))))
 
+(ert-deftest donkey-insert-org-scratch-message-quotes-the-key ()
+  "The save key is quoted with an opening quote and a closing one.
+
+Written between two plain apostrophes, `substitute-command-keys' curled
+both as closing quotes, and every *org-scratch* buffer opened with the
+key sitting between two ’.  Pinned to the curve style, where the two
+spellings differ; under grave they render the same."
+  (with-temp-buffer
+    (let ((text-quoting-style 'curve))
+      (donkey-insert-org-scratch-message))
+    (goto-char (point-min))
+    (should (search-forward "with ‘C-x s’ for persistence" nil t))
+    (should-not (string-match-p "’C-x" (buffer-string)))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-create-org-scratch / donkey-org-scratch
 ;;; ---------------------------------------------------------------------------

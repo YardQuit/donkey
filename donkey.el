@@ -228,14 +228,22 @@ interaction entirely."
 ;;; ---------------------------------------------------------------------------
 
 (defun donkey-insert-org-scratch-message ()
-  "Insert buffer message."
+  "Insert the *org-scratch* header naming the `save-some-buffers' key.
+
+The key is quoted as a reference, the way `initial-scratch-message'
+quotes its `\\[find-file]'.  Between plain apostrophes,
+`substitute-command-keys' curled both as CLOSING quotes, and every
+*org-scratch* buffer opened with the key sitting between two ’.
+
+No `purecopy' around the text: `initial-scratch-message' dropped its
+own in Emacs 31, where the function is obsolete, and outside the dump
+it returned its argument unchanged anyway."
   (insert
    (substitute-command-keys
-    (purecopy
-     (concat "# This buffer is for scribbling in org-mode.\n"
-             "# Start your scribble here and save to file with '"
-             "\\[save-some-buffers]"
-             "' for persistence.\n\n"))))
+    (concat "# This buffer is for scribbling in org-mode.\n"
+            "# Start your scribble here and save to file with `"
+            "\\[save-some-buffers]"
+            "' for persistence.\n\n")))
   (goto-char (point-max)))
 
 (defun donkey-create-org-scratch ()
