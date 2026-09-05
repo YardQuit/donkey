@@ -1277,6 +1277,60 @@ delimiter twice.  Taking the key away for good would have cost that."
       (donkey-test--pair-keys "call(alpha) end" 5 "m i ( (")
     (should-not (equal buffer "call(alpha) end"))))
 
+(ert-deftest donkey-a-repeated-pair-mark-swallows-its-delimiter-too ()
+  "\\=`m i ( m i (' grows the selection a level; nothing is inserted.
+
+A second `m i' or `m a' never reads a delimiter -- the repeat reuses the
+one it resolved -- so the paren typed after it by habit was as loose as
+after an auto-detected first press, and nothing protected it.  From
+inside \"((a (b c) d) e)\", `m i ( m i (' selected \"a (b c) d\" and then
+ran the paren as `donkey-wrap-region': \"(((a (b c) d) e)\" with nothing
+pairing, a wrap under `electric-pair-mode', and a `d' pressed next
+deleted one character, the insertion having ended the selection.
+Confirmed live in `emacs -nw'.
+
+Pinned for both commands, from inside the pair and from on its opener,
+and the deliberate double press still wraps after a repeat: the
+protection is one press per `m i', not the key taken away."
+  (dolist (case '(("((a (b c) d) e)" 8 "m i ("           "b c")
+                  ("((a (b c) d) e)" 8 "m i ( m i ("     "a (b c) d")
+                  ("((a (b c) d) e)" 8 "m a ( m a ("     "(a (b c) d)")
+                  ;; On the opener of (b c): the first press auto-detects,
+                  ;; the second repeats, and both parens are swallowed.
+                  ("((a (b c) d) e)" 5 "m i ( m i ("     "a (b c) d")))
+    (cl-destructuring-bind (text pos keys expected) case
+      (cl-destructuring-bind (selection buffer _point _origin)
+          (donkey-test--pair-keys text pos keys)
+        (should (equal (list keys buffer) (list keys text)))
+        (should (equal (list keys selection) (list keys expected))))))
+  ;; A second paren after the repeat is the deliberate wrap.
+  (cl-destructuring-bind (_selection buffer _point _origin)
+      (donkey-test--pair-keys "((a (b c) d) e)" 8 "m i ( m i ( (")
+    (should-not (equal buffer "((a (b c) d) e)")))
+  ;; And a `d' after the repeat deletes what was selected.
+  (cl-destructuring-bind (_selection buffer _point _origin)
+      (donkey-test--pair-keys "((a (b c) d) e)" 8 "m i ( m i ( d")
+    (should (equal buffer "(() e)"))))
+
+(ert-deftest donkey-a-swallowed-delimiter-does-not-end-the-repeat ()
+  "\\=`m i ( m i ( m i (' keeps growing; the swallowed paren is no key.
+
+`donkey--pair-delimiter-already-taken' runs as a command, so it became
+`last-command', and the `m i' after it was a fresh search rather than a
+repeat.  A fresh search from where the selection left point finds the
+pair it is already inside, so the chain stalled: three presses selected
+what two did.  It now hands `this-command' back to the mark command, and
+the chain reads as one run whether or not a paren was typed between the
+presses."
+  (dolist (case '(("m i ( m i ( m i ("   "(a (b c) d) e")
+                  ("m i ( m i m i"       "(a (b c) d) e")
+                  ("m a ( m a ( m a ("   "((a (b c) d) e)")))
+    (cl-destructuring-bind (keys expected) case
+      (cl-destructuring-bind (selection buffer _point _origin)
+          (donkey-test--pair-keys "((a (b c) d) e)" 8 keys)
+        (should (equal (list keys buffer) (list keys "((a (b c) d) e)")))
+        (should (equal (list keys selection) (list keys expected)))))))
+
 (ert-deftest donkey-the-pair-prompt-takes-a-closing-delimiter ()
   "\\=`m i )' means what \\=`m i (' means.
 

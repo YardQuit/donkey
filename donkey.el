@@ -2533,13 +2533,24 @@ to reject by name."
         (t char)))
 
 (defun donkey--pair-delimiter-already-taken ()
-  "Do nothing, silently.
+  "Do nothing, silently, and keep the mark command's repeat alive.
 
-What a delimiter key runs for one press after `m i' or `m a' took its
-delimiter from the character at point.  Silent on purpose: the selection
+What a delimiter key runs for one press after `m i' or `m a' resolved
+its delimiter without reading a key.  Silent on purpose: the selection
 message is the answer the press was after, and overwriting it with an
-explanation would take away the one thing worth reading."
-  (interactive))
+explanation would take away the one thing worth reading.
+
+`this-command' is set to `last-command' -- the `m i' or `m a' whose
+press this was -- so the command loop hands the next key the same
+`last-command' it would have seen had the delimiter never been typed.
+Without that the swallowed press itself became `last-command', and a
+following `m i' was a fresh search instead of a repeat: from inside
+\"((a (b c) d) e)\", `m i ( m i ( m i (' stalled at \"a (b c) d\", since
+a fresh search from where the selection left point finds the pair it
+is already inside.  `donkey--mark-extending-p' compares the two, and
+says why."
+  (interactive)
+  (setq this-command last-command))
 
 (defun donkey--suppress-one-pair-delimiter ()
   "Make the NEXT key harmless if it names a delimiter.
@@ -2558,6 +2569,17 @@ both spellings work and neither edits: \\=`m i\\=' alone still selects,
 \\=`m i (\\=' selects and the paren does nothing.  One press only -- a
 second \\=`(\\=' wraps the selection, which is how somebody who wanted the
 wrap gets it.
+
+A repeat arms it too.  A second \\=`m i\\=' never reads a delimiter --
+`donkey--mark-pair-select' reuses the one it resolved -- so the paren a
+reader types after it out of habit is as loose as after the first
+press.  Unprotected, \\=`m i ( m i (\\=' from inside \"((a (b c) d) e)\"
+grew the selection a level and then ran the paren: \"(((a (b c) d) e)\"
+with nothing pairing, a wrap under `electric-pair-mode', and a `d'
+pressed next deleted one character, the insertion having ended the
+selection.  Confirmed live in `emacs -nw'.  So every press of the two
+commands that does not stop at the prompt, fresh or repeat, protects
+exactly one delimiter press.
 
 Closing characters are bound too, point being able to sit on either
 end of a pair.
@@ -2885,7 +2907,10 @@ the same way round as every other DONKEY mark command and as
   ;; point is ON a delimiter, and would otherwise sit waiting on
   ;; `read-char'.  Whichever end of the selection point is left at, one
   ;; of `m i' and `m a' lands somewhere that is not a delimiter, so this
-  ;; is not something the cursor position alone can fix.
+  ;; is not something the cursor position alone can fix.  Not prompting
+  ;; leaves the delimiter the reader types next loose, exactly as the
+  ;; auto-detect does, so the repeat arms the same one-press protection;
+  ;; see `donkey--suppress-one-pair-delimiter'.
   ;;
   ;; And repeating agrees with counting, the way it does for the other
   ;; mark commands: both walk outward from the same anchor.
@@ -2893,7 +2918,8 @@ the same way round as every other DONKEY mark command and as
          (state (and (donkey--mark-extending-p) donkey--mark-pair-state))
          (anchor (if state (nth 0 state) (point)))
          (spec (if state
-                   (cdr state)
+                   (progn (donkey--suppress-one-pair-delimiter)
+                          (cdr state))
                  (donkey--mark-pair-read-delimiter)))
          (open-char (nth 0 spec))
          (close-char (nth 1 spec))
