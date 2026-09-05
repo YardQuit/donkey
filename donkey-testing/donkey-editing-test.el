@@ -3033,6 +3033,77 @@ region and the bank already have."
     (should (equal (buffer-string) "aaa\nbbb\n"))
     (should (equal donkey-test-keys--said "Nothing to paste"))))
 
+;; `V' on an EMPTY line -- a selection with no text in it.
+;;
+;; The region such a session holds is empty, which `use-region-p' does not
+;; count as a selection, so `y', `d' and `c' all used to take their
+;; no-selection branch and act on the character at point instead -- the
+;; newline.  See `donkey--selection-to-act-on-p'.  Real keys, because the
+;; session is made by `V' and read by the key after it, and a directly
+;; called command sees whatever `mark-active' the test left.
+
+(ert-deftest donkey-visual-line-delete-on-an-empty-line-kills-the-newline ()
+  "`V d' on an empty line removes it through the kill ring, so `p' restores it.
+
+Regression: the empty region fell through to the count branch, which
+deletes with `delete-region' -- the line went, but off the ring, and
+the `p' after it said \"Nothing to paste\"."
+  (donkey-test-keys--harness "*donkey-ve-test*" #'text-mode ()
+      "a\n\nb\n" "j V d"
+    (should (equal (buffer-string) "a\nb\n"))
+    (should (equal kill-ring '("\n"))))
+  (donkey-test-keys--harness "*donkey-ve-test*" #'text-mode ()
+      "a\n\nb\n" "j V d p"
+    (should (equal (buffer-string) "a\n\nb\n"))))
+
+(ert-deftest donkey-visual-line-copy-on-an-empty-line-takes-the-line-not-a-count ()
+  "`V y' on an empty line copies its newline and nothing past it.
+
+The newline was copied before too, by coincidence: the count branch
+copied the one character at point, which on an empty line IS the
+newline.  A count with the press tells the branches apart --
+`V \\[universal-argument] 2 y' took the newline AND the first character
+of the next line, where a `V' selection ignores a count on every other
+line."
+  (donkey-test-keys--harness "*donkey-ve-test*" #'text-mode ()
+      "a\n\nb\n" "j V C-u 2 y"
+    (should (equal kill-ring '("\n")))
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-visual-line-change-on-an-empty-line-keeps-the-line ()
+  "`V c' on an empty line leaves it empty and opens INSERT on it.
+
+Regression: the empty region fell through to the no-selection branch,
+which deleted the character at point -- the newline -- so `V c' on an
+empty line joined the next line up onto it, and typing landed in
+front of that line's text instead of on a line of its own.  Nothing
+goes on the kill ring, there being nothing to save: `kill-region'
+over an empty span would push \"\"."
+  (donkey-test-keys--harness "*donkey-ve-test*" #'text-mode ()
+      "a\n\nb\n" "j V c X"
+    (should (equal (buffer-string) "a\nX\nb\n"))
+    (should (bound-and-true-p donkey-insert-mode))
+    (should-not kill-ring)))
+
+(ert-deftest donkey-visual-line-on-an-empty-last-line-is-nothing-to-take ()
+  "`V d' on an empty final line with no newline reports and saves nothing.
+
+The one empty-line session with nothing in it at all: the widened span
+is empty too.  `donkey--selection-to-act-on-p' declines it, so the
+count branch answers as it always did -- \"End of buffer -- nothing to
+delete\" -- rather than `kill-region' pushing \"\" onto the ring."
+  (donkey-test-keys--harness "*donkey-ve-test*" #'text-mode ()
+      "a\n" "j V d"
+    (should (equal (buffer-string) "a\n"))
+    (should-not kill-ring)
+    (should (equal donkey-test-keys--said
+                   "End of buffer -- nothing to delete")))
+  (donkey-test-keys--harness "*donkey-ve-test*" #'text-mode ()
+      "a\n" "j V y"
+    (should-not kill-ring)
+    (should (equal donkey-test-keys--said
+                   "End of buffer -- nothing to copy"))))
+
 (ert-deftest donkey-change-does-not-act-on-banked-lines ()
   "`c' changes the character at point and leaves banks standing.
 

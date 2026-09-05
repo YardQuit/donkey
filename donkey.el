@@ -663,6 +663,13 @@ Deliberate, and the one place the two line commands part company: `V d'
 takes the newline because you asked for the line to go, `V c' keeps it
 because you asked to replace what is on it.
 
+An EMPTY line under `V' is changed the same way: it stays, empty, with
+INSERT state on it.  Its region is empty, which `use-region-p' does not
+count as a selection, so the press used to take the no-selection branch
+below and remove the character at point -- the newline -- joining the
+next line up onto the one being changed.  See
+`donkey--selection-to-act-on-p'.
+
 Banked lines are not honored either.  With lines banked via
 `donkey-bank-selection' and no active region, this changes the character
 at point and leaves the banks standing -- `y', `d' and `p' all act on
@@ -692,7 +699,7 @@ zero changes none while still entering INSERT state -- the same reading
 `donkey-delete' gives its own argument, since the two remove text
 identically and differ only in what happens next."
   (interactive "p")
-  (if (use-region-p)
+  (if (donkey--selection-to-act-on-p)
       (if (bound-and-true-p rectangle-mark-mode)
           (progn
             ;; Saved before it goes, the same way `donkey-delete' fills
@@ -719,7 +726,17 @@ identically and differ only in what happens next."
         ;; already did for the same selection.  `c' saved nothing at all
         ;; before this, so \[donkey-yank] after changing a marked word
         ;; pasted whatever happened to be on the ring instead.
-        (kill-region (mark) (point))
+        ;;
+        ;; Not over NOTHING, though.  A `V' session on an empty line is
+        ;; a selection with no text in it -- see
+        ;; `donkey--selection-to-act-on-p' -- and `kill-region' over an
+        ;; empty span still pushes "" onto the ring, so the next paste
+        ;; would put back nothing where the last kill was expected.
+        ;; The selection is let go of as the kill would have let go of
+        ;; it, and INSERT state opens on the line that stays empty.
+        (if (= (mark) (point))
+            (deactivate-mark)
+          (kill-region (mark) (point)))
         (donkey-enter-insert))
     ;; NOT killed: no selection was made, so there is nothing to put
     ;; back.  See the docstring -- this is the rule, not an oversight.
@@ -1600,6 +1617,39 @@ Only for a live visual-line session.  A character-wise region made with
       (donkey--whole-line-span (region-beginning) (region-end))
     (cons (region-beginning) (region-end))))
 
+(defun donkey--selection-to-act-on-p ()
+  "Return non-nil when an action key has a linear selection to take.
+
+The test `donkey-copy', `donkey-delete' and `donkey-change' share for
+the linear case, in place of a bare `use-region-p'.  That one is nil
+for an EMPTY active region -- `use-empty-active-region' is nil by
+default, and this package leaves it so -- which is right for a `v'
+selection that has not moved yet, and wrong for a `V' session on an
+empty line.  The session presents the line as selected, and the line
+has a newline to take, but its region runs from the line's start to
+the line's end, which on an empty line is no distance at all.  All
+three keys therefore fell through to their no-selection branches and
+acted on the character at point as though nothing had been selected.
+Confirmed live, on \"a\", an empty line and \"b\" with `V' pressed on
+the empty one: `d' removed the newline with `delete-region', off the
+kill ring, so `p' then had nothing to put back; `c' removed the
+newline and joined \"b\" up onto the empty line, where changing a line
+leaves an empty line to type on; and `y' saved the newline only
+because the character at point happened to be it, so that a count
+reached past the line the session showed.  `donkey-yank' asked
+`donkey--visual-line-session-active-p' itself all along, which is why
+`V p' on the same line already worked.
+
+A session whose widened span is EMPTY -- `V' on the buffer's last
+line, when that line is empty and ends without a newline -- is still
+no selection.  There is nothing to take, and `kill-region' over
+nothing would push \"\" onto the ring; the count branches report
+\"nothing to delete\" there, as they did."
+  (or (use-region-p)
+      (and (donkey--visual-line-session-active-p)
+           (let ((bounds (donkey--visual-line-region-bounds)))
+             (< (car bounds) (cdr bounds))))))
+
 ;; Why a rectangle copy never reaches the clipboard, and why `y' does not
 ;; use `kill-ring-save':
 ;;
@@ -1674,7 +1724,10 @@ A visual-line selection made with `V' is widened to whole lines before
 being copied.  The highlight stops at the end of the last line, so the
 newline ending it never looks selected -- but it IS copied, and the kill
 pastes back as a complete line instead of splicing onto whatever line
-\"p\" lands in.  See `donkey--visual-line-region-bounds'.
+\"p\" lands in.  See `donkey--visual-line-region-bounds'.  An empty line
+is a line too: `V y' on one copies its newline, and a count typed with
+it does not reach past the line -- see `donkey--selection-to-act-on-p'
+for the empty region that used to fall through to the count.
 
 With `rectangle-mark-mode' active, copies the rectangle instead of a
 linear region -- and does so even when lines are banked, leaving every
@@ -1724,7 +1777,7 @@ copies nothing at all."
              "Nothing to copy -- the rectangle has no width"))
            ((donkey--banked-selection-p)
             (donkey--copy-banked-selection) t)
-           ((use-region-p)
+           ((donkey--selection-to-act-on-p)
             (let ((bounds (donkey--visual-line-region-bounds)))
               (kill-ring-save (car bounds) (cdr bounds)))
             t)
@@ -1762,6 +1815,10 @@ newline ending it never looks selected -- but it IS deleted, so `V d'
 removes those lines outright rather than emptying them and leaving the
 blanks behind.  Taking one character more than was highlighted is
 deliberate, not an off-by-one: see `donkey--visual-line-region-bounds'.
+An empty line goes the same way, its newline on the kill ring for
+\\[donkey-yank] to put back.  It used to go through `delete-region'
+instead, off the ring, its region being empty and `use-region-p'
+therefore nil -- see `donkey--selection-to-act-on-p'.
 
 With `rectangle-mark-mode' active, kills the rectangle via
 `kill-rectangle', which fills `killed-rectangle' -- the store
@@ -1804,7 +1861,7 @@ the same place."
       "Nothing to delete -- the rectangle has no width"))
     ((donkey--banked-selection-p)
      (donkey--delete-banked-selection))
-    ((use-region-p)
+    ((donkey--selection-to-act-on-p)
      (let ((bounds (donkey--visual-line-region-bounds)))
        (kill-region (car bounds) (cdr bounds))))
     ((zerop n) nil)
