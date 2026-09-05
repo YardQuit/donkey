@@ -31,6 +31,23 @@
     (donkey--ensure-non-rectangle-selection)
     (should-not (bound-and-true-p rectangle-mark-mode))))
 
+(ert-deftest donkey-ensure-non-rectangle-selection-forgets-the-visual-anchor ()
+  "The funnel clears `donkey-visual-anchor' as it clears a stale rectangle.
+
+The anchor is the visual-line session's state, and like the rectangle
+it is taken down only by `deactivate-mark-hook', which a selection
+command that moves an already-active mark never fires.  Cleared here,
+every command that comes through the funnel starts its selection with
+no session underneath it -- see
+`donkey-a-selection-made-inside-a-visual-line-session-ends-it' for
+what the leftover anchor did through the keys."
+  (with-temp-buffer
+    (insert "hello\nworld\n")
+    (goto-char 1)
+    (setq donkey-visual-anchor 1)
+    (donkey--ensure-non-rectangle-selection)
+    (should-not donkey-visual-anchor)))
+
 (defmacro donkey--test-clears-stale-rectangle-mode (test-name command-form)
   "Define ERT test TEST-NAME asserting COMMAND-FORM clears a stale rectangle.
 
@@ -97,6 +114,18 @@ change at all."
 (donkey--test-clears-stale-rectangle-mode
     donkey-set-mark-clears-stale-rectangle-mode
   (progn (goto-char 2) (donkey-set-mark)))
+
+;; Through `donkey-mark-word', which the fresh-run branch marks its word
+;; with; the toggle has no funnel call of its own any more.  The
+;; `deactivate-mark' on that branch would take the rectangle down too --
+;; but only through `deactivate-mark-hook', which needs
+;; `transient-mark-mode' to fire, and this macro's buffer has it off as
+;; batch Emacs does and a user may.
+(donkey--test-clears-stale-rectangle-mode
+    donkey-mark-run-toggle-clears-stale-rectangle-mode
+  (progn (goto-char 2)
+         (unwind-protect (donkey-mark-run-toggle)
+           (donkey--mark-run-exit))))
 
 (ert-deftest donkey-set-mark-activates-mark-at-point ()
   "The mark is set at point and the region activated.
@@ -5162,12 +5191,15 @@ reminder would be advertising keys that no longer extend anything."
   "A superseding selection ends the reminder along with the session.
 
 A mark command mid-session repositions the region without ever
-deactivating it, so the anchor survives while the session is over --
-the exact state `donkey--visual-line-session-active-p' exists to
-reject, and the case that separates it from a bare anchor check in
-`donkey--show-selection-hint': anchor set, region active, mark on
-the marked word.  A motion here must not resurrect the visual-line
-reminder over a selection that is no longer a visual-line session."
+deactivating it, so nothing on `deactivate-mark-hook' can end the
+session for it.  The command clears the anchor itself, through
+`donkey--ensure-non-rectangle-selection', and
+`donkey--visual-line-session-active-p' rejects a mark that sits
+nowhere a session would have left it besides -- either way the
+selection is no longer a visual-line session, and a motion here must
+not resurrect the visual-line reminder over it.  This is the case
+that separates the predicate from a bare anchor check in
+`donkey--show-selection-hint'."
   (donkey-mark-test--keys "one two\nthree four\n" "V J m w"
     (let (msgs)
       (cl-letf (((symbol-function 'message)
@@ -5177,6 +5209,87 @@ reminder over a selection that is no longer a visual-line session."
         (let ((this-command 'next-line))
           (donkey--show-selection-hint))
         (should-not msgs)))))
+
+(ert-deftest donkey-a-selection-made-inside-a-visual-line-session-ends-it ()
+  "`m w', `m b' or `v' after `V' leaves a plain selection, not a session.
+
+Every selection command clears `donkey-visual-anchor' through
+`donkey--ensure-non-rectangle-selection' before it sets its mark.
+Without that the anchor outlived the session -- a moving mark never
+fires `deactivate-mark-hook' -- and
+`donkey--visual-line-session-active-p', which knows a session by the
+mark sitting at the anchor or at the anchor line's end, took a fresh
+selection whose mark happened to land there for the session still
+running.  From the end of the line `V' selects, `m w' and `m b' mark
+the last word and leave their mark at that line's end, and `v' plants
+one at point.  Confirmed live: `V m w' highlighted \"beta\" alone and
+`d' removed the whole line, kill ring \"alpha beta\\n\"; `V v h h'
+highlighted two characters and `y' copied the whole line; the
+reminder after each `h' read \"Visual line\" over a selection `v' had
+just started; and `V m w V' said \"Visual line: canceled\" where a
+fresh session should have started.
+
+Pinned: the selection each leaves and that it is no session, what `d'
+and `y' take from it, which reminder the motion after `v' repaints,
+and that `V' after it starts a fresh session on the line point is on."
+  (dolist (case '(("V m w"   "beta")
+                  ("V m b"   "beta")
+                  ("V v h h" "ta")))
+    (cl-destructuring-bind (keys selection) case
+      (donkey-mark-test--keys "alpha beta\ngamma\n" keys
+        (should (equal (list keys (donkey-mark-test--selection)
+                             (and (donkey--visual-line-session-active-p) t))
+                       (list keys selection nil))))))
+  ;; The action keys take the selection, not the line it sits on.
+  (dolist (case '(("V m w d"   "alpha \ngamma\n"     ("beta"))
+                  ("V m w y"   "alpha beta\ngamma\n" ("beta"))
+                  ("V m b d"   "alpha \ngamma\n"     ("beta"))
+                  ("V v h h d" "alpha be\ngamma\n"   ("ta"))
+                  ("V v h h y" "alpha beta\ngamma\n" ("ta"))))
+    (cl-destructuring-bind (keys text kills) case
+      (let ((kill-ring nil) (kill-ring-yank-pointer nil))
+        (donkey-mark-test--keys "alpha beta\ngamma\n" keys
+          (should (equal (list keys
+                               (buffer-substring-no-properties (point-min)
+                                                               (point-max))
+                               kill-ring)
+                         (list keys text kills)))))))
+  ;; The motion after `v' repaints the linear reminder, not the
+  ;; session's.
+  (should (equal (car (donkey-hint-test--msgs "alpha beta\ngamma\n" "V v h"))
+                 donkey--linear-selection-hint))
+  ;; And `V' starts over instead of canceling a session that is gone.
+  (donkey-mark-test--keys "alpha beta\ngamma\n" "V m w V"
+    (should (donkey--visual-line-session-active-p))
+    (should (equal (donkey-mark-test--selection) "alpha beta")))
+  (should (equal (car (donkey-hint-test--msgs "alpha beta\ngamma\n" "V m w V"))
+                 donkey--visual-line-hint)))
+
+(ert-deftest donkey-a-mark-moved-from-outside-the-package-still-ends-the-session ()
+  "A stale anchor a foreign mark command leaves is still rejected.
+
+`mark-sexp' and its kin never come through
+`donkey--ensure-non-rectangle-selection', so after `V' they leave the
+anchor behind.  `donkey--visual-line-session-active-p's positional
+check is what stands between that anchor and the next `J': the mark
+sits nowhere a session would have left it, so the selection is no
+session and `J' moves down one line as plain `forward-line' does,
+instead of snapping the region back to the anchor line.  The check
+was what kept every stale anchor out before the selection commands
+cleared theirs, and this is the case it still covers.
+
+Over a session on the SECOND line, because `mark-sexp' grows an active
+region at the mark's side, away from point -- and from the first
+line's start there is nothing before the mark for it to take, so the
+key changed nothing there."
+  (donkey-mark-test--keys "alpha beta\ngamma delta\nrest\n" "j V C-M-SPC"
+    (should donkey-visual-anchor)
+    (should-not (donkey--visual-line-session-active-p))
+    (should (equal (donkey-mark-test--selection) "beta\ngamma delta")))
+  (donkey-mark-test--keys "alpha beta\ngamma delta\nrest\n" "j V C-M-SPC J"
+    (should (bolp))
+    (should (looking-at-p "rest"))
+    (should (equal (donkey-mark-test--selection) "beta\ngamma delta\n"))))
 
 (ert-deftest donkey-m-adopts-an-existing-selection ()
   "`M' over a live selection carries it into the mode; `M M' cancels.

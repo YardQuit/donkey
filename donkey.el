@@ -2029,32 +2029,61 @@ live in `emacs -nw' on 30.2 and 31.1: with the binding, v w
 ;;; Mark and Text Object Selection Commands
 ;;; ---------------------------------------------------------------------------
 
-(defun donkey--ensure-non-rectangle-selection ()
-  "Disable `rectangle-mark-mode' if it is currently active.
-
-`rectangle-mark-mode' only auto-disables via `deactivate-mark-hook',
-which fires on the mark's active -> inactive transition -- not when a
-command simply repositions an ALREADY-active mark, which is exactly
-what `push-mark'/`set-mark'/`activate-mark' do for every Donkey
-selection command (`donkey-mark-inner', `donkey-mark-paragraph',
-`donkey-set-mark', etc.).  Without this, a rectangle selection left
-active from an earlier, unrelated `donkey-rectangle-mark-mode' session
-would silently persist underneath a brand new, intended-to-be-linear
-selection, and the next `donkey-copy'/`donkey-delete'/`donkey-yank'
-would misinterpret the new selection as a rectangle instead of the
-intended linear span.  Confirmed live: after `m v' (rectangle-mark) on
-one line, then `m p' (mark-paragraph) elsewhere without canceling the
-rectangle first, pressing `d' silently killed a zero-width \"rectangle\"
-\(one empty string per line) instead of deleting the paragraph, with no
-error and no visible change to the buffer at all.
-
-Called at the start of every Donkey command that establishes a new
-selection, before that command's own `push-mark'/`set-mark' call."
-  (when (bound-and-true-p rectangle-mark-mode)
-    (rectangle-mark-mode -1)))
-
 (defvar-local donkey-visual-anchor nil
   "Anchor position for visual line selection.")
+
+(defun donkey--ensure-non-rectangle-selection ()
+  "Clear the selection state an earlier selection may have left behind.
+
+Disables `rectangle-mark-mode' if it is active, and forgets any
+`donkey-visual-anchor'.  Each is the state of one KIND of selection --
+a rectangle, a visual-line session -- and each is only ever taken down
+by `deactivate-mark-hook', which fires on the mark's active -> inactive
+transition and not when a command simply repositions an ALREADY-active
+mark, which is exactly what `push-mark'/`set-mark'/`activate-mark' do
+for every Donkey selection command (`donkey-mark-inner',
+`donkey-mark-paragraph', `donkey-set-mark', etc.).  So a selection of
+one kind started over a live selection of another kept the old kind's
+state underneath it, and the action keys read the new selection as the
+old kind.
+
+The rectangle: one left active from an earlier, unrelated
+`donkey-rectangle-mark-mode' session silently persisted underneath a
+brand new, intended-to-be-linear selection, and the next
+`donkey-copy'/`donkey-delete'/`donkey-yank' took the new selection for
+a rectangle instead of the intended linear span.  Confirmed live: after
+`m v' (rectangle-mark) on one line, then `m p' (mark-paragraph)
+elsewhere without canceling the rectangle first, pressing `d' silently
+killed a zero-width \"rectangle\" (one empty string per line) instead of
+deleting the paragraph, with no error and no visible change to the
+buffer at all.
+
+The anchor, for the same reason.  `donkey--visual-line-session-active-p'
+knows a session by where the mark sits -- at the anchor, or at the
+anchor line's end -- and a fresh selection can land its mark on either:
+with point at the end of the line `V' selected, `m w' marks the last
+word and leaves the mark at that line's end, and `v' plants one at
+point.  Confirmed live: `V m w' highlighted \"beta\" alone and `d' then
+removed the whole line; `V v h h' highlighted two characters, `y'
+copied the whole line, and the reminder after each `h' read \"Visual
+line\" over a selection `v' had just started; `V m w V' said \"Visual
+line: canceled\" where a fresh session should have started.  Clearing
+the anchor here is what makes the highlight and the action agree.  The
+predicate's positional check stays for selections made by commands
+outside this package, which never come through here.
+
+Called at the start of every Donkey command that establishes a new
+selection, before that command's own `push-mark'/`set-mark' call -- and
+so before its search, which means a command that then fails to find its
+object leaves the old selection standing as a plain region, as it
+already left a rectangle.  `donkey-mark-run-toggle' does not come
+through here itself: adopting a live session needs the anchor, which
+`donkey-mark-run-adopt' widens the session through before clearing it,
+and the branch that starts a run afresh marks its word with
+`donkey-mark-word', which does."
+  (when (bound-and-true-p rectangle-mark-mode)
+    (rectangle-mark-mode -1))
+  (setq donkey-visual-anchor nil))
 
 (defun donkey--clear-visual-anchor ()
   "Clear `donkey-visual-anchor' whenever the mark is deactivated.
@@ -2091,20 +2120,21 @@ mark, so a following `J'/`K' still recognizes the session and
 re-anchors to whole lines, instead of falling through to plain
 `forward-line' as a `last-command'-based check would.
 
-It also still rejects a STALE anchor, which is what this predicate
-exists for.  Setting a brand new region while one is already active
-\(e.g. `donkey-mark-inner', `donkey-mark-outer', or any other mark
-command) never runs `deactivate-mark-hook' -- that hook only fires on
-the active -> inactive transition, not when the region is simply
-repositioned -- so `donkey--clear-visual-anchor' never gets a chance
-to clear an anchor left over from an earlier session.  Those commands
-do move the mark, though, to a position unrelated to the old anchor's
-line, so the check below fails and the stale anchor is correctly
-ignored.  Confirmed live: pressing `J' right after using
-`donkey-mark-inner' to select \"hello\" (with a leftover anchor from an
-earlier visual-line session) snapped the region all the way back to
-the visual-line session's original anchor line instead of extending
-\"hello\" by one line."
+The mark test also stands between a STALE anchor and a session it was
+never part of.  Every selection command of this package clears the
+anchor through `donkey--ensure-non-rectangle-selection' before it sets
+its mark, because a new mark can land exactly where a session would
+have left it -- see there.  Commands from outside the package
+\(\\[set-mark-command], `mark-word', `mark-sexp') reposition an active
+mark without passing through it, and `deactivate-mark-hook' does not
+fire for a mark that merely moves, so an anchor can outlive its session
+that way.  Those commands land the mark somewhere unrelated to the
+anchor's line, and the check below fails for them.  Confirmed live:
+`V' on a second line and then `mark-sexp', which grows an active region
+at the mark's side and so took the word before the line, left the
+anchor behind, and `J' pressed on that selection moved down one line as
+plain `forward-line' does instead of snapping the region back to the
+anchor line."
   (and (region-active-p)
        donkey-visual-anchor
        ;; An anchor outside the accessible portion is not a session this
@@ -4519,7 +4549,6 @@ the whole object, exactly as the prefixed key does, which is the
 promise this key makes: the same behavior, minus the prefix."
   (interactive)
   (let ((was-rectangle (bound-and-true-p rectangle-mark-mode)))
-    (donkey--ensure-non-rectangle-selection)
     (cond
      ((and (not was-rectangle) (donkey--adoptable-selection-p))
       ;; The rename is what makes the adoption stick: this command is
@@ -4539,6 +4568,17 @@ promise this key makes: the same behavior, minus the prefix."
       ;; second press found `last-command' equal to `this-command'
       ;; and grew the word from the mark the rectangle left, selecting
       ;; from where the rectangle began to the word under point.
+      ;;
+      ;; No `donkey--ensure-non-rectangle-selection' of its own here.
+      ;; The word marked below is `donkey-mark-word', which comes
+      ;; through the funnel first as every selection command does, so
+      ;; the rectangle and any visual-line anchor are cleared there
+      ;; whether the word is found or not.  This command used to call
+      ;; it too, before the `cond', which was harmless while the funnel
+      ;; only disabled a rectangle and stopped being so once it cleared
+      ;; the anchor as well: the adopting branch above NEEDS the anchor,
+      ;; `donkey-mark-run-adopt' widening a live session to whole lines
+      ;; through it, and `V J M d' fell back to the raw region.
       (deactivate-mark)
       ;; The word IS `m w', with no position it declines from.
       ;; It used to run only with point ON a word, so that from a gap
