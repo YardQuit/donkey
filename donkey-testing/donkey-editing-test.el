@@ -2184,6 +2184,66 @@ same reason."
                          offenders)))))))))
     (should-not offenders)))
 
+(ert-deftest donkey-docstrings-render-with-matched-quotes ()
+  "Every docstring in donkey.el renders with its quotes paired.
+
+Sixteen did not.  A `sym' reference whose closing quote was written as
+\\=' rendered as \"‘kill-ring'\" under the default curve style -- the
+opener curly, the closer straight -- and a closer written as a lone
+\\= lost its backslash to the Lisp reader and left a stray \"=\" in
+the help text: \"‘read-char=’\".  Both came from the same belief, that
+the closing quote of a reference needs escaping.  It does not:
+`substitute-command-keys' curls a bare apostrophe by itself, and the
+escape is for an apostrophe that must stay straight -- a possessive
+such as Emacs\\='s, an expression prefix such as \\='bar.  Harmless to
+the code and invisible to the byte compiler and checkdoc alike, which
+is how the two shapes accumulated over three weeks of commits.
+
+Checked on the RENDERED text rather than the source, because the
+rendering is what `C-h f' shows and because the source has more than
+one right spelling: a reference closes with a bare quote, a
+literal-grave example with the escape on both ends.  The style is
+bound to curve explicitly -- --batch under a C locale renders grave
+style, where the escaped closer is indistinguishable from a bare one
+and the defect is invisible.  Scoped to donkey.el the way
+donkey-docstrings-carry-no-repeated-apostrophes is, and for the same
+reason."
+  (let ((package (expand-file-name "donkey.el"
+                                   (file-name-directory
+                                    (or (symbol-file 'donkey-copy 'defun)
+                                        default-directory))))
+        (text-quoting-style 'curve)
+        offenders)
+    (mapatoms
+     (lambda (sym)
+       (when (string-prefix-p "donkey" (symbol-name sym))
+         (dolist (entry (list (cons (and (fboundp sym) (documentation sym))
+                                    (symbol-file sym 'defun))
+                              (cons (and (boundp sym)
+                                         (documentation-property
+                                          sym 'variable-documentation))
+                                    (symbol-file sym 'defvar))))
+           (let ((doc (car entry))
+                 (file (cdr entry)))
+             (when (and (stringp doc) file
+                        (equal (expand-file-name file) package))
+               (dolist (line (split-string doc "\n"))
+                 ;; A curly opener closed by a straight quote, where the
+                 ;; straight quote is neither the start of a quoted
+                 ;; expression -- `(thing-at-point \\='sentence)' -- nor
+                 ;; the apostrophe character itself named as `\\=''.
+                 ;; The second pattern is the same opener left standing
+                 ;; before a possessive: "‘donkey-mode's".  The third is
+                 ;; the stray "=" a lone \\= leaves behind.
+                 (when (or (string-match-p
+                            "‘[^‘’]*'\\(?:[^[:alnum:]’]\\|$\\)" line)
+                           (string-match-p "‘[^‘’ ]+'s\\b" line)
+                           (string-match-p
+                            "\\(?:[[:alnum:]]\\|[][()]\\)=[‘’]" line))
+                   (push (format "%s: %s" (symbol-name sym) line)
+                         offenders)))))))))
+    (should-not offenders)))
+
 (ert-deftest donkey-editing-commands-honor-a-count ()
   "`d'/`x', `y' and `c' act on COUNT characters.
 

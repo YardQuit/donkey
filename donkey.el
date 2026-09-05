@@ -660,9 +660,9 @@ Banked lines are not honored either.  With lines banked via
 at point and leaves the banks standing -- `y', `d' and `p' all act on
 the bank instead.
 
-What a SELECTION replaces goes on the `kill-ring\\=', so
-\\[donkey-yank] brings it back -- the same store `donkey-delete\\=' fills
-for the same selection.  A rectangle goes to `killed-rectangle\\='
+What a SELECTION replaces goes on the `kill-ring', so
+\\[donkey-yank] brings it back -- the same store `donkey-delete' fills
+for the same selection.  A rectangle goes to `killed-rectangle'
 instead, where \\[donkey-yank-rectangle] pastes it from.  Nothing was
 saved at all before, so changing a marked word and pasting gave whatever
 happened to be on the ring already.
@@ -671,8 +671,8 @@ With NO selection nothing is saved, and that is the rule rather than an
 oversight: a character changed under the cursor is a typo being fixed,
 not a cut, and filling the ring with single characters would push out
 what was put there deliberately.  A COUNT does not change that --
-\\`C-u 3 c\\=' is still no selection -- so the text it removes is gone
-except through `undo\\='.  `donkey-delete\\=' draws the same line in the
+\\`C-u 3 c' is still no selection -- so the text it removes is gone
+except through `undo'.  `donkey-delete' draws the same line in the
 same place.
 
 INSERT state is entered even when there is nothing to delete, such as at
@@ -681,7 +681,7 @@ the very end of the buffer.
 COUNT changes that many characters when no selection is active.  A
 negative COUNT changes that many characters before point, and a COUNT of
 zero changes none while still entering INSERT state -- the same reading
-`donkey-delete\\=' gives its own argument, since the two remove text
+`donkey-delete' gives its own argument, since the two remove text
 identically and differ only in what happens next.
 
 COUNT changes that many characters when no region is active.  A negative
@@ -1962,13 +1962,13 @@ to Normal state, even if the insertion signals.
 Which delimiters actually wrap is the pairing package's decision, not
 this command's, and `electric-pair-mode' does not cover all six
 defaults.  It wraps what its own rules treat as a pair -- `(', `[',
-`{' and `\"' -- and leaves `'' and ``' alone, inserting the character
+`{' and `\"' -- and leaves `\\='' and `\\=`' alone, inserting the character
 at the region's start with the region unwrapped.  Confirmed in
 `fundamental-mode', `text-mode' and `emacs-lisp-mode' alike, so it is
 not the major mode's syntax table deciding; adding them to
 `electric-pair-pairs' is what changes it.
 
-Smartparens wraps all six out of the box, `'' and ``' included.  It is
+Smartparens wraps all six out of the box, `\\='' and `\\=`' included.  It is
 the pair definition that decides, so excluding one -- `sp-local-pair'
 with `:actions' nil, say -- stops that delimiter wrapping and leaves
 the character inserted, exactly as `electric-pair-mode' does for the
@@ -2453,12 +2453,12 @@ it."
   :group 'donkey)
 
 (defun donkey--mark-pair-prompt ()
-  "Return the `read-char\=' prompt for `m i\=' and `m a\='.
+  "Return the `read-char' prompt for `m i' and `m a'.
 
 It NAMES the delimiters rather than listing them.  Listing meant
 nineteen characters across the echo area, most of a line spent on
 something nobody reads twice, and the list grows with every pair a
-reader adds to `donkey-mark-pair-delimiters\='.  Naming the variable
+reader adds to `donkey-mark-pair-delimiters'.  Naming the variable
 covers the built-in pairs and any customized ones at once, and \\[describe-variable]
 on it shows both, marked as customized where they are.
 
@@ -2485,13 +2485,13 @@ variable shows the reader their own."
   "Return the OPEN character of the pair CHAR belongs to.
 
 CHAR itself when it opens a pair, and the opener when it CLOSES one, so
-the prompt takes \\=`)\=' for \\=`(\=', and \\=`]\=' for \\=`[\='.  Point
-sitting on a closer has always resolved this way -- `rassq\=' against
-`donkey-mark-pair-delimiters\=' -- and there is no reason a reader who
+the prompt takes \\=`)\\=' for \\=`(\\=', and \\=`]\\=' for \\=`[\\='.  Point
+sitting on a closer has always resolved this way -- `rassq' against
+`donkey-mark-pair-delimiters' -- and there is no reason a reader who
 TYPES the closer should be told it is unsupported when the same
 character under the cursor is understood.
 
-A symmetric delimiter opens and closes with itself, so `assq\=' answers
+A symmetric delimiter opens and closes with itself, so `assq' answers
 first and the second lookup never sees it.
 
 Anything else comes back unchanged, for the close lookup in the caller
@@ -2504,7 +2504,7 @@ to reject by name."
 (defun donkey--pair-delimiter-already-taken ()
   "Do nothing, silently.
 
-What a delimiter key runs for one press after `m i\=' or `m a\=' took its
+What a delimiter key runs for one press after `m i' or `m a' took its
 delimiter from the character at point.  Silent on purpose: the selection
 message is the answer the press was after, and overwriting it with an
 explanation would take away the one thing worth reading."
@@ -2513,45 +2513,45 @@ explanation would take away the one thing worth reading."
 (defun donkey--suppress-one-pair-delimiter ()
   "Make the NEXT key harmless if it names a delimiter.
 
-`m i\=' and `m a\=' read their delimiter from the character at point when
+`m i' and `m a' read their delimiter from the character at point when
 point is on one, and then they are finished -- so the delimiter the
-reader types as the third key of \\=`m i (\=' never reaches `read-char\='
+reader types as the third key of \\=`m i (\\=' never reaches `read-char'
 and runs as a command in its own right.  Every delimiter this package
-knows is bound to `donkey-wrap-region\=', which INSERTS: \\=`m i (\=' with
+knows is bound to `donkey-wrap-region', which INSERTS: \\=`m i (\\=' with
 point on the paren turned \"call(alpha) end\" into \"call((alpha) end\".
 A selection key had edited the buffer, silently, from the sequence the
 reader meant to select with.
 
 The press is swallowed rather than the auto-detect being taken away, so
-both spellings work and neither edits: \\=`m i\=' alone still selects,
-\\=`m i (\=' selects and the paren does nothing.  One press only -- a
-second \\=`(\=' wraps the selection, which is how somebody who wanted the
+both spellings work and neither edits: \\=`m i\\=' alone still selects,
+\\=`m i (\\=' selects and the paren does nothing.  One press only -- a
+second \\=`(\\=' wraps the selection, which is how somebody who wanted the
 wrap gets it.
 
 Closing characters are bound too, point being able to sit on either
 end of a pair.
 
 Nothing is armed for a call from Lisp.  There is no next keystroke to
-protect there, and the map would be left standing: `set-transient-map\='
-puts it in `overriding-terminal-local-map\=', which is terminal-wide and
+protect there, and the map would be left standing: `set-transient-map'
+puts it in `overriding-terminal-local-map', which is terminal-wide and
 comes down on the next COMMAND, so a caller outside the command loop
 leaves it up for whatever runs next.  The suite showed this the moment
 it was written -- the marking tests call the command directly with
 point on a delimiter, and the check that no key of this package
 shadows an Emacs command outside the documented few then resolved
-\\=`(\=' through the leftover map and reported one.  Three shuffled
+\\=`(\\=' through the leftover map and reported one.  Three shuffled
 orders caught it; the fixed order did not.
 
-The test is that `this-command\=' IS one of the two commands, not merely
+The test is that `this-command' IS one of the two commands, not merely
 that it is set.  The command loop sets it before each command and
 nothing resets it afterwards, so outside the loop it holds whatever
-ran last: an earlier test had left `kill-region\=' there, and a later
+ran last: an earlier test had left `kill-region' there, and a later
 Lisp call with point on a brace found it non-nil and armed the map all
 the same -- the one shuffled order that survived the first guard.
 Naming the commands also fixes what a wrapper gets: a command
-of the reader\='s own that calls this one is not `m i\=', so nobody typed
+of the reader\\='s own that calls this one is not `m i', so nobody typed
 a delimiter after it, and its next key must not be eaten.
-`donkey--mark-extending-p\=' guards on `this-command\=' for the same
+`donkey--mark-extending-p' guards on `this-command' for the same
 reason, and says so."
   (when (memq this-command '(donkey-mark-inner donkey-mark-outer))
     (let ((map (make-sparse-keymap)))
@@ -3086,10 +3086,10 @@ COUNT selects how many levels out to go."
 (defun donkey--back-to-symbol-char ()
   "Move point back onto the last symbol character before it.
 
-`donkey-mark-symbol\=' used `backward-sexp\=' to normalize point onto the
+`donkey-mark-symbol' used `backward-sexp' to normalize point onto the
 symbol behind, and landed wherever a SEXP starts, which is not where a
 symbol starts.  Reported from a key sequence quoted in prose, of the
-shape `substitute-command-keys\=' renders a binding as -- curly quotes and
+shape `substitute-command-keys' renders a binding as -- curly quotes and
 all.  With point in the gap between its two halves that landing was the
 opening quote, punctuation with no symbol at point, and the mark was
 REFUSED although a symbol sat directly behind.  The same landing sent a
@@ -3099,18 +3099,18 @@ Punctuation, quotes, and brackets are all crossed to reach the symbol,
 because none of them can be part of one; the search is for a character
 of word or symbol syntax and stops on the first.
 
-`skip-syntax-backward\=' stops in exactly two places here, at the first
+`skip-syntax-backward' stops in exactly two places here, at the first
 such character or at the start of the buffer, so a landing past
-`point-min\=' IS the character and needs no second test for it.  One was
+`point-min' IS the character and needs no second test for it.  One was
 written and mutation testing showed it changed nothing.
 
 Nothing moves when there is no such character behind point at all.  The
 leading gap of a buffer is that case, and the caller answers it by
-reaching FORWARD instead -- see `donkey--mark-reach-forward-for\='.
+reaching FORWARD instead -- see `donkey--mark-reach-forward-for'.
 
 The guard is a rule about this function rather than about what the user
-sees.  `donkey-mark-symbol\=' puts point back before it reports a refusal,
-so leaving the cursor at `point-min\=' here would be invisible through the
+sees.  `donkey-mark-symbol' puts point back before it reports a refusal,
+so leaving the cursor at `point-min' here would be invisible through the
 command -- checked, across five modes and every position of fourteen
 buffers, and nothing differed.  It is written anyway, because the restore
 belongs to the refusal and this belongs to the search: a step that only
@@ -3124,8 +3124,8 @@ this function directly, for the same reason."
 (defun donkey--trim-symbol-prefix ()
   "Move point forward over punctuation stuck to the front of the symbol ahead.
 
-The mirror of `donkey--trim-symbol-punctuation\=', called with point at
-the START of a backward symbol run.  `backward-sexp\=' stops where a sexp
+The mirror of `donkey--trim-symbol-punctuation', called with point at
+the START of a backward symbol run.  `backward-sexp' stops where a sexp
 starts rather than where a symbol does, and scanning sweeps adjacent
 punctuation into the sexp, so a mark of a name quoted in prose came out
 holding the opening quote as well.
@@ -3135,8 +3135,8 @@ and # in Lisp -- introduces the form after it and belongs with it, so
 marking \\='bar still gives \\='bar; punctuation belongs to no symbol in
 any mode.  The distinction is the mode's own syntax table rather than a
 list of characters here, which is why the same rule serves prose and
-code: the curly quotes are punctuation in `text-mode\=' and
-`emacs-lisp-mode\=' alike, and in `help-mode\=', where they are brackets
+code: the curly quotes are punctuation in `text-mode' and
+`emacs-lisp-mode' alike, and in `help-mode', where they are brackets
 instead, sexp scanning already stopped in the right place and this finds
 nothing to do.
 
@@ -3160,24 +3160,24 @@ A symbol that IS punctuation keeps itself that way."
 
 Called with point at the END of a forward symbol run, where a trailing
 \".\" or \",\" is prose punctuation rather than part of the name --
-`donkey-mark-symbol\\=' drops it so that marking the symbol in \"see
-`foo\\=', bar.\" gives \"bar\" rather than \"bar.\".
+`donkey-mark-symbol' drops it so that marking the symbol in \"see
+\\=`foo\\=', bar.\" gives \"bar\" rather than \"bar.\".
 
 Anything of punctuation SYNTAX goes the same way, which is what carries
 the rule into modes whose punctuation is not those two characters.  The
 closing curly quote around a name quoted in prose is punctuation in
-`text-mode\\=' and `emacs-lisp-mode\\=' alike, and marking such a name
+`text-mode' and `emacs-lisp-mode' alike, and marking such a name
 gave it with that quote still attached until this counted it.  The two
 literal characters stay named because Lisp gives \".\" symbol syntax and
 \",\" the syntax of an expression prefix, so neither is punctuation in
 the mode this package is written in.
 
-`donkey--trim-symbol-prefix\\=' is the mirror at the other end, and the
+`donkey--trim-symbol-prefix' is the mirror at the other end, and the
 pair of them is why the command can promise a symbol rather than a sexp.
 
-Stops short when the symbol IS that punctuation.  In Lisp `.\\=' has
+Stops short when the symbol IS that punctuation.  In Lisp `.' has
 symbol syntax, so \"...\" is a symbol in its own right, and trimming it
-left nothing: `m W\\=' on a buffer of \"...\" produced an EMPTY region
+left nothing: `m W' on a buffer of \"...\" produced an EMPTY region
 and announced a successful mark.  On the extend path the same trim ate
 the symbol but not the space before it, so a second press over
 \"a ...\" grew the selection from \"a\" to \"a \" -- a trailing
@@ -3203,19 +3203,19 @@ an extension: never trim away the thing that was just added."
 (defun donkey--real-thing-at-point (thing)
   "Return the THING at point, unless nothing in it is really a THING.
 
-`thing-at-point' reports the WHOLE BUFFER as the `word\\=' at point when
+`thing-at-point' reports the WHOLE BUFFER as the `word' at point when
 the buffer holds no word character anywhere: \"...\", \"!!!\" and
 \"()\" each answer with themselves.  So the guard meant to reject a
-buffer with no word in it accepted one instead, and `donkey-mark-word\\='
+buffer with no word in it accepted one instead, and `donkey-mark-word'
 selected the entire buffer while reporting \"Word marked\" -- after
-which \\[donkey-delete] emptied it.  Confirmed in `fundamental-mode\\=',
-`text-mode\\=' and `emacs-lisp-mode\\=' alike, so it is not the major
+which \\[donkey-delete] emptied it.  Confirmed in `fundamental-mode',
+`text-mode' and `emacs-lisp-mode' alike, so it is not the major
 mode\\='s syntax table deciding.  A buffer of pure whitespace answers nil,
 which is why the hole shows only with non-word text that is not blank
 either.
 
 Checked by looking for a character of the right syntax inside what came
-back, so a real word or symbol passes through unchanged.  `symbol\\='
+back, so a real word or symbol passes through unchanged.  `symbol'
 does not need the treatment -- it answers nil unless the characters
 really do have symbol syntax, which is why \"+++\" is a symbol and
 marking it is correct -- but it is asked the same way here so the two
@@ -4719,10 +4719,10 @@ of the object being counted from, and not wherever counting the same
 number of objects forward again happens to land.
 
 Both of those were tried, and each was wrong in its own direction.
-`donkey-mark-word\=' handed the negative case to `mark-word\=', which
+`donkey-mark-word' handed the negative case to `mark-word', which
 measures from point, so the separator came with it -- asked for the word
 before \"four\" it marked \"three \" rather than \"three\".
-`donkey-mark-symbol\=' counted forward again from the start it had
+`donkey-mark-symbol' counted forward again from the start it had
 reached, which overshoots as soon as the buffer runs out behind: asked
 for the three symbols before the second word of a five-word buffer, it
 marked the second and third words as well, reaching past the very point
@@ -4730,7 +4730,7 @@ the count was measured from.
 
 BACKWARD and FORWARD are the object\\='s own motions.  Going back one and
 forward one lands on the end of the object behind, from any position a
-caller has normalized; the `min\=' is for a caller that has not, where
+caller has normalized; the `min' is for a caller that has not, where
 FORWARD could return past where it started."
   (save-excursion
     (goto-char origin)
@@ -5083,7 +5083,7 @@ COUNT marks or extends by that many paragraphs."
 Punctuation at either end is omitted from the selection -- a trailing
 comma or period, and the quotes around a name in prose.  An expression
 prefix is not punctuation and stays: \\='bar marks as \\='bar.  See
-`donkey--trim-symbol-punctuation\=' and `donkey--trim-symbol-prefix\='.
+`donkey--trim-symbol-punctuation' and `donkey--trim-symbol-prefix'.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
@@ -5173,15 +5173,15 @@ matching how `forward-sexp' reads its argument."
 The other end of `donkey-mark-symbol's run, sharing
 `donkey--mark-backward' with the other three backward keys.
 
-The trailing trim does not run here.  `donkey--trim-symbol-punctuation\='
+The trailing trim does not run here.  `donkey--trim-symbol-punctuation'
 drops a trailing \".\" or \",\" because that punctuation attaches to the
 END of a name, and this walk lands on symbol STARTS; whatever punctuation
 separated the symbols becomes interior to the selection -- confirmed by
 probe, growing back from \"baz\" over \"foo, bar baz\" selects all of it,
 comma in place.
 
-`donkey--trim-symbol-prefix\=' does run, for the punctuation the walk
-lands ON rather than passes over.  `backward-sexp\=' stops where a sexp
+`donkey--trim-symbol-prefix' does run, for the punctuation the walk
+lands ON rather than passes over.  `backward-sexp' stops where a sexp
 starts, which in prose is in front of the quote before the name.
 
 The delegate a fresh press goes through also brings the
@@ -6739,7 +6739,7 @@ who has rebound either key is still taught the keys they actually have
 `\\\\[donkey-delete]' cannot keep here because it names one binding and
 this command has two.
 
-Each key is wrapped in the \\=\\=` KEY \\=' escape rather than returned bare,
+Each key is wrapped in the \\=\\\\=` KEY \\=' escape rather than returned bare,
 so `substitute-command-keys' gives it the `help-key-binding' face -- the
 same treatment every other key in the tutor gets.  Returned as raw text
 first, the two keys were the only ones in the whole buffer rendering as
@@ -7860,9 +7860,9 @@ is broken when nothing happens.  Kept in step with
 ;;; ---------------------------------------------------------------------------
 
 (defvar donkey--startup-resweep-timer nil
-  "One-shot idle timer for `donkey--startup-resweep\\=', or nil.
+  "One-shot idle timer for `donkey--startup-resweep', or nil.
 
-Stored so `donkey-mode\\='s disable path can cancel it.  The resweep
+Stored so `donkey-mode's disable path can cancel it.  The resweep
 itself refuses to run with the mode off, but a live timer belonging to
 a switched-off mode is still DONKEY state, and the teardown promises
 to clear all of it.")
@@ -7870,28 +7870,28 @@ to clear all of it.")
 (defun donkey--startup-resweep ()
   "Apply DONKEY\\='s default state to buffers created during startup.
 
-When `donkey-mode\\=' is enabled from an init file, its sweep over
-`buffer-list\\=' covers only the buffers existing at that moment, and
-`after-change-major-mode-hook\\=' covers buffers that pick a major mode
+When `donkey-mode' is enabled from an init file, its sweep over
+`buffer-list' covers only the buffers existing at that moment, and
+`after-change-major-mode-hook' covers buffers that pick a major mode
 later.  The startup screen (*GNU Emacs*) slips through both nets: it
 is created after EVERY startup hook -- probed live: it does not exist
-yet when `after-init-hook\\=', `emacs-startup-hook\\=' or even
-`window-setup-hook\\=' runs -- and it stays in `fundamental-mode\\=', the
+yet when `after-init-hook', `emacs-startup-hook' or even
+`window-setup-hook' runs -- and it stays in `fundamental-mode', the
 mode buffers are born in, so no mode function ever fires the hook for
 it.  A user landing there found the mode on with every key dead --
 literally: the splash suppresses self-insert itself, so \"j\" was not
-even typing, it was `undefined\\=', in a package whose whole point is
+even typing, it was `undefined', in a package whose whole point is
 that \"j\" moves.
 
 This function is the missing sweep, scheduled from the enable path on
 a one-shot idle timer because no hook is late enough.  Scheduled
 UNCONDITIONALLY, because the enable path cannot tell whether startup
-is still in progress: guarding on a nil `after-init-time\\=' was tried
+is still in progress: guarding on a nil `after-init-time' was tried
 and rejected -- that variable is already set while \"-l\" files and
-`after-init-hook\\=' functions run, yet the splash arrives later still,
+`after-init-hook' functions run, yet the splash arrives later still,
 so the guard skipped exactly the enables it was meant to serve.  An
 extra sweep costs nothing when nothing was missed:
-`donkey--ensure-default-state\\=' only touches buffers holding no DONKEY
+`donkey--ensure-default-state' only touches buffers holding no DONKEY
 state at all.
 
 Daemon sessions get nothing from this timer, and the guarantee above
@@ -7899,16 +7899,16 @@ is weaker there than it reads.  An \"emacs --daemon\" reaches its first
 idle within a fraction of a second of the enable -- measured at
 0.21 s, before any client frame exists, sweeping only buffers the
 enable sweep had already covered.  What protects a frame made later by
-\"emacsclient -c\" is `after-change-major-mode-hook\\=' instead, and it
-reaches more than it looks: `set-buffer-major-mode\\=' calls the mode
-function even when the mode stays `fundamental-mode\\=', so the
+\"emacsclient -c\" is `after-change-major-mode-hook' instead, and it
+reaches more than it looks: `set-buffer-major-mode' calls the mode
+function even when the mode stays `fundamental-mode', so the
 switch-to-a-new-name path fires the hook too.  Probed live in a
 graphical client frame: the visited file and *scratch* both carry
 state, and the only buffers left without it are internal,
 leading-space ones no user visits.
 
 What stays uncovered is the class the splash belonged to, not just
-that one buffer: a buffer made by a bare `get-buffer-create\\=' after
+that one buffer: a buffer made by a bare `get-buffer-create' after
 this timer has run, and never given a major mode, holds no state
 permanently.  No such buffer is reachable in normal use today -- the
 audit that measured the timing found none -- so this function fixes
@@ -8075,7 +8075,7 @@ installed them for good."
     (minibuffer-setup-hook . donkey--minibuffer-setup)
     (minibuffer-exit-hook . donkey--minibuffer-exit)
     ,@donkey--state-hooks)
-  "Every (HOOK . FUNCTION) `donkey-mode' adds to Emacs\='s own hooks.
+  "Every (HOOK . FUNCTION) `donkey-mode' adds to Emacs\\='s own hooks.
 
 One list, so the enable and disable paths cannot drift apart.  All of
 these used to be added at load time -- some of them by a bare
@@ -8084,7 +8084,7 @@ on disable, so a session that had merely loaded the file ran DONKEY
 code on every command, every minibuffer and every input-method toggle
 for good.  (`deactivate-mark-hook' is not here:
 `donkey--clear-visual-anchor' is installed buffer-locally by the
-command that needs it.)  A global minor mode\='s hooks
+command that needs it.)  A global minor mode\\='s hooks
 belong to the mode.
 
 The `donkey--state-hooks' tail is shared with the standalone state
