@@ -69,7 +69,8 @@ whatever the option says.  Worth pinning in both directions: the option
 is documented as the control, and a reader who takes that literally
 would expect emptying it to let every sequence through.  The docstring
 now says otherwise, and this is what makes that true."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil)))
+  (cl-letf ((noninteractive nil)
+            ((symbol-function 'display-graphic-p) (lambda (&rest _) nil)))
     (dolist (case '(("linux"   . t)
                     ("dumb"    . nil)
                     ("unknown" . nil)
@@ -87,6 +88,20 @@ now says otherwise, and this is what makes that true."
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--terminal-supports-decscusr-p
 ;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-terminal-supports-decscusr-p-returns-nil-in-batch ()
+  "Nil under `--batch', however capable the terminal type looks.
+
+A batch Emacs has no terminal to shape and writes what it is sent to
+standard output: the suite's own log filled with cursor sequences, and
+the `sit-for' between each pair was two fifths of its running time.
+Every test below that stubs a capable terminal binds `noninteractive'
+to nil for the same reason, the suite itself being the batch run this
+guards against."
+  (cl-letf ((noninteractive t)
+            ((symbol-function 'display-graphic-p) (lambda () nil))
+            ((symbol-function 'tty-type) (lambda () "xterm-256color")))
+    (should (null (donkey--terminal-supports-decscusr-p)))))
 
 (ert-deftest donkey-terminal-supports-decscusr-p-returns-nil-in-gui ()
   "Nil when `display-graphic-p' returns t.
@@ -115,13 +130,15 @@ qualify."
 
 (ert-deftest donkey-terminal-supports-decscusr-p-returns-t-for-xterm ()
   "Non-nil for xterm-256color."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
+  (cl-letf ((noninteractive nil)
+            ((symbol-function 'display-graphic-p) (lambda () nil))
             ((symbol-function 'tty-type) (lambda () "xterm-256color")))
     (should (donkey--terminal-supports-decscusr-p))))
 
 (ert-deftest donkey-terminal-supports-decscusr-p-falls-back-to-TERM-env ()
   "Uses TERM env var when `tty-type' returns nil."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
+  (cl-letf ((noninteractive nil)
+            ((symbol-function 'display-graphic-p) (lambda () nil))
             ((symbol-function 'tty-type) (lambda () nil))
             ((symbol-function 'getenv) (lambda (var) "xterm-256color")))
     (should (donkey--terminal-supports-decscusr-p))))
@@ -135,7 +152,8 @@ qualify."
 
 (ert-deftest donkey-terminal-supports-decscusr-p-accepts-terms-that-contain-denied-prefix ()
   "Allows terminal types that contain (but don't start with) a denied prefix."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
+  (cl-letf ((noninteractive nil)
+            ((symbol-function 'display-graphic-p) (lambda () nil))
             ((symbol-function 'tty-type) (lambda () "xterm-dumb")))
     (should (donkey--terminal-supports-decscusr-p))))
 
@@ -155,7 +173,8 @@ qualify."
 (ert-deftest donkey-send-cursor-sequence-sends-in-supported-terminal ()
   "Sends sequence twice (double-send for reliability) in a supported terminal."
   (let ((send-count 0))
-    (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
+    (cl-letf ((noninteractive nil)
+              ((symbol-function 'display-graphic-p) (lambda () nil))
               ((symbol-function 'tty-type) (lambda () "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (cl-incf send-count)))
@@ -175,7 +194,8 @@ qualify."
 
 (ert-deftest donkey-send-cursor-sequence-swallows-io-errors ()
   "Silently absorbs I/O errors from `send-string-to-terminal'."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
+  (cl-letf ((noninteractive nil)
+            ((symbol-function 'display-graphic-p) (lambda () nil))
             ((symbol-function 'tty-type) (lambda () "xterm-256color"))
             ((symbol-function 'send-string-to-terminal)
              (lambda (&rest _) (signal 'file-error "I/O failure")))
@@ -250,7 +270,8 @@ only worth making when the value changes."
   "Sends DECSCUSR in terminal mode."
   (let ((send-called nil))
     (clrhash donkey--last-applied-cursor-settings)
-    (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
+    (cl-letf ((noninteractive nil)
+              ((symbol-function 'display-graphic-p) (lambda () nil))
               ((symbol-function 'tty-type) (lambda () "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (setq send-called t)))
@@ -270,7 +291,8 @@ buffer.  Driving the terminal from there sent a shape for a buffer
 nobody sees and paused for redisplay in the caller's critical section."
   (let ((send-called nil))
     (clrhash donkey--last-applied-cursor-settings)
-    (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
+    (cl-letf ((noninteractive nil)
+              ((symbol-function 'display-graphic-p) (lambda () nil))
               ((symbol-function 'tty-type) (lambda () "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (setq send-called t)))
@@ -296,7 +318,8 @@ Without deduplication, that doubles DECSCUSR terminal I/O and the
 synchronous `sit-for' delay on every single transition."
   (let ((send-count 0))
     (clrhash donkey--last-applied-cursor-settings)
-    (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
+    (cl-letf ((noninteractive nil)
+              ((symbol-function 'display-graphic-p) (lambda () nil))
               ((symbol-function 'tty-type) (lambda () "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (setq send-count (1+ send-count))))
@@ -314,7 +337,8 @@ synchronous `sit-for' delay on every single transition."
   "Still sends DECSCUSR when the setting genuinely changes."
   (let ((sent nil))
     (clrhash donkey--last-applied-cursor-settings)
-    (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
+    (cl-letf ((noninteractive nil)
+              ((symbol-function 'display-graphic-p) (lambda () nil))
               ((symbol-function 'tty-type) (lambda () "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (seq &rest _) (push seq sent)))
@@ -383,7 +407,8 @@ Normal-state buffer to an Insert-state buffer and back sent no DECSCUSR
 sequence at all for the return trip until this was fixed."
   (let ((send-log nil))
     (clrhash donkey--last-applied-cursor-settings)
-    (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
+    (cl-letf ((noninteractive nil)
+              ((symbol-function 'display-graphic-p) (lambda () nil))
               ((symbol-function 'tty-type) (lambda () "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (push 'sent send-log)))

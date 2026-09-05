@@ -7269,8 +7269,21 @@ Returns nil for graphical frames and for terminals whose type
 matches a prefix in `donkey-decscusr-denied-terminals'.
 Falls back to the `TERM' environment variable when `tty-type'
 returns nil, and performs a conservative guess based on known
-capable terminal names."
-  (and (not (display-graphic-p))
+capable terminal names.
+
+Nil under `--batch' too, whatever `TERM' says.  There is no terminal
+to shape there: `display-graphic-p' is nil, `TERM' is whatever the
+shell that started Emacs had, and `send-string-to-terminal' writes to
+standard output.  So a batch run of the test suite started from an
+xterm wrote every cursor change into its own log -- one run of 1181
+tests logged 2694 sequences, \"[2 q\" and \"[0 q\" between the test
+lines -- and slept ten milliseconds in `sit-for' between the two
+copies of each, which was two fifths of the suite's running time:
+36 seconds with the sequences, 21 without.  `noninteractive' is the
+signal, and a test that stubs a capable terminal binds it to nil to
+get past this line to the rest of the test."
+  (and (not noninteractive)
+       (not (display-graphic-p))
        (let ((tty (or (tty-type) (getenv "TERM"))))
          (when tty
            (and (not (cl-some
