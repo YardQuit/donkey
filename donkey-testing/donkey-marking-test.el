@@ -228,11 +228,22 @@ seed until one landed on it."
                    "hello"))))
 
 (ert-deftest donkey-mark-word-point-after-word ()
-  "Point on whitespace after word selects previous word."
+  "Point on the space after a word selects the word AHEAD of it.
+
+It selected the word behind until the owner pressed `m w' and `m b'
+from the same space and got the same word from both -- see
+`donkey--mark-reach'.  The backward key is the one that keeps the word
+behind, asserted alongside so the two cannot drift back together."
   (with-temp-buffer
     (insert "hello world")
     (goto-char 6)
     (donkey-mark-word)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "world")))
+  (with-temp-buffer
+    (insert "hello world")
+    (goto-char 6)
+    (donkey-mark-word-backward)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "hello"))))
 
@@ -473,12 +484,16 @@ Return list (POINT MARK TEXT) describing the resulting region."
   (should (equal (nth 2 (donkey-test--symbol-result "foo123bar" 5)) "foo123bar")))
 
 (ert-deftest donkey-mark-symbol-whitespace-before ()
-  "Cursor on space with symbol to the left should mark it."
-  (should (equal (nth 2 (donkey-test--symbol-result "foo bar" 4)) "foo")))
+  "Cursor on the space after a symbol: the BACKWARD key marks that symbol.
+
+The forward key used to, and this test and the next asserted the same
+\"foo\" for the same position under two names.  See `donkey--mark-reach'."
+  (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "foo bar" 4 1 t)
+                 "foo")))
 
 (ert-deftest donkey-mark-symbol-whitespace-after ()
-  "Cursor on space with symbol to the right."
-  (should (equal (nth 2 (donkey-test--symbol-result "foo bar" 4)) "foo")))
+  "Cursor on the space before a symbol: the forward key marks that symbol."
+  (should (equal (nth 2 (donkey-test--symbol-result "foo bar" 4)) "bar")))
 
 (ert-deftest donkey-mark-symbol-before-paren ()
   "Symbol immediately before a paren should not include it."
@@ -562,8 +577,8 @@ take them."
           (buffer-substring-no-properties (region-beginning) (region-end)))
       (user-error nil))))
 
-(ert-deftest donkey-mark-symbol-in-a-key-sequence-marks-the-symbol-behind ()
-  "The gap inside a quoted key sequence marks the symbol before it.
+(ert-deftest donkey-mark-symbol-in-a-key-sequence-marks-the-symbol-ahead ()
+  "The gap inside a quoted key sequence marks the half AHEAD for `m W'.
 
 Reported against a key sequence quoted in prose -- the shape
 `substitute-command-keys' renders a binding as, curly quotes and all.
@@ -576,18 +591,40 @@ a sexp starts, not where a symbol starts, and the curly quotes are
 punctuation that scanning sweeps into the neighboring sexp -- so the step
 back landed on the quote, where there is no symbol, and the selection
 that did succeed reached out to the quote as well.  `thing-at-point'
-never agreed: it read the name, with the right bounds, throughout."
+never agreed: it read the name, with the right bounds, throughout.
+
+The fix reached for the half BEHIND, and this test held that.  The half
+behind is `m B's now: from the gap between the two halves `m W' marks
+the one on the right and `m B' the one on the left, and the quotes are
+crossed in both directions -- see `donkey--mark-reach'."
   (dolist (mode '(emacs-lisp-mode text-mode org-mode fundamental-mode))
     (let ((text "press ‘C-x C-f’ now"))
-      ;; In the gap between the two, and in the gap after the last.
+      ;; In the gap between the two: the forward key takes the half
+      ;; ahead, the backward key the half behind.
       (should (equal (list mode (donkey-test--symbol-in mode text 11))
-                     (list mode "C-x")))
-      (should (equal (list mode (donkey-test--symbol-in mode text 16))
                      (list mode "C-f")))
-      ;; And on the names themselves, quotes shed at either end.
+      (should (equal (list mode (donkey-test--symbol-in mode text 11 1 t))
+                     (list mode "C-x")))
+      ;; On the closing quote, which is a gap too: the word after it,
+      ;; or the half before it.
+      (should (equal (list mode (donkey-test--symbol-in mode text 16))
+                     (list mode "now")))
+      (should (equal (list mode (donkey-test--symbol-in mode text 16 1 t))
+                     (list mode "C-f")))
+      ;; On the opening quote: the first half, or the word before.
+      (should (equal (list mode (donkey-test--symbol-in mode text 7))
+                     (list mode "C-x")))
+      (should (equal (list mode (donkey-test--symbol-in mode text 7 1 t))
+                     (list mode "press")))
+      ;; And on the names themselves, quotes shed at either end, the
+      ;; same from both keys.
       (should (equal (list mode (donkey-test--symbol-in mode text 9))
                      (list mode "C-x")))
+      (should (equal (list mode (donkey-test--symbol-in mode text 9 1 t))
+                     (list mode "C-x")))
       (should (equal (list mode (donkey-test--symbol-in mode text 13))
+                     (list mode "C-f")))
+      (should (equal (list mode (donkey-test--symbol-in mode text 13 1 t))
                      (list mode "C-f"))))))
 
 (ert-deftest donkey-mark-symbol-keeps-an-expression-prefix ()
@@ -608,11 +645,19 @@ is checked in."
                  "`bar"))
   (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "(foo #'bar baz)" 8)
                  "#'bar"))
-  ;; From the gap after them, where the step back used to refuse
-  ;; outright, or reach past the prefix to the symbol before it.
-  (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "(foo 'bar baz)" 10)
+  ;; From the gap after them, which is the backward key's to reach --
+  ;; where the step back used to refuse outright, or reach past the
+  ;; prefix to the symbol before it.
+  (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "(foo 'bar baz)" 10 1 t)
                  "'bar"))
-  (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "(foo #'bar baz)" 11)
+  (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "(foo #'bar baz)" 11 1 t)
+                 "#'bar"))
+  ;; And from the gap BEFORE them, which is the forward key's: the reach
+  ;; ahead stops on the first symbol character, past the prefix, and the
+  ;; trim brings the prefix back in.
+  (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "(foo 'bar baz)" 5)
+                 "'bar"))
+  (should (equal (donkey-test--symbol-in 'emacs-lisp-mode "(foo #'bar baz)" 5)
                  "#'bar")))
 
 (ert-deftest donkey-mark-symbol-backward-sheds-a-leading-quote ()
@@ -649,26 +694,78 @@ in the suite could tell.
 What the two halves are for is the function on its own terms.  A search
 that only moves when it has found something cannot strand the cursor, and
 a landing ON the character is what lets the caller take
-`beginning-of-thing' from a position that is unambiguously inside."
-  ;; Lands on the character, not after it.
+`beginning-of-thing' from a position that is unambiguously inside.
+
+The return value is part of the contract too: `donkey--mark-reach-from-gap'
+takes non-nil as \"found one behind\" and nil as the cue to try the other
+side, so a step that moved and said nil would send a backward press
+reaching forward past the symbol it had just found."
+  ;; Lands on the character, not after it, and says so.
   (with-temp-buffer
     (insert "ab ")
     (goto-char 4)
-    (donkey--back-to-symbol-char)
+    (should (donkey--back-to-symbol-char))
     (should (equal (point) 2)))
   ;; Crosses whatever is in the way to reach it.
   (with-temp-buffer
     (insert "ab ‘’ ,.;")
     (goto-char (point-max))
-    (donkey--back-to-symbol-char)
+    (should (donkey--back-to-symbol-char))
     (should (equal (point) 2)))
-  ;; And stays put when there is nothing behind.
+  ;; And stays put when there is nothing behind, and says that too.
   (dolist (text '("   " ",,, ;;;" "‘’‘’"))
     (with-temp-buffer
       (insert text)
       (goto-char 3)
-      (donkey--back-to-symbol-char)
+      (should-not (donkey--back-to-symbol-char))
       (should (equal (list text (point)) (list text 3))))))
+
+(ert-deftest donkey-mark-reach-from-gap-tries-each-side-from-the-origin ()
+  "Both tries start where the press was, and a double failure ends there.
+
+`donkey--mark-reach-from-gap' promises its callers two things besides the
+order it tries the sides in: the second thunk sees point where the first
+found it -- not wherever the first gave up -- and nil comes back with
+point at the origin, so a refusal can be reported without the cursor
+having moved.  The four commands cannot show either half: their thunks
+fail only at a buffer end, from which the other side finds the same
+object it would from the origin, and each puts point back itself before
+its `user-error'.  Both were tried as mutations and every key-driven test
+passed, so the contract is held here on the function's own terms, with
+thunks that record where they were called and move before failing."
+  (dolist (reach '(ahead behind))
+    (with-temp-buffer
+      (insert "0123456789")
+      (let ((donkey--mark-reach reach)
+            calls)
+        ;; The side the reach names goes first; it moves, then fails.
+        ;; The other side must still be called from the origin.
+        (goto-char 5)
+        (should-not
+         (donkey--mark-reach-from-gap
+          (lambda () (push (cons 'ahead (point)) calls) (goto-char 9) nil)
+          (lambda () (push (cons 'behind (point)) calls) (goto-char 2) nil)))
+        (should (equal (list reach (point) (reverse calls))
+                       (if (eq reach 'ahead)
+                           (list reach 5 '((ahead . 5) (behind . 5)))
+                         (list reach 5 '((behind . 5) (ahead . 5))))))
+        ;; A success on the second try keeps that try's landing.
+        (goto-char 5)
+        (should
+         (donkey--mark-reach-from-gap
+          (lambda () (goto-char 9) (eq reach 'behind))
+          (lambda () (goto-char 2) (eq reach 'ahead))))
+        (should (equal (list reach (point))
+                       (list reach (if (eq reach 'ahead) 2 9))))
+        ;; A success on the first try never calls the second.
+        (goto-char 5)
+        (setq calls nil)
+        (should
+         (donkey--mark-reach-from-gap
+          (lambda () (push 'ahead calls) (when (eq reach 'ahead) (goto-char 8) t))
+          (lambda () (push 'behind calls) (when (eq reach 'behind) (goto-char 3) t))))
+        (should (equal (list reach (point) calls)
+                       (list reach (if (eq reach 'ahead) 8 3) (list reach))))))))
 
 (ert-deftest donkey-trim-symbol-prefix-keeps-a-symbol-made-of-punctuation ()
   "The prefix trim will not trim away the thing it was called to keep.
@@ -707,8 +804,11 @@ the rule `donkey-mark-symbol-backward' already documents."
                    "C-x C-f"))
     (should (equal (donkey-test--symbol-in 'emacs-lisp-mode text 13 -1)
                    "C-x"))
+    ;; From the closing quote, a gap, the count is measured from \"now\"
+    ;; -- the symbol ahead, see `donkey--mark-reach' -- so the one
+    ;; before it is \"C-f\", the quote between them shed.
     (should (equal (donkey-test--symbol-in 'emacs-lisp-mode text 16 -1)
-                   "C-x"))
+                   "C-f"))
     ;; Interior punctuation, both directions.
     (should (equal (donkey-test--symbol-in 'emacs-lisp-mode text 9 3)
                    "C-x C-f’ now"))
@@ -718,18 +818,29 @@ the rule `donkey-mark-symbol-backward' already documents."
 (ert-deftest donkey-mark-symbol-and-mark-word-agree-about-the-gap ()
   "The two mark keys answer the same question the same way.
 
-\\=`m w' and \\=`m W' both mark the thing BEHIND point from a gap, and
-they disagreed wherever punctuation sat between: the word key stepped
-back with `backward-word' and found its word, the symbol key stepped back
-with `backward-sexp' and landed on punctuation, where it refused.  The
-report that opened this was a user who had learned the word key\\='s reach
-and expected the symbol key to have it too.
+\\=`m w' and \\=`m W' both mark the thing AHEAD of point from a gap, the
+one behind where nothing is ahead, and they disagreed wherever
+punctuation sat between: the word key stepped with `backward-word' and
+found its word, the symbol key stepped with `backward-sexp' and landed on
+punctuation, where it refused.  The report that opened this was a user
+who had learned the word key\\='s reach and expected the symbol key to
+have it too.  Both reached BEHIND then; the direction turned with
+`donkey--mark-reach', and the agreement is the thing this holds.
+
+The two bracket cases are the symbol key\\='s own: reaching forward by
+`forward-sexp' landed on the paren and refused where the word key found
+\"foo\", so \\=`m W' on the opening paren of a list, or on the whitespace
+before one, reported no symbol at all.  Reaching by syntax crosses the
+bracket.
 
 Where neither can find anything, they still both refuse."
   (dolist (case (list
                  (list 'emacs-lisp-mode "(foo bar)\n\n" 12 "bar" "bar")
-                 (list 'emacs-lisp-mode "press ‘C-x C-f’ now" 11 "x" "C-x")
+                 (list 'emacs-lisp-mode "press ‘C-x C-f’ now" 11 "C" "C-f")
                  (list 'emacs-lisp-mode "(foo)\n\n" 8 "foo" "foo")
+                 (list 'emacs-lisp-mode "(foo bar)" 1 "foo" "foo")
+                 (list 'emacs-lisp-mode "  (foo)" 1 "foo" "foo")
+                 (list 'emacs-lisp-mode "foo (bar baz)" 4 "bar" "bar")
                  (list 'fundamental-mode ",,, ... ;;;" 6 nil nil)
                  (list 'text-mode "   " 2 nil nil)))
     (cl-destructuring-bind (mode text pos word symbol) case
@@ -1035,19 +1146,28 @@ otherwise swallow this documented case."
       (should-not (use-region-p)))))
 
 (ert-deftest donkey-mark-paragraph-blank-line-between-paragraphs-still-works ()
-  "Pressing this from a blank line between paragraphs marks the one above.
+  "From a blank line between paragraphs `m p' marks the one BELOW, `m P' above.
 
 The guard checks the RESULT, not what is under point, precisely so this
 keeps working: point sits on whitespace, but the command has a real
 paragraph to give.
 
-The blank point started on comes with it: it is the one blank line the
-first paragraph is entitled to, standing in for the leading one it does
-not have."
+Both keys marked the one above until `m w' and `m b' were found marking
+the same word from the same space -- see `donkey--mark-reach'.  The
+blank point started on comes with either: for the paragraph below it is
+the one blank line every paragraph but the first arrives with, and for
+the one above it stands in for the leading blank the first paragraph
+does not have."
   (with-temp-buffer
     (insert "Para one.\n\nPara two.\n")
     (goto-char 11)
     (donkey-mark-paragraph)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "\nPara two.\n")))
+  (with-temp-buffer
+    (insert "Para one.\n\nPara two.\n")
+    (goto-char 11)
+    (donkey-mark-paragraph-backward)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "Para one.\n\n"))))
 
@@ -3158,14 +3278,18 @@ reason for sentences to be the exception."
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "Hello there."))))
 
-(ert-deftest donkey-mark-sentence-gap-selects-the-sentence-behind ()
-  "In the gap between two sentences, the one BEHIND is marked.
+(ert-deftest donkey-mark-sentence-gap-selects-the-sentence-ahead ()
+  "In the gap between two sentences `m s' marks the one AHEAD, `m S' behind.
 
 The gap is the whole point of the test: a cursor inside a sentence has
-never been in doubt.  `m w', `m W' and `m p' all answer with the object
-behind from the equivalent position, and `m s' reaching forward instead
-made the same cursor position mean different things depending on which
-mark key followed it.
+never been in doubt.  `m w', `m W' and `m p' answer with the object
+ahead from the equivalent position, and their backward keys with the
+one behind, so this key and `m S' must divide the gap the same way --
+see `donkey--mark-reach'.  This test held the sentence BEHIND for `m s'
+when the family agreed on that side, after `m s' reaching forward on
+its own had made one cursor position mean different things under
+different mark keys; the family turned round, and the agreement is what
+this still holds.
 
 A buffer and a pinned `last-command' per position, not one shared
 between them: `mark-end-of-sentence' extends the existing selection when
@@ -3183,6 +3307,14 @@ it failed.  Interactively the moves between the two positions set
       (let ((last-command 'forward-char)
             (this-command 'donkey-mark-sentence))
         (donkey-mark-sentence))
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     "Four five six.")))
+    (with-temp-buffer
+      (insert "One two three.  Four five six.  Seven eight nine.\n")
+      (goto-char pos)
+      (let ((last-command 'forward-char)
+            (this-command 'donkey-mark-sentence-backward))
+        (donkey-mark-sentence-backward))
       (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                      "One two three.")))))
 
@@ -3642,22 +3774,35 @@ symbol before it."
                      "foo-a")))))
 
 (ert-deftest donkey-mark-paragraph-negative-count-marks-backward ()
-  "A negative count marks the paragraph before the one point is on."
+  "A negative count marks the paragraph before the one point normalizes onto.
+
+On a paragraph that is the paragraph point is on.  On the blank line
+between two it is the one BELOW -- the paragraph `m p' with no count
+marks from there, see `donkey--mark-reach' -- so from the blank line
+above \"three.\" a count of -1 marks \"two two.\" just as it does from
+\"three.\" itself.  It marked \"one one.\" from that blank line while
+a blank line meant the paragraph above; that answer is still the one
+from \"two two.\" itself, held first."
   (let ((transient-mark-mode t))
-    (with-temp-buffer
-      (insert "one one.\n\ntwo two.\n\nthree.\n")
-      (goto-char 20)
-      (donkey-mark-paragraph -1)
-      (should (equal (buffer-substring-no-properties (region-beginning)
-                                                     (region-end))
-                     "one one.\n")))))
+    (dolist (case '((11 "one one.\n") (21 "\ntwo two.\n") (20 "\ntwo two.\n")))
+      (with-temp-buffer
+        (insert "one one.\n\ntwo two.\n\nthree.\n")
+        (goto-char (car case))
+        (donkey-mark-paragraph -1)
+        (should (equal (list (car case)
+                             (buffer-substring-no-properties (region-beginning)
+                                                             (region-end)))
+                       case))))))
 
 (ert-deftest donkey-mark-sentence-treats-counts-below-one-as-one ()
   "Unlike the other mark commands, this one clamps a count below 1.
 
-It is defined in terms of the sentence AHEAD of point -- it normalizes
-forward and rejects a selection ending behind where it started -- so a
-zero or negative count has nothing it could mean but that error."
+`mark-end-of-sentence' counts from the start this command normalizes
+onto, so a count of 0 would select nothing at all and a negative one
+would reach back over the sentence already behind that start -- neither
+of which is a sentence at point.  (The docstring used to say the command
+was defined in terms of the sentence ahead and refused anything ending
+behind point; that was true of an earlier shape of it.)"
   (let ((transient-mark-mode t))
     (with-temp-buffer
       (insert "One thing.  Two thing.  Three thing.")
@@ -4013,6 +4158,68 @@ full suite."
   (and (region-active-p)
        (buffer-substring-no-properties (region-beginning) (region-end))))
 
+(ert-deftest donkey-a-gap-gives-each-key-the-object-on-its-own-side ()
+  "From a gap the forward keys mark the object AHEAD, the backward keys BEHIND.
+
+The owner's report, in the owner's shape: `m w' and `m b' pressed from
+the space after \"text\" both marked \"text\", and so did `M' -- a key
+that names a direction was reaching the other way.  Now the two keys
+from one space are the two words on either side of it, and `M' answers
+as `m w' does.  The symbol, sentence and paragraph keys divide their gaps
+the same way -- see `donkey--mark-reach' for the rule.
+
+Real keys, because the answer depends on `last-command': a fresh press
+is the one that reaches, and every case here is a fresh press from a
+position the motions put the cursor on.  \"w w\" lands ON the space
+after \"text\"; \"w w l\" on the space between the first two sentences,
+the period being where the second `w' stops; \"j\" on the blank line.
+
+The other side answers where a key's own side is empty: the end of a
+buffer gives the forward keys the last object, the start gives the
+backward keys the first.  Those two are the trailing and leading gaps
+the family already agreed about, and they are held here so the reach
+cannot become a refusal."
+  (let ((words "for text that is not saved"))
+    ;; The report.
+    (donkey-mark-test--keys words "w w m w"
+      (should (equal (donkey-mark-test--selection) "that")))
+    (donkey-mark-test--keys words "w w m b"
+      (should (equal (donkey-mark-test--selection) "text")))
+    (donkey-mark-test--keys words "w w M"
+      (should (equal (donkey-mark-test--selection) "that")))
+    (donkey-mark-test--keys words "w w m W"
+      (should (equal (donkey-mark-test--selection) "that")))
+    (donkey-mark-test--keys words "w w m B"
+      (should (equal (donkey-mark-test--selection) "text")))
+    ;; On a word, both keys mark that word.
+    (donkey-mark-test--keys words "w w l m w"
+      (should (equal (donkey-mark-test--selection) "that")))
+    (donkey-mark-test--keys words "w w l m b"
+      (should (equal (donkey-mark-test--selection) "that"))))
+  (let ((prose "One two.  Three four.  Five six.\n"))
+    (donkey-mark-test--keys prose "w w l m s"
+      (should (equal (donkey-mark-test--selection) "Three four.")))
+    (donkey-mark-test--keys prose "w w l m S"
+      (should (equal (donkey-mark-test--selection) "One two."))))
+  (let ((paragraphs "Para one.\n\nPara two.\n"))
+    (donkey-mark-test--keys paragraphs "j m p"
+      (should (equal (donkey-mark-test--selection) "\nPara two.\n")))
+    (donkey-mark-test--keys paragraphs "j m P"
+      (should (equal (donkey-mark-test--selection) "Para one.\n\n"))))
+  ;; The trailing gap for the forward keys, the leading for the backward.
+  (donkey-mark-test--keys "alpha beta  " "w w l m w"
+    (should (equal (donkey-mark-test--selection) "beta")))
+  (donkey-mark-test--keys "alpha beta  " "w w l m W"
+    (should (equal (donkey-mark-test--selection) "beta")))
+  (donkey-mark-test--keys "   alpha beta" "m b"
+    (should (equal (donkey-mark-test--selection) "alpha")))
+  (donkey-mark-test--keys "   alpha beta" "m B"
+    (should (equal (donkey-mark-test--selection) "alpha")))
+  (donkey-mark-test--keys "Para one.\n\nPara two.\n\n\n" "j j j j m p"
+    (should (equal (donkey-mark-test--selection) "\nPara two.\n")))
+  (donkey-mark-test--keys "\n\nPara one.\n\nPara two.\n" "m P"
+    (should (equal (donkey-mark-test--selection) "\nPara one.\n"))))
+
 (ert-deftest donkey-every-mark-key-grows-on-a-second-press ()
   "`m w', `m W', `m s' and `m p' all extend, not just `m s'.
 
@@ -4249,12 +4456,19 @@ Two of them also pin the mid-object rule: a backward press whose
 region start sits inside a larger object of its own kind first reaches
 THAT object's start -- `m w m B' from the word \"two\" completes the
 symbol backward to \"b-two\", and `m B m P' from mid-paragraph reaches
-the paragraph's start -- and the next press adds a whole one."
+the paragraph's start -- and the next press adds a whole one.  The
+lead for the `m w m B' case lands ON \"two\": from the space after it
+`m w' marks the word ahead, \"c\", which begins its symbol rather than
+sitting inside one -- see `donkey--mark-reach'.  The `m W m s' lead
+stays on the space after \"Two\", from which `m W' marks \"thing\" --
+the symbol ahead -- so the continuation's \"thing.\" is told apart from
+the \"Two thing.\" a fresh `m s' would give from there; while `m W'
+reached behind, both gave \"Two thing.\" and the case pinned nothing."
   (dolist (case '(("m S m w" "w w w " sent "Two thing.  Three")
                   ("m s m b" "w w w " sent "thing.  Two thing.")
                   ("m b m W" "w w w w " sym "two c-three")
-                  ("m w m B" "w w w w " sym "b-two")
-                  ("m W m s" "w w w " sent "Two thing.")
+                  ("m w m B" "w w w l " sym "b-two")
+                  ("m W m s" "w w w " sent "thing.")
                   ("m p m S" "j j " para "Alpha one.\n\nBeta two.\n")
                   ("m B m P" "j j " para "\nBeta")
                   ("m P m p" "j j " para "\nBeta two.\n\nGamma three.\n")))
@@ -4438,9 +4652,13 @@ that still normalized walked the region's start silently back to
 extending branch skips normalization, like every sibling; this is the
 case that shows the difference, because the family test
 `donkey-a-mark-run-crosses-object-types' happens to start its own
-`m W m s' case on a word that begins its sentence."
+`m W m s' case on a word that begins its sentence.
+
+\"w w w l\" lands ON \"thing\".  A fourth `w' would stop on the period
+after it, which is a gap, and from a gap `m w' marks the word ahead --
+\"Three\", in the next sentence -- see `donkey--mark-reach'."
   (donkey-mark-test--keys "One thing.  Two thing.  Three thing."
-      "w w w w m w m s"
+      "w w w l m w m s"
     (should (equal (donkey-mark-test--selection) "thing."))))
 
 (ert-deftest donkey-mark-sentence-backward-repeats-grow-backward ()
@@ -4648,7 +4866,7 @@ the mode like any foreign key."
     (should-not (region-active-p))
     (should (= (point) (line-end-position))))
   ;; With a run live -- and `M' makes one wherever there is a word
-  ;; behind -- `g h' is no motion but an end of the selection,
+  ;; on either side -- `g h' is no motion but an end of the selection,
   ;; and the letter after it grows what is there.  The motion case is
   ;; the one above, where there is nothing to mark at all.
   (donkey-mark-test--keys "for text that is\nnot saved\n" "g h M g h w"
@@ -4698,9 +4916,9 @@ beside the stale mark, and `w' must mark the word at point afresh --
 \(Staged through the in-mode cancel because `M' over a live selection
 ADOPTS it rather than canceling.  The empty re-entry is made by
 calling `donkey--mark-run-enter' rather than by pressing `M' on
-whitespace: `M' reaches for the word behind, wherever there is one,
-so no key sequence arrives in the mode with nothing selected in a
-buffer that has words in it -- and a live region is exactly what
+whitespace: `M' reaches for a word, ahead or behind, wherever there
+is one, so no key sequence arrives in the mode with nothing selected
+in a buffer that has words in it -- and a live region is exactly what
 would hide this case.)"
   (donkey-mark-test--keys "for text that is" "w w l M M"
     (should-not (region-active-p))
@@ -4716,11 +4934,15 @@ The cross-object family rule reaches inside the mode unchanged --
 the letters are the family commands, so nothing new has to.  Pinned
 against the prefixed spelling on the same text, since the whole
 sentence is what `M s' used to select while the word was a head start
-and no press."
+and no press.
+
+\"w w w l\" lands ON \"thing\" -- see
+`donkey-a-continuation-does-not-renormalize-the-sentence-start' for
+why not a fourth `w'."
   (let ((moded (donkey-mark-test--keys "One thing.  Two thing.  Three thing."
-                   "w w w w M s" (donkey-mark-test--selection)))
+                   "w w w l M s" (donkey-mark-test--selection)))
         (prefixed (donkey-mark-test--keys "One thing.  Two thing.  Three thing."
-                      "w w w w m w m s" (donkey-mark-test--selection))))
+                      "w w w l m w m s" (donkey-mark-test--selection))))
     (should (equal moded "thing."))
     (should (equal moded prefixed))))
 
@@ -4739,9 +4961,9 @@ away instead.  The siblings simply extend; these two now do too.
 A fresh press in a buffer of nothing but whitespace must still
 report, which is the guard the continuation case had to be carved out
 of rather than deleted."
-  ;; Staged in a buffer with no word in it: `M' takes the word behind
-  ;; wherever there is one, and the run has to START blank for the
-  ;; continuation to be the thing under test.
+  ;; Staged in a buffer with no word in it: `M' takes a word wherever
+  ;; there is one on either side, and the run has to START blank for
+  ;; the continuation to be the thing under test.
   (donkey-mark-test--keys ",,,\n\n   \n" "j j M J s"
     (should (equal (donkey-mark-test--selection) "   \n")))
   (donkey-mark-test--keys ",,,\n\n   \n" "j j M J m p"
@@ -5238,9 +5460,12 @@ fires `deactivate-mark-hook' -- and
 `donkey--visual-line-session-active-p', which knows a session by the
 mark sitting at the anchor or at the anchor line's end, took a fresh
 selection whose mark happened to land there for the session still
-running.  From the end of the line `V' selects, `m w' and `m b' mark
-the last word and leave their mark at that line's end, and `v' plants
-one at point.  Confirmed live: `V m w' highlighted \"beta\" alone and
+running.  From the end of the line `V' selects, `m b' marks the last
+word and leaves its mark at that line's end, `v' plants one at point,
+and `m w' marks the first word of the NEXT line -- the word ahead of a
+gap, see `donkey--mark-reach'; it marked the last word too while the
+forward key reached behind, and that is the shape the live report
+below has.  Confirmed live: `V m w' highlighted \"beta\" alone and
 `d' removed the whole line, kill ring \"alpha beta\\n\"; `V v h h'
 highlighted two characters and `y' copied the whole line; the
 reminder after each `h' read \"Visual line\" over a selection `v' had
@@ -5250,7 +5475,7 @@ fresh session should have started.
 Pinned: the selection each leaves and that it is no session, what `d'
 and `y' take from it, which reminder the motion after `v' repaints,
 and that `V' after it starts a fresh session on the line point is on."
-  (dolist (case '(("V m w"   "beta")
+  (dolist (case '(("V m w"   "gamma")
                   ("V m b"   "beta")
                   ("V v h h" "ta")))
     (cl-destructuring-bind (keys selection) case
@@ -5259,8 +5484,8 @@ and that `V' after it starts a fresh session on the line point is on."
                              (and (donkey--visual-line-session-active-p) t))
                        (list keys selection nil))))))
   ;; The action keys take the selection, not the line it sits on.
-  (dolist (case '(("V m w d"   "alpha \ngamma\n"     ("beta"))
-                  ("V m w y"   "alpha beta\ngamma\n" ("beta"))
+  (dolist (case '(("V m w d"   "alpha beta\n\n"      ("gamma"))
+                  ("V m w y"   "alpha beta\ngamma\n" ("gamma"))
                   ("V m b d"   "alpha \ngamma\n"     ("beta"))
                   ("V v h h d" "alpha be\ngamma\n"   ("ta"))
                   ("V v h h y" "alpha beta\ngamma\n" ("ta"))))
@@ -5276,10 +5501,11 @@ and that `V' after it starts a fresh session on the line point is on."
   ;; session's.
   (should (equal (car (donkey-hint-test--msgs "alpha beta\ngamma\n" "V v h"))
                  donkey--linear-selection-hint))
-  ;; And `V' starts over instead of canceling a session that is gone.
+  ;; And `V' starts over instead of canceling a session that is gone
+  ;; -- on the line point is now on, the one `m w' moved it to.
   (donkey-mark-test--keys "alpha beta\ngamma\n" "V m w V"
     (should (donkey--visual-line-session-active-p))
-    (should (equal (donkey-mark-test--selection) "alpha beta")))
+    (should (equal (donkey-mark-test--selection) "gamma")))
   (should (equal (car (donkey-hint-test--msgs "alpha beta\ngamma\n" "V m w V"))
                  donkey--visual-line-hint)))
 
@@ -5387,11 +5613,11 @@ where there is no word to stand in, it shows on its own."
     (should (equal (donkey-mark-test--selection) "that")))
   (donkey-mark-test--keys "for text that is" "w w l l v M w"
     (should (equal (donkey-mark-test--selection) "that is")))
-  ;; From whitespace `M' takes the word behind, which is still not
+  ;; From whitespace `M' takes the word ahead, which is still not
   ;; the empty region `v' left: adopting that would have kept the
   ;; cursor's own position as an end.
   (donkey-mark-test--keys "for text that is" "w w v M"
-    (should (equal (donkey-mark-test--selection) "text")))
+    (should (equal (donkey-mark-test--selection) "that")))
   ;; With nothing anywhere to mark, the drop shows on its own -- and
   ;; `*' has nothing to trade.
   (donkey-mark-test--keys ",,, ;;;" "l l v M"
@@ -5931,7 +6157,7 @@ apart, which is the whole reason this does its own setup."
 Entering the mode used to leave the selection empty and wait, so the
 commonest run -- mark this word, then grow it -- cost a press that
 said nothing on screen.  `M' now marks a word on its way in: the one
-under the cursor, or from a gap the one behind it, which is
+under the cursor, or from a gap the one ahead of it, which is
 `donkey-mark-word's own answer, so the two keys never disagree.  Where
 nothing can be marked at all the mode still starts, entering being
 what the key is for.
@@ -5989,18 +6215,20 @@ the second letter grew."
     (should (equal (list :sel (donkey-mark-test--selection)
                          :point (point) :mark (mark t))
                    (list :sel "that" :point 10 :mark 14))))
-  ;; From whitespace it takes the word BEHIND, which is what `m w'
+  ;; From whitespace it takes the word AHEAD, which is what `m w'
   ;; takes from there and what a reader who has been pressing `m w'
-  ;; expects.  It used to arrive empty instead, on the reasoning that a
-  ;; key saying "start selecting" should not reach the way one saying
+  ;; expects -- see `donkey--mark-reach'; it took the word behind while
+  ;; `m w' did.  It used to arrive empty instead, on the reasoning that
+  ;; a key saying "start selecting" should not reach the way one saying
   ;; "word" may -- but an empty run is worth nothing: the adjusters
   ;; continue a VISIBLE run only, so `h' `j' `k' `l', `g h', `g l' and
   ;; `g e' select nothing from one, and the keys that can grow it mark
   ;; afresh whether it is there or not.
   (donkey-mark-test--keys "for text that is" "w w M"
-    (should (equal (donkey-mark-test--selection) "text"))
+    (should (equal (donkey-mark-test--selection) "that"))
     (should (eq (key-binding "w") 'donkey-mark-word)))
-  ;; Including across a line, where `m w' reaches too.
+  ;; Including across lines and from the trailing gap, where the word
+  ;; behind is the only one there is and `m w' takes it too.
   (donkey-mark-test--keys "Word.\n\n   \n" "j j M"
     (should (equal (donkey-mark-test--selection) "Word"))
     (should (eq (key-binding "w") 'donkey-mark-word)))
@@ -6863,24 +7091,32 @@ whitespace it walked over would be no answer at all."
                          (cons text expected))))))))
 
 (ert-deftest donkey-mark-commands-agree-about-which-object-a-gap-means ()
-  "From the gap between two objects, all four mark the one BEHIND.
+  "From a gap, forward keys mark the object AHEAD and backward keys BEHIND.
 
 The property is cross-command, so it is asserted across commands rather
 than inside any one of them: a cursor parked in whitespace must not mean
-different things depending on which mark key follows it.  `m s' was the
-exception -- it reached forward from every gap -- and the exception was
-invisible from within its own tests, all of which were written in terms
-of the sentence ahead.
+different things depending on which mark key follows it, beyond the one
+difference the keys name -- `m w' the word ahead, `m b' the word behind,
+and the six others likewise, so one gap gives the two neighbors and not
+the same one twice.  See `donkey--mark-reach' for the report.  `m s'
+was the exception when all eight agreed on the object behind -- it
+reached forward from every gap -- and the exception was invisible from
+within its own tests, all of which were written in terms of the
+sentence ahead.
 
 Emacs' own commands mark forward from a gap, but that is an artifact of
 marking from point without normalizing at all: `mark-word' in the gap of
 \"alpha  beta\" answers \" beta\", leading space attached.  Native has
 no opinion about which object was MEANT, so it cannot settle this and
 does not appear in the expectations below."
-  (dolist (case '((donkey-mark-word      "alpha  beta"           7  nil "alpha")
-                  (donkey-mark-symbol    "foo-a  bar-b"          7  emacs-lisp-mode "foo-a")
-                  (donkey-mark-sentence  "One two.  Three four." 10 nil "One two.")
-                  (donkey-mark-paragraph "A.\n\nB."              4  nil "A.\n\n")))
+  (dolist (case '((donkey-mark-word      "alpha  beta"           7  nil "beta")
+                  (donkey-mark-symbol    "foo-a  bar-b"          7  emacs-lisp-mode "bar-b")
+                  (donkey-mark-sentence  "One two.  Three four." 10 nil "Three four.")
+                  (donkey-mark-paragraph "A.\n\nB."              4  nil "\nB.")
+                  (donkey-mark-word-backward      "alpha  beta"           7  nil "alpha")
+                  (donkey-mark-symbol-backward    "foo-a  bar-b"          7  emacs-lisp-mode "foo-a")
+                  (donkey-mark-sentence-backward  "One two.  Three four." 10 nil "One two.")
+                  (donkey-mark-paragraph-backward "A.\n\nB."              4  nil "A.\n\n")))
     (cl-destructuring-bind (command text pos mode expected) case
       (with-temp-buffer
         (when mode (funcall mode))
@@ -6914,7 +7150,7 @@ other three marked the last word, symbol and paragraph."
                          (cons command expected))))))))
 
 (ert-deftest donkey-mark-commands-agree-about-the-leading-gap ()
-  "In the LEADING gap all four reach forward to the object ahead.
+  "In the LEADING gap all eight mark keys reach forward to the object ahead.
 
 Nothing sits behind the start of a buffer, so the object ahead is the
 only answer available.  `m s' and `m p' always gave it; `m w' and `m W'
@@ -6925,11 +7161,23 @@ the other end of the buffer.
 
 This test has been inverted deliberately: it was added asserting the
 disagreement, on the footing that changing it should be a decision
-rather than a drift.  This is the decision."
+rather than a drift.  This is the decision.
+
+The forward keys reach ahead from EVERY gap now, so for them the
+leading gap is no longer a special case.  For the backward keys it is
+the one gap where their own side is empty, and they must fall through
+to the other -- see `donkey--mark-reach'.  The paragraph arrives with
+ONE leading blank line, as it does from the blank line between two
+paragraphs, rather than with every blank line above it: the reach is
+`forward-paragraph' then `backward-paragraph' from both places."
   (dolist (case '((donkey-mark-word      "   alpha beta"        nil "alpha")
                   (donkey-mark-symbol    "   foo-a bar-b"       emacs-lisp-mode "foo-a")
                   (donkey-mark-sentence  "   One two.  Three."  nil "One two.")
-                  (donkey-mark-paragraph "\n\nA.\n\nB."         nil "\n\nA.\n")))
+                  (donkey-mark-paragraph "\n\nA.\n\nB."         nil "\nA.\n")
+                  (donkey-mark-word-backward      "   alpha beta"   nil "alpha")
+                  (donkey-mark-symbol-backward    "   foo-a bar-b"  emacs-lisp-mode "foo-a")
+                  (donkey-mark-sentence-backward  "   One two.  Three." nil "One two.")
+                  (donkey-mark-paragraph-backward "\n\nA.\n\nB."    nil "\nA.\n")))
     (cl-destructuring-bind (command text mode expected) case
       (with-temp-buffer
         (when mode (funcall mode))
@@ -6942,14 +7190,13 @@ rather than a drift.  This is the decision."
                          (cons command expected))))))))
 
 (ert-deftest donkey-mark-word-and-symbol-still-report-with-nothing-either-way ()
-  "Reaching forward must not turn \"nothing here\" into a selection.
+  "Reaching for a neighbor must not turn \"nothing here\" into a selection.
 
-The risk the leading-gap reach introduces: a buffer with no word in it
-at all now runs the backward search, finds nothing, runs the forward
-search, and must still arrive at the refusal rather than marking
-whatever it walked over.  `donkey--mark-reach-forward-for' puts point
-back before answering no, which is what keeps the message honest about
-where the cursor is.
+The risk the reach introduces: a buffer with no word in it at all runs
+the forward search, finds nothing, runs the backward search, and must
+still arrive at the refusal rather than marking whatever it walked over.
+`donkey--mark-reach-from-gap' puts point back before answering no, which
+is what keeps the message honest about where the cursor is.
 
 Blank leading text with real words further down is the case that has to
 keep working, and it is covered by the agreement test above; this one is
@@ -6976,9 +7223,9 @@ its complement."
   "A refused mark moves nothing, however far it looked.
 
 Both commands step point about before they know whether there is
-anything to mark -- back onto a word or sexp, then forward reaching
-for the next one -- and a refusal that leaves point where the search
-gave up has moved the cursor and marked nothing.  To the reader that
+anything to mark -- forward reaching for the next word or symbol, then
+back onto the one behind -- and a refusal that leaves point where the
+search gave up has moved the cursor and marked nothing.  To the reader that
 is the key half working, and the further the search went the worse it
 reads.
 
@@ -6996,7 +7243,7 @@ here.  Point is put back onto a symbol CHARACTER now rather than onto a
 sexp boundary, which both marks the name where the report was filed and
 takes the displacement away: a step that only moves when it finds a symbol
 cannot strand the cursor on a refusal.  See
-`donkey-mark-symbol-in-a-key-sequence-marks-the-symbol-behind'.  The
+`donkey-mark-symbol-in-a-key-sequence-marks-the-symbol-ahead'.  The
 word key keeps its own step back, `backward-word', which still walks to
 the start of the buffer when there is no word to find -- measured, from
 position 6 to position 1 -- so the rule is still worth its test."
@@ -7043,11 +7290,15 @@ position 6 to position 1 -- so the rule is still worth its test."
   "A refused forward reach puts the cursor back before reporting.
 
 \"  ()  \" in `emacs-lisp-mode' is the shape that shows it: the forward
-reach lands on the paren at position 3, which is a sexp but not a symbol,
-so the answer is no -- and without the restore the cursor would be left
-sitting on the paren the search rejected, three characters from where the
-key was pressed.  Nothing else in the suite distinguishes the two, since
-the whitespace-only buffers happen to walk back to point-min either way."
+reach walks over the brackets to the end of the buffer looking for a
+symbol character and finds none, so the answer is no -- and without the
+restore the cursor would be left at the end, six characters from where
+the key was pressed.  The step the other way moves only when it finds a
+symbol, so the forward reach is the one this restore is for.  It used to
+land on the paren at position 3, a sexp but not a symbol, when it went
+by sexp motion; the distance changed, the rule did not.  Nothing else in
+the suite distinguishes the two, since the whitespace-only buffers happen
+to walk back to point-min either way."
   (with-temp-buffer
     (emacs-lisp-mode)
     (let ((transient-mark-mode t) (this-command nil) (last-command nil))

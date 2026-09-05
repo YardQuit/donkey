@@ -519,15 +519,27 @@ Punctuation between two marked symbols is interior and stays, so
 what it selected.
 
 The same rule decides where =m W= looks from a gap. It marks the symbol
-BEHIND point, the way =m w= marks the word behind, and it reaches across
+AHEAD of point, the way =m w= marks the word ahead, and it reaches across
 whatever punctuation is in the way to find it — standing between the two
-halves of a quoted key sequence, =m W= marks the half on the left.
+halves of a quoted key sequence, =m W= marks the half on the right, and
+on the opening quote it marks the first half.
+
+Every mark key has a side. On a word both =m w= and =m b= mark that
+word; from the space between two words =m w= marks the word ahead and
+=m b= the word behind, so from one space the two keys are the two words
+on either side of it — and =M=, which is =m w= with the mode switched
+on, takes the word ahead too. =m W= and =m B=, =m s= and =m S=, =m p=
+and =m P= divide their gaps the same way. The eight used to agree on the
+object behind, which made =m w= and =m b= from the same space mark the
+same word. Where the preferred side is empty the other answers: the end
+of a buffer gives the forward keys the last object, and the start gives
+the backward keys the first.
 
 =m w=, =m W=, =m s= and =m p= all report =No ... at or before point=
 rather than marking nothing when there is nothing of substance to mark —
 an empty buffer, or one holding only blank lines and whitespace. A blank
 line *between* paragraphs is not such a case: =m p= marks the paragraph
-above it, as it always has.
+below it and =m P= the one above, each with its one blank line.
 
 =donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ‘ ’ “ ” = * ~ | \ / : + _ $=
 by default -- an alist of (OPEN . CLOSE) pairs in =donkey-mark-pair-delimiters=
@@ -785,11 +797,11 @@ exception worth naming: it changes no text but still drops into INSERT
 state, because entering INSERT is what the command is for and only the
 deletion is governed by the count.
 
-=m s= is one exception: a count below 1 is treated as 1. That command is
-defined in terms of the sentence *ahead* of the cursor — it normalizes
-forward and reports =No sentence after point= for anything ending behind
-where it started — so zero and negative counts have nothing they could
-mean but that error.
+=m s= is one exception: a count below 1 is treated as 1. That command
+normalizes onto the start of the sentence it marks and counts from there
+with =mark-end-of-sentence=, so a count of zero would select nothing at
+all and a negative one would reach back over the sentence already behind
+that start — neither of which is a sentence at point.
 
 =m b=, =m B=, =m S= and =m P= are the others, treating a count below 1
 as 1 for the mirrored reason: they *are* the backward direction, so a
@@ -844,7 +856,7 @@ a letter, so =M d= takes it, =M w= is two words and =M b= the word and
 the one before it.
 
 *Which* word is =m w='s answer, exactly: the one under the cursor, or
-from a gap the one behind it. The two keys agree because there is no
+from a gap the one ahead of it. The two keys agree because there is no
 reading under which they should differ — and because an empty run is
 worth nothing anyway. =h j k l=, =g h=, =g l= and =g e= all continue a
 *visible* run only, so they select nothing from an empty one, and the
