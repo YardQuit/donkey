@@ -1406,8 +1406,34 @@ Confirmed live in `emacs -nw': with a region active in a read-only
 buffer, pressing a wrap delimiter reported \"Buffer is read-only\" and
 silently left the modeline on DONKEY[I].
 
-The error must still reach the user; only the state cleanup is
-guaranteed."
+The error comes from `post-self-insert-hook' here rather than from a
+read-only buffer, because a read-only buffer is now refused BEFORE
+INSERT state is entered -- see the test after this one -- and would no
+longer reach the cleanup this pins.  The error must still reach the
+user; only the state cleanup is guaranteed."
+  (with-temp-buffer
+    (donkey-normal-mode 1)
+    (let ((transient-mark-mode t)
+          (donkey-mode t))
+      (insert "hello")
+      (goto-char 1)
+      (push-mark (point) t t)
+      (goto-char 3)
+      (let ((last-command-event ?\()
+            (post-self-insert-hook (list (lambda () (error "Pairing broke")))))
+        (should-error (donkey-wrap-region)))
+      (should (bound-and-true-p donkey-normal-mode))
+      (should-not (bound-and-true-p donkey-insert-mode)))))
+
+(ert-deftest donkey-wrap-region-in-a-read-only-buffer-keeps-the-selection ()
+  "A wrap key in a read-only buffer refuses and leaves the region active.
+
+Regression test.  The refusal used to come from `self-insert-command',
+after INSERT state had been entered, and leaving INSERT again through
+`donkey--exit-insert' deactivated the mark -- so `v w (' in a read-only
+buffer said \"Buffer is read-only\" and threw the selection away with
+it, where the rectangle path kept its block.  The buffer is asserted
+unchanged as well, the refusal being the whole of what the press does."
   (with-temp-buffer
     (donkey-normal-mode 1)
     (let ((transient-mark-mode t)
@@ -1419,8 +1445,11 @@ guaranteed."
       (setq buffer-read-only t)
       (let ((last-command-event ?\())
         (should-error (donkey-wrap-region) :type 'buffer-read-only))
-      (should (bound-and-true-p donkey-normal-mode))
-      (should-not (bound-and-true-p donkey-insert-mode)))))
+      (should (region-active-p))
+      (should (= (mark) 1))
+      (should (= (point) 3))
+      (should (string= (buffer-string) "hello"))
+      (should (bound-and-true-p donkey-normal-mode)))))
 
 (ert-deftest donkey-wrap-region-bound-for-each-default-delimiter ()
   "Every default wrap delimiter is bound in Normal state.

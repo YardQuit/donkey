@@ -2026,6 +2026,10 @@ the still-active region and wrap it.  With none enabled the character
 is simply inserted at point, since nothing is listening.  Then returns
 to Normal state, even if the insertion signals.
 
+A read-only buffer is refused before any of that, with the selection
+left standing -- see the comment in the body for why the refusal has
+to come first.
+
 Which delimiters actually wrap is the pairing package's decision, not
 this command's, and `electric-pair-mode' does not cover all six
 defaults.  It wraps what its own rules treat as a pair -- `(', `[',
@@ -2070,17 +2074,30 @@ live in `emacs -nw' on 30.2 and 31.1: with the binding, v w
    ;; hands it to `self-insert-command', which cannot insert it either.
    ((not (characterp last-command-event))
     (call-interactively #'undefined))
-   ((bound-and-true-p rectangle-mark-mode)
-    (donkey--wrap-rectangle-region last-command-event))
    (t
-    (donkey-insert-mode 1)
-    (unwind-protect
-        ;; Emacs 31's electric-pair reads the count from
-        ;; `current-prefix-arg', not from the argument below, and deletes
-        ;; that many characters before wrapping.  See the docstring.
-        (let ((current-prefix-arg nil))
-          (self-insert-command 1))
-      (donkey--exit-insert)))))
+    ;; A read-only buffer is refused HERE, before anything changes, so
+    ;; that the selection outlives the refusal.  `self-insert-command'
+    ;; refuses it too, but by then INSERT state has been entered, and
+    ;; the `unwind-protect' below leaves it again through
+    ;; `donkey--exit-insert', which deactivates the mark: `v w (' in a
+    ;; read-only buffer said "Buffer is read-only" and dropped the
+    ;; selection with it, so that after making the buffer writable the
+    ;; user had to select again.  The rectangle path kept its block,
+    ;; signaling from its first edit before any state had changed.
+    ;; Confirmed live.  Both paths now refuse alike and keep what was
+    ;; selected.
+    (barf-if-buffer-read-only)
+    (if (bound-and-true-p rectangle-mark-mode)
+        (donkey--wrap-rectangle-region last-command-event)
+      (donkey-insert-mode 1)
+      (unwind-protect
+          ;; Emacs 31's electric-pair reads the count from
+          ;; `current-prefix-arg', not from the argument below, and
+          ;; deletes that many characters before wrapping.  See the
+          ;; docstring.
+          (let ((current-prefix-arg nil))
+            (self-insert-command 1))
+        (donkey--exit-insert))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mark and Text Object Selection Commands
