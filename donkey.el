@@ -682,12 +682,7 @@ COUNT changes that many characters when no selection is active.  A
 negative COUNT changes that many characters before point, and a COUNT of
 zero changes none while still entering INSERT state -- the same reading
 `donkey-delete' gives its own argument, since the two remove text
-identically and differ only in what happens next.
-
-COUNT changes that many characters when no region is active.  A negative
-COUNT changes that many characters before point and a COUNT of zero
-changes none, matching `delete-char'; either way INSERT state is still
-entered, which is what was actually asked for."
+identically and differ only in what happens next."
   (interactive "p")
   (if (use-region-p)
       (if (bound-and-true-p rectangle-mark-mode)
@@ -5474,7 +5469,7 @@ This toggles, with or without a region.  With no region, point on an
 already-banked line unbanks that line.  With a region whose lines are
 ALL already banked, the whole block is unbanked in one press -- which
 is how to take back a multi-line bank without either walking it line
-by line or clearing every other bank too.  A region covering a only
+by line or clearing every other bank too.  A region covering an only
 partly-banked block banks the rest instead, so a block only ever
 toggles off once it is uniformly on; press again to then clear it.
 
@@ -6312,7 +6307,7 @@ what is INSIDE the nearest pair; \\[donkey-mark-outer] includes the delimiters t
 
    ---> call(this argument here)
 
-A count means levels out, so \\`C-u 2' \\[donkey-mark-inner] \\`(' from the inner pair selects
+A count means levels out, so \\`C-u 2' \\[donkey-mark-inner] \\`(' from the inner pair selects the
 outer one.
 
 >> Put the cursor on \"deep\" below and press \\`C-u 2' \\[donkey-mark-inner] then \\`('.
