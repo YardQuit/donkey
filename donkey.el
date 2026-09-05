@@ -4050,6 +4050,7 @@ trading the ends of a VISIBLE selection can mean."
     (keymap-set map "*" #'donkey-mark-run-exchange)
     (keymap-set map "u" #'donkey-mark-run-step-back)
     (keymap-set map "U" #'donkey-mark-run-step-forward)
+    (keymap-set map "." #'repeat)
     (keymap-set map "v" #'donkey-mark-run-refuse)
     (keymap-set map "V" #'donkey-mark-run-refuse)
     map)
@@ -4073,6 +4074,23 @@ run alone rather than throwing it away over a typo, which
 `donkey--mark-run-mode-keep-p' arranges without a binding here.  And
 \`V' IS bound here, to `donkey-mark-run-refuse', because it is the one
 key whose ordinary job would discard the run silently.
+
+\`.' is `repeat', as it is in normal state, so `M w .' is three words
+and `M w . .' four, a count carrying over -- `M \\[universal-argument] 3 w .'
+is seven.  The key always did grow the selection; what it also did
+was END THE MODE, because `repeat' runs the previous command by name
+and the keep test judged the key by its own name, `repeat', rather
+than by the command it stood for.  The run then stood with nothing
+behind it: the next \`w' MOVED, dragging the highlight along, and
+\`u' undid a text edit inside the region.
+`donkey--mark-run-press-command' is what sees through the key now, for
+`donkey--mark-run-mode-keep-p' and for the history alike, so each
+\`.' is one more press and one more step for \`u' to take back.
+Bound here rather than left to the normal map so that the key is the
+mode's own -- listed with the rest, and not dependent on what \`.'
+means outside.  `M .' repeats the toggle itself, which takes the
+selection up again as if freshly pressed, with no steps behind it:
+`M' is not `w', and the key that ran was `M'.
 
 \`p' and \`P' are missing DELIBERATELY, though their objects belong
 to the family.  Holding them here shadowed the two paste keys, and
@@ -4102,10 +4120,11 @@ It names the keys whose SUBJECT the mode changes, and no others.
 \`w' moves by a word in normal state and marks one here, and nobody
 could guess that from the key -- so the object keys are spelled out.
 A key that keeps its subject is not: \`h' \`j' \`k' \`l' still move,
-\`J' and \`K' still work on lines, \`u' and \`U' still step back and
-forward, of the run rather than the buffer, which is the same idea
-one level down.  Naming those spent the line on the keys least in
-need of it, and the line is what a reader has to take in at a glance.
+\`J' and \`K' still work on lines, \`.' still repeats, \`u' and \`U'
+still step back and forward, of the run rather than the buffer, which
+is the same idea one level down.  Naming those spent the line on the
+keys least in need of it, and the line is what a reader has to take in
+at a glance.
 
 Paragraphs keep their \`m' prefix -- \`p' and \`P' pass through to the
 paste commands here -- so they are the one entry the reminder has to
@@ -4154,6 +4173,48 @@ be asked instead.  Set at entry from `executing-kbd-macro' and cleared
 by `donkey--mark-run-exit', so a mode armed by a live keypress carries
 nil and is never touched by the rule.")
 
+(defun donkey--mark-run-press-command ()
+  "Return the command the press now starting stands for.
+
+`this-command', except for \`.': that key runs `repeat', and `repeat'
+runs whatever command came before it -- `last-repeatable-command',
+which the command loop takes from `real-this-command' -- so the command
+the press stands for is that one.  `donkey--mark-run-mode-keep-p' and
+`donkey--mark-run-mode-pre-command' both ask this rather than
+`this-command', so that `M w .' is judged and recorded as the \`w' it
+repeats: the mode stays, and the press is one more step for \`u'.
+
+Both hooks run BEFORE `repeat' does.  Once it runs, `repeat' sets
+`this-command' to the command it repeats, which is why
+`donkey--mark-run-mode-post-command' needs no help; but the keep test
+and the history are asked on `pre-command-hook', where `this-command'
+still names the key's own binding.
+
+A second \`.' arrives with `last-repeatable-command' set to `repeat'
+itself -- the previous press's `real-this-command' was the repeat, not
+the command it ran -- and `repeat' keeps the command it last repeated
+in `repeat-previous-repeated-command' for exactly this, reading it back
+on the way in.  The same substitution here is what makes `M w . .'
+four words with three steps behind it.  `bound-and-true-p', because
+the variable belongs to repeat.el, which is loaded the first time the
+key runs and not before; it is only ever consulted after that.
+
+Nil when there is nothing to repeat, which the keep test treats as
+inert: `repeat' will say \"There is nothing to repeat\" and change
+nothing, so the run is left standing as over any other key that does
+nothing.
+
+One case is not seen through.  With `repeat-message-function' set,
+`repeat' binds the key to a closure of its own for the presses that
+follow the first, and a closure has no name to look up: the second
+\`.' then ends the mode, as every \`.' did before.  The variable is
+nil by default and nothing in this package sets it."
+  (if (eq this-command 'repeat)
+      (if (eq last-repeatable-command 'repeat)
+          (bound-and-true-p repeat-previous-repeated-command)
+        last-repeatable-command)
+    this-command))
+
 (defun donkey--mark-run-mode-pre-command ()
   "Record the run's shape before a press that is about to change it.
 
@@ -4164,6 +4225,12 @@ stepping back to what they left would spend a press on nothing, and
 neither `donkey-mark-run-step-back' nor `donkey-mark-run-step-forward'
 may record, each keeping the other's stack and neither able to make
 progress against its own.
+
+A \`.' is recorded as the command it repeats, which
+`donkey--mark-run-press-command' names: the press still reads
+`repeat' here, `repeat' renaming `this-command' only once it runs, so
+recording by `this-command' skipped every \`.', and \`u' after
+`M w . .' stepped back past all three words at once.
 
 It also names the nameless press -- see the comment below -- which is
 the one thing here that is not about the history.
@@ -4187,15 +4254,16 @@ is silently removed for the session."
   ;; to it.  This is about what the press leaves behind.
   (when (null this-command)
     (setq this-command 'undefined))
-  (when (and (memq this-command donkey--mark-run-commands)
-             (not (memq this-command donkey--mark-run-inert-commands))
-             (not (memq this-command '(donkey-mark-run-step-back
-                                       donkey-mark-run-step-forward))))
-    (push (list (point) (mark t) (and mark-active t))
-          donkey--mark-run-history)
-    ;; A step off the path is a new branch, and there is nothing to
-    ;; redo onto it -- the bargain every undo system strikes.
-    (setq donkey--mark-run-redo nil)))
+  (let ((command (donkey--mark-run-press-command)))
+    (when (and (memq command donkey--mark-run-commands)
+               (not (memq command donkey--mark-run-inert-commands))
+               (not (memq command '(donkey-mark-run-step-back
+                                    donkey-mark-run-step-forward))))
+      (push (list (point) (mark t) (and mark-active t))
+            donkey--mark-run-history)
+      ;; A step off the path is a new branch, and there is nothing to
+      ;; redo onto it -- the bargain every undo system strikes.
+      (setq donkey--mark-run-redo nil))))
 
 (defun donkey-mark-run-step-back ()
   "Put the run back where the last press found it.
@@ -4352,8 +4420,12 @@ the two spellings of one accident having arrived here differently.
 direction: it exists to leave the run standing, so it must not be the
 thing that ends it.  Both arrive through
 `donkey--mark-run-inert-commands', which the family list already
-appends, so the first test below covers them."
-  (or (memq this-command donkey--mark-run-commands)
+appends, so the first test below covers them.
+
+\`.' is judged by the command it repeats, not by `repeat' -- see
+`donkey--mark-run-press-command'.  Judged by name it was a foreign
+key, and the mode ended on a press that grew the selection."
+  (or (memq (donkey--mark-run-press-command) donkey--mark-run-commands)
       ;; A key sequence that resolves to NOTHING never reaches a
       ;; command, and arrives here as nil.  Emacs runs `undefined' for
       ;; a single unbound key -- which is why \`~' was already inert --
@@ -4574,6 +4646,13 @@ forward again, one press per step.  A run only ever grows -- `b'
 after `w' adds a word at the other end rather than taking one back --
 so without them a press that reached further than it looked left
 cancelling and starting again as the only way out.
+
+\`.' repeats the last press, as it does everywhere: `M w .' is three
+words, and each \`.' is a step of its own for \`u' to take back.  The
+key runs `repeat', which the mode reads as the command it repeats --
+see `donkey--mark-run-press-command'.  `M .' repeats the toggle itself,
+which takes the selection up again as if freshly pressed, with no
+steps behind it.
 
 The `m' prefix is the one key that neither runs nor ends the mode: it
 still reaches the normal map, so `m w' inside the mode runs
@@ -6410,8 +6489,8 @@ one does for v, V and m v too, each naming what its own selection
 answers to.  It names the keys whose SUBJECT the mode changes and no
 others -- w moves by a word in normal state and marks one here --
 while a key that keeps its subject is left out: h j k l still move,
-J and K still work on lines, u and U still step back and forward.
-All of them are below.
+J and K still work on lines, \\`.' still repeats, u and U still step
+back and forward.  All of them are below.
 
 The press arrives holding a word, that being what nearly every run
 starts from -- so \\`M' alone is a selected word, and \\`M' DONKEY-DELETE-KEYS takes it.
@@ -6444,6 +6523,8 @@ only ever grows, so without them a press that reached further than it
 looked left cancelling and starting again as the only way out.
 Outside the mode those two keys are undo and redo, and inside it they
 are the same idea one level down -- of the run rather than the buffer.
+\\`.' repeats the last press, as it does everywhere: \\`M' \\`w' \\`.' is three
+words, and each \\`.' is one step for \\`u' to take back.
 
 >> Press \\[donkey-mark-run-toggle] on \"three\" in the ---> line above, then
    \\`w' \\`w' \\`w': four words.  Too many?  Press \\`u' twice to take two

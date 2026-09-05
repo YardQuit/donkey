@@ -6219,6 +6219,76 @@ again."
   (should (memq 'donkey-mark-run-step-forward donkey--mark-run-commands))
   (should (memq 'donkey-mark-run-step-forward donkey--mark-run-adjusters)))
 
+
+(ert-deftest donkey-dot-repeats-a-press-inside-a-run ()
+  "`.' grows the run by the last press, and the mode survives it.
+
+`.' is `repeat', and `repeat' runs the previous command by name -- so
+`M w .' always did select three words.  What it also did was END THE
+MODE: the key names `repeat', not `donkey-mark-word', and the keep test
+judged it by that name.  The selection then stood with nothing behind
+it, so the next `w' MOVED and dragged the highlight along.  Pinned: the
+key is the mode's own, the mode stays, the letter after `.' grows, a
+second `.' chains through `repeat-previous-repeated-command', a count
+carries, `V' is still refused after one, and a foreign key still ends
+the mode in the same press.  The refusal is called rather than pressed:
+the signal would abort the macro and take the assertions with it."
+  (let ((text "for text that is not saved here today"))
+    (should (eq (keymap-lookup donkey-mark-run-mode-map ".") 'repeat))
+    (donkey-mark-test--keys text "w w l M w ."
+      (should (equal (donkey-mark-test--selection) "that is not"))
+      (should (eq (key-binding "w") 'donkey-mark-word))
+      ;; `repeat' leaves a transient map of its own on top of the
+      ;; mode's, binding only the dot; every other key still reaches
+      ;; the mode's map, `V' included.
+      (should (eq (key-binding "V") 'donkey-mark-run-refuse))
+      (should-error (donkey-mark-run-refuse) :type 'user-error)
+      (should (equal (donkey-mark-test--selection) "that is not")))
+    (donkey-mark-test--keys text "w w l M w . w"
+      (should (equal (donkey-mark-test--selection) "that is not saved")))
+    (donkey-mark-test--keys text "w w l M w . ."
+      (should (equal (donkey-mark-test--selection) "that is not saved"))
+      (should (eq (key-binding "w") 'donkey-mark-word)))
+    (donkey-mark-test--keys text "w w l M C-u 2 w ."
+      (should (equal (donkey-mark-test--selection) "that is not saved here")))
+    (donkey-mark-test--keys text "w w l M b ."
+      (should (equal (donkey-mark-test--selection) "for text that"))
+      (should (eq (key-binding "w") 'donkey-mark-word)))
+    (donkey-mark-test--keys text "w w l M w . d"
+      (should (equal (buffer-string) "for text  saved here today"))
+      (should-not (eq (key-binding "w") 'donkey-mark-word)))
+    ;; `M .' repeats the toggle, not the word it marked: the selection
+    ;; is taken up again as if freshly pressed, and the mode stays.
+    (donkey-mark-test--keys text "w w l M ."
+      (should (equal (donkey-mark-test--selection) "that"))
+      (should (eq (key-binding "w") 'donkey-mark-word)))))
+
+(ert-deftest donkey-dot-is-a-step-u-takes-back ()
+  "Each `.' is one press, recorded like the press it repeats.
+
+The history is written on `pre-command-hook', where the press still
+names `repeat' -- `repeat' renames `this-command' only once it runs --
+so recording by `this-command' skipped every `.'.  With the mode
+lapsing on the key that never showed; with the mode kept it would have
+made `u' after `M w . .' step back past all three words at once.
+Recording by the command the press stands for makes each `.' a step
+of its own, and repeating `u' itself is a step back, not a press."
+  (let ((text "for text that is not saved here today"))
+    (donkey-mark-test--keys text "w w l M w . u"
+      (should (equal (donkey-mark-test--selection) "that is")))
+    (donkey-mark-test--keys text "w w l M w . . u u"
+      (should (equal (donkey-mark-test--selection) "that is")))
+    (donkey-mark-test--keys text "w w l M w . . u u u"
+      (should (equal (donkey-mark-test--selection) "that")))
+    ;; `U' walks forward over a repeated press as over any other.
+    (donkey-mark-test--keys text "w w l M w . u u U U"
+      (should (equal (donkey-mark-test--selection) "that is not")))
+    ;; Repeating `u' steps back again and records nothing, so the run
+    ;; is not left with a step it cannot take.
+    (donkey-mark-test--keys text "w w l M w w u ."
+      (should (equal (donkey-mark-test--selection) "that"))
+      (should (eq (key-binding "w") 'donkey-mark-word))
+      (should-error (donkey-mark-run-step-back) :type 'user-error))))
 (ert-deftest donkey-U-in-a-run-does-not-redo-a-text-edit ()
   "`U' inside a run touches the selection, never the buffer.
 

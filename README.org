@@ -832,9 +832,10 @@ active, and goes when the mode does. It names the keys whose *subject*
 the mode changes and no others: =w= moves by a word in normal state
 and marks one here, which nobody could guess from the key. A key that
 keeps its subject is left out — =h j k l= still move, =J= and =K=
-still work on lines, =u= and =U= still step back and forward, of the
-run rather than the buffer. Spelling those out spent the line on the
-keys least in need of it, and the line has to be taken in at a glance.
+still work on lines, =.= still repeats, =u= and =U= still step back
+and forward, of the run rather than the buffer. Spelling those out
+spent the line on the keys least in need of it, and the line has to be
+taken in at a glance.
 The complete list is here and in the tutor.
 
 =M= arrives holding a word, since that is what nearly every run starts
@@ -909,6 +910,18 @@ a *text edit*, dropped the selection and lapsed the mode without
 saying so — worst exactly where it was likeliest, straight after =u=.
 Inside a run both keys are about the run, which is the same idea one
 level down. Outside it they are untouched.
+
+=.= repeats the last press, as it does everywhere else: =M w .= is
+three words and =M w . .= four, a count carries — =M C-u 3 w .= is
+seven — and each =.= is one step for =u= to take back. It used to end
+the mode. The key runs =repeat=, which runs the previous command by
+name, and the mode judged the key by its own name rather than by the
+command it stood for; the selection grew all the same, so the run
+looked alive when it was not — the next =w= *moved*, dragging the
+highlight with it, and =u= undid a text edit inside the selection.
+The mode now reads the press as the command it repeats. =M .= repeats
+=M= itself, which takes the selection up again as if freshly pressed,
+with no steps behind it.
 
 =*= swaps point and mark, so the motions adjust the selection's
 *other* end — vi's =o= in visual mode. The object keys own fixed ends
