@@ -3358,8 +3358,11 @@ adjusting point mid-run -- possible only inside the mode, where alone
 those commands are bound -- reads as the run continuing, the way
 `j'/`k' keep a visual-line session; the PLAIN motions stay out, so
 any of them still ends a run, prefix spelling and mode alike.
-`donkey-mark-run-toggle' itself is NOT a member: it marks nothing, and
-membership would let a mark left over from an older selection qualify
+`donkey-mark-run-toggle' itself is NOT a member, and needs no
+membership: a press that marked a word or adopted a selection renames
+itself in `this-command' to the member that did it, so the next key
+grows what it left, and the press that found neither keeps its own
+name, so that a mark left over from an older selection cannot qualify
 the first letter after `M' as a continuation -- see its docstring.
 `donkey-mark-run-adopt' IS one: an adopting press hands the next key a
 live selection, and membership is what makes that key grow it.
@@ -3428,8 +3431,8 @@ marking tests ran first."
        ;; one -- it also demands `transient-mark-mode', which is on by
        ;; default but need not be.  With it off the object keys grew
        ;; runs as they always do while this test refused every one that
-       ;; had passed through a motion, so `M w l w' re-marked one word
-       ;; where `M w l w' with the mode on takes \"hat is\".  Half a mode,
+       ;; had passed through a motion, so `M l w' re-marked one word
+       ;; where `M l w' with the mode on takes \"hat is\".  Half a mode,
        ;; and by accident: `donkey-rectangle-mark-mode' asks
        ;; `mark-active' for the same reason and says so.  Deactivating
        ;; clears it either way, so the stale-mark protection stands.
@@ -3452,9 +3455,9 @@ a `v' region has always had.  And a negative count reaches behind
 point, so `C-u -3 m w' finishes with the mark at the START.
 
 In all three the object key that followed did not grow the selection,
-it destroyed it: `M w * w' pushed the mark forward from the region's
+it destroyed it: `M * w' pushed the mark forward from the region's
 own start and collapsed the selection to nothing, while still
-reporting \"Word marked\"; `M w * s' replaced it with a span on the
+reporting \"Word marked\"; `M * s' replaced it with a span on the
 other side of point.  Swapping back first makes every object key mean
 the one thing it means everywhere else, and costs the swap only when
 there is one to undo -- this is a no-op on a run already laid out the
@@ -3520,7 +3523,7 @@ Bound to \`V' and \`v' inside `donkey-mark-run-mode-map'.  Both start
 a selection of their own, and neither has an honest reading over a
 run.  Pressed mid-run, `donkey-visual-line-toggle' dropped the run and
 anchored a fresh line session on whatever line the cursor sat in --
-`M w V' over a marked word came back holding that word's whole line,
+`M V' over a marked word came back holding that word's whole line,
 with the run gone and nothing said.  `donkey-set-mark' re-anchors,
 which is what \`v' means everywhere else and reads as \"start again
 from here\" -- but mid-run it left an empty region at point where a
@@ -3616,17 +3619,17 @@ motions.
 The pair owns FIXED ENDS, the way the object keys do rather than the
 way \`h' \`j' \`k' \`l' do: this one takes the selection's start,
 `donkey-mark-run-line-end' its end.  They were plain motions once,
-and both moved POINT, which made them cancel each other -- `M w g h'
+and both moved POINT, which made them cancel each other -- `M g h'
 reached back to the line's start, and the `g l' after it dragged
 point across the mark to the line's end and left the beginning
 behind, so the pair could never build the whole line.  Owning an end
-apiece, they add: `M w g h g l' is the line's text from one edge to
+apiece, they add: `M g h g l' is the line's text from one edge to
 the other, in either order.
 
 With no run in progress the key is still just a motion.  Nothing is
 lost by that -- `v g l' has always been the way to select to the
 line's end from scratch -- and it keeps the pair usable for placing
-the cursor before marking, which is what `M g l w' does."
+the cursor before marking whenever the mode holds no run."
   (interactive "p")
   (let ((extending (donkey--mark-run-continuing-p)))
     (beginning-of-line count)
@@ -3662,7 +3665,7 @@ end of the line the cursor happens to sit in."
 Stands in for `g g'.  The buffer's edges are the line's edges written
 large, so the pair works the way `donkey-mark-run-line-start' and
 `donkey-mark-run-line-end' do: an end apiece, this one the start, and
-they add -- `M w g g g e' is the whole buffer from a word in the
+they add -- `M g g g e' is the whole buffer from a word in the
 middle of it.
 
 A jump is the largest thing a single press can do to a run, which is
@@ -3731,6 +3734,14 @@ sitting mid-line -- a word selection's end, say -- first completes its
 own line, the way a backward symbol press from mid-symbol first
 reaches that symbol's start; the next press adds a whole one.
 
+\`M' arrives holding a word, so inside the mode nearly every press is
+a further one: `M J' is the word grown to the end of its line, which
+from the line's first word is the whole line and from any other word
+is the word onward -- point stays at the word's start, that end being
+`donkey-mark-run-line-backward's.  `M J K' is the whole line from
+anywhere, in either order, and \`V' then \`M' adopts one whole.  A
+fresh press comes only where \`M' found no word to mark.
+
 The mark lands at the START OF THE NEXT LINE rather than at the end of
 this one, so the newline that ends the selection is inside it.  That
 one character is the difference between a line selection and the text
@@ -3771,6 +3782,11 @@ Bound to \`K' inside `donkey-mark-run-mode-map'; the other end of
 `donkey-mark-run-line-forward's pair.  A fresh press selects the line
 point is on; each further press walks POINT up a line, first
 completing a partial line the way its partner does at the mark end.
+From a word, then, `M K' reaches back to the start of the word's line
+and no further -- the completing step -- while from a line's first
+word, point sitting at a line start already, it takes the line above
+as well; the word's own end stays where it is, that end being the
+partner's, so `M K J' is the whole line as `M J K' is.
 
 A fresh press marks the whole line, newline included -- see its
 partner for why the character matters.  The extending branch needs no
@@ -3806,8 +3822,8 @@ Press again to trade back.
 
 The OBJECT keys own fixed ends -- mark forward, point backward -- so
 a swap is not theirs to honor: they call `donkey--normalize-mark-run'
-and trade back before they grow.  `M w * w' therefore selects what
-`M w w' selects.  It used to push the mark forward from the region's
+and trade back before they grow.  `M * w' therefore selects what
+`M w' selects.  It used to push the mark forward from the region's
 own start and collapse the selection to nothing while still reporting
 \"Word marked\", which was the swap's one sharp edge; growing by
 objects now reads the same whichever way round the ends are.
@@ -3854,15 +3870,16 @@ trading the ends of a VISIBLE selection can mean."
 
 Each letter is bound to the VERY COMMAND its `m'-prefixed key runs,
 not to a re-implementation, so the two spellings cannot drift apart:
-`M w w b' selects exactly what `m w m w m b' selects.  \\`h' \\`j'
-\\`k' \\`l' move point without ending the run, adjusting the
-selection's near end the way `j'/`k' adjust a visual-line session --
-through the `donkey--mark-run-adjusters' wrappers, since the plain
-motions must keep ending runs everywhere else.  \`M' inside the mode cancels.
+`M w b' selects exactly what `m w m w m b' selects, the press itself
+being `m w'.  \\`h' \\`j' \\`k' \\`l' move point without ending the
+run, adjusting the selection's near end the way `j'/`k' adjust a
+visual-line session -- through the `donkey--mark-run-adjusters'
+wrappers, since the plain motions must keep ending runs everywhere
+else.  \`M' inside the mode cancels.
 
 Every other key is missing on purpose.  Pressing one fails
 `donkey--mark-run-mode-keep-p', so the transient map lapses and the
-key does its ordinary job in the same press -- `M w w d' selects two
+key does its ordinary job in the same press -- `M w d' selects two
 words and deletes them, with no explicit exit.  Two kinds of press are
 exempt.  A key that does nothing -- unbound, or \`DEL' -- leaves the
 run alone rather than throwing it away over a typo, which
@@ -3874,7 +3891,7 @@ key whose ordinary job would discard the run silently.
 to the family.  Holding them here shadowed the two paste keys, and
 the mode has no other way to reach them: `d', `y', `x' and `c' all
 act on a mark run selection, so replacing one with the kill ring was
-the single ordinary edit the mode made unreachable -- `M w p' grew
+the single ordinary edit the mode made unreachable -- `M p' grew
 the selection to its paragraph and pasted nothing.  Paragraphs are
 one keystroke away either way, and pasting was none.
 
@@ -3882,7 +3899,7 @@ one keystroke away either way, and pasting was none.
 still reaches the normal map's prefix, so `m w' inside the mode runs
 `donkey-mark-word' -- the same command the bare `w' here runs -- and
 both the keep test and the family test are about COMMANDS, so the
-mode survives the press and the run grows.  `M w m w w' selects three
+mode survives the press and the run grows.  `M m w w' selects three
 words, and `m p' and `m P' grow a run by paragraphs from inside the
 mode exactly as the bare letters used to.")
 
@@ -4027,7 +4044,7 @@ instead of marking afresh."
 
 Bound to \\`U' inside `donkey-mark-run-mode-map', where it is the
 other half of `donkey-mark-run-step-back': one press, one step, and
-\\`M' \\`w' \\`w' \\`u' \\`u' \\`U' \\`U' is the two words again.  A press
+\\`M' \\`w' \\`w' \\`u' \\`u' \\`U' \\`U' is the three words again.  A press
 that is not one of the two ends the redo, a new branch having nothing
 to redo onto, and this reports rather than guessing when there is
 nothing left.
@@ -4058,8 +4075,8 @@ differ only in the stack they take it from and the stack they leave
 the current shape on.
 
 Whether the mark was ACTIVE is restored along with the rest, so the
-shape before the first object key -- the head start
-`donkey-mark-run-toggle' takes on the way in, or nothing at all --
+shape before the first recorded press -- the word
+`donkey-mark-run-toggle' marks on the way in, or nothing at all --
 comes back as it was rather than as a selection it never was."
   (cl-destructuring-bind (pt mk active) state
     (goto-char pt)
@@ -4077,6 +4094,16 @@ The reminder is repainted after the mode's family commands and after
 nothing else: their own messages \(\"Word marked\" and kin) repeat what
 the visible selection already shows, so replacing them costs nothing,
 while during count entry the echo area belongs to the keystroke echo.
+Count entry is told apart by `prefix-arg' rather than by name, because
+the keys of a count carry no name of their own here:
+`universal-argument' and `digit-argument' copy `last-command' into
+`this-command' \(`prefix-command-preserve-state'), so that the command
+they prefix still reads as a repeat of the one before it, and mid-run
+each key of \`C-u 3' therefore arrives naming the family member it
+followed.  `prefix-arg' is non-nil after exactly those keys and nil
+again after the command they were for.  Without the test the reminder
+painted over the \`C-u 3-' echo, and the count being typed could not
+be seen.
 
 The exit is the transient map's backstop.  `set-transient-map' asks
 `donkey--mark-run-mode-keep-p' from `pre-command-hook', which is one
@@ -4085,8 +4112,8 @@ running: a command whose own key lookup happened long before leaves
 the mode armed behind it, and the next bare `w' the user typed marked
 a word instead of moving.  A command that is neither a family member,
 nor part of entering a count, nor `donkey-mark-run-toggle' itself --
-the press that arms the map, and deliberately no family member -- ends
-the mode here.
+the arming press when it found nothing to mark or adopt, the one case
+in which it keeps its own name -- ends the mode here.
 
 A REPLAYED MACRO needs the extra arm above, because
 `this-command' cannot see it.  `kmacro-call-macro' and
@@ -4108,7 +4135,11 @@ is silently removed for the session."
    ((and donkey--mark-run-armed-in-macro (not executing-kbd-macro))
     (donkey--mark-run-exit))
    ((memq this-command donkey--mark-run-commands)
-    (donkey--repaint-hint donkey--mark-run-mode-hint))
+    ;; A count's keys arrive under the family member's name -- see
+    ;; the docstring -- and the echo area is theirs while one is
+    ;; being typed.
+    (unless prefix-arg
+      (donkey--repaint-hint donkey--mark-run-mode-hint)))
    ((or (donkey--mark-run-mode-keep-p)
         (eq this-command 'donkey-mark-run-toggle))
     nil)
@@ -4234,10 +4265,11 @@ armed-by-keypress one is to have written it down."
 Active and not empty.  `donkey-set-mark' activates a mark without
 covering anything yet, and `region-active-p' says yes to that: adopting
 it made the first object key grow from the CURSOR, so `v M w' from
-mid-word took the tail of the word.  Asked by `donkey-mark-run-toggle'
-to decide whether to adopt and by `donkey-mark-run-adopt' to refuse
-when it should not have been called -- one test, so the two cannot
-drift into disagreeing about what a selection is.
+mid-word took the tail of the word where `M w' takes two whole ones.
+Asked by `donkey-mark-run-toggle' to decide whether to adopt and by
+`donkey-mark-run-adopt' to refuse when it should not have been called
+-- one test, so the two cannot drift into disagreeing about what a
+selection is.
 
 `mark-active' rather than `region-active-p', so a selection made with
 `transient-mark-mode' off is still one to adopt -- see
@@ -4279,7 +4311,7 @@ Refuses without a selection to adopt, and an EMPTY active region is no
 selection: `donkey-set-mark' plants a mark and activates it without
 covering anything yet, and adopting that made the first object key
 grow from the cursor -- `v M w' from mid-word took the tail of the
-word, where `M w' alone marks the whole of it.
+word, where \`M' alone marks the whole of it and `M w' two.
 `donkey-mark-run-toggle' enters the mode empty-handed in that case
 instead.
 
@@ -4305,10 +4337,10 @@ progress instead of marking afresh over it."
 
 Mark run mode is the `m' prefix held down for you: the object keys
 \`w' \`W' \`b' \`B' \`s' \`S' run exactly the commands their
-`m'-prefixed keys run, through `donkey-mark-run-mode-map'.  `M w w b'
-selects what `m w m w m b' selects: two words forward and one back.
-The first letter marks afresh, later letters grow the one selection,
-counts work, and objects mix mid-run, all per
+`m'-prefixed keys run, through `donkey-mark-run-mode-map'.  The press
+itself is `m w' -- see below -- so `M w b' selects what `m w m w m b'
+selects: two words forward and one back.  Every letter grows the one
+selection, counts work, and objects mix mid-run, all per
 `donkey--mark-run-commands'.
 
 The paragraph pair is the one the mode does not letter.  \`p' and
@@ -4328,15 +4360,15 @@ visual-line session; a motion may even cross the mark, passing the
 selection through empty before the object keys grow it again -- the
 freeform a `v' region has always had.  The line and buffer edges are
 the exception among the motions: with a run live `g h', `g l', `g g'
-and `g e' own an end apiece and stretch it, so `M w g h g l' takes the
-whole line's text and `M w g g g e' the whole buffer, rather than each
+and `g e' own an end apiece and stretch it, so `M g h g l' takes the
+whole line's text and `M g g g e' the whole buffer, rather than each
 undoing the other.  The object keys really do grow
 it again: whichever way round a motion, a \`*' or a negative count
 has left the ends, `donkey--normalize-mark-run' puts them back before
 the next object is added.
 
 The mode needs no explicit exit: any key outside the mode's own lets
-it lapse and then does its ordinary job -- `M w w d' selects two
+it lapse and then does its ordinary job -- `M w d' selects two
 words and deletes them.  \`M' pressed again cancels the selection and the
 mode with it, and \`C-g' does the same, as it does for every
 selection.
@@ -4360,14 +4392,16 @@ The `m' prefix is the one key that neither runs nor ends the mode: it
 still reaches the normal map, so `m w' inside the mode runs
 `donkey-mark-word' -- the very command the bare `w' runs here -- and
 the mode's tests are about COMMANDS, not keys, so the run simply
-carries on.  `M w m w w' selects three words, and the two spellings
+carries on.  `M m w w' selects three words, and the two spellings
 can be mixed mid-run.  It is also how paragraphs are reached, their
-letters having been given back to pasting: `M w m p' grows the word
+letters having been given back to pasting: `M m p' grows the word
 to its paragraph and stays in the mode.
 
 With nothing selected the press marks a WORD on its way in, so the
 mode arrives holding the thing nearly every run starts from.  \`M'
-alone is a selected word.
+alone is a selected word: the press is `m w', and the mode's promise
+is one sentence long -- each letter after it is one more `m'-prefixed
+press.
 
 WHICH word is `donkey-mark-word's answer and not a second rule: the
 one under the cursor, or from a gap the one behind it.  The two agree
@@ -4380,13 +4414,21 @@ regardless.  Where `donkey-mark-word' itself refuses, in a buffer with
 no word in it at all, the mode still starts: entering is what the key
 is for.
 
-The word is a head start rather than the run's first press: the object
-key after it still marks afresh, because this command stays out of
-`donkey--mark-run-commands' and the family test reads `last-command'.
-So \`M' \`w' is the word the prefix would have marked, \`M' \`s' is the
-whole sentence, and \`M' \`w' \`w' \`b' is `m w m w m b' still.  Nothing
-about the letters changes; there is simply already something selected
-when they arrive.
+The word is the run's FIRST PRESS, and the letter after it GROWS: the
+press leaves `donkey-mark-word' in `this-command' once the word is
+marked, the way the adopting branch leaves `donkey-mark-run-adopt'
+there, so the family test finds a member in `last-command' when the
+letter arrives.  \`M' \`w' is two words, \`M' \`b' is the word and the
+one before it, and \`M' \`s' is the word grown forward to the end of
+its sentence -- what `m w m s' selects, the whole sentence being `m s'
+and then \`M'.  For a long time the word was a head start instead,
+this command keeping its own name so that the letter after it marked
+afresh and `M w w b' spelled `m w m w m b'.  What that cost was the
+letter after \`M' re-marking the very word already on screen: `M w'
+looked like nothing happening, `M b' the same, and only the second
+letter grew -- while `M l w' and `M * w' DID grow from the word, the
+adjusters being members, so the word was a press to some keys and
+none to others.  A press to every key, it needs no explaining.
 
 Pressed with an active selection this ADOPTS it into the mode instead
 of entering empty-handed -- see `donkey-mark-run-adopt': a
@@ -4404,18 +4446,20 @@ rather than adopted -- and then the press goes on to start a run as it
 would over nothing at all, which is what it used to return without
 doing.  And an EMPTY active region -- a bare `v', which
 has activated a mark but covered nothing yet -- is dropped rather than
-adopted, so the first object key marks the whole object at point:
-`v M w' mid-word takes the word, as `M w' alone does.
+adopted, so the press marks the whole word at point in its place:
+`v M' mid-word takes the word, as \`M' alone does.
 
-This command is NOT a member of `donkey--mark-run-commands': it marks
-nothing, and membership would let a mark left over from an older
-selection qualify the first letter after \`M' as a continuation,
-growing a selection no longer on screen where a fresh mark was asked
-for.  An earlier design instead anchored an empty selection at point
-and WAS a member, so the first letter grew from the cursor -- `M w'
-from mid-word took the tail of the word.  The mode form marks the
-whole object, exactly as the prefixed key does, which is the promise
-this key makes: the same behavior, minus the prefix."
+This command is NOT a member of `donkey--mark-run-commands', and the
+renames are why it need not be.  A press that marked or adopted
+leaves the name of the command that did it, and a press that did
+neither -- a buffer with no word in it -- keeps its own, so the letter
+after THAT one marks afresh rather than growing from whatever stale
+mark the buffer held.  Membership would have let the stale mark
+qualify.  An earlier design instead anchored an empty selection at
+point and WAS a member, so the first letter grew from the cursor --
+`M w' from mid-word took the tail of the word.  The mode form marks
+the whole object, exactly as the prefixed key does, which is the
+promise this key makes: the same behavior, minus the prefix."
   (interactive)
   (let ((was-rectangle (bound-and-true-p rectangle-mark-mode)))
     (donkey--ensure-non-rectangle-selection)
@@ -4436,11 +4480,10 @@ this key makes: the same behavior, minus the prefix."
       ;; without entering, the one selection whose `M' left the mode
       ;; off -- so the press did nothing but clear, and the obvious
       ;; second press found `last-command' equal to `this-command'
-      ;; and grew the head start from the mark the rectangle left,
-      ;; selecting from where the rectangle began to the word under
-      ;; point.
+      ;; and grew the word from the mark the rectangle left, selecting
+      ;; from where the rectangle began to the word under point.
       (deactivate-mark)
-      ;; The head start IS `m w', with no position it declines from.
+      ;; The word IS `m w', with no position it declines from.
       ;; It used to run only with point ON a word, so that from a gap
       ;; the mode arrived empty rather than reaching for the word
       ;; behind -- the reasoning being that a key which says "start
@@ -4456,40 +4499,37 @@ this key makes: the same behavior, minus the prefix."
       ;; that can grow it (`w', `J', `%') mark afresh whether it is
       ;; there or not.  It was an affordance in name only.
       ;;
-      ;; And NOT renamed to `donkey-mark-word' in `this-command', which
-      ;; is what adoption does.  The rename would make the object key
-      ;; that follows GROW this word instead of marking afresh, and
-      ;; every `M'-and-a-letter sequence would count from one word
-      ;; further along -- `M w w b' would stop being `m w m w m b',
-      ;; which is the promise the mode is named for.  Left alone, the
-      ;; word is a free head start: press nothing and you have it,
-      ;; press `w' and you have the word the prefix would have marked.
-      ;;
-      ;; `last-command' is bound away for the call.  Leaving
-      ;; `this-command' alone is what keeps the head start out of the
-      ;; run, but it also lets `donkey--mark-extending-p' match this
-      ;; command against ITSELF -- two `M' presses in a row are
-      ;; `(eq last-command this-command)', and the head start would
-      ;; then GROW whatever mark was lying about instead of marking
-      ;; the word under point.  Nothing else can reach that shape now
-      ;; that every branch here enters the mode, the second press
-      ;; being the map's own cancel; the binding is what makes it stay
-      ;; unreachable.
+      ;; `last-command' is bound away for the call.  The word is a
+      ;; FRESH mark, and `donkey-mark-word' decides between marking
+      ;; and growing by reading `last-command' -- a family member left
+      ;; there by an older run whose selection is gone, as `m w' and
+      ;; then a hook that deactivated the mark leaves one, would have
+      ;; it GROW from whatever mark was lying about instead of marking
+      ;; the word under point.
       ;;
       ;; Marked BEFORE the mode is armed, which is only about what is
       ;; left on screen.  `donkey--mark-run-enter' ends by showing the
-      ;; reminder, and the head start's own "Word marked" used to land
-      ;; on top of it -- so the mode's only sign was missing for the
+      ;; reminder, and the word's own "Word marked" used to land on
+      ;; top of it -- so the mode's only sign was missing for the
       ;; whole first press of every run that starts on a word, which
       ;; is most of them, and `M d' never showed it at all.  The
-      ;; post-command repaint cannot help here: it fires for family
-      ;; commands, and this press is deliberately none.  Widening it
-      ;; to the toggle is worse than it looks, `this-command' being
-      ;; set to `last-command' for the keys of a count, so the hint
-      ;; would paint over the `C-u 3-' echo as well.
+      ;; rename below makes the post-command repaint cover this press
+      ;; as well now; the order stays, so that the reminder is the
+      ;; last thing said whether the repaint runs or not.
       (condition-case nil
-          (let ((last-command nil))
-            (donkey-mark-word))
+          (progn
+            (let ((last-command nil))
+              (donkey-mark-word))
+            ;; The word marked, the press IS `m w': renamed in
+            ;; `this-command' to the command that marked, as the
+            ;; adopting branch above renames to its own.  The rename
+            ;; is what makes the letter that follows GROW the word --
+            ;; see the docstring for what leaving the toggle's name
+            ;; here cost.  Only on success: a press that found no word
+            ;; keeps the toggle's own name, so the letter after it
+            ;; marks afresh rather than growing from whatever mark the
+            ;; buffer happened to hold.
+            (setq this-command 'donkey-mark-word))
         ;; Refused only where `m w' refuses: a buffer with no word in
         ;; it at all, before point or after.  The mode still starts,
         ;; empty, because entering is what the key is for and a buffer
@@ -4718,9 +4758,10 @@ did so first; this is the same rule reaching the other two keys.
 
 For a FRESH press only, which is why the callers keep their own
 condition: a run may legitimately cover blank -- `M J' on an indented
-empty line marks whitespace, and the next object key is asked to grow
-it -- and refusing there deactivated the mark, throwing away a
-selection the user could see over the state the run started from."
+empty line of a buffer with no word for \`M' to take marks whitespace,
+and the next object key is asked to grow it -- and refusing there
+deactivated the mark, throwing away a selection the user could see
+over the state the run started from."
   (when (donkey--region-blank-p)
     (deactivate-mark)
     (when origin
@@ -6164,34 +6205,38 @@ press adds one object of its own kind at its own end, so \\[donkey-mark-word] \\
 grows the word selection forward to the end of its sentence.
 
 \\[donkey-mark-run-toggle] holds the prefix down for you.  In mark run mode the bare letters
-w W b B s S mark and grow exactly as their m-prefixed keys do, so \\`M' \\`w' \\`w' \\`b'
-selects what three prefixed presses select.  A reminder of the object
-keys stays in the echo area for as long as the mode is on, and goes
-when the mode does -- as one does for v, V and m v too, each naming
-what its own selection answers to.  It names the keys whose SUBJECT the
-mode changes and no others -- w moves by a word in normal state and
-marks one here -- while a key that keeps its subject is left out:
-h j k l still move, J and K still work on lines, u and U still step
-back and forward.  All of them are below.
+w W b B s S mark and grow exactly as their m-prefixed keys do, so \\`M' \\`w' \\`b'
+selects what three prefixed presses select, the press itself being
+the first of them.  A reminder of the object keys stays in the echo
+area for as long as the mode is on, and goes when the mode does -- as
+one does for v, V and m v too, each naming what its own selection
+answers to.  It names the keys whose SUBJECT the mode changes and no
+others -- w moves by a word in normal state and marks one here --
+while a key that keeps its subject is left out: h j k l still move,
+J and K still work on lines, u and U still step back and forward.
+All of them are below.
 
 The press arrives holding a word, that being what nearly every run
 starts from -- so \\`M' alone is a selected word, and \\`M' DONKEY-DELETE-KEYS takes it.
 Which word is m w's answer exactly: the one under the cursor, or from
-a gap the one behind it, so the two keys never disagree.  The head
-start is not the run's first press: the letters behave as they always
-did.
+a gap the one behind it, so the two keys never disagree.  The word is
+the run's first press, and every letter after it grows: \\`M' is m w,
+and \\`M' \\`w' is two words.
 
->> Put the cursor on \"three\" in the ---> line and press \\[donkey-mark-run-toggle], then
-   \\`w' \\`w': two words are selected, no prefix in sight.  Press \\`b'
-   and the word before joins them.  Now press DONKEY-DELETE-KEYS to take all
+>> Put the cursor on \"three\" in the ---> line and press \\[donkey-mark-run-toggle]: one
+   word is selected.  Press \\`w': two words, no prefix in sight.  Press
+   \\`b' and the word before joins them.  Now press DONKEY-DELETE-KEYS to take all
    three.
 
    ---> one two three four five six
 
-J and K grow the selection by whole lines, newline and all, so a
-delete after them removes the lines outright.  h j k l move point and
+J and K grow the selection by lines, J at the bottom end and K at the
+top, each finishing its own end's line first: from a word, \\`J' reaches
+the end of its line, newline and all, \\`K' the start, and \\`J' \\`K' is the
+whole line -- so a delete after the pair removes it outright, and
+from a line's first word \\`J' alone is enough.  h j k l move point and
 adjust the selection's near end; g h and g l are the two that own an
-end apiece instead, so they add up -- \\`M' \\`w' \\`g' \\`h' \\`g' \\`l' takes the whole
+end apiece instead, so they add up -- \\`M' \\`g' \\`h' \\`g' \\`l' takes the whole
 line's text, in either order.  * trades which end the motions hold;
 the object keys trade it back before they grow, so they never need
 thinking about.
@@ -6204,7 +6249,7 @@ Outside the mode those two keys are undo and redo, and inside it they
 are the same idea one level down -- of the run rather than the buffer.
 
 >> Press \\[donkey-mark-run-toggle] on \"three\" in the ---> line above, then
-   \\`w' \\`w' \\`w'.  Three words too many?  Press \\`u' twice to take two
+   \\`w' \\`w' \\`w': four words.  Too many?  Press \\`u' twice to take two
    of them back, and \\`U' once if you went one step too far.
 
 Paragraphs keep their m prefix there, since p and P stay the paste

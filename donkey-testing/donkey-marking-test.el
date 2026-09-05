@@ -4305,11 +4305,11 @@ donkey-a-backward-press-revives-a-deactivated-run explains:
                     ("w w l m p m p" donkey-mark-paragraph
                      "for text that is not saved"
                      "for text that is not saved")
-                    ("M w J" donkey-mark-run-line-forward
+                    ("M J" donkey-mark-run-line-forward
                      "one\ntwo\nthree\n" "one\n")
-                    ("w w l M w g h" donkey-mark-run-line-start
+                    ("w w l M g h" donkey-mark-run-line-start
                      "for text that is not saved" "for text that")
-                    ("w w l M w g l" donkey-mark-run-line-end
+                    ("w w l M g l" donkey-mark-run-line-end
                      "for text that is not saved" "that is not saved")))
       (cl-destructuring-bind (keys cmd text expected) case
         (let ((sabotage (lambda ()
@@ -4360,48 +4360,107 @@ case that shows the difference, because the family test
     (should (equal backward forward))))
 
 (ert-deftest donkey-mark-run-mode-is-the-m-prefix-held-down ()
-  "`M w w b' selects exactly what `m w m w m b' selects.
+  "`M w b' selects exactly what `m w m w m b' selects.
 
 The headline of mark run mode: each letter of
 `donkey-mark-run-mode-map' is bound to the very command its
-`m'-prefixed key runs, so the two spellings cannot drift apart.
-Asserted against the literal expectation AND against the prefixed run
-on the same text, so a change to either spelling that the other does
-not follow fails here."
+`m'-prefixed key runs, and the press itself is `m w', so the two
+spellings cannot drift apart.  Asserted against the literal
+expectation AND against the prefixed run on the same text, so a change
+to either spelling that the other does not follow fails here.  The
+bare press is held to `m w' the same way."
   (let ((moded (donkey-mark-test--keys "for text that is not saved"
-                   "w w l M w w b" (donkey-mark-test--selection)))
+                   "w w l M w b" (donkey-mark-test--selection)))
         (prefixed (donkey-mark-test--keys "for text that is not saved"
                       "w w l m w m w m b" (donkey-mark-test--selection))))
     (should (equal moded "text that is"))
+    (should (equal moded prefixed)))
+  (let ((moded (donkey-mark-test--keys "for text that is not saved"
+                   "w w l M" (donkey-mark-test--selection)))
+        (prefixed (donkey-mark-test--keys "for text that is not saved"
+                      "w w l m w" (donkey-mark-test--selection))))
+    (should (equal moded "that"))
     (should (equal moded prefixed))))
 
-(ert-deftest donkey-mark-run-mode-first-letter-marks-afresh ()
-  "`M w' equals a fresh `m w': the mode plants no anchor.
+(ert-deftest donkey-the-letter-after-M-grows-the-word ()
+  "Every letter after `M' grows the word it marked; none re-marks it.
+
+The bug this pins: `M' marked a word, and `w' or `b' after it did
+nothing anyone could see -- the letter marked the same word over
+again, and only the SECOND letter grew.  The word was a head start
+rather than a press, `donkey-mark-run-toggle' keeping its own name in
+`this-command' instead of the marker's, so the letter after it found
+no run to continue.  Meanwhile `M l w' and `M * w' DID grow from the
+word, the adjusters being members: one word was a press to some keys
+and none to others.
+
+Checked as the promise is stated -- `M' is `m w', and each letter
+after it is one more `m'-prefixed press -- and, separately, that no
+letter leaves the word as it was, which is the shape the bug took.
+The mechanism is pinned too: the press leaves the marker's name
+behind it, and only when it marked."
+  (let* ((text "for text that is not saved.  Second one here.\n")
+         (word (donkey-mark-test--keys text "w w l M"
+                 (should (eq last-command 'donkey-mark-word))
+                 (donkey-mark-test--selection))))
+    (should (equal word (donkey-mark-test--keys text "w w l m w"
+                          (donkey-mark-test--selection))))
+    ;; A press that found no word keeps its own name, so the letter
+    ;; after it marks afresh -- see donkey-the-toggle-is-no-family-member.
+    (donkey-mark-test--keys ",,, ;;;\n" "M"
+      (should (eq last-command 'donkey-mark-run-toggle)))
+    ;; No letter is a repeat of the press.
+    (dolist (key '("w" "b" "W" "B" "s" "S" "m w" "m b" "m p" "J" "K"))
+      (should-not (equal (list key (donkey-mark-test--keys
+                                       text (concat "w w l M " key)
+                                     (donkey-mark-test--selection)))
+                         (list key word))))
+    ;; And each is the prefixed press it stands for.
+    (dolist (case '(("w" . "m w") ("b" . "m b") ("W" . "m W")
+                    ("B" . "m B") ("s" . "m s") ("S" . "m S")
+                    ("m w" . "m w") ("m p" . "m p")
+                    ("w b" . "m w m b") ("w w b" . "m w m w m b")
+                    ("b s" . "m b m s")))
+      (should (equal (list (car case)
+                           (donkey-mark-test--keys
+                               text (concat "w w l M " (car case))
+                             (donkey-mark-test--selection)))
+                     (list (car case)
+                           (donkey-mark-test--keys
+                               text (concat "w w l m w " (cdr case))
+                             (donkey-mark-test--selection))))))))
+
+(ert-deftest donkey-mark-run-mode-marks-whole-words-from-mid-word ()
+  "`M' equals a fresh `m w' and `M w' two of them: the mode plants no anchor.
 
 An earlier design pushed an empty anchored selection at `M' and grew
 from it, which made `M w' from MID-WORD select the tail of the word.
 The mode form marks the whole object from anywhere inside it, exactly
-as the prefixed key does -- the same behavior, minus the prefix.  The
-mid-word start is what tells the two designs apart."
+as the prefixed key does -- the same behavior, minus the prefix -- and
+the letter after it adds a whole word to the whole word.  The mid-word
+start is what tells the two designs apart."
+  (donkey-mark-test--keys "for text that is" "w w l l M"
+    (should (equal (donkey-mark-test--selection) "that")))
   (donkey-mark-test--keys "for text that is" "w w l l M w"
-    (should (equal (donkey-mark-test--selection) "that"))))
+    (should (equal (donkey-mark-test--selection) "that is"))))
 
 (ert-deftest donkey-mark-run-mode-takes-counts ()
   "A count inside the mode matches its prefixed spelling.
 
-`C-u 3' then `w' inside the mode selects what `C-u 3 m w' selects.
+`C-u 3' then `w' inside the mode selects what `C-u 3 m w' selects
+after the press's own word -- four words, `M' being `m w'.
 `donkey--mark-run-mode-keep-p' keeps the transient map alive through
 `universal-argument' and its digits; without that arm the mode would
 lapse on the count and the `w' would be a plain motion."
-  (let ((moded (donkey-mark-test--keys "alpha beta gamma delta" "M C-u 3 w"
-                 (donkey-mark-test--selection)))
-        (prefixed (donkey-mark-test--keys "alpha beta gamma delta" "C-u 3 m w"
-                    (donkey-mark-test--selection))))
-    (should (equal moded "alpha beta gamma"))
+  (let ((moded (donkey-mark-test--keys "alpha beta gamma delta epsilon"
+                   "M C-u 3 w" (donkey-mark-test--selection)))
+        (prefixed (donkey-mark-test--keys "alpha beta gamma delta epsilon"
+                      "m w C-u 3 m w" (donkey-mark-test--selection))))
+    (should (equal moded "alpha beta gamma delta"))
     (should (equal moded prefixed))))
 
 (ert-deftest donkey-a-foreign-key-lapses-the-mode-and-still-works ()
-  "`M w w d' selects two words and deletes them; no explicit exit.
+  "`M w d' selects two words and deletes them; no explicit exit.
 
 `d' is not in `donkey-mark-run-mode-map', so the transient map lapses
 in that press's pre-command and the key does its ordinary job on the
@@ -4409,7 +4468,7 @@ selection the mode built.  And once lapsed, the letters are plain
 keys again: the `w' after the delete moves and marks nothing.  (The
 lapse can no longer be shown with a motion -- `h' `j' `k' `l' are the
 mode's own keys now.)"
-  (donkey-mark-test--keys "for text that is" "w l M w w d"
+  (donkey-mark-test--keys "for text that is" "w l M w d"
     (should (equal (buffer-substring-no-properties (point-min) (point-max))
                    "for  is"))
     (execute-kbd-macro (kbd "w"))
@@ -4420,24 +4479,24 @@ mode's own keys now.)"
 
 Through the `donkey-mark-run-' wrappers, which are family members --
 the plain motions cannot be, or `m w l m w' would stop marking a
-single word afresh, a pinned rule.  After `M w l', the region's near
+single word afresh, a pinned rule.  After `M l', the region's near
 end has moved one character in and the next `w' still EXTENDS: \"hat
 is\", not a fresh \"is\".  `h' walks the near end outward instead,
 counts pass through, and the vertical pair adjusts by lines with
 `next-line's own column behavior, `j'/`k' being what they stand in
 for."
-  (donkey-mark-test--keys "for text that is not saved" "w w l M w l w"
+  (donkey-mark-test--keys "for text that is not saved" "w w l M l w"
     (should (equal (donkey-mark-test--selection) "hat is")))
-  (donkey-mark-test--keys "for text that is" "w w l M w h"
+  (donkey-mark-test--keys "for text that is" "w w l M h"
     (should (equal (donkey-mark-test--selection) " that")))
-  (donkey-mark-test--keys "for text that is not saved" "w w l M w C-u 2 l w"
+  (donkey-mark-test--keys "for text that is not saved" "w w l M C-u 2 l w"
     (should (equal (donkey-mark-test--selection) "at is")))
-  (donkey-mark-test--keys "one\ntwo\nthree\n" "j M w k"
+  (donkey-mark-test--keys "one\ntwo\nthree\n" "j M k"
     (should (equal (donkey-mark-test--selection) "one\ntwo")))
   ;; The column survives the vertical move -- `next-line', not
   ;; `forward-line', as the wrappers' docstrings promise: from column 2
   ;; of "y two", `k' lands on column 2 of "x one".
-  (donkey-mark-test--keys "x one\ny two\n" "j l l M w k"
+  (donkey-mark-test--keys "x one\ny two\n" "j l l M k"
     (should (equal (donkey-mark-test--selection) "one\ny two")))
   ;; And it survives a SECOND press over a line too short to hold it,
   ;; which is the whole of what `donkey--line-move-last-command' buys:
@@ -4455,26 +4514,26 @@ for."
 
 The pair owns FIXED ENDS -- `g h' the selection's start, `g l' its
 end -- where \`h' \`j' \`k' \`l' all move point.  Both moved point
-once, which made them cancel each other: `M w g h' reached back to
+once, which made them cancel each other: `M g h' reached back to
 the line's start, and the `g l' after it dragged point across the
 mark to the line's end and left the beginning behind, leaving \" is\"
 where the whole line was asked for.  Now they add, in either order,
 and a `w' after either still EXTENDS.
 
 With nothing selected the key is the plain motion it is outside the
-mode, which is what `M g l w' relies on.  Unmatched `g' sequences are
+mode.  Unmatched `g' sequences are
 deliberately NOT shadowed -- the transient map defines only these
 two, so `g q' still resolves to its normal-state command and lapses
 the mode like any foreign key."
-  (donkey-mark-test--keys "for text that is" "w w l M w g h"
+  (donkey-mark-test--keys "for text that is" "w w l M g h"
     (should (equal (donkey-mark-test--selection) "for text that")))
-  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w g l"
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M g l"
     (should (equal (donkey-mark-test--selection) "that is")))
-  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w g h g l"
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M g h g l"
     (should (equal (donkey-mark-test--selection) "for text that is")))
-  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w g l g h"
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M g l g h"
     (should (equal (donkey-mark-test--selection) "for text that is")))
-  (donkey-mark-test--keys "for text that is" "w w l M w g h w"
+  (donkey-mark-test--keys "for text that is" "w w l M g h w"
     (should (equal (donkey-mark-test--selection) "for text that is")))
   ;; `g l' pushes the mark, so it measures from the end the selection
   ;; already reaches rather than from the cursor, and cannot shrink a
@@ -4487,17 +4546,17 @@ the mode like any foreign key."
   (donkey-mark-test--keys ",,, ;;;\n... ---\n" "M g l"
     (should-not (region-active-p))
     (should (= (point) (line-end-position))))
-  ;; With a run live -- and the head start makes one wherever there is
-  ;; a word behind -- `g h' is no motion but an end of the selection,
+  ;; With a run live -- and `M' makes one wherever there is a word
+  ;; behind -- `g h' is no motion but an end of the selection,
   ;; and the letter after it grows what is there.  The motion case is
   ;; the one above, where there is nothing to mark at all.
   (donkey-mark-test--keys "for text that is\nnot saved\n" "g h M g h w"
     (should (equal (donkey-mark-test--selection) "for text")))
   ;; A swap is not theirs to honor either -- they own fixed ends, so
   ;; they trade back first, exactly as the object keys do.
-  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w * g h"
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M * g h"
     (should (equal (donkey-mark-test--selection) "for text that")))
-  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w * g l"
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M * g l"
     (should (equal (donkey-mark-test--selection) "that is")))
   ;; And both bring a region back that a hook deactivated mid-run: the
   ;; extending branch is reached because `last-command' names a family
@@ -4516,11 +4575,11 @@ the mode like any foreign key."
             (progn
               (add-hook 'pre-command-hook sabotage)
               (donkey-mark-test--keys "for text that is\nnot saved\n"
-                  (concat "w w l M w " keys)
+                  (concat "w w l M " keys)
                 (should (equal (list keys (donkey-mark-test--selection))
                                (list keys expected)))))
           (remove-hook 'pre-command-hook sabotage)))))
-  (donkey-mark-test--keys "for text that is" "w w l M w"
+  (donkey-mark-test--keys "for text that is" "w w l M"
     (should (eq (key-binding (kbd "g q")) 'fill-region))
     (should (eq (key-binding (kbd "g h")) 'donkey-mark-run-line-start))))
 
@@ -4538,11 +4597,11 @@ beside the stale mark, and `w' must mark the word at point afresh --
 \(Staged through the in-mode cancel because `M' over a live selection
 ADOPTS it rather than canceling.  The empty re-entry is made by
 calling `donkey--mark-run-enter' rather than by pressing `M' on
-whitespace: the head start reaches for the word behind now, wherever
-there is one, so no key sequence arrives in the mode with nothing
-selected in a buffer that has words in it -- and a live region is
-exactly what would hide this case.)"
-  (donkey-mark-test--keys "for text that is" "w w l M w M"
+whitespace: `M' reaches for the word behind, wherever there is one,
+so no key sequence arrives in the mode with nothing selected in a
+buffer that has words in it -- and a live region is exactly what
+would hide this case.)"
+  (donkey-mark-test--keys "for text that is" "w w l M M"
     (should-not (region-active-p))
     (should (mark t))                   ; the stale mark, left behind
     (donkey--mark-run-enter)
@@ -4550,13 +4609,19 @@ exactly what would hide this case.)"
     (should (equal (donkey-mark-test--selection) "that"))))
 
 (ert-deftest donkey-mark-run-mode-mixes-objects ()
-  "`M w s' grows the word to its sentence's end, like `m w m s'.
+  "`M s' grows the word to its sentence's end, like `m w m s'.
 
 The cross-object family rule reaches inside the mode unchanged --
-the letters are the family commands, so nothing new has to."
-  (donkey-mark-test--keys "One thing.  Two thing.  Three thing."
-      "w w w w M w s"
-    (should (equal (donkey-mark-test--selection) "thing."))))
+the letters are the family commands, so nothing new has to.  Pinned
+against the prefixed spelling on the same text, since the whole
+sentence is what `M s' used to select while the word was a head start
+and no press."
+  (let ((moded (donkey-mark-test--keys "One thing.  Two thing.  Three thing."
+                   "w w w w M s" (donkey-mark-test--selection)))
+        (prefixed (donkey-mark-test--keys "One thing.  Two thing.  Three thing."
+                      "w w w w m w m s" (donkey-mark-test--selection))))
+    (should (equal moded "thing."))
+    (should (equal moded prefixed))))
 
 (ert-deftest donkey-a-blank-run-grows-instead-of-being-refused ()
   "`M J s' on a blank line extends the run rather than dropping it.
@@ -4573,9 +4638,9 @@ away instead.  The siblings simply extend; these two now do too.
 A fresh press in a buffer of nothing but whitespace must still
 report, which is the guard the continuation case had to be carved out
 of rather than deleted."
-  ;; Staged in a buffer with no word in it: the head start takes the
-  ;; word behind wherever there is one, and the run has to START blank
-  ;; for the continuation to be the thing under test.
+  ;; Staged in a buffer with no word in it: `M' takes the word behind
+  ;; wherever there is one, and the run has to START blank for the
+  ;; continuation to be the thing under test.
   (donkey-mark-test--keys ",,,\n\n   \n" "j j M J s"
     (should (equal (donkey-mark-test--selection) "   \n")))
   (donkey-mark-test--keys ",,,\n\n   \n" "j j M J m p"
@@ -4620,10 +4685,13 @@ A single flash at entry vanished under the first \"Word marked\";
 `donkey--mark-run-mode-post-command' paints the reminder back after each
 family command, and after nothing else -- during count entry the echo
 area belongs to the keystroke echo, so across `M', a `C-u 3' and a
-`w' the hint must appear exactly twice: at entry and after the
-letter.  Messages
-are captured by stubbing `message', because batch Emacs has no echo
-area for `current-message' to read."
+`w' the hint must appear exactly once more than across `M' alone: for
+the letter, and for neither key of the count.  The count's keys reach
+the hook under the family member's own name, `universal-argument' and
+`digit-argument' handing `this-command' on unchanged, so the hook
+tells them apart by `prefix-arg' -- without that they painted over
+the `C-u 3-' echo.  Messages are captured by stubbing `message',
+because batch Emacs has no echo area for `current-message' to read."
   (let (msgs)
     (cl-letf (((symbol-function 'message)
                (lambda (fmt &rest args)
@@ -4632,22 +4700,26 @@ area for `current-message' to read."
       (donkey-mark-test--keys "for text that is not saved" "w w l M w w"
         nil))
     (should (equal (car msgs) donkey--mark-run-mode-hint)))
-  (let (msgs)
-    (cl-letf (((symbol-function 'message)
-               (lambda (fmt &rest args)
-                 (when fmt (push (apply #'format fmt args) msgs))
-                 nil)))
-      (donkey-mark-test--keys "alpha beta gamma delta" "M C-u 3 w"
-        nil))
-    (should (= 2 (seq-count (lambda (m) (equal m donkey--mark-run-mode-hint))
-                            msgs))))
-  ;; The ENTRY press ends on the reminder too.  The head start says
-  ;; "Word marked" over the one `donkey--mark-run-enter' shows, and no
-  ;; repaint follows -- the toggle is deliberately no family member --
-  ;; so the mode's only sign on screen was missing for the whole first
-  ;; press of every run that starts on a word, which is most of them.
-  ;; `M d' is a complete interaction that never showed it.  Marking
-  ;; before arming is what puts the reminder last.
+  (let ((paints (lambda (keys)
+                  (let (msgs)
+                    (cl-letf (((symbol-function 'message)
+                               (lambda (fmt &rest args)
+                                 (when fmt (push (apply #'format fmt args) msgs))
+                                 nil)))
+                      (donkey-mark-test--keys "alpha beta gamma delta epsilon"
+                          keys nil))
+                    (seq-count (lambda (m) (equal m donkey--mark-run-mode-hint))
+                               msgs)))))
+    (should (= (funcall paints "M C-u 3 w") (1+ (funcall paints "M"))))
+    (should (= (funcall paints "M w C-u 3 w") (+ 2 (funcall paints "M")))))
+  ;; The ENTRY press ends on the reminder too.  The word's "Word
+  ;; marked" used to land on the one `donkey--mark-run-enter' shows,
+  ;; with no repaint after it, so the mode's only sign on screen was
+  ;; missing for the whole first press of every run that starts on a
+  ;; word, which is most of them.  `M d' is a complete interaction
+  ;; that never showed it.  Marking before arming is what put the
+  ;; reminder last; the press being `m w' now, the repaint covers it
+  ;; too.
   (dolist (keys '("M" "M w" "M C-u 3 w"))
     (let (msgs)
       (cl-letf (((symbol-function 'message)
@@ -4658,8 +4730,8 @@ area for `current-message' to read."
           nil))
       (should (equal (list keys (car msgs))
                      (list keys donkey--mark-run-mode-hint)))))
-  ;; On whitespace there is no head start to talk over, and the
-  ;; reminder is still the last thing said.
+  ;; From the leading gap the word ahead is marked, and the reminder
+  ;; is still the last thing said.
   (let (msgs)
     (cl-letf (((symbol-function 'message)
                (lambda (fmt &rest args)
@@ -5106,13 +5178,13 @@ blanket one."
     (should (equal (donkey-mark-test--selection) "fo"))))
 
 (ert-deftest donkey-an-empty-selection-is-not-adopted ()
-  "`v M w' marks the whole word, as `M w' alone does.
+  "`v M' marks the whole word, as `M' alone does.
 
 `donkey-set-mark' activates a mark without covering anything yet, and
 `region-active-p' says yes to that empty region.  Adopting it made
 the first object key grow from the CURSOR -- `v M w' from mid-word
 took the tail of the word, \"hat\" for \"that\" -- which is the very
-design `donkey-mark-run-mode-first-letter-marks-afresh' pins the
+design `donkey-mark-run-mode-marks-whole-words-from-mid-word' pins the
 toggle against.  The toggle drops such a region and marks the word
 under the cursor in its place, and `donkey-mark-run-adopt' refuses
 outright, being reachable by name.
@@ -5123,16 +5195,16 @@ deleted nothing at all, and \\`*' had ends to trade where there is
 nothing between them.  The drop now shows as a whole word taking the
 empty region's place, so `v M d' deletes that word; from whitespace,
 where there is no word to stand in, it shows on its own."
-  (donkey-mark-test--keys "for text that is" "w w l l v M w"
-    (should (equal (donkey-mark-test--selection) "that")))
-  ;; The head start makes the point even plainer: the empty region is
-  ;; gone and a WHOLE word stands in its place, where adopting would
-  ;; have kept the cursor as one end.
+  ;; The empty region is gone and a WHOLE word stands in its place,
+  ;; where adopting would have kept the cursor as one end; the letter
+  ;; after it adds a whole word to that.
   (donkey-mark-test--keys "for text that is" "w w l l v M"
     (should (equal (donkey-mark-test--selection) "that")))
-  ;; From whitespace the head start takes the word behind, which is
-  ;; still not the empty region `v' left: adopting that would have kept
-  ;; the cursor's own position as an end.
+  (donkey-mark-test--keys "for text that is" "w w l l v M w"
+    (should (equal (donkey-mark-test--selection) "that is")))
+  ;; From whitespace `M' takes the word behind, which is still not
+  ;; the empty region `v' left: adopting that would have kept the
+  ;; cursor's own position as an end.
   (donkey-mark-test--keys "for text that is" "w w v M"
     (should (equal (donkey-mark-test--selection) "text")))
   ;; With nothing anywhere to mark, the drop shows on its own -- and
@@ -5159,17 +5231,17 @@ arrange this: the mode survives the press and the run grows.  Pinned
 because the two spellings being interchangeable mid-run is what the
 mode promises, and a keep test written against KEYS would quietly
 break it."
-  (donkey-mark-test--keys "for text that is not saved" "w w l M w m w w"
+  (donkey-mark-test--keys "for text that is not saved" "w w l M m w w"
     (should (equal (donkey-mark-test--selection) "that is not")))
   ;; The paragraph pair has no bare letter here -- `p' and `P' are the
   ;; paste keys -- so the prefix is the ONLY way it reaches the mode,
   ;; and the run has to survive it like any other family press.
-  (donkey-mark-test--keys "Alpha one.\n\nBeta two.\n\nGamma.\n" "j j M w m p"
+  (donkey-mark-test--keys "Alpha one.\n\nBeta two.\n\nGamma.\n" "j j M m p"
     (should (equal (donkey-mark-test--selection) "Beta two.\n\n")))
-  (donkey-mark-test--keys "Alpha one.\n\nBeta two.\n\nGamma.\n" "j j M w m p w"
+  (donkey-mark-test--keys "Alpha one.\n\nBeta two.\n\nGamma.\n" "j j M m p w"
     (should (equal (donkey-mark-test--selection) "Beta two.\n\nGamma")))
   (donkey-mark-test--keys "Alpha one.\n\nBeta two.\n\nGamma.\n"
-      "j j j j M w m P"
+      "j j j j M m P"
     (should (equal (donkey-mark-test--selection) "\nGamma"))))
 
 (ert-deftest donkey-the-mode-hint-names-only-keys-that-work ()
@@ -5230,13 +5302,13 @@ would undo the trim silently."
     (should (<= (length hint) 100))))
 
 (ert-deftest donkey-p-and-P-keep-their-paste-jobs-inside-the-mode ()
-  "`M w p' replaces the marked word; the mode letters no paragraph.
+  "`M p' replaces the marked word; the mode letters no paragraph.
 
 Every other ordinary edit already reached a mark run selection --
 `d', `y', `x' and `c' are all foreign keys that lapse the mode and
 act on what it built -- but `p' and `P' were the paragraph keys here,
 so the one thing the mode could not do was paste over its own
-selection: `M w p' grew the selection to its paragraph and pasted
+selection: `M p' grew the selection to its paragraph and pasted
 nothing, and there was no key sequence that would.  The pair passes
 through now, and the objects they used to name are still one prefix
 away, at `m p' and `m P'.
@@ -5246,17 +5318,17 @@ nothing without a banked rectangle -- what matters is that the press
 no longer marks, and that it lets the mode go."
   (let* ((kill-ring (list "XX"))
          (kill-ring-yank-pointer kill-ring))
-    (donkey-mark-test--keys "for text that is" "w w l M w p"
+    (donkey-mark-test--keys "for text that is" "w w l M p"
       (should (equal (buffer-substring-no-properties (point-min) (point-max))
                      "for text XX is"))
       (should-not (region-active-p))
       (should (eq (key-binding "w") 'forward-word))))
-  (donkey-mark-test--keys "for text that is" "w w l M w P"
+  (donkey-mark-test--keys "for text that is" "w w l M P"
     (should (equal (buffer-substring-no-properties (point-min) (point-max))
                    "for text that is"))
     (should (eq (key-binding "w") 'forward-word)))
   ;; Mid-run, with the map armed, the two keys are still the paste ones.
-  (donkey-mark-test--keys "for text that is" "w w l M w"
+  (donkey-mark-test--keys "for text that is" "w w l M"
     (should (eq (key-binding "w") 'donkey-mark-word))
     (should (eq (key-binding "p") 'donkey-yank))
     (should (eq (key-binding "P") 'donkey-yank-rectangle))))
@@ -5266,11 +5338,14 @@ no longer marks, and that it lets the mode go."
 
 Fresh, either press marks the line point is on; further presses grow
 by whole lines, `J' pushing the mark down and `K' walking point up,
-the family's fixed ends.  A mark sitting mid-line first completes its
-own line -- the mid-object rule words and symbols already follow --
-so `M w J' takes the word's whole line, and objects keep mixing:
-`M J w' is the line plus a word.  Counts work, and `J' outside the
-mode is untouched -- still `donkey-visual-next-line', V's key.
+the family's fixed ends, an end sitting mid-line first completing its
+own line -- the mid-object rule words and symbols already follow.
+`M' arrives holding a word, so from the line's first word `M J' is the
+whole line and from any other word it is the word grown to the line's
+end, `M K' reaching back to the line's start; `M J K' is the whole
+line from anywhere, and objects keep mixing: `M J w' is the line plus
+a word.  Counts work, and `J' outside the mode is untouched -- still
+`donkey-visual-next-line', V's key.
 
 A whole line here includes its NEWLINE, which is why every expectation
 below that ends at a line boundary ends with one -- see
@@ -5285,14 +5360,29 @@ below that ends at a line boundary ends with one -- see
       "j M J K"
     (should (equal (donkey-mark-test--selection) "one two\nthree four\n")))
   (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
-      "j M w J"
-    (should (equal (donkey-mark-test--selection) "three four\n")))
-  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
       "j M J w"
     (should (equal (donkey-mark-test--selection) "three four\nfive")))
   (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
       "j M C-u 2 J"
     (should (equal (donkey-mark-test--selection) "three four\nfive six\n")))
+  ;; From a word further in, each key finishes its own end's line and
+  ;; no more: the pair is the whole line, in either order, and `K' on
+  ;; its own leaves the word's end where it is.
+  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
+      "j w l M J"
+    (should (equal (donkey-mark-test--selection) "four\n")))
+  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
+      "j w l M K"
+    (should (equal (donkey-mark-test--selection) "three four")))
+  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
+      "j w l M J K"
+    (should (equal (donkey-mark-test--selection) "three four\n")))
+  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
+      "j w l M K J"
+    (should (equal (donkey-mark-test--selection) "three four\n")))
+  (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
+      "j w l M K K"
+    (should (equal (donkey-mark-test--selection) "one two\nthree four")))
   (donkey-mark-test--keys "one two\nthree four\nfive six\nseven eight\n"
       "V J M J"
     (should (equal (donkey-mark-test--selection)
@@ -5323,14 +5413,21 @@ what they leave behind, which is the whole point of the change.
 
 `V M J d' is the case that made it worth doing: adopting a visual-line
 session brings its lines over whole, and before this the very next
-`J' handed the newline straight back."
+`J' handed the newline straight back.
+
+`M J' is the whole line from its first word; from any other word the
+pair `J' `K' is, in either order, since each finishes its own end's
+line -- so `M J K d' removes the line from anywhere."
   (donkey-mark-test--keys "one two\nthree four\nrest\n" "M J d"
     (should (equal (buffer-substring-no-properties (point-min) (point-max))
                    "three four\nrest\n")))
   (donkey-mark-test--keys "one two\nthree four\nrest\n" "M J J d"
     (should (equal (buffer-substring-no-properties (point-min) (point-max))
                    "rest\n")))
-  (donkey-mark-test--keys "one two\nthree four\nrest\n" "j M K d"
+  (donkey-mark-test--keys "one two\nthree four\nrest\n" "j w l M J K d"
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "one two\nrest\n")))
+  (donkey-mark-test--keys "one two\nthree four\nrest\n" "j w l M K J d"
     (should (equal (buffer-substring-no-properties (point-min) (point-max))
                    "one two\nrest\n")))
   (donkey-mark-test--keys "one two\nthree four\nrest\n" "V M J d"
@@ -5355,7 +5452,7 @@ session brings its lines over whole, and before this the very next
 
 Vi's `o' in visual mode: the motions move point, and point sits at
 the selection's start, so trimming or growing the FAR end meant
-walking the near one -- `M w w * l l' now grows past the far end
+walking the near one -- `M w * l l' now grows past the far end
 instead, `* h' trims it, and a second `*' trades back, pinned by the
 un-swapped `l' shrinking the start again.  A member of
 `donkey--mark-run-adjusters', so the run carries on across it.
@@ -5366,13 +5463,13 @@ on its own: with no mark at all the native command already signals,
 but beside the mark a canceled run left behind it would leap there
 and re-activate whatever lies between -- so after cancel, the swap
 must refuse and the region must stay gone."
-  (donkey-mark-test--keys "for text that is not saved" "w w l M w w * l l"
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w * l l"
     (should (equal (donkey-mark-test--selection) "that is n")))
-  (donkey-mark-test--keys "for text that is not saved" "w w l M w * h"
+  (donkey-mark-test--keys "for text that is not saved" "w w l M * h"
     (should (equal (donkey-mark-test--selection) "tha")))
-  (donkey-mark-test--keys "for text that is not saved" "w w l M w * * l"
+  (donkey-mark-test--keys "for text that is not saved" "w w l M * * l"
     (should (equal (donkey-mark-test--selection) "hat")))
-  (donkey-mark-test--keys "for text that is" "w w l M w M"
+  (donkey-mark-test--keys "for text that is" "w w l M M"
     (should-error (donkey-mark-run-exchange) :type 'user-error)
     (should-not (region-active-p))))
 
@@ -5381,9 +5478,9 @@ must refuse and the region must stay gone."
 
 The object keys own fixed ends -- mark forward, point backward -- so
 a swap is not theirs to honor.  Left unhandled it was not merely
-awkward: `M w * w' pushed the mark forward from the region\'s own
+awkward: `M * w' pushed the mark forward from the region\'s own
 START and collapsed the selection to nothing, still reporting \"Word
-marked\"; `M w * s' replaced it with a span on the other side of
+marked\"; `M * s' replaced it with a span on the other side of
 point.  `donkey--normalize-mark-run' trades the ends back first, so
 each of the eight reads exactly as its unswapped spelling does --
 asserted against that spelling, key by key, rather than against
@@ -5393,10 +5490,10 @@ The motions keep the swap, which is what `*' is for; those are pinned
 by donkey-star-trades-the-end-the-motions-hold."
   (dolist (key '("w" "b" "W" "B" "s" "S" "J" "K"))
     (let ((swapped (donkey-mark-test--keys "for text that is not saved"
-                       (format "w w l M w * %s" key)
+                       (format "w w l M * %s" key)
                      (donkey-mark-test--selection)))
           (plain (donkey-mark-test--keys "for text that is not saved"
-                     (format "w w l M w %s" key)
+                     (format "w w l M %s" key)
                    (donkey-mark-test--selection))))
       (should (equal (list key swapped) (list key plain)))))
   ;; The paragraph pair is asserted on a buffer with paragraphs to
@@ -5404,18 +5501,18 @@ by donkey-star-trades-the-end-the-motions-hold."
   (dolist (key '("m p" "m P"))
     (let ((swapped (donkey-mark-test--keys
                        "Alpha one.\n\nBeta two.\n\nGamma three.\n"
-                       (format "j j M w * %s" key)
+                       (format "j j M * %s" key)
                      (donkey-mark-test--selection)))
           (plain (donkey-mark-test--keys
                      "Alpha one.\n\nBeta two.\n\nGamma three.\n"
-                     (format "j j M w %s" key)
+                     (format "j j M %s" key)
                    (donkey-mark-test--selection))))
       (should (equal (list key swapped) (list key plain)))))
   ;; Two literals, so the pairs cannot agree on something wrong.
-  (donkey-mark-test--keys "for text that is not saved" "w w l M w * w"
+  (donkey-mark-test--keys "for text that is not saved" "w w l M * w"
     (should (equal (donkey-mark-test--selection) "that is")))
   (donkey-mark-test--keys "Alpha one.\n\nBeta two.\n\nGamma three.\n"
-      "j j M w * m p"
+      "j j M * m p"
     (should (equal (donkey-mark-test--selection) "Beta two.\n\n"))))
 
 (ert-deftest donkey-a-crossing-motion-leaves-a-run-the-keys-can-grow ()
@@ -5429,35 +5526,47 @@ With point six characters past the mark, `w' pushed the mark forward
 from BEHIND point and left \"s\", a span with nothing to do with what
 was on screen; `b' walked point back into the region and shrank it to
 \" \".  Both now grow the visible selection from its far end."
-  (donkey-mark-test--keys "for text that is not saved" "w w l M w C-u 6 l"
+  (donkey-mark-test--keys "for text that is not saved" "w w l M C-u 6 l"
     (should (equal (donkey-mark-test--selection) " i")))
-  (donkey-mark-test--keys "for text that is not saved" "w w l M w C-u 6 l w"
+  (donkey-mark-test--keys "for text that is not saved" "w w l M C-u 6 l w"
     (should (equal (donkey-mark-test--selection) " is")))
-  (donkey-mark-test--keys "for text that is not saved" "w w l M w C-u 6 l b"
+  (donkey-mark-test--keys "for text that is not saved" "w w l M C-u 6 l b"
     (should (equal (donkey-mark-test--selection) "that i"))))
 
 (ert-deftest donkey-a-negative-count-leaves-a-run-the-next-key-grows ()
   "A count reaching behind point still leaves a run that grows forward.
 
-`donkey-mark-word' reads a negative COUNT as marking the words BEFORE
-the one point normalizes onto.  That used to finish with the mark at the
-selection\'s start -- the family layout inside out -- and the next `w'
-walked the mark forward from there and ate into the selection instead of
-extending it.  The layout is the family\'s way round now, and the
-extension it was written for is the same either way, which is the point:
-the next key grows the selection whichever end the count left the mark
-at.  Pinned in both spellings, the mode\'s and the prefix\'s, since the
-count belongs to the mark command rather than to the mode.
+`donkey-mark-word' reads a negative COUNT on a fresh press as marking
+the words BEFORE the one point normalizes onto.  That used to finish
+with the mark at the selection\'s start -- the family layout inside out
+-- and the next `w' walked the mark forward from there and ate into
+the selection instead of extending it.  The layout is the family\'s
+way round now, and the extension it was written for is the same either
+way, which is the point: the next key grows the selection whichever
+end the count left the mark at.  Pinned through the prefix and through
+`M' adopting what the count selected, since the count belongs to the
+mark command rather than to the mode.
+
+The mode has no fresh negative count of its own, `M' being `m w':
+mid-run a negative count is `mark-word\'s own extension, which walks
+the mark BACK, and the mode\'s spelling of that agrees with the
+prefix\'s, as the mode promises of every press.
 
 The first selection lost a trailing space when the two object keys were
 made to agree about what a negative count reaches back to."
-  (donkey-mark-test--keys "for text that is not saved" "w w w l M C-u -3 w"
+  (donkey-mark-test--keys "for text that is not saved" "w w w l C-u -3 m w"
     (should (equal (donkey-mark-test--selection) "for text that")))
-  (donkey-mark-test--keys "for text that is not saved" "w w w l M C-u -3 w w"
-    (should (equal (donkey-mark-test--selection) "for text that is")))
   (donkey-mark-test--keys "for text that is not saved"
       "w w w l C-u -3 m w m w"
-    (should (equal (donkey-mark-test--selection) "for text that is"))))
+    (should (equal (donkey-mark-test--selection) "for text that is")))
+  (donkey-mark-test--keys "for text that is not saved"
+      "w w w l C-u -3 m w M w"
+    (should (equal (donkey-mark-test--selection) "for text that is")))
+  (let ((moded (donkey-mark-test--keys "for text that is not saved"
+                   "w w w l M C-u -3 w" (donkey-mark-test--selection)))
+        (prefixed (donkey-mark-test--keys "for text that is not saved"
+                      "w w w l m w C-u -3 m w" (donkey-mark-test--selection))))
+    (should (equal moded prefixed))))
 
 (ert-deftest donkey-normalizing-a-run-touches-only-an-inverted-one ()
   "`donkey--normalize-mark-run\' is a no-op unless the ends are reversed.
@@ -5503,10 +5612,10 @@ object key after one still EXTENDS instead of marking afresh.
 does not ring: `execute-kbd-macro' stops on a command that dings, so
 `undefined' cannot be driven through the harness and is asserted
 against the predicate directly."
-  (donkey-mark-test--keys "for text that is" "w w l M w DEL"
+  (donkey-mark-test--keys "for text that is" "w w l M DEL"
     (should (eq (key-binding "w") 'donkey-mark-word))
     (should (equal (donkey-mark-test--selection) "that")))
-  (donkey-mark-test--keys "for text that is" "w w l M w DEL w"
+  (donkey-mark-test--keys "for text that is" "w w l M DEL w"
     (should (equal (donkey-mark-test--selection) "that is")))
   (dolist (cmd '(undefined ignore))
     (let ((this-command cmd))
@@ -5516,7 +5625,7 @@ against the predicate directly."
   (should (memq 'ignore donkey--mark-run-commands))
   ;; A key that really does something still ends the run, which is the
   ;; rule the exemption is carved out of.
-  (donkey-mark-test--keys "for text that is" "w w l M w"
+  (donkey-mark-test--keys "for text that is" "w w l M"
     (let ((this-command 'transpose-chars))
       (should-not (donkey--mark-run-mode-keep-p)))))
 
@@ -5526,7 +5635,7 @@ against the predicate directly."
 A visual-line session and a mark run are two ways of owning one
 selection, and `donkey-visual-line-toggle' pressed mid-run dropped the
 run and anchored a fresh line session on whatever line the cursor sat
-in: `M w V' over a marked word came back holding that word's whole
+in: `M V' over a marked word came back holding that word's whole
 line, with the run gone and nothing said.  The key is bound to
 `donkey-mark-run-refuse' inside the mode, which signals and changes
 nothing -- the mode is still armed and the selection still there when
@@ -5535,7 +5644,7 @@ away.
 
 Outside the mode `V' is untouched, which is the point of refusing
 rather than rebinding."
-  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M w"
+  (donkey-mark-test--keys "for text that is\nnot saved\n" "w w l M"
     (should (eq (key-binding "V") 'donkey-mark-run-refuse))
     (should (eq (key-binding "v") 'donkey-mark-run-refuse))
     (should-error (donkey-mark-run-refuse) :type 'user-error)
@@ -5554,7 +5663,7 @@ rather than rebinding."
 
   ;; And after a legal exit it works again: the delete takes the run,
   ;; and the `V' after it starts its session on what is left.
-  (donkey-mark-test--keys "one two\nthree four\n" "M w d V"
+  (donkey-mark-test--keys "one two\nthree four\n" "M d V"
     (should (equal (donkey-mark-test--selection) " two"))))
 
 (ert-deftest donkey-the-tutors-mark-run-walkthrough-is-true ()
@@ -5563,16 +5672,29 @@ rather than rebinding."
 The tutor teaches mark run mode by having the reader press the keys
 on a sample line, and a walkthrough that has drifted from the code
 teaches the wrong thing to exactly the people least able to spot it.
-The sequence is the one the tutor prints -- `M', two `w', a `b', then
-the delete -- and the assertions are the two claims it makes: that
-three words end up selected, and that the delete takes all three."
-  (donkey-mark-test--keys "one two three four five six" "w w l M w w b"
+The sequence is the one the tutor prints -- `M', a `w', a `b', then
+the delete -- and the assertions are the claims it makes along the
+way: one word selected at `M', two at `w', the word before joining at
+`b', and the delete taking all three.  Then the `u' exercise: `M' and
+three `w' are four words, two `u' take two of them back, and a `U'
+puts one forward again."
+  (donkey-mark-test--keys "one two three four five six" "w w l M"
+    (should (equal (donkey-mark-test--selection) "three")))
+  (donkey-mark-test--keys "one two three four five six" "w w l M w"
+    (should (equal (donkey-mark-test--selection) "three four")))
+  (donkey-mark-test--keys "one two three four five six" "w w l M w b"
     (should (equal (donkey-mark-test--selection) "two three four")))
-  (donkey-mark-test--keys "one two three four five six" "w w l M w w b d"
+  (donkey-mark-test--keys "one two three four five six" "w w l M w b d"
     (should (equal (buffer-substring-no-properties (point-min) (point-max))
                    "one  five six")))
+  (donkey-mark-test--keys "one two three four five six" "w w l M w w w"
+    (should (equal (donkey-mark-test--selection) "three four five six")))
+  (donkey-mark-test--keys "one two three four five six" "w w l M w w w u u"
+    (should (equal (donkey-mark-test--selection) "three four")))
+  (donkey-mark-test--keys "one two three four five six" "w w l M w w w u u U"
+    (should (equal (donkey-mark-test--selection) "three four five")))
   ;; And the line-edge claim from the same section.
-  (donkey-mark-test--keys "one two three four five six" "w w l M w g h g l"
+  (donkey-mark-test--keys "one two three four five six" "w w l M g h g l"
     (should (equal (donkey-mark-test--selection)
                    "one two three four five six"))))
 
@@ -5619,23 +5741,23 @@ apart, which is the whole reason this does its own setup."
       (when (buffer-live-p buf) (kill-buffer buf)))))
 
 (ert-deftest donkey-M-marks-the-word-under-the-cursor ()
-  "`M' arrives holding a word, and changes nothing about the letters.
+  "`M' arrives holding a word, and that word is the run's first press.
 
 Entering the mode used to leave the selection empty and wait, so the
 commonest run -- mark this word, then grow it -- cost a press that
-said nothing on screen.  `M' now marks the word under the cursor on
-its way in.
+said nothing on screen.  `M' now marks a word on its way in: the one
+under the cursor, or from a gap the one behind it, which is
+`donkey-mark-word's own answer, so the two keys never disagree.  Where
+nothing can be marked at all the mode still starts, entering being
+what the key is for.
 
-Only UNDER the cursor.  `donkey-mark-word' reaches for the word behind
-a gap, which is right for a key that says \"word\" and wrong for one
-that says \"start selecting\": from a blank line the head start would
-have jumped the selection up to the paragraph above, and in a buffer
-with no word at all it would have reported instead of entering.
-
-And the head start is not the run's first press: the toggle stays out
-of `donkey--mark-run-commands', so the object key after it still marks
-afresh.  `M w' is the word the prefix would have marked, `M w w b' is
-`m w m w m b' still, and nothing about the letters moves."
+The word is the run's FIRST PRESS: the toggle leaves `donkey-mark-word'
+in `this-command' once it has marked, so the letter after it GROWS --
+`M w' is two words, and `M w b' is `m w m w m b'.  For a long time it
+was a head start only, the toggle keeping its own name so that the
+letter after it marked afresh, and that letter then re-marked the very
+word already on screen: `M w' looked like nothing happening, and only
+the second letter grew."
   ;; Asserted with the state beside the answer.  A bare `equal' on the
   ;; selection says what came out and nothing about how, and this one
   ;; fails on a machine neither the author nor the reader has: it
@@ -5702,15 +5824,16 @@ afresh.  `M w' is the word the prefix would have marked, `M w w b' is
   (donkey-mark-test--keys ",,, ;;; ..." "M"
     (should-not (region-active-p))
     (should (eq (key-binding "w") 'donkey-mark-word)))
-  ;; The letters are untouched: the first one still marks afresh.
-  (let ((head (donkey-mark-test--keys "for text that is not saved" "w w l M w"
-                (donkey-mark-test--selection)))
-        (prefixed (donkey-mark-test--keys "for text that is not saved" "w w l m w"
+  ;; The letter after it grows: `M w' is `m w m w', and the headline
+  ;; `M w b' is `m w m w m b'.
+  (let ((grown (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+                 (donkey-mark-test--selection)))
+        (prefixed (donkey-mark-test--keys "for text that is not saved" "w w l m w m w"
                     (donkey-mark-test--selection))))
-    (should (equal head "that"))
-    (should (equal head prefixed)))
+    (should (equal grown "that is"))
+    (should (equal grown prefixed)))
   (let ((moded (donkey-mark-test--keys "for text that is not saved"
-                   "w w l M w w b" (donkey-mark-test--selection)))
+                   "w w l M w b" (donkey-mark-test--selection)))
         (prefixed (donkey-mark-test--keys "for text that is not saved"
                       "w w l m w m w m b" (donkey-mark-test--selection))))
     (should (equal moded "text that is"))
@@ -5793,16 +5916,16 @@ policy: `donkey-rectangle-mark-mode' had already reached for
 Run over BOTH values, since the point is that the answer does not
 depend on the setting."
   (dolist (case '(;; a run surviving one of its own motions
-                  ("w w l M w l w"        "hat is")
+                  ("w w l M l w"          "hat is")
                   ;; the swap, which used to refuse outright
-                  ("w w l M w *"          "that")
-                  ("w w l M w * w"        "that is")
-                  ("w w l M w * l l"      "that i")
+                  ("w w l M *"            "that")
+                  ("w w l M * w"          "that is")
+                  ("w w l M * l l"        "that i")
                   ;; adoption of a region `v' built
                   ("w w l v C-u 5 l M b"  "text that ")
                   ("w w l v C-u 5 l M w"  "that is")
                   ;; and the line-edge pair, which owns ends
-                  ("w w l M w g h g l"    "for text that is not saved")))
+                  ("w w l M g h g l"      "for text that is not saved")))
     (cl-destructuring-bind (keys expected) case
       (dolist (tmm '(t nil))
         (should (equal
@@ -5822,50 +5945,48 @@ the only way out.  That is cheap for a word and expensive for a
 paragraph, and the mode cannot tell in advance which a press will be.
 
 One press, one step, and the ladder is walked all the way down: `M w
-w s' is the sentence, and three steps back is the first word.  A
-fourth reports rather than guessing, and leaves the selection alone
-while it does."
-  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w w s"
+s' is the sentence, and two steps back is the first word.  A third
+reports rather than guessing, and leaves the selection alone while it
+does."
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w s"
     (should (equal (donkey-mark-test--selection) "that is not saved here today")))
-  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w w s u"
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w s u"
     (should (equal (donkey-mark-test--selection) "that is")))
-  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w w s u u"
-    (should (equal (donkey-mark-test--selection) "that")))
-  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w w s u u u"
-    ;; A fourth finds nothing to undo and says so, leaving the run it
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w s u u"
+    ;; A third finds nothing to undo and says so, leaving the run it
     ;; could not step still standing.  Called rather than pressed: the
     ;; signal would abort the macro and take the assertions with it.
     (should (equal (donkey-mark-test--selection) "that"))
     (should (eq (key-binding "w") 'donkey-mark-word))
     (should-error (donkey-mark-run-step-back) :type 'user-error))
   ;; The run carries on across a step back rather than starting over.
-  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w w u w"
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w u w"
     (should (equal (donkey-mark-test--selection) "that is")))
   ;; Every press the mode owns is a step, the motions and `*' included.
-  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w l l u"
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M l l u"
     (should (equal (donkey-mark-test--selection) "hat")))
-  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w * u"
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M * u"
     (should (equal (donkey-mark-test--selection) "that")))
   ;; A counted press is one press, so one step takes all of it back.
   (donkey-mark-test--keys "for text that is not saved here today"
-      "w w l M w C-u 5 w u"
+      "w w l M C-u 5 w u"
     (should (equal (donkey-mark-test--selection) "that")))
   ;; A key that changed nothing recorded nothing, so the step goes past
   ;; it to the press that did.
   (donkey-mark-test--keys "for text that is not saved here today" "w w l M w DEL u"
     (should (equal (donkey-mark-test--selection) "that"))
     (should-error (donkey-mark-run-step-back) :type 'user-error))
-  ;; The head start is not a recorded press: `M' alone has nothing
-  ;; before it to go back to, and cancelling is what undoes it.
+  ;; The entry press is not a recorded step: the history starts with
+  ;; the mode, which is armed once the word is marked, so `M' alone
+  ;; has nothing before it to go back to, and cancelling is what
+  ;; undoes it.
   (donkey-mark-test--keys "for text that is not saved here today" "w w l M"
     (should-error (donkey-mark-run-step-back) :type 'user-error))
-  ;; Entered from whitespace there is no head start, so the first
-  ;; press records a state with NO mark -- and stepping back to it has
-  ;; to put the selection away rather than leave the last one showing.
-  ;; Where there is nothing to mark the head start declines, so the
-  ;; first press records a state with NO mark -- and stepping back to
-  ;; it has to put the selection away rather than leave the last one
-  ;; showing.  `J' rather than `w', there being no word to take.
+  ;; Where there is nothing to mark the entry press declines, so the
+  ;; first recorded press finds a state with NO mark -- and stepping
+  ;; back to it has to put the selection away rather than leave the
+  ;; last one showing.  `J' rather than `w', there being no word to
+  ;; take.
   (donkey-mark-test--keys ",,, ;;;\n... ---\n" "M J"
     (should (equal (donkey-mark-test--selection) ",,, ;;;\n")))
   (donkey-mark-test--keys ",,, ;;;\n... ---\n" "M J u"
@@ -5876,7 +5997,7 @@ while it does."
   "`U' puts the run back where `u' stepped it out of.
 
 The other half of the pair, and one press per step like its sibling:
-`M w w u u' is the first word, and two of these is two words again.
+`M w w u u' is the first word again, and two of these is three words.
 A press that is neither of the two ends the redo -- a new branch has
 nothing to redo onto, which is the bargain every undo system strikes
 -- and with nothing left it reports rather than guessing.
@@ -5885,18 +6006,18 @@ nothing to redo onto, which is the bargain every undo system strikes
 `u U' the history stands exactly where it did, and `u' steps back
 again."
   (let ((text "for text that is not saved here today"))
-    (donkey-mark-test--keys text "w w l M w w u U"
+    (donkey-mark-test--keys text "w w l M w u U"
       (should (equal (donkey-mark-test--selection) "that is")))
     (donkey-mark-test--keys text "w w l M w w u u U U"
-      (should (equal (donkey-mark-test--selection) "that is")))
+      (should (equal (donkey-mark-test--selection) "that is not")))
     ;; `U' left the history alone, so `u' still walks back down it.
-    (donkey-mark-test--keys text "w w l M w w u U u"
+    (donkey-mark-test--keys text "w w l M w u U u"
       (should (equal (donkey-mark-test--selection) "that")))
     ;; The run carries on from what came back.
-    (donkey-mark-test--keys text "w w l M w w u U w"
+    (donkey-mark-test--keys text "w w l M w u U w"
       (should (equal (donkey-mark-test--selection) "that is not")))
     ;; The mode is still on, and `U' is its key while it is.
-    (donkey-mark-test--keys text "w w l M w w u U"
+    (donkey-mark-test--keys text "w w l M w u U"
       (should (eq (key-binding "w") 'donkey-mark-word))
       (should (eq (key-binding "U") 'donkey-mark-run-step-forward)))
     ;; Nothing stepped back, nothing to step forward to.  Called
@@ -5904,11 +6025,11 @@ again."
     (donkey-mark-test--keys text "w w l M w w"
       (should-error (donkey-mark-run-step-forward) :type 'user-error))
     ;; A press off the path drops the redo.
-    (donkey-mark-test--keys text "w w l M w w u w"
+    (donkey-mark-test--keys text "w w l M w u w"
       (should (equal (donkey-mark-test--selection) "that is"))
       (should-error (donkey-mark-run-step-forward) :type 'user-error))
     ;; Even a motion, which is a press like any other here.
-    (donkey-mark-test--keys text "w w l M w w u l"
+    (donkey-mark-test--keys text "w w l M w u l"
       (should-error (donkey-mark-run-step-forward) :type 'user-error)))
   (should (memq 'donkey-mark-run-step-forward donkey--mark-run-commands))
   (should (memq 'donkey-mark-run-step-forward donkey--mark-run-adjusters)))
@@ -5955,7 +6076,7 @@ test."
             ;; The selection came back and the buffer did not change.
             (should (equal (buffer-substring-no-properties
                             (region-beginning) (region-end))
-                           "one"))
+                           "one two"))
             (should-not (string-match-p "ADDED" (buffer-string)))
             (should (eq (key-binding "w") 'donkey-mark-word))))
       (donkey--mark-run-exit)
@@ -5985,12 +6106,12 @@ sequences of its own.
 `ding' is stubbed because `execute-kbd-macro' stops at the bell, and
 the key pressed AFTER the mistype is the whole point."
   (cl-letf (((symbol-function 'ding) #'ignore))
-    (dolist (keys '("w w l M w g x w"      ; the mode's own prefix
-                    "w w l M w g ~ w"
-                    "w w l M w m x w"      ; the companion prefix
-                    "w w l M w z x w"      ; a normal-state prefix
-                    "w w l M w C-x C-\\ w" ; and a native one
-                    "w w l M w ~ w"))      ; the single key, as before
+    (dolist (keys '("w w l M g x w"      ; the mode's own prefix
+                    "w w l M g ~ w"
+                    "w w l M m x w"      ; the companion prefix
+                    "w w l M z x w"      ; a normal-state prefix
+                    "w w l M C-x C-\\ w" ; and a native one
+                    "w w l M ~ w"))      ; the single key, as before
       (donkey-mark-test--keys "for text that is not saved" keys
         (should (equal (list keys (donkey-mark-test--selection))
                        (list keys "that is")))
@@ -5998,7 +6119,7 @@ the key pressed AFTER the mistype is the whole point."
                        (list keys t)))))
     ;; The press is called what the other spelling is called, which is
     ;; what carries the run across it.
-    (donkey-mark-test--keys "for text that is not saved" "w w l M w g x"
+    (donkey-mark-test--keys "for text that is not saved" "w w l M g x"
       (should (eq last-command 'undefined))))
   ;; And the predicate answers for the nil directly, since it is asked
   ;; before the renaming above can happen.
@@ -6048,19 +6169,19 @@ press can do to a run and gave no way back -- so they waited until
 
 `G' is the same command as `g e', as it is in normal state."
   (let ((text "one two three\nfour five six\nseven eight nine\n"))
-    (donkey-mark-test--keys text "j M w g g"
+    (donkey-mark-test--keys text "j M g g"
       (should (equal (donkey-mark-test--selection) "one two three\nfour")))
-    (donkey-mark-test--keys text "j M w g e"
+    (donkey-mark-test--keys text "j M g e"
       (should (equal (donkey-mark-test--selection)
                      "four five six\nseven eight nine\n")))
-    (donkey-mark-test--keys text "j M w G"
+    (donkey-mark-test--keys text "j M G"
       (should (equal (donkey-mark-test--selection)
                      "four five six\nseven eight nine\n")))
     ;; An end apiece, so they add rather than cancel.
-    (donkey-mark-test--keys text "j M w g g g e"
+    (donkey-mark-test--keys text "j M g g g e"
       (should (equal (donkey-mark-test--selection) text)))
     ;; And the reason they could be adopted at all.
-    (donkey-mark-test--keys text "j M w g e u"
+    (donkey-mark-test--keys text "j M g e u"
       (should (equal (donkey-mark-test--selection) "four")))
     ;; Fresh, both are the plain motions the keys are outside the mode
     ;; -- and reach the very edge.  With \"p\" rather than \"P\" a bare
@@ -6077,7 +6198,7 @@ press can do to a run and gave no way back -- so they waited until
     ;; to stretch, and is ignored by one that has an edge to reach.
     (donkey-mark-test--keys ",,, ;;;\n... ---\n;;; ,,,\n" "j M C-u 5 g g"
       (should (> (point) (point-min))))
-    (donkey-mark-test--keys text "j M w C-u 5 g g"
+    (donkey-mark-test--keys text "j M C-u 5 g g"
       (should (equal (donkey-mark-test--selection) "one two three\nfour")))
     ;; `g g' brings back a region a hook deactivated mid-run, the way
     ;; the backward object keys and `g h' do -- moving point activates
@@ -6090,7 +6211,7 @@ press can do to a run and gave no way back -- so they waited until
       (unwind-protect
           (progn
             (add-hook 'pre-command-hook sabotage)
-            (donkey-mark-test--keys text "j M w g g"
+            (donkey-mark-test--keys text "j M g g"
               (should (equal (donkey-mark-test--selection)
                              "one two three\nfour"))))
         (remove-hook 'pre-command-hook sabotage)))
@@ -6140,13 +6261,13 @@ It is a member without being a growable object.  Nothing can add to a
 selection that already covers everything, and the press after it finds
 nothing to do rather than anything surprising."
   (let ((text "one two three\nfour five six\n"))
-    (donkey-mark-test--keys text "M w %"
+    (donkey-mark-test--keys text "M %"
       (should (equal (donkey-mark-test--selection) text))
       (should (eq (key-binding "w") 'donkey-mark-word)))
-    (donkey-mark-test--keys text "M w % u"
+    (donkey-mark-test--keys text "M % u"
       (should (equal (donkey-mark-test--selection) "one")))
     ;; Nothing left to grow: the press after it changes nothing.
-    (donkey-mark-test--keys text "M w % w"
+    (donkey-mark-test--keys text "M % w"
       (should (equal (donkey-mark-test--selection) text)))
     ;; Outside the mode the key is untouched, and does not arm anything.
     (donkey-mark-test--keys text "%"
@@ -6203,7 +6324,7 @@ refusals by `donkey-V-is-refused-inside-a-mark-run'."
         (should (equal (list start (donkey-mark-test--selection))
                        (list start "")))))
     ;; The `m' keys end no run, and clear a block before marking.
-    (donkey-mark-test--keys text "M w m w"
+    (donkey-mark-test--keys text "M m w"
       (should (equal (donkey-mark-test--selection) "alpha beta"))
       (should (eq (key-binding "w") 'donkey-mark-word)))
     (donkey-mark-test--keys text "m v j l m w"
@@ -6231,40 +6352,40 @@ Pressing `M' again is the obvious answer to that, and it was the
 worst one.  With the mode still off the second press reached the
 toggle a second time, where `donkey--mark-extending-p' found
 `last-command' equal to `this-command' -- two toggles in a row are
-each other -- and the head start GREW from the mark the rectangle had
+each other -- and the word GREW from the mark the rectangle had
 left, selecting from where the rectangle began to the word under
 point.  A span across lines that nobody asked for, and `M M d' would
 have taken it.
 
 Both halves are fixed here: every branch of the toggle now enters, so
-that shape is unreachable, and the head start binds `last-command'
+that shape is unreachable, and the marking press binds `last-command'
 away so it cannot match itself even if some later branch stops
 entering."
-  ;; The rectangle's span is not adopted -- the head start marks the
-  ;; word under point, exactly as it would have with no selection.
+  ;; The rectangle's span is not adopted -- the press marks the word
+  ;; under point, exactly as it would have with no selection.
   (donkey-mark-test--keys "abc def\nghi jkl\n" "m v j l M"
     (should (eq (key-binding "w") 'donkey-mark-word))
     (should-not (bound-and-true-p rectangle-mark-mode))
     (should (equal (donkey-mark-test--selection) "ghi")))
-  ;; A letter after it marks afresh, the head start being no press.
+  ;; A letter after it grows the word, the press being `m w' here as
+  ;; it is over nothing.
   (donkey-mark-test--keys "abc def\nghi jkl\n" "m v j l M w"
-    (should (equal (donkey-mark-test--selection) "ghi")))
+    (should (equal (donkey-mark-test--selection) "ghi jkl")))
   ;; And the second `M' is the mode's own cancel now, not a second
   ;; toggle growing a stale mark.
   (donkey-mark-test--keys "abc def\nghi jkl\n" "m v j l M M"
     (should-not (region-active-p))
     (should-not (eq (key-binding "w") 'donkey-mark-word))))
 
-(ert-deftest donkey-the-head-start-never-grows-a-mark-it-found ()
-  "The head start marks afresh whatever `last-command' says.
+(ert-deftest donkey-M-never-grows-a-mark-it-found ()
+  "`M' marks the word afresh whatever `last-command' says.
 
-`donkey-mark-run-toggle' deliberately leaves `this-command' alone, so
-that the letter after `M' marks rather than grows -- see
-`donkey-the-toggle-is-no-family-member'.  The cost is that the toggle
-can match ITSELF: `donkey--mark-extending-p' asks
-`(eq last-command this-command)', and two toggles in a row satisfy it,
-so the head start would grow from whatever mark was lying about
-instead of marking the word under point.
+`donkey-mark-run-toggle' still carries its own name in `this-command'
+when it calls `donkey-mark-word' -- the rename to the marker's name
+comes once the word is marked -- and `donkey--mark-extending-p' asks
+`(eq last-command this-command)', which two toggles in a row satisfy.
+Unguarded, the word would grow from whatever mark was lying about
+instead of being marked under point.
 
 That shape was reachable through the rectangle branch, which canceled
 and returned without arming the map, leaving the second `M' to reach
@@ -6273,7 +6394,7 @@ the toggle again -- see
 branch enters now, so no key sequence gets there, and this asks the
 command directly instead: the guard has to hold on its own, or the
 next branch that forgets to enter brings the bug back with it."
-  (let ((buf (get-buffer-create "*donkey-head-start-test*")))
+  (let ((buf (get-buffer-create "*donkey-M-guard-test*")))
     (unwind-protect
         (progn
           (donkey-mode 1)
@@ -6300,16 +6421,21 @@ next branch that forgets to enter brings the bug back with it."
       (donkey-mode -1))))
 
 (ert-deftest donkey-the-toggle-is-no-family-member ()
-  "A letter after `M' marks afresh even with an old mark lying around.
+  "A letter after a press that marked nothing starts afresh.
 
-`M w M M b': the in-mode `M' cancels the word selection, leaving its
-mark at the word's end; the next `M' re-enters the mode empty.  Were
-`donkey-mark-run-toggle' in `donkey--mark-run-commands', that stale
-mark would qualify `b' as a continuation -- point walks back and
-re-activates \"text that\", a selection the user had just dropped.
-Fresh, `b' marks the word at point."
-  (donkey-mark-test--keys "for text that is" "w w l M w M M b"
-    (should (equal (donkey-mark-test--selection) "that"))))
+`M' renames itself in `this-command' to the command that marked or
+adopted, and the rename is what lets the letter after it grow -- so
+membership in `donkey--mark-run-commands' would buy the toggle
+nothing, and would cost the one press that keeps its own name: the
+one that found no word to mark.  `M J J M M J' in a buffer of
+punctuation: the first run takes two lines, the in-mode `M' cancels
+it and leaves its mark at the end of the second, and the next `M'
+re-enters the mode empty, there being no word.  Were the toggle a
+member, that stale mark would qualify `J' as a continuation and the
+line would grow from it -- three lines, two of them a selection the
+user had just dropped.  Fresh, `J' takes the line at point."
+  (donkey-mark-test--keys ",,, ;;;\n... ---\n;;; ,,,\n" "M J J M M J"
+    (should (equal (donkey-mark-test--selection) ",,, ;;;\n"))))
 
 (ert-deftest donkey-mark-extending-p-companions-only-through-the-command-loop ()
   "COMPANIONS extend a run only under the same guards as a repeat.

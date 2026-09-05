@@ -810,9 +810,10 @@ press adds a whole one.
 
 =M= is the =m= prefix held down for you: it enters *mark run mode*,
 where the bare letters =w W b B s S= run exactly what their
-=m=-prefixed keys run, so =M w w b= selects what =m w m w m b=
-selects. The first letter marks afresh, later letters grow the one
-selection, counts work (=M C-u 3 w=), and objects mix as above.
+=m=-prefixed keys run. The press itself is =m w=, so =M w b= selects
+what =m w m w m b= selects: every letter grows the one selection,
+counts work (=M C-u 3 w= is four words, as =m w C-u 3 m w= is), and
+objects mix as above.
 
 The echo-area reminder stays visible for as long as the mode is
 active, and goes when the mode does. It names the keys whose *subject*
@@ -826,8 +827,8 @@ The complete list is here and in the tutor.
 
 =M= arrives holding a word, since that is what nearly every run starts
 from — pressed on =that=, the word is selected before you have touched
-a letter, so =M d= takes it and =M w= is the word the prefix would
-have marked.
+a letter, so =M d= takes it, =M w= is two words and =M b= the word and
+the one before it.
 
 *Which* word is =m w='s answer, exactly: the one under the cursor, or
 from a gap the one behind it. The two keys agree because there is no
@@ -838,15 +839,21 @@ keys that can grow it (=w=, =J=, =%=) mark afresh whether it is there
 or not. Only where =m w= itself declines — a buffer with no word in it
 at all — does the mode arrive empty, and it still arrives.
 
-The head start is not the run's first press, so nothing about the
-letters changes — =M w w b= is still =m w m w m b=.
+The word is the run's first press, and the rule is one sentence: =M=
+is =m w=, and each letter after it is one more =m=-prefixed press. It
+was a head start for a long time, the letter after it marking afresh
+so that =M w w b= spelled =m w m w m b= — and what that bought was
+=M w= re-marking the very word already on screen, so that the first
+letter looked like nothing happening and only the second grew. =M s=
+is therefore the word grown to the end of its sentence, as =m w m s=
+is; the whole sentence is =m s= and then =M=.
 
 The =m= prefix still works inside the mode and needs no thinking
 about: =m w= runs the very command the bare =w= runs, so the mode
-survives it and the run keeps growing — =M w m w w= selects three
+survives it and the run keeps growing — =M m w w= selects three
 words, and the two spellings can be mixed mid-run. Paragraphs are
 reached that way and only that way: =p= and =P= stay the *paste* keys
-inside the mode, so =M w p= replaces the marked word with the kill
+inside the mode, so =M p= replaces the marked word with the kill
 ring, and =m p= / =m P= grow the run by paragraphs. Lettering them
 cost the mode the one ordinary edit it could not otherwise make — =d=,
 =y=, =x= and =c= all act on a mark run selection, and only pasting had
@@ -855,20 +862,24 @@ nowhere to go.
 =h j k l= move point without ending the run, adjusting the selection's
 near end the way =j=/=k= adjust a =V= session. =g h= and =g l= reach
 the line's ends, and unlike =h j k l= they own an end apiece rather
-than both moving point, so they add up: =M w g h g l= selects the
+than both moving point, so they add up: =M g h g l= selects the
 whole line's text, in either order. =g g= and =g e= (and =G=) do the
-same for the buffer's ends, so =M w g g g e= is everything from a word
+same for the buffer's ends, so =M g g g e= is everything from a word
 in the middle. With nothing selected yet all four are still plain
 motions, for placing the cursor before marking. Other =g= keys are not
 shadowed and end the mode like any foreign key.
 
-=J= and =K= make lines a growable object of the mode: fresh, either
-marks the current line, and further presses grow by whole lines — =J=
-at the bottom end, =K= at the top, a mark mid-line completing its own
-line first. Whole lines means the newline too, so =M J d= removes the
-line outright rather than leaving the blank one behind, and =M J y=
+=J= and =K= make lines a growable object of the mode: =J= grows the
+run's bottom end by a line and =K= its top, an end sitting mid-line
+completing its own line first. From a word, =M J= is therefore the
+word grown to the end of its line — from the line's first word, the
+whole line — and =M K= reaches back to its start; =M J K= is the whole
+line from anywhere, in either order, and =V= then =M= adopts one
+whole. Whole lines means the newline too, so =M J K d= removes the
+line outright rather than leaving the blank one behind, and =M J K y=
 yanks back as a line. The highlight reaches the next line's first
-column to show it.
+column to show it. Fresh, where =M= found no word to mark, either key
+marks the current line.
 
 =u= puts the run back where the last press found it and =U= puts it
 forward again, one press per step, the motions and =*= included. A run
@@ -889,8 +900,8 @@ level down. Outside it they are untouched.
 
 =*= swaps point and mark, so the motions adjust the selection's
 *other* end — vi's =o= in visual mode. The object keys own fixed ends
-and simply trade back before they grow, so =M w * w= selects what
-=M w w= selects, and the same goes for a motion that has walked point
+and simply trade back before they grow, so =M * w= selects what
+=M w= selects, and the same goes for a motion that has walked point
 past the mark.
 
 Pressed with a selection already active — a =V= session, a =v= region,
@@ -903,10 +914,10 @@ drops rather than adopts, having no forward end for the family to own
 — and having dropped it, =M= starts a run as it would over nothing at
 all, so the press still leaves you somewhere to press a letter. An
 *empty* selection is dropped the same way, so after a bare =v=
-mid-word, =M w= still marks the whole word.
+mid-word, =M= still marks the whole word.
 
 Any other key ends the mode and then does its ordinary job in the same
-press — =M w w d= selects two words and deletes them. Two are held
+press — =M w d= selects two words and deletes them. Two are held
 back. A key that does nothing — one that is unbound, or =DEL= — leaves
 the run standing, so a mistyped key costs a beep rather than the
 selection. A mistyped *sequence* counts as one too: =m x= for =m w=,
