@@ -13,6 +13,28 @@
 (defvar donkey-test-keys--said nil
   "Last message emitted by the keys run through `donkey-test-keys--harness'.")
 
+(defconst donkey-test-keys--clipboard-bindings
+  '((select-enable-clipboard nil)
+    (interprogram-cut-function nil)
+    (interprogram-paste-function nil))
+  "Bindings that keep a test off the machine\\='s clipboard.
+
+One list, for every harness to splice, because naming the three in
+each of them is how seven of them came to be missing all three.  A test
+must neither read the clipboard nor write it: reading makes the test
+depend on whatever the desktop is holding, and writing throws away
+something the person running the suite meant to keep.
+
+Neither shows under `--batch\\=' or in a terminal frame -- there is no
+clipboard to reach -- so no CI job here can fail on it.  It took running
+the suite in a GRAPHICAL frame to see either.  Reading:
+`interprogram-paste-function\\=' is `gui-selection-value\\=' there, so
+`yank\\=' takes the desktop selection over the test\\='s own kill ring, and
+`donkey-p-and-P-keep-their-paste-jobs-inside-the-mode\\=' pasted
+\"CLIPBOARD-CONTENT\" over its own \"XX\".  Writing: `kill-new\\=' reaches
+`interprogram-cut-function\\=', and a run of the suite left \"ZZZ\" on the
+clipboard of the machine it ran on.")
+
 (defmacro donkey-test-keys--harness (name mode bindings text keys &rest body)
   "Type KEYS into a displayed DONKEY buffer of TEXT, then run BODY.
 
@@ -74,9 +96,7 @@ user was told without silencing the run."
                (inhibit-message t)
                (kill-ring nil) (kill-ring-yank-pointer nil)
                (killed-rectangle nil)
-               (select-enable-clipboard nil)
-               (interprogram-cut-function nil)
-               (interprogram-paste-function nil)
+               ,@donkey-test-keys--clipboard-bindings
                (donkey-test-keys--said nil)
                ,@bindings)
            (insert ,text)

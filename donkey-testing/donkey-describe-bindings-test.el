@@ -5,6 +5,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
+(require 'donkey-test-keys)
 
 (defconst donkey-test--source-dir
   (or (and load-file-name (file-name-directory (directory-file-name
@@ -959,6 +960,7 @@ broken, not the sentence."
          (let ((transient-mark-mode t)
                (kill-ring nil)
                (kill-ring-yank-pointer nil)
+               ,@donkey-test-keys--clipboard-bindings
                (killed-rectangle nil)
                (donkey--clipboard-warning-shown nil)
                (this-command nil)
@@ -1009,6 +1011,7 @@ around that false reading before running the keys showed otherwise."
          (let ((transient-mark-mode t)
                (kill-ring nil)
                (kill-ring-yank-pointer nil)
+               ,@donkey-test-keys--clipboard-bindings
                (killed-rectangle nil)
                (donkey--clipboard-warning-shown nil)
                (this-command nil)

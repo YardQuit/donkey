@@ -7,6 +7,7 @@
 (require 'rect)
 (require 'kmacro)
 (require 'donkey)
+(require 'donkey-test-keys)
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--ensure-non-rectangle-selection
@@ -1192,6 +1193,192 @@ clean.  Each expectation below also matches vi's `dap'."
 ;;; donkey-mark-inner
 ;;; ---------------------------------------------------------------------------
 
+(defun donkey-test--pair-keys (text pos keys)
+  "Type KEYS at POS in a displayed buffer of TEXT.
+Return (SELECTION BUFFER POINT ORIGIN), the buffer text included because
+what these keys must NOT do is change it.
+
+The same shape as `donkey-test-keys--harness', for the reasons its
+docstring gives: the buffer is switched to and the keys go through
+`execute-kbd-macro'.  Not that macro itself, because the point of
+these keys is often a `user-error' -- an empty pair, a character that
+is no delimiter -- and the harness lets one end the test."
+  (when (get-buffer "*donkey-pair-test*") (kill-buffer "*donkey-pair-test*"))
+  (unwind-protect
+      (progn
+        (switch-to-buffer (get-buffer-create "*donkey-pair-test*"))
+        (emacs-lisp-mode)
+        (donkey-mode 1)
+        (let ((transient-mark-mode t) (prefix-arg nil) (current-prefix-arg nil)
+              (unread-command-events nil) (inhibit-message t) (kill-ring nil)
+              (select-enable-clipboard nil) (interprogram-cut-function nil)
+              (interprogram-paste-function nil)
+              (this-command nil) (last-command nil))
+          (insert text)
+          (goto-char pos)
+          (donkey-normal-mode 1)
+          (donkey--mark-run-exit)
+          (let ((origin (point)))
+            (cl-letf (((symbol-function 'message) #'ignore)
+                      ((symbol-function 'ding) #'ignore))
+              (ignore-errors (execute-kbd-macro (kbd keys))))
+            (list (and (region-active-p)
+                       (buffer-substring-no-properties
+                        (region-beginning) (region-end)))
+                  (buffer-substring-no-properties (point-min) (point-max))
+                  (point) origin))))
+    ;; `donkey--suppress-one-pair-delimiter' arms a transient map, and a
+    ;; transient map comes down on the next COMMAND -- which, for a test
+    ;; that stops here, is the next TEST'S first key.  The same
+    ;; terminal-wide hazard the mark run map has, answered the same way.
+    (setq overriding-terminal-local-map nil)
+    (when (get-buffer "*donkey-pair-test*") (kill-buffer "*donkey-pair-test*"))))
+
+(ert-deftest donkey-a-pair-key-never-edits-the-buffer ()
+  "\\=`m i (' selects; it does not insert a paren.
+
+`m i' and `m a' read their delimiter from the character at point when
+point is on one, and are then finished -- so the delimiter typed as the
+third key of \\=`m i (' never reached `read-char' and ran as a command of
+its own.  Every delimiter is bound to `donkey-wrap-region', which
+INSERTS: with point on the paren, \\=`m i (' turned \"call(alpha) end\"
+into \"call((alpha) end\".  A selection key had edited the buffer,
+silently, from the very sequence a reader would type to select with.
+
+Found by fuzzing one rule over 7840 sequences -- a selection key may not
+modify the buffer -- of which 52 did, every one of them this.
+
+Both spellings work and neither edits: the press is swallowed for one
+key rather than the auto-detect being taken away."
+  (dolist (case '(("call(alpha) end" 5  "m i (" "alpha")
+                  ("call(alpha) end" 5  "m i"   "alpha")
+                  ("call(alpha) end" 11 "m i (" "alpha")
+                  ("call(alpha) end" 5  "m a (" "(alpha)")
+                  ("call[alpha] end" 5  "m i [" "alpha")
+                  ("call{alpha} end" 5  "m i {" "alpha")
+                  ("say \"hi\" now"  5  "m i \"" "hi")
+                  ;; The prompting path was always safe; it is here so the
+                  ;; two spellings are pinned to the same answer.
+                  ("call(alpha) end" 7  "m i (" "alpha")
+                  ("call(alpha) end" 7  "m a (" "(alpha)")))
+    (cl-destructuring-bind (text pos keys expected) case
+      (cl-destructuring-bind (selection buffer _point _origin)
+          (donkey-test--pair-keys text pos keys)
+        (should (equal (list text keys buffer) (list text keys text)))
+        (should (equal (list text keys selection)
+                       (list text keys expected)))))))
+
+(ert-deftest donkey-a-second-delimiter-still-wraps ()
+  "The swallow is one press, so a deliberate wrap is still reachable.
+
+Somebody who means to wrap what \\=`m i' just selected presses the
+delimiter twice.  Taking the key away for good would have cost that."
+  (cl-destructuring-bind (_selection buffer _point _origin)
+      (donkey-test--pair-keys "call(alpha) end" 5 "m i ( (")
+    (should-not (equal buffer "call(alpha) end"))))
+
+(ert-deftest donkey-the-pair-prompt-takes-a-closing-delimiter ()
+  "\\=`m i )' means what \\=`m i (' means.
+
+Point sitting ON a closer has always resolved to its opener, through
+`rassq' against `donkey-mark-pair-delimiters'.  A reader who TYPES the
+closer was told it was unsupported, which is the same character being
+understood in one place and refused in the other.
+
+A character in neither half is still refused, and still leaves the
+cursor where the key was pressed."
+  (dolist (case '(("call(alpha) end" 7 "m i )" "alpha")
+                  ("call(alpha) end" 7 "m a )" "(alpha)")
+                  ("call[alpha] end" 7 "m i ]" "alpha")
+                  ("call{alpha} end" 7 "m a }" "{alpha}")))
+    (cl-destructuring-bind (text pos keys expected) case
+      (cl-destructuring-bind (selection buffer _point _origin)
+          (donkey-test--pair-keys text pos keys)
+        (should (equal (list keys buffer) (list keys text)))
+        (should (equal (list keys selection) (list keys expected))))))
+  ;; Not a delimiter at either end.
+  (cl-destructuring-bind (selection buffer point origin)
+      (donkey-test--pair-keys "call(alpha) end" 7 "m i x")
+    (should-not selection)
+    (should (equal buffer "call(alpha) end"))
+    (should (equal point origin))))
+
+(ert-deftest donkey-an-empty-pair-leaves-the-cursor-where-it-was ()
+  "\\=`m i' on \"()\" reports from where the key was pressed.
+
+The two lines that lay the selection out have already walked point
+inside the pair by the time the region turns out to be empty, so the
+report came from one character along -- 6 to 7 on \"empty() here\".  The
+same rule the four object keys answer for.
+
+\\=`m a' on the same pair still selects: there the delimiters are the
+content."
+  ;; Positions are spelled out: the innermost pair is the empty one, and
+  ;; a computed "first open paren" lands on the OUTER pair of "((()))",
+  ;; whose inner content is not empty at all.
+  (dolist (case '(("empty() here" 6) ("((()))" 3) ("a () b" 3)))
+    (cl-destructuring-bind (text pos) case
+      (cl-destructuring-bind (selection buffer point origin)
+          (donkey-test--pair-keys text pos "m i (")
+        (should-not selection)
+        (should (equal (list text buffer) (list text text)))
+        (should (equal (list text point) (list text origin))))))
+  (cl-destructuring-bind (selection _buffer _point _origin)
+      (donkey-test--pair-keys "empty() here" 6 "m a (")
+    (should (equal selection "()"))))
+
+(ert-deftest donkey-a-lisp-call-arms-no-delimiter-suppression ()
+  "Calling the command from Lisp leaves no transient map behind.
+
+The suppression exists for the reader\='s NEXT KEYSTROKE, and a caller
+outside the command loop has none -- so arming there only leaves a map
+standing.  `set-transient-map\=' puts it in
+`overriding-terminal-local-map\=', which is terminal-wide and comes down
+on the next COMMAND, so the next thing to run is whatever comes along:
+in the suite that was the next TEST, and
+`donkey-tutor-claim-no-fifth-shadowed-emacs-command\=' resolved \\=`(\='
+through the leftover map and reported a shadowed Emacs command.
+
+Three of the six pinned shuffle seeds caught it and the fixed order did
+not, which is exactly the kind of thing that should not need a lucky
+order to find.  Hence this, which asks the question directly.
+
+The second case is the one a guard on `this-command\=' being SET let
+through: nothing resets that variable between commands, so outside the
+command loop it holds whatever ran last -- `kill-region\=', left over
+from an earlier test in the one seed that still failed.  A Lisp call
+with point on a brace found it non-nil and armed the map.  The guard
+names the two commands now, and this case keeps it that way.
+
+The third case is the other side: reached as its own command, the
+suppression IS armed, and a delimiter resolves to the swallowing
+binding.  Without it, a guard that armed nothing at all would pass the
+first two."
+  (dolist (stale '(nil kill-region))
+    (setq overriding-terminal-local-map nil)
+    (with-temp-buffer
+      (insert "{hello}")
+      (goto-char 1)
+      (let ((transient-mark-mode t) (this-command stale) (last-command nil))
+        (donkey-mark-inner))
+      (should (equal (buffer-substring-no-properties
+                      (region-beginning) (region-end))
+                     "hello"))
+      (should (equal (list stale overriding-terminal-local-map)
+                     (list stale nil)))))
+  (unwind-protect
+      (with-temp-buffer
+        (insert "{hello}")
+        (goto-char 1)
+        (let ((transient-mark-mode t) (this-command 'donkey-mark-inner)
+              (last-command nil))
+          (donkey-mark-inner))
+        (should (eq (key-binding (kbd "{"))
+                    #'donkey--pair-delimiter-already-taken))
+        (should (eq (key-binding (kbd "}"))
+                    #'donkey--pair-delimiter-already-taken)))
+    (setq overriding-terminal-local-map nil)))
+
 (ert-deftest donkey-mark-inner-braces ()
   "Marks content inside braces, excluding delimiters."
   (with-temp-buffer
@@ -1741,25 +1928,43 @@ It falls through to the `read-char' prompt instead."
         (should-error (donkey-mark-inner) :type 'error))
       (should prompted))))
 
-(ert-deftest donkey-mark-pair-delimiters-prompt-reflects-customization ()
-  "The `read-char' prompt reflects the current customization.
+(ert-deftest donkey-mark-pair-delimiters-prompt-names-the-variable ()
+  "The prompt names `donkey-mark-pair-delimiters' instead of reciting it.
 
-The prompt string is built from the current value of
-`donkey-mark-pair-delimiters', so it stays in sync."
+It used to list every open character, which is nineteen of them by
+default and more once a reader adds a pair -- most of a line of echo
+area spent on something nobody reads twice, and a list that could only
+grow.  Naming the variable covers the built-in pairs and the customized
+ones together, and \\[describe-variable] on it shows the reader their own.
+
+Pinned so the prompt cannot quietly go back to reciting: it says the
+same thing whatever the variable holds."
+  (should (equal (donkey--mark-pair-prompt)
+                 "Delimiter (see donkey-mark-pair-delimiters): "))
   (let ((donkey-mark-pair-delimiters '((?# . ?#))))
-    (should (equal (donkey--mark-pair-prompt) "Char (#): "))))
-
-(ert-deftest donkey-mark-pair-delimiters-unsupported-error-reflects-customization ()
-  "The unsupported-delimiter error reflects the current customization.
-
-Its message lists the characters
-from the current value of `donkey-mark-pair-delimiters'."
+    (should (equal (donkey--mark-pair-prompt)
+                   "Delimiter (see donkey-mark-pair-delimiters): ")))
+  ;; A customized delimiter is not spelled into it either.  Checked with
+  ;; a character that cannot appear in the prompt for another reason --
+  ;; the parentheses around "see ..." are punctuation, and are also
+  ;; delimiters, so the default list cannot be asked this question.
   (let ((donkey-mark-pair-delimiters '((?# . ?#))))
-    (should-error (donkey--mark-pair-unsupported-error ?!) :type 'error)
-    (condition-case err
-        (donkey--mark-pair-unsupported-error ?!)
-      (error
-       (should (string-match-p "Use: #" (error-message-string err)))))))
+    (should-not (string-search "#" (donkey--mark-pair-prompt)))))
+
+(ert-deftest donkey-mark-pair-delimiters-unsupported-error-names-the-variable ()
+  "The unsupported-delimiter error points at the list rather than being it.
+
+The character actually typed is named, that being the part a reader
+cannot look up, and the accepted ones are left to
+`donkey-mark-pair-delimiters' for the reason the prompt leaves them
+there."
+  (should-error (donkey--mark-pair-unsupported-error ?!) :type 'user-error)
+  (condition-case err
+      (donkey--mark-pair-unsupported-error ?!)
+    (error
+     (let ((message (error-message-string err)))
+       (should (string-search "!" message))
+       (should (string-search "donkey-mark-pair-delimiters" message))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-mark-outer
@@ -3655,6 +3860,9 @@ full suite."
                ;; which is why it moved about and why no --batch job ever
                ;; saw it.
                (unread-command-events nil)
+               ;; See `donkey-test-keys--clipboard-bindings' for what
+               ;; these are and which GUI-only failure found them.
+               ,@donkey-test-keys--clipboard-bindings
                (this-command nil) (last-command nil))
            (switch-to-buffer (get-buffer-create "*donkey-mark-test*"))
            ;; Nothing from outside is allowed to be armed when the keys

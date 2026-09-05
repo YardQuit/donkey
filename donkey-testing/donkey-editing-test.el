@@ -2347,6 +2347,7 @@ so leaving it on leaks into every later test in the process.  See
          (let ((transient-mark-mode t)
                (kill-ring nil)
                (kill-ring-yank-pointer nil)
+               ,@donkey-test-keys--clipboard-bindings
                (donkey--clipboard-warning-shown nil)
                (this-command nil) (last-command nil))
            (insert "AAA one\nBBB two\nCCC three\nDDD four\nEEE five\n")
@@ -2627,6 +2628,7 @@ to reset."
          (let ((transient-mark-mode t)
                (kill-ring nil)
                (kill-ring-yank-pointer nil)
+               ,@donkey-test-keys--clipboard-bindings
                (donkey--clipboard-warning-shown nil)
                (this-command nil)
                (last-command nil))
@@ -2819,6 +2821,7 @@ minor mode, so leaving it on leaks into every later test."
          (let ((transient-mark-mode t)
                (kill-ring nil)
                (kill-ring-yank-pointer nil)
+               ,@donkey-test-keys--clipboard-bindings
                (this-command nil)
                (last-command nil))
            (insert "alpha\nbeta\ngamma\n")
@@ -3115,6 +3118,7 @@ into every later test."
          (let ((transient-mark-mode t)
                (kill-ring nil)
                (kill-ring-yank-pointer nil)
+               ,@donkey-test-keys--clipboard-bindings
                (killed-rectangle nil)
                (donkey--clipboard-warning-shown nil)
                (this-command nil)

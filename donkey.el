@@ -2445,31 +2445,122 @@ opens and closes a pair), OPEN and CLOSE are identical.
 
 Customize this to add or remove supported delimiters -- e.g. add
 `(?# . ?#)' for a language that uses # as an inline marker, or remove
-pairs you never use.  Order matters only for the `read-char' prompt
-string, which lists the OPEN characters in this order."
+pairs you never use.  Order does not matter: the prompt names this
+variable rather than listing it, and either half of a pair answers
+it."
   :type '(alist :key-type (character :tag "Open")
                 :value-type (character :tag "Close"))
   :group 'donkey)
 
-(defun donkey--mark-pair-open-chars-string (separator)
-  "Return the open characters of `donkey-mark-pair-delimiters' joined by SEPARATOR."
-  (mapconcat (lambda (pair) (char-to-string (car pair)))
-             donkey-mark-pair-delimiters separator))
-
 (defun donkey--mark-pair-prompt ()
-  "Build the `read-char' prompt string from `donkey-mark-pair-delimiters'."
-  (format "Char (%s): " (donkey--mark-pair-open-chars-string "")))
+  "Return the `read-char\=' prompt for `m i\=' and `m a\='.
+
+It NAMES the delimiters rather than listing them.  Listing meant
+nineteen characters across the echo area, most of a line spent on
+something nobody reads twice, and the list grows with every pair a
+reader adds to `donkey-mark-pair-delimiters\='.  Naming the variable
+covers the built-in pairs and any customized ones at once, and \\[describe-variable]
+on it shows both, marked as customized where they are.
+
+The README lists the defaults in full, and a test keeps that list
+honest."
+  "Delimiter (see donkey-mark-pair-delimiters): ")
 
 (defun donkey--mark-pair-unsupported-error (char)
   "Signal a `user-error' for CHAR not in `donkey-mark-pair-delimiters'.
 
 A `user-error' rather than a bare `error': this is reached by answering
 the `m i'/`m a' prompt with a character that is not a delimiter, which is
-an ordinary typo on a prompt that lists nineteen accepted characters --
-not a malfunction.  A bare `error' pops the debugger for anyone running
-with `debug-on-error' on."
-  (user-error "Unsupported delimiter '%c'.  Use: %s" char
-              (donkey--mark-pair-open-chars-string " ")))
+an ordinary typo -- not a malfunction.  A bare `error' pops the debugger
+for anyone running with `debug-on-error' on.
+
+The message names `donkey-mark-pair-delimiters' rather than reciting it,
+for the reason `donkey--mark-pair-prompt' gives: the list is nineteen
+characters long, it grows with customization, and \\[describe-variable] on the
+variable shows the reader their own."
+  (user-error "Unsupported delimiter '%c'; see donkey-mark-pair-delimiters"
+              char))
+
+(defun donkey--mark-pair-open-for (char)
+  "Return the OPEN character of the pair CHAR belongs to.
+
+CHAR itself when it opens a pair, and the opener when it CLOSES one, so
+the prompt takes \\=`)\=' for \\=`(\=', and \\=`]\=' for \\=`[\='.  Point
+sitting on a closer has always resolved this way -- `rassq\=' against
+`donkey-mark-pair-delimiters\=' -- and there is no reason a reader who
+TYPES the closer should be told it is unsupported when the same
+character under the cursor is understood.
+
+A symmetric delimiter opens and closes with itself, so `assq\=' answers
+first and the second lookup never sees it.
+
+Anything else comes back unchanged, for the close lookup in the caller
+to reject by name."
+  (cond ((assq char donkey-mark-pair-delimiters) char)
+        ((rassq char donkey-mark-pair-delimiters)
+         (car (rassq char donkey-mark-pair-delimiters)))
+        (t char)))
+
+(defun donkey--pair-delimiter-already-taken ()
+  "Do nothing, silently.
+
+What a delimiter key runs for one press after `m i\=' or `m a\=' took its
+delimiter from the character at point.  Silent on purpose: the selection
+message is the answer the press was after, and overwriting it with an
+explanation would take away the one thing worth reading."
+  (interactive))
+
+(defun donkey--suppress-one-pair-delimiter ()
+  "Make the NEXT key harmless if it names a delimiter.
+
+`m i\=' and `m a\=' read their delimiter from the character at point when
+point is on one, and then they are finished -- so the delimiter the
+reader types as the third key of \\=`m i (\=' never reaches `read-char\='
+and runs as a command in its own right.  Every delimiter this package
+knows is bound to `donkey-wrap-region\=', which INSERTS: \\=`m i (\=' with
+point on the paren turned \"call(alpha) end\" into \"call((alpha) end\".
+A selection key had edited the buffer, silently, from the sequence the
+reader meant to select with.
+
+The press is swallowed rather than the auto-detect being taken away, so
+both spellings work and neither edits: \\=`m i\=' alone still selects,
+\\=`m i (\=' selects and the paren does nothing.  One press only -- a
+second \\=`(\=' wraps the selection, which is how somebody who wanted the
+wrap gets it.
+
+Closing characters are bound too, point being able to sit on either
+end of a pair.
+
+Nothing is armed for a call from Lisp.  There is no next keystroke to
+protect there, and the map would be left standing: `set-transient-map\='
+puts it in `overriding-terminal-local-map\=', which is terminal-wide and
+comes down on the next COMMAND, so a caller outside the command loop
+leaves it up for whatever runs next.  The suite showed this the moment
+it was written -- the marking tests call the command directly with
+point on a delimiter, and the check that no key of this package
+shadows an Emacs command outside the documented few then resolved
+\\=`(\=' through the leftover map and reported one.  Three shuffled
+orders caught it; the fixed order did not.
+
+The test is that `this-command\=' IS one of the two commands, not merely
+that it is set.  The command loop sets it before each command and
+nothing resets it afterwards, so outside the loop it holds whatever
+ran last: an earlier test had left `kill-region\=' there, and a later
+Lisp call with point on a brace found it non-nil and armed the map all
+the same -- the one shuffled order that survived the first guard.
+Naming the commands also fixes what a wrapper gets: a command
+of the reader\='s own that calls this one is not `m i\=', so nobody typed
+a delimiter after it, and its next key must not be eaten.
+`donkey--mark-extending-p\=' guards on `this-command\=' for the same
+reason, and says so."
+  (when (memq this-command '(donkey-mark-inner donkey-mark-outer))
+    (let ((map (make-sparse-keymap)))
+      (dolist (pair donkey-mark-pair-delimiters)
+        (define-key map (vector (car pair))
+                    #'donkey--pair-delimiter-already-taken)
+        (define-key map (vector (cdr pair))
+                    #'donkey--pair-delimiter-already-taken))
+      (set-transient-map map))))
 
 (defun donkey--mark-pair-read-delimiter ()
   "Return (OPEN-CHAR CLOSE-CHAR ON-OPENER) for the char pair to mark.
@@ -2486,9 +2577,16 @@ path instead of assuming point is the opener."
          (on-opener (and default-char (assq default-char donkey-mark-pair-delimiters)))
          (on-closer (and default-char (not on-opener)
                           (rassq default-char donkey-mark-pair-delimiters)))
-         (open-char (cond (on-opener default-char)
-                           (on-closer (car on-closer))
-                           (t (read-char (donkey--mark-pair-prompt)))))
+         (open-char (cond
+                     ;; Both branches below answer WITHOUT reading a key,
+                     ;; so the delimiter the reader types next is loose --
+                     ;; see `donkey--suppress-one-pair-delimiter'.
+                     (on-opener (donkey--suppress-one-pair-delimiter)
+                                default-char)
+                     (on-closer (donkey--suppress-one-pair-delimiter)
+                                (car on-closer))
+                     (t (donkey--mark-pair-open-for
+                         (read-char (donkey--mark-pair-prompt))))))
          (close-char (or (cdr (assq open-char donkey-mark-pair-delimiters))
                          (donkey--mark-pair-unsupported-error open-char))))
     (list open-char close-char on-opener)))
@@ -2760,7 +2858,8 @@ the same way round as every other DONKEY mark command and as
   ;;
   ;; And repeating agrees with counting, the way it does for the other
   ;; mark commands: both walk outward from the same anchor.
-  (let* ((state (and (donkey--mark-extending-p) donkey--mark-pair-state))
+  (let* ((origin (point))
+         (state (and (donkey--mark-extending-p) donkey--mark-pair-state))
          (anchor (if state (nth 0 state) (point)))
          (spec (if state
                    (cdr state)
@@ -2785,6 +2884,15 @@ the same way round as every other DONKEY mark command and as
             (list anchor open-char close-char on-opener level))
       (when (>= (region-beginning) (region-end))
         (deactivate-mark)
+        ;; Point is put back first.  The two lines above have already
+        ;; walked it inside the pair by the time the region turns out to
+        ;; be empty, so the report came from one character along from
+        ;; where the key was pressed -- measured, 6 to 7 on "empty()
+        ;; here" -- which is the same thing `donkey-mark-word' and the
+        ;; other three answer for.  The anchor kept in
+        ;; `donkey--mark-pair-state' is untouched by this, so a second
+        ;; press still widens a level from where the first started.
+        (goto-char origin)
         ;; A `user-error': an empty pair is ordinary in code -- `()' for a
         ;; no-argument call, `""' for an empty string -- so pressing `m i'
         ;; on one is a miss, not a malfunction, and a bare `error' popped
@@ -2799,9 +2907,18 @@ the same way round as every other DONKEY mark command and as
 (defun donkey-mark-inner (&optional count)
   "Mark text INSIDE CHAR pairs (excluding delimiters).
 
+The delimiters are `donkey-mark-pair-delimiters', which is where to look
+for the pairs in force -- the built-in ones and anything added by
+customizing it.  The README lists the defaults in full.
+
 Auto-detects the delimiter when point is on a recognized OPEN or CLOSE
-character in `donkey-mark-pair-delimiters'; otherwise prompts via
-`read-char'.  For asymmetric pairs (e.g. `(' and `)'), nested
+character; otherwise prompts via `read-char'.  EITHER half of a pair
+answers that prompt: \\=`m i )\\=' means what \\=`m i (\\=' means, the closer
+resolving to its opener the same way point sitting on one always has.
+
+The delimiter key is harmless when the prompt was skipped -- see
+`donkey--suppress-one-pair-delimiter', which is there because it was
+not.  For asymmetric pairs (e.g. `(' and `)'), nested
 occurrences of the SAME pair resolve to the correctly balanced match
 -- e.g. the outer `(' of \"(a(b)c)\" selects \"a(b)c\", not just up to
 the first `)' found.

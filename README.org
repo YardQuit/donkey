@@ -538,6 +538,19 @@ key up for something else):
 
 #+end_src
 
+Either half names the pair: =m i )= means what =m i (= means, and
+=m a ]= what =m a [= does. With the cursor already sitting on a
+delimiter — either end of one — the character is taken from the buffer
+and nothing is asked, so =m i= alone is enough there; typing the
+delimiter anyway is harmless, and pressing it a second time wraps the
+selection you just made.
+
+The prompt names =donkey-mark-pair-delimiters= rather than reciting it.
+The list above is nineteen characters and grows with whatever you add,
+so =C-h v donkey-mark-pair-delimiters= is where to see the pairs in
+force — your own additions marked as customized — and =C-h f
+donkey-mark-inner= describes the command.
+
 For asymmetric pairs (e.g. =(= and =)=), nested occurrences of the same
 pair are matched correctly -- the outer =(= of =(a(b)c)= selects
 =a(b)c=, not just up to the first =)= found. This is a plain character
