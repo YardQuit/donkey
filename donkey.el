@@ -880,10 +880,16 @@ Returns command symbol or nil if no handler matches."
         t))))
 
 (defun donkey--org-mode-enter-handler ()
-  "Handle Enter in `org-mode' and markdown modes.  Return t if handled."
-  (when (or (eq major-mode 'org-mode)
-            (eq major-mode 'markdown-mode)
-            (eq major-mode 'gfm-mode))
+  "Handle Enter in `org-mode' and markdown modes.  Return t if handled.
+
+Derivation counts, as it does for `donkey-editing-modes' and the
+agenda handler: a mode built on `org-mode' -- `org-journal-mode' is
+one -- is Org syntax, and `org-element-at-point' reads it the same.
+Matching `major-mode' by `eq' left RET doing nothing at all in such
+a buffer, since the mode is an editing mode and the non-editing
+fallback never fires there, while the same headline under plain
+`org-mode' toggled.  `gfm-mode' derives from `markdown-mode'."
+  (when (derived-mode-p 'org-mode 'markdown-mode)
     (let ((handler (donkey--find-enter-handler)))
       (when handler
         (donkey--execute-handler handler)
@@ -942,8 +948,9 @@ order, stopping at the first one that reports it handled the key:
 
 1. `donkey--org-agenda-enter-handler' -- delegates to whatever
    `org-agenda-mode-map' itself binds RET to (open item, visit entry).
-2. `donkey--org-mode-enter-handler' -- for `org-mode'/`markdown-mode'/
-   `gfm-mode', dispatches via `donkey--find-enter-handler' against the
+2. `donkey--org-mode-enter-handler' -- in `org-mode' and
+   `markdown-mode' buffers, derived modes such as `gfm-mode' included,
+   dispatches via `donkey--find-enter-handler' against the
    element at point (see `donkey-add-enter-rule' to register more
    element-type/command rules, e.g. from `config.el').
 3. `donkey--non-editing-enter-handler' -- outside `donkey-editing-modes'

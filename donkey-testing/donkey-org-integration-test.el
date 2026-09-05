@@ -588,6 +588,33 @@ fallback has to be tried before ancestors, not after."
         (donkey-enter-dwim))
       (should (eq called-cmd 'org-toggle-checkbox)))))
 
+(ert-deftest donkey-enter-dwim-dispatches-in-a-mode-derived-from-org ()
+  "A mode derived from `org-mode' gets the Org dispatch too.
+
+Regression test using a REAL buffer in a derived mode, as
+`org-journal-mode' is one.  `donkey--org-mode-enter-handler' matched
+`major-mode' by `eq', so RET on a TODO headline in such a buffer did
+nothing: the mode derives from `text-mode' as well, which makes it an
+editing mode, and the non-editing fallback never fires in one.  The
+same headline under plain `org-mode' toggled.  Confirmed in a live
+frame before the handler moved to `derived-mode-p', which is how
+`donkey-editing-modes' and the agenda handler already match."
+  (eval '(define-derived-mode donkey-test--journalish-mode org-mode
+           "Journalish")
+        t)
+  (with-temp-buffer
+    (donkey-test--journalish-mode)
+    (insert "* TODO Some task\n")
+    (goto-char (point-min))
+    (should (donkey--editing-mode-p))
+    (let (called-cmd)
+      (cl-letf (((symbol-function 'donkey-org-todo)
+                 (lambda () (interactive) nil))
+                ((symbol-function 'call-interactively)
+                 (lambda (cmd) (setq called-cmd cmd))))
+        (donkey-enter-dwim))
+      (should (eq called-cmd 'donkey-org-todo)))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-enter-dwim dispatcher - Org-Agenda Mode
 ;;;
