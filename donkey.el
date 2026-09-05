@@ -1983,7 +1983,24 @@ the pair definition that decides, so excluding one -- `sp-local-pair'
 with `:actions' nil, say -- stops that delimiter wrapping and leaves
 the character inserted, exactly as `electric-pair-mode' does for the
 two it never knew about.  Same outcome from opposite directions, and
-neither is this command's doing."
+neither is this command's doing.
+
+A count is ignored: one delimiter press, one wrap.  Passing 1 to
+`self-insert-command' is not what settles that.  Since Emacs 31,
+`electric-pair-post-self-insert-function' reads `current-prefix-arg'
+for itself to learn how many characters the self-insert put down, and
+deletes that many before wrapping the region.  Emacs 30 hard-codes one.
+Fed a live count, 31 deleted characters the user never typed:
+\\[universal-argument] 3 ( on a selected \"alpha\" left \"(((alp))) beta\",
+a negative count ate the space after the selection and signaled, and a
+large one signaled `args-out-of-range'.  So `current-prefix-arg' is
+bound to nil around the insertion, and every version behaves as 30
+always did.  Honoring the count instead was considered and declined:
+with no pairing package the count would insert N delimiters at point,
+and under 30's `electric-pair-mode' it wraps once and then inserts N-1
+bare characters, so there is no one meaning to give it.  Confirmed
+live in `emacs -nw' on 30.2 and 31.1: with the binding, v w
+\\[universal-argument] 3 ( yields \"(alpha) beta\" on both."
   (interactive)
   (cond
    ((not (use-region-p))
@@ -2001,7 +2018,11 @@ neither is this command's doing."
    (t
     (donkey-insert-mode 1)
     (unwind-protect
-        (self-insert-command 1)
+        ;; Emacs 31's electric-pair reads the count from
+        ;; `current-prefix-arg', not from the argument below, and deletes
+        ;; that many characters before wrapping.  See the docstring.
+        (let ((current-prefix-arg nil))
+          (self-insert-command 1))
       (donkey--exit-insert)))))
 
 ;;; ---------------------------------------------------------------------------

@@ -1318,6 +1318,43 @@ back to the bare \"hello( world\" of the test above."
             (should (string= (buffer-string) "(hello) world")))
         (electric-pair-local-mode -1)))))
 
+(ert-deftest donkey-a-counted-wrap-inserts-one-delimiter-and-loses-nothing ()
+  "A count before a wrap delimiter wraps once and deletes nothing.
+
+Pinned two ways.  A function on `post-self-insert-hook' records
+`current-prefix-arg' as the delimiter is inserted, and it must be nil
+whatever count the keys carried -- that is what discriminates on every
+Emacs, not only where the damage shows.  And the buffer itself: under
+`electric-pair-local-mode', each of the counted key runs must end in
+the plain wrap, the same text a bare delimiter press produces.
+
+Regression test.  Emacs 31's `electric-pair-post-self-insert-function'
+reads `current-prefix-arg' for itself to learn how many characters the
+self-insert put down, and deletes that many before wrapping.  Handed a
+live count together with `self-insert-command' 1, it deleted text the
+user never typed: v w \\[universal-argument] 3 ( on \"alpha beta\" left
+\"(((alp))) beta\", a negative count ate the space after the selection,
+a count of 9 signaled args-out-of-range.  Emacs 30 hard-codes one and
+never showed it, so the recorder is the part of this test that fails
+there."
+  (dolist (case '(("v w C-u 3 (" . "(alpha) beta")
+                  ("m w C-u 3 (" . "(alpha) beta")
+                  ("v w C-u 0 (" . "(alpha) beta")
+                  ("v w C-u - (" . "(alpha) beta")
+                  ("v w C-u 3 \"" . "\"alpha\" beta")))
+    (let (seen)
+      (donkey-test-keys--harness "*donkey-wrap-count*"
+          (lambda () (fundamental-mode) (electric-pair-local-mode 1))
+          ((post-self-insert-hook
+            (cons (lambda () (push current-prefix-arg seen))
+                  post-self-insert-hook)))
+          "alpha beta" (car case)
+        (should (equal (cons (car case) (buffer-string)) case))
+        ;; The hook runs once per character electric-pair puts down, so
+        ;; SEEN has several entries; every one of them must be nil.
+        (should (equal (cons (car case) (delete-dups seen))
+                       (list (car case) nil)))))))
+
 (ert-deftest donkey-wrap-region-delete-selection-mode-does-not-eat-region ()
   "`delete-selection-mode' must not swallow the selection here.
 
