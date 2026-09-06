@@ -3572,6 +3572,24 @@ commands cannot drift apart."
          (string-match-p (if (eq thing 'word) "\\w" "\\w\\|\\s_") found)
          found)))
 
+(defun donkey--object-count (count)
+  "Return COUNT as the number of objects for a forward mark key.
+
+Nil and zero are one; anything else is itself.  `donkey-mark-word',
+`donkey-mark-symbol' and `donkey-mark-paragraph' read their COUNT
+through this, so the three agree, and `donkey-mark-sentence' reads
+every count below one as one for a reason of its own -- see there.
+
+Zero used to mark NOTHING, on the argument that `mark-word' and
+`forward-paragraph' read zero that way.  What that gave the user was
+an empty active region under \"Word marked\": the one press of a key
+that says \"word\" which left no word selected, and a selection with
+nothing in it for the action keys to refuse.  Changed on request: a
+count of zero is a bare press.  A NEGATIVE count keeps its meaning,
+the objects behind the one point normalizes onto."
+  (let ((n (or count 1)))
+    (if (zerop n) 1 n)))
+
 (defvar donkey--mark-reach 'ahead
   "Which neighbor a fresh mark press takes from a gap: `ahead' or `behind'.
 
@@ -5041,8 +5059,9 @@ adding one object of its own kind at its own end: `m w m s' is the
 word grown forward to the end of its sentence.
 
 COUNT marks that many words.  A negative COUNT marks that many words
-before the one point normalizes onto, and a COUNT of zero marks nothing,
-matching how `mark-word' itself reads its argument."
+before the one point normalizes onto, and a COUNT of zero marks one, as
+a bare press does -- see `donkey--object-count' for why zero no longer
+marks nothing the way `mark-word' itself reads it."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (let ((extend (donkey--mark-run-continuing-p)))
@@ -5099,7 +5118,7 @@ matching how `mark-word' itself reads its argument."
           ;; it took to make the extension signal `mark-inactive'
           ;; instead of growing.  See `donkey--normalize-mark-run'.
           (mark-even-if-inactive t)
-          (n (or count 1)))
+          (n (donkey--object-count count)))
       (if (and (not extend) (< n 0))
           ;; `mark-word' measures a negative count from POINT, and point
           ;; is the START of the word being counted from, so the
@@ -5149,11 +5168,12 @@ this a region some hook deactivated mid-run would keep growing
 invisibly -- point moves, nothing shows, and the next \`d' acts on a
 selection the user cannot see.  A no-op when the region is active.
 
-A COUNT below 1 is treated as 1.  Zero and negative counts already
-mean something in this family -- the forward commands read them as
-reaching BEHIND point -- and these four are that direction, so there
-is nothing left for them to name here.  Running out of buffer stops
-and keeps what is selected, matching the forward direction at the end
+A COUNT below 1 is treated as 1.  A negative count already means
+something in this family -- the forward commands read it as reaching
+BEHIND point -- and these four are that direction, so there is nothing
+left for it to name here; zero is a bare press for every mark key.
+Running out of buffer stops and keeps what is selected, matching the
+forward direction at the end
 of the buffer."
   (let ((n (max 1 (or count 1))))
     (if (donkey--mark-run-continuing-p)
@@ -5460,15 +5480,15 @@ COUNT marks or extends by that many sentences."
 ;; would take more than the paragraph asked for.  Confirmed against
 ;; "A.\n\n\n\nB.\n", where deleting either paragraph leaves two blanks
 ;; standing.
-(defun donkey--absorb-paragraph-blank (start n)
+(defun donkey--absorb-paragraph-blank (start)
   "Extend point over one following blank line, when START owns no leading one.
 
 Called with point at the end of a paragraph selection that began at
-START, having advanced N paragraphs.  Does nothing when N is zero, when
-the selection already begins on a blank line, or when there is no blank
-line to take."
-  (when (and (/= n 0)
-             (save-excursion
+START.  Does nothing when the selection already begins on a blank line,
+or when there is no blank line to take.  It once took the count as well
+and did nothing at zero; `donkey--object-count' reads zero as one now,
+so a selection always has a paragraph in it by the time this runs."
+  (when (and (save-excursion
                (goto-char start)
                (not (looking-at-p "^[[:space:]]*$")))
              (looking-at-p "^[[:space:]]*$")
@@ -5494,9 +5514,7 @@ selected is worse than one that says it found nothing.
 Checked on the result rather than beforehand, matching
 `donkey-mark-sentence': a blank line BETWEEN two paragraphs is a normal
 place to press this from and marks the paragraph below, so gating on
-what is under point would reject work this command does correctly.  A
-COUNT of zero is exempt -- it is documented to mark nothing, and the
-nothing came from the count rather than from the buffer.
+what is under point would reject work this command does correctly.
 
 From a blank line between two paragraphs the one BELOW is marked, as
 `donkey-mark-word' marks the word ahead from the space between two, and
@@ -5525,10 +5543,10 @@ end, in either order, as does every other member of
 
 COUNT marks that many paragraphs.  A negative COUNT marks that many
 paragraphs before the one point normalizes onto, and a COUNT of zero
-marks nothing, matching how `forward-paragraph' reads its argument."
+marks one, as a bare press does -- see `donkey--object-count'."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (let ((n (or count 1))
+  (let ((n (donkey--object-count count))
         (origin (point))
         (extending (donkey--mark-run-continuing-p)))
     (if extending
@@ -5545,7 +5563,7 @@ marks nothing, matching how `forward-paragraph' reads its argument."
                     (let ((start (point)))
                       (goto-char (mark t))
                       (forward-paragraph n)
-                      (donkey--absorb-paragraph-blank start n)
+                      (donkey--absorb-paragraph-blank start)
                       (point))))
       ;; Point ends at the START, mark at the end.  It used to be the
       ;; other way round, which made this the only mark command that
@@ -5581,11 +5599,11 @@ marks nothing, matching how `forward-paragraph' reads its argument."
         (backward-paragraph 1))
       (let ((start (point)))
         (forward-paragraph n)
-        (donkey--absorb-paragraph-blank start n)
+        (donkey--absorb-paragraph-blank start)
         (push-mark (point) nil t)
         (goto-char start))
       (activate-mark))
-    (unless (or extending (= n 0))
+    (unless extending
       (donkey--refuse-blank-mark "paragraph" origin))
     (message "Paragraph marked")))
 
@@ -5639,11 +5657,11 @@ end, in either order, as does every other member of
 `donkey--mark-run-commands'.
 
 COUNT marks that many symbols.  A negative COUNT marks that many symbols
-before the one point normalizes onto, and a COUNT of zero marks nothing,
-matching how `forward-sexp' reads its argument."
+before the one point normalizes onto, and a COUNT of zero marks one, as
+a bare press does -- see `donkey--object-count'."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (let ((n (or count 1)))
+  (let ((n (donkey--object-count count)))
    (if (donkey--mark-run-continuing-p)
       ;; Grown by moving the MARK, which is where this command leaves the
       ;; far end of its selection -- it finishes with `backward-sexp', so

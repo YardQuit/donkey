@@ -1132,18 +1132,20 @@ reason."
       (ignore-errors (donkey-mark-paragraph))
       (should-not (use-region-p)))))
 
-(ert-deftest donkey-mark-paragraph-zero-count-is-exempt-from-the-guard ()
-  "A zero count marks nothing WITHOUT erroring, as documented.
+(ert-deftest donkey-mark-paragraph-zero-count-marks-the-paragraph ()
+  "A zero count marks the paragraph, as a bare press does.
 
-The nothing came from the count, not from the buffer -- there is a
-paragraph right there.  Pinned because the emptiness guard would
-otherwise swallow this documented case."
+Zero used to be exempt from the emptiness guard because it marked
+nothing by design; now there is nothing to exempt, and the guard
+reads the result like any other press."
   (with-temp-buffer
     (insert "A paragraph.\n")
     (goto-char 3)
     (let ((transient-mark-mode t))
-      (should (progn (donkey-mark-paragraph 0) t))
-      (should-not (use-region-p)))))
+      (donkey-mark-paragraph 0)
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "A paragraph.\n")))))
 
 (ert-deftest donkey-mark-paragraph-blank-line-between-paragraphs-still-works ()
   "From a blank line between paragraphs `m p' marks the one BELOW, `m P' above.
@@ -3736,14 +3738,46 @@ answering differently is the part a reader would have to keep in mind."
         (should (equal (cons count results)
                        (cons count (list (car results) (car results)))))))))
 
-(ert-deftest donkey-mark-word-zero-count-marks-nothing ()
-  "A count of zero marks an empty region, as `mark-word' does."
+(ert-deftest donkey-mark-word-zero-count-marks-the-word ()
+  "A count of zero marks the word, as a bare press does.
+
+It used to mark an empty region, as `mark-word' does at zero -- the one
+press of the key that said \"Word marked\" over nothing selected."
   (let ((transient-mark-mode t))
     (with-temp-buffer
       (insert "alpha beta gamma")
       (goto-char 13)
       (donkey-mark-word 0)
-      (should (= (region-beginning) (region-end))))))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "gamma")))))
+
+(ert-deftest donkey-mark-symbol-zero-count-marks-the-symbol ()
+  "A count of zero marks the symbol, as a bare press does."
+  (let ((transient-mark-mode t))
+    (with-temp-buffer
+      (emacs-lisp-mode)
+      (insert "foo-a bar-b baz-c")
+      (goto-char 14)
+      (donkey-mark-symbol 0)
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "baz-c")))))
+
+(ert-deftest donkey-a-zero-count-is-a-bare-press-through-the-keys ()
+  "`C-u 0 m w', `C-u 0 m W' and `C-u 0 m p' select what the bare key selects.
+
+The three forward object keys agree through `donkey--object-count';
+`m s' already read a count below one as one."
+  (dolist (case '(("m w" "alpha") ("m W" "alpha") ("m p" "alpha beta.\n\n")))
+    (cl-destructuring-bind (key expected) case
+      (dolist (prefix '("" "C-u 0 "))
+        (donkey-test-keys--harness "*donkey-zero-count*" #'text-mode ()
+            "alpha beta.\n\nGamma.\n" (concat prefix key)
+          (should (equal (list key prefix
+                               (buffer-substring-no-properties
+                                (region-beginning) (region-end)))
+                         (list key prefix expected))))))))
 
 (ert-deftest donkey-mark-symbol-negative-count-marks-backward ()
   "A negative count marks that many symbols before the one point is on."

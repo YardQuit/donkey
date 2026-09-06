@@ -801,18 +801,22 @@ and the one the count was measured from, and nothing at all from ahead
 of the cursor when the buffer runs out first. =m w= and =m W= answer
 alike.
 
-A count of *zero* does nothing at all — =C-u 0 x= deletes no characters,
-=C-u 0 y= leaves the kill ring untouched rather than pushing an empty
-string over whatever =p= was about to paste. =C-u 0 c= is the one
-exception worth naming: it changes no text but still drops into INSERT
-state, because entering INSERT is what the command is for and only the
-deletion is governed by the count.
+A count of *zero* does nothing at all on the editing keys — =C-u 0 x=
+deletes no characters, =C-u 0 y= leaves the kill ring untouched rather
+than pushing an empty string over whatever =p= was about to paste.
+=C-u 0 c= is the one exception worth naming: it changes no text but
+still drops into INSERT state, because entering INSERT is what the
+command is for and only the deletion is governed by the count.
 
-=m s= is one exception: a count below 1 is treated as 1. That command
-normalizes onto the start of the sentence it marks and counts from there
-with =mark-end-of-sentence=, so a count of zero would select nothing at
-all and a negative one would reach back over the sentence already behind
-that start — neither of which is a sentence at point.
+On the mark keys a count of zero is a bare press: =C-u 0 m w= marks the
+word, as =m w= does, and =m W=, =m s= and =m p= read it the same way. A
+key that says "word" selects a word.
+
+=m s= goes one step further and treats a negative count as 1 as well.
+That command normalizes onto the start of the sentence it marks and
+counts from there with =mark-end-of-sentence=, so a negative count
+would reach back over the sentence already behind that start — which
+is not a sentence at point.
 
 =m b=, =m B=, =m S= and =m P= are the others, treating a count below 1
 as 1 for the mirrored reason: they *are* the backward direction, so a
