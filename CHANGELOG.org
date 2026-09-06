@@ -9,6 +9,139 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.7.0 — 2026-09-06
+
+A round of live function tests, driven with real keys in a terminal
+frame and a graphical one, followed by a review of everything since
+1.6.0 and the decisions it raised. Four keys read a count they used to
+ignore, four mark keys reach the other way from a gap, =RET= follows a
+Markdown link, and a dozen refusals now leave things exactly as they
+found them. Minor rather than patch because keys select and open
+something different than they did.
+
+*Changed*
+
+- =o= and =O= take a count. =C-u 3 o= opens the usual line under the
+  cursor's line and two empty lines beyond it; =C-u 3 O= the usual
+  line above and two empty lines above that. The cursor stays on the
+  line a bare press opens, only that line is indented, and a count
+  below 1 opens one. =i=, =a=, =I= and =A= still ignore a count and
+  =c= keeps its own.
+- =V= takes a count. =C-u 3 V= selects three rows anchored on the
+  cursor's line, exactly what =V J J= selects, and =J= and =K= grow or
+  shrink it from that anchor; =C-u -2 V= selects upward. A counted
+  press always starts a fresh selection, even over a live session —
+  only the bare press cancels. Zero is a bare press. =M= and =m v=
+  still ignore a count.
+- A count of zero on =m w=, =m W= and =m p= marks one object, as a
+  bare press does, the way =m s= always read it. =C-u 0 m w= used to
+  mark an empty region and say "Word marked". Negative counts keep
+  reaching backward.
+- Every mark key has a side. From the space between two words =m w=
+  marks the word *ahead* and =m b= the word *behind*, so from one gap
+  the two keys are the two words on either side of it — and =M=, which
+  is =m w=, takes the word ahead too. =m W= and =m B=, =m s= and
+  =m S=, =m p= and =m P= divide their gaps the same way. The eight
+  used to agree on the object behind, which made =m w= and =m b= from
+  the same space mark the same word. Where the preferred side is empty
+  the other answers: the end of a buffer gives the forward keys the
+  last object and the start gives the backward keys the first. On an
+  object itself nothing changes.
+- =g j= joins the selected lines into one. =V J J g j= makes three
+  lines one and leaves the fourth; a selection that ends at the start
+  of a line leaves that line out; a selection inside a single line
+  joins it with the next; a rectangle's rows are lines like any other
+  selection's. The selection used to be ignored. Without one, =g j=
+  pulls the next line up as before, and a count still says how many.
+- =RET= in =markdown-mode= and =gfm-mode= follows the link at point
+  through markdown-mode's own =markdown-follow-thing-at-point= and does
+  nothing elsewhere on the page. Markdown used to go through the Org
+  rules: with Org loaded every press left three lines in =*Warnings*=
+  and a task-list item signaled about Org's tab width; without it RET
+  did nothing at all, and an inline link was followed in neither case.
+  The default link rule is Org's command alone now.
+- =.= is a mark run key. =M w .= is three words and =M w . .= four, a
+  count carries, and each =.= is one step for =u= to take back. The
+  key grew the selection before but ended the mode with it.
+- =J= and =K= inside a rectangle move as =j= and =k= do there, keeping
+  the column, so the block grows or shrinks by a row. They fell through
+  to a plain line motion that landed on column 0 and collapsed the
+  block.
+
+*Fixed*
+
+- A wrap key no longer ends a keyboard macro recording. =v w (= while
+  F3 was recording stopped it silently, because the way back to Normal
+  was =C-g='s, which stops a recording on purpose. Wrapping is not an
+  abort.
+- A wrap key refuses read-only text before it enters Insert state, at
+  every place the wrap would insert, and the selection survives. Under
+  =electric-pair-mode= with the selection's last character read-only,
+  =m w (= used to leave a stray =(= behind and drop the selection; a
+  read-only buffer already refused cleanly since 1.6.0 and still does.
+- A bank is whole lines however the text has moved. =m l g j y= copied
+  four characters under "Copied 1 line", and =d= removed them and left
+  the rest of the line standing; =D= at the end of a banked line and
+  =M-^= from below did the same. Banks are read back as the whole lines
+  their overlays touch, two banked lines joined into one count as one,
+  and the bank key, =m u= and =m U= find a bank that no longer starts
+  at its line's start.
+- A refused =m i=, =m a=, =m I= or =m A= changes nothing. A =V= session
+  or a rectangle kept its highlight but lost its kind when the search
+  found no pair, so the =d= that followed took the text as a plain
+  region — the line without its newline, the block as one span. The
+  key typed next is left alone too: with the cursor on the paren of an
+  unbalanced =(abc=, a refused =m i= used to eat the =(= typed to wrap
+  what it had kept.
+- =m p= on the first character of a paragraph marks *that* paragraph.
+  Under a separator line holding spaces or a tab it marked the one
+  above; the start is found forward-then-back now, as =mark-paragraph=
+  finds it. In Org, =m p= on a headline marks the body under it, which
+  is what Emacs's own =mark-paragraph= gives there; it used to mark the
+  previous section's body.
+- =m i ( m i (= grows the selection a level and inserts nothing. The
+  repeat never reads a delimiter, so the paren typed after it out of
+  habit ran as a wrap. Every press that marks without stopping at the
+  prompt now protects exactly one delimiter press.
+- =V= on an empty line acts on the line. =d= took the newline off the
+  kill ring, =c= joined the next line up, and =y= saved by count past
+  the line; the session's empty region did not read as a selection.
+- A new selection forgets the visual-line anchor. =V m w d= removed the
+  whole line, =V v h h y= copied it, and =V m w V= said "canceled"
+  where a fresh session should have started.
+- A wrap key refused in a read-only buffer keeps the selection, and a
+  count on a wrap key is ignored: since Emacs 31 =electric-pair-mode=
+  reads a live count for itself and deleted characters never typed.
+- =:= refuses what is not a line number. =1e999= reads as an infinite
+  float, and rounding it signaled a raw arithmetic overflow; it is a
+  =user-error= naming the input now, with the cursor left put.
+- The =m i= / =m a= refusal names an unprintable key: =RET=, =SPC=,
+  =TAB=, =DEL= and a Meta key used to wrap the message, show an empty
+  pair of quotes, or signal about a character code.
+- =RET= dispatches in modes derived from =org-mode=, such as
+  =org-journal-mode=, where it used to do nothing.
+- The =*org-scratch*= header quotes its save key as a reference rather
+  than between two closing quotes.
+
+*Internal*
+
+- Two tests relied on ambient command state and were caught by the
+  pinned shuffle seeds when new tests shifted the order; both bind what
+  they depend on now.
+- The cursor shape is left alone under =--batch=, where the escape
+  sequences went to the test log and cost two fifths of the suite's
+  running time.
+- The README's table of contents points at anchors GitHub can follow,
+  and a run of docstrings that rendered with mismatched quotes render
+  matched.
+
+*Upgrading*
+
+Nothing to do. If you had learned that =m w= from a space marks the
+word behind, or that =C-u 3 o= opens one line, those are the two
+habits that change; every other key that reads differently reads so
+only where it used to refuse or mark nothing.
+
 * 1.6.0 — 2026-09-05
 
 Mark run mode was released in 1.5.0 with the word =M= marks treated as
