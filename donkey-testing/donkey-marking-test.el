@@ -1563,6 +1563,31 @@ content."
       (donkey-test--pair-keys "empty() here" 6 "m a (")
     (should (equal selection "()"))))
 
+(ert-deftest donkey-a-refused-pair-mark-arms-no-delimiter-suppression ()
+  "An auto-detected `m i' that finds no pair leaves the next delimiter key alone.
+
+Regression: the swallow was armed where the delimiter was read from
+the buffer, before the search, so with the cursor on the paren of an
+unbalanced \"(abc\" the refusal left it standing and the `(' typed
+next -- to wrap the selection the refusal had kept -- was eaten.  The
+binding of the key is what is asserted: the transient map, when armed,
+resolves the delimiter to the swallowing command."
+  (donkey-test-keys--harness "*donkey-pair-refused*" #'text-mode ()
+      "(abc def\nnext\n" "V g h"
+    (should-error (execute-kbd-macro (kbd "m i")) :type 'user-error)
+    (should (eq (key-binding "(") #'donkey-wrap-region))
+    (should (donkey--visual-line-session-active-p))))
+
+(ert-deftest donkey-a-found-pair-still-arms-the-suppression ()
+  "The control for the test above: a press that marks does protect one key."
+  (unwind-protect
+      (donkey-test-keys--harness "*donkey-pair-found*" #'text-mode ()
+          "(abc) def\n" "m i"
+        (should (eq (key-binding "(") #'donkey--pair-delimiter-already-taken)))
+    ;; The transient map is terminal-wide and comes down on the next
+    ;; command, which would be the next test's first key.
+    (setq overriding-terminal-local-map nil)))
+
 (ert-deftest donkey-a-lisp-call-arms-no-delimiter-suppression ()
   "Calling the command from Lisp leaves no transient map behind.
 

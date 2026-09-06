@@ -2927,7 +2927,15 @@ with nothing pairing, a wrap under `electric-pair-mode', and a `d'
 pressed next deleted one character, the insertion having ended the
 selection.  Confirmed live in `emacs -nw'.  So every press of the two
 commands that does not stop at the prompt, fresh or repeat, protects
-exactly one delimiter press.
+exactly one delimiter press -- once it has FOUND its pair.
+
+A press that finds none arms nothing.  The swallow used to be armed
+where the delimiter was read from the buffer, before the search, so a
+refused press left it standing: with the cursor on the paren of an
+unbalanced \"(abc\", \\=`m i\\=' said \"No matching )\" and then ate the
+\\=`(\\=' typed next, silently -- the one key a reader reaches for to wrap
+the selection the refusal had just left standing.  A refused key
+changes nothing, and that includes the key after it.
 
 Closing characters are bound too, point being able to sit on either
 end of a pair.
@@ -2964,7 +2972,7 @@ reason, and says so."
       (set-transient-map map))))
 
 (defun donkey--mark-pair-read-delimiter ()
-  "Return (OPEN-CHAR CLOSE-CHAR ON-OPENER) for the char pair to mark.
+  "Return (OPEN-CHAR CLOSE-CHAR ON-OPENER AUTO) for the char pair to mark.
 
 Uses the character at point when it is a recognized OPEN or CLOSE
 delimiter (see `donkey-mark-pair-delimiters'); otherwise prompts via
@@ -2973,24 +2981,25 @@ side -- when it sits on the CLOSE side of an asymmetric pair (e.g. `)'
 for `(', where OPEN and CLOSE differ), OPEN-CHAR is still resolved
 automatically here, but ON-OPENER comes back nil so
 `donkey--mark-pair-positions' takes its search-backward-then-forward
-path instead of assuming point is the opener."
+path instead of assuming point is the opener.
+
+AUTO is non-nil when the delimiter was read from the buffer rather
+than from a key, so the delimiter the reader types next is loose.
+Whether to swallow that press is the caller's decision, made once the
+pair has been found -- see `donkey--suppress-one-pair-delimiter' for
+why it is not made here."
   (let* ((default-char (char-after))
          (on-opener (and default-char (assq default-char donkey-mark-pair-delimiters)))
          (on-closer (and default-char (not on-opener)
                           (rassq default-char donkey-mark-pair-delimiters)))
          (open-char (cond
-                     ;; Both branches below answer WITHOUT reading a key,
-                     ;; so the delimiter the reader types next is loose --
-                     ;; see `donkey--suppress-one-pair-delimiter'.
-                     (on-opener (donkey--suppress-one-pair-delimiter)
-                                default-char)
-                     (on-closer (donkey--suppress-one-pair-delimiter)
-                                (car on-closer))
+                     (on-opener default-char)
+                     (on-closer (car on-closer))
                      (t (donkey--mark-pair-open-for
                          (read-char (donkey--mark-pair-prompt))))))
          (close-char (or (cdr (assq open-char donkey-mark-pair-delimiters))
                          (donkey--mark-pair-unsupported-error open-char))))
-    (list open-char close-char on-opener)))
+    (list open-char close-char on-opener (and (or on-opener on-closer) t))))
 
 (defun donkey--mark-pair-scan-forward (open-char close-char)
   "Scan forward for the CLOSE-CHAR balancing one already-open OPEN-CHAR.
@@ -3259,20 +3268,23 @@ has been FOUND -- see the comment at the marking below."
   ;; of `m i' and `m a' lands somewhere that is not a delimiter, so this
   ;; is not something the cursor position alone can fix.  Not prompting
   ;; leaves the delimiter the reader types next loose, exactly as the
-  ;; auto-detect does, so the repeat arms the same one-press protection;
-  ;; see `donkey--suppress-one-pair-delimiter'.
+  ;; auto-detect does, so the repeat gets the same one-press protection
+  ;; once it has marked; see `donkey--suppress-one-pair-delimiter'.
   ;;
   ;; And repeating agrees with counting, the way it does for the other
   ;; mark commands: both walk outward from the same anchor.
   (let* ((state (and (donkey--mark-extending-p) donkey--mark-pair-state))
          (anchor (if state (nth 0 state) (point)))
          (spec (if state
-                   (progn (donkey--suppress-one-pair-delimiter)
-                          (cdr state))
+                   (cdr state)
                  (donkey--mark-pair-read-delimiter)))
          (open-char (nth 0 spec))
          (close-char (nth 1 spec))
          (on-opener (nth 2 spec))
+         ;; Whether the delimiter typed next is loose: always on a
+         ;; repeat, which reads none, and on a fresh press that read it
+         ;; from the buffer.  Acted on only once the pair is found.
+         (auto (if state t (nth 3 spec)))
          (level (+ (if state (nth 3 spec) 0) (max 1 (or count 1)))))
     (pcase-let* ((`(,start-pos . ,end-pos)
                   (save-excursion
@@ -3316,6 +3328,11 @@ has been FOUND -- see the comment at the marking below."
       (activate-mark)
       (setq donkey--mark-pair-state
             (list anchor open-char close-char on-opener level))
+      ;; Only a press that marked has a next key to protect -- see
+      ;; `donkey--suppress-one-pair-delimiter' for the refused press that
+      ;; used to eat one.
+      (when auto
+        (donkey--suppress-one-pair-delimiter))
       (message (if inner-p
                    "Selected content for '%c'"
                  "Selected OUTER content including '%c'")
