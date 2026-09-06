@@ -2369,8 +2369,12 @@ The lesson tells the reader that a guess costs nothing, so a key with no
 gives that for free to any command whose `interactive' spec does not read
 one -- which is why the claim is safe to make, and why it would stop
 being safe if one of these grew a spec that read a prefix argument and
-did something surprising with it."
-  (dolist (key '("i" "a" "A" "I" "v" "V" "m v" "%" "?"))
+did something surprising with it.
+
+`V' left this list when it grew a count that selects that many rows,
+and the lesson names it among the counted keys now; `M' and `m v' are
+the two selection toggles that still ignore one."
+  (dolist (key '("i" "a" "A" "I" "v" "m v" "%" "?"))
     (let ((command (keymap-lookup donkey-normal-mode-map key)))
       (should (commandp command))
       (let ((spec (cadr (interactive-form command))))

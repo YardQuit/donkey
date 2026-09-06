@@ -5,6 +5,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
+(require 'donkey-test-keys)
 
 ;; Ensure dynamic scoping for position-tracking and visual-selection variables
 (defvar donkey--position-ring)
@@ -856,6 +857,80 @@ starting a new visual-line selection on the current line."
       (should (= donkey-visual-anchor (donkey--bol 1)))
       (should (= (mark) (donkey--bol 1)))
       (should (= (point) (donkey--eol 1))))))
+
+(defun donkey-nav-test--region-text ()
+  "Return the active region's text, which the counted `V' assertions compare."
+  (buffer-substring-no-properties (region-beginning) (region-end)))
+
+(ert-deftest donkey-a-counted-V-selects-that-many-rows ()
+  "`C-u 3 V' selects three rows anchored on the current line, and J/K continue it."
+  (donkey-test-keys--harness "*donkey-V-count*" #'text-mode ()
+      "a\nb\nc\nd\ne\n" "C-u 3 V"
+    (should (equal (donkey-nav-test--region-text) "a\nb\nc"))
+    (should (donkey--visual-line-session-active-p))
+    (should (= donkey-visual-anchor 1))
+    (execute-kbd-macro (kbd "J"))
+    (should (equal (donkey-nav-test--region-text) "a\nb\nc\nd"))
+    (execute-kbd-macro (kbd "K K"))
+    (should (equal (donkey-nav-test--region-text) "a\nb"))))
+
+(ert-deftest donkey-a-negative-count-on-V-selects-upward ()
+  "`C-u -2 V' selects this row and the one above, and K grows it further up."
+  (donkey-test-keys--harness "*donkey-V-count*" #'text-mode ()
+      "a\nb\nc\nd\ne\n" "j j j C-u - 2 V"
+    (should (equal (donkey-nav-test--region-text) "c\nd"))
+    (should (donkey--visual-line-session-active-p))
+    (execute-kbd-macro (kbd "K"))
+    (should (equal (donkey-nav-test--region-text) "b\nc\nd"))))
+
+(ert-deftest donkey-a-counted-V-starts-afresh-over-a-live-session ()
+  "A counted press over a live session selects anew from the cursor's line.
+
+Only the bare press cancels: a count is an instruction about size."
+  (donkey-test-keys--harness "*donkey-V-count*" #'text-mode ()
+      "a\nb\nc\nd\ne\n" "V J C-u 3 V"
+    (should (equal (donkey-nav-test--region-text) "b\nc\nd"))
+    (should (donkey--visual-line-session-active-p))
+    (should (= donkey-visual-anchor 3))))
+
+(ert-deftest donkey-a-counted-V-stops-where-J-stops ()
+  "A count past the buffer's end selects to the end, as `C-u 9 J' would."
+  (donkey-test-keys--harness "*donkey-V-count*" #'text-mode ()
+      "a\nb\nc\n" "C-u 9 V"
+    (should (= (region-beginning) 1))
+    (should (= (region-end) (point-max)))
+    (should (donkey--visual-line-session-active-p))))
+
+(ert-deftest donkey-a-zero-count-on-V-is-a-bare-press ()
+  "`C-u 0 V' selects one row fresh, and toggles a live session off."
+  (donkey-test-keys--harness "*donkey-V-count*" #'text-mode ()
+      "a\nb\nc\n" "C-u 0 V"
+    (should (equal (donkey-nav-test--region-text) "a")))
+  (donkey-test-keys--harness "*donkey-V-count*" #'text-mode ()
+      "a\nb\nc\n" "V C-u 0 V"
+    (should-not (region-active-p))
+    (should (equal donkey-test-keys--said "Visual line: canceled"))))
+
+(ert-deftest donkey-a-counted-V-then-d-takes-whole-rows ()
+  "`C-u 3 V d' removes the three rows outright, newlines included."
+  (donkey-test-keys--harness "*donkey-V-count*" #'text-mode ()
+      "a\nb\nc\nd\ne\n" "C-u 3 V d"
+    (should (equal (buffer-string) "d\ne\n"))
+    (should (equal (car kill-ring) "a\nb\nc\n"))))
+
+(ert-deftest donkey-V-with-a-count-is-still-refused-inside-a-mark-run ()
+  "The mark run's refusal of `V' does not depend on the count.
+
+The refusal leaves the mode armed, as it is meant to, and the harness
+signals out before its own cleanup -- so the mode is disarmed here, or
+every later `V' in the file would be refused too."
+  (unwind-protect
+      (should-error
+       (donkey-test-keys--harness "*donkey-V-count*" #'text-mode ()
+           "one two\nthree\n" "M C-u 3 V"
+         nil)
+       :type 'user-error)
+    (donkey--mark-run-exit)))
 
 (ert-deftest donkey-visual-line-toggle-call-interactively ()
   "Can be called via `call-interactively'."

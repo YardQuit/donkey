@@ -257,7 +257,7 @@ process interaction.
 |-----+-----------------------------+---------------------------------------|
 | =J= | =donkey-visual-next-line=     | Move down, extending visual selection |
 | =K= | =donkey-visual-previous-line= | Move up, extending visual selection   |
-| =V= | =donkey-visual-line-toggle=   | Toggle visual line selection          |
+| =V= | =donkey-visual-line-toggle=   | Toggle visual line selection; a count selects that many rows |
 | =v= | =donkey-set-mark=           | Drop a mark and start selecting; =C-g= lets go |
 | =M= | =donkey-mark-run-toggle=    | Toggle mark run mode: bare =w W b B s S= mark and grow |
 | =(= =[= ={= ="= ='= =`= | =donkey-wrap-region= | Wrap active region with delimiter, see below |
@@ -321,6 +321,11 @@ The =v= and =m v= lines say what the other two do not have to. Those
 own their keys and can list them; these own none — every motion
 extends a =v= selection or sizes a rectangle — so what is worth saying
 is how to let go, which is the part neither key tells you.
+
+A count on =V= selects that many rows at once: =C-u 3 V= is =V=
+followed by =J= twice, anchored on the current line, and =C-u -3 V=
+selects upward. A counted press always starts a fresh selection, even
+over a live session — only the bare press cancels.
 
 Within a visual-line session (started with =V=), =J= and =K= extend the
 selection by whole lines, always anchored to the line =V= was pressed
@@ -756,9 +761,10 @@ Notes:
 A count works wherever "how many" means something, and it always means
 exactly that — so =C-u 3 x= deletes three characters and =C-u 2 m s=
 marks two sentences. Every motion takes one, as does every =m= key that
-selects a thing, along with =d=, =y=, =c=, =p=, =o= and =O=. The keys
-with no "how many" in them — entering INSERT at the cursor, toggling a
-state, asking for help — ignore a count rather than refusing it.
+selects a thing, along with =d=, =y=, =c=, =p=, =o=, =O= and =V=. The
+keys with no "how many" in them — entering INSERT at the cursor, the
+=M= and =m v= toggles, asking for help — ignore a count rather than
+refusing it.
 
 | Keys        | Effect                                  |
 |-------------+-----------------------------------------|
@@ -766,6 +772,7 @@ state, asking for help — ignore a count rather than refusing it.
 | =C-u 2 P=   | paste the rectangle twice as wide       |
 | =C-u 3 J=   | down three lines, extending a visual selection |
 | =C-u 3 K=   | up three lines, extending a visual selection |
+| =C-u 3 V=   | select three rows, anchored on this one; =C-u -3 V= upward |
 | =C-u 3 x=   | delete three characters                 |
 | =C-u 3 y=   | copy three characters                   |
 | =C-u 3 c=   | change three characters                 |

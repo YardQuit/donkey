@@ -2582,13 +2582,30 @@ Guarded, not signaling -- a function that errors on
      ((and donkey--linear-selection-active mark-active)
       (donkey--repaint-hint donkey--linear-selection-hint)))))
 
-(defun donkey-visual-line-toggle ()
-  "Start/cancel visual line selection.
+(defun donkey-visual-line-toggle (&optional arg)
+  "Start/cancel visual line selection; with a count, select that many rows.
 
 Only cancels when a visual-line session is genuinely active (see
 `donkey--visual-line-session-active-p').  Pressing this with some OTHER
 active region -- a `donkey-mark-inner' selection, say -- starts a fresh
 visual-line session anchored at the current line instead.
+
+With a count, selects that many rows at once, anchored on the cursor's
+line: \\[universal-argument] 3 \\[donkey-visual-line-toggle] is this key
+followed by \\[donkey-visual-next-line] twice, and `J'/`K' afterwards
+grow or shrink it from the same anchor.  A negative count selects
+UPWARD, the way \\[universal-argument] -3 \\[donkey-visual-next-line]
+moves.  Running out of buffer stops where `J' stops.  A counted press
+always starts a fresh selection, even over a live session -- a count is
+an instruction about size, and cancelling is what the bare press is
+for.  Zero is a bare press, as it is on the mark keys.
+
+ARG is the raw prefix argument, because a bare press and
+\\[universal-argument] 1 must be told apart: only the bare press
+toggles.  Took no count for a long time, as the other selection
+toggles still do not; changed on request, since every modal editor's
+line-select key takes one and \\[universal-argument] 3 \\[donkey-visual-next-line],
+\\[universal-argument] 3 \\[donkey-bank-selection] already read a count as rows.
 
 See `donkey--ensure-non-rectangle-selection' for why a stale active
 `rectangle-mark-mode' selection is disabled first.
@@ -2600,23 +2617,46 @@ and `donkey-yank' widen a live session to whole lines before acting, so
 the line break goes with it: `d' removes the line outright rather than
 emptying it, `y' gives a kill that pastes back as a complete line, and
 `p' replaces the line instead of opening an empty one under it."
-  (interactive)
-  (if (donkey--visual-line-session-active-p)
+  (interactive "P")
+  (let ((n (prefix-numeric-value arg)))
+    (cond
+     ((and arg (not (zerop n)))
+      (donkey--visual-line-start n))
+     ((donkey--visual-line-session-active-p)
+      ;; `deactivate-mark' clears the anchor through the buffer-local
+      ;; `deactivate-mark-hook'.  That hook is guaranteed present: an
+      ;; active session requires a non-nil anchor, and the only code
+      ;; that sets one is `donkey--visual-line-start', one line after
+      ;; installing the hook.
+      (deactivate-mark)
+      (message "Visual line: canceled"))
+     (t
+      (donkey--visual-line-start 1)))))
+
+(defun donkey--visual-line-start (n)
+  "Start a visual-line session of N rows, anchored on the cursor's line.
+
+The start branch of `donkey-visual-line-toggle', for a bare press (N
+of 1) and a counted one alike.  The shape is the one the session's own
+motions leave, so `J' and `K' pick it up as theirs: rows downward keep
+the mark at the anchor with point at the last row's end, rows upward
+put the mark at the anchor line's end with point at the first row's
+start -- the two layouts `donkey--visual-line-session-active-p' knows.
+N below zero counts upward; the motion is `forward-line', which stops
+at the buffer's edge the way the session's `J' and `K' do."
+  (donkey--ensure-non-rectangle-selection)
+  (add-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor nil t)
+  (setq donkey-visual-anchor (line-beginning-position))
+  (if (> n 0)
       (progn
-        ;; `deactivate-mark' clears the anchor through the buffer-local
-        ;; `deactivate-mark-hook'.  That hook is guaranteed present: an
-        ;; active session requires a non-nil anchor, and the only code
-        ;; that sets one is the start branch below, one line after
-        ;; installing the hook.
-        (deactivate-mark)
-        (message "Visual line: canceled"))
-    (donkey--ensure-non-rectangle-selection)
-    (add-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor nil t)
-    (setq donkey-visual-anchor (line-beginning-position))
-    (set-mark (line-beginning-position))
-    (end-of-line)
-    (activate-mark)
-    (message "%s" donkey--visual-line-hint)))
+        (set-mark (line-beginning-position))
+        (forward-line (1- n))
+        (end-of-line))
+    (set-mark (line-end-position))
+    (forward-line (1+ n))
+    (beginning-of-line))
+  (activate-mark)
+  (message "%s" donkey--visual-line-hint))
 
 (defun donkey-visual-next-line (&optional count)
   "Move down COUNT lines, extending the visual-line selection if active.
@@ -6695,9 +6735,10 @@ A count works wherever \"how many\" means something, and it always means
 exactly that.  Give it as C-u N before the key.
 
 Every motion takes one, and so does every \\`m' key that selects a thing,
-along with DONKEY-DELETE-KEYS, \\[donkey-copy], \\[donkey-change], \\[donkey-yank], \\[donkey-open-below] and \\[donkey-open-above].  The keys with no \"how many\" in them
--- entering INSERT at the cursor, toggling a state, asking for help --
-ignore a count rather than refusing it, so a guess there costs nothing.
+along with DONKEY-DELETE-KEYS, \\[donkey-copy], \\[donkey-change], \\[donkey-yank], \\[donkey-open-below], \\[donkey-open-above] and \\[donkey-visual-line-toggle].  The keys with no \"how many\" in them
+-- entering INSERT at the cursor, the other two selection toggles, asking
+for help -- ignore a count rather than refusing it, so a guess there
+costs nothing.
 
 If you are coming from vi, note the \\`C-u'.  A bare \\`3' does NOT start a
 count here -- digits are unbound in NORMAL state.  Worse than doing
@@ -6965,6 +7006,7 @@ Lesson 6 -- whole lines
 
 \\[donkey-visual-line-toggle] starts a line selection anchored on the current line.  \\[donkey-visual-next-line] and
 \\[donkey-visual-previous-line] then grow it a whole line at a time, and they take counts too.
+So does \\[donkey-visual-line-toggle] itself: \\`C-u 3' \\[donkey-visual-line-toggle] selects three lines in one press.
 
 >> Put the cursor on the first ---> line, press \\[donkey-visual-line-toggle], then \\[donkey-visual-next-line] twice, then DONKEY-DELETE-KEYS.
    All three lines go, leaving no blank behind.
