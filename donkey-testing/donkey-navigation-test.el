@@ -136,6 +136,28 @@ instead of just going to a line. Now rounded to the nearest whole line."
       (donkey-goto-line))
     (should (= (line-number-at-pos) 4))))
 
+(ert-deftest donkey-goto-line-refuses-what-is-not-a-line-number ()
+  "An infinite or NaN answer to the prompt is a `user-error', point unmoved.
+
+Regression: \"1e999\" reads as an infinite float, and `round' on it
+signaled a raw \"Arithmetic overflow error\"."
+  (dolist (input (list 1.0e+INF -1.0e+INF 0.0e+NaN))
+    (with-temp-buffer
+      (insert "line1\nline2\nline3\n")
+      (goto-char 8)
+      (cl-letf (((symbol-function 'read-number) (lambda (&rest _) input)))
+        (should-error (donkey-goto-line) :type 'user-error))
+      (should (= (point) 8)))))
+
+(ert-deftest donkey-goto-line-huge-finite-number-goes-to-the-last-line ()
+  "A number past the fixnum range is a bignum `forward-line' simply clamps."
+  (with-temp-buffer
+    (insert "line1\nline2\nline3\n")
+    (goto-char (point-min))
+    (cl-letf (((symbol-function 'read-number) (lambda (&rest _) 1e30)))
+      (donkey-goto-line))
+    (should (= (point) (point-max)))))
+
 (ert-deftest donkey-goto-line-preserves-buffer-text ()
   "After `goto-line', buffer text is unchanged."
   (let ((original-text "original text\n"))

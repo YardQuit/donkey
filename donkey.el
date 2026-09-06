@@ -448,9 +448,21 @@ undershoot stops at the first).  `read-number' accepts fractional
 input (e.g. \"3.5\", an easy typo for \"35\" or \"3\"), which is
 rounded to the nearest whole line here rather than passed straight to
 `forward-line' -- which requires an integer and would otherwise signal
-a raw `wrong-type-argument' error instead of just going to a line."
+a raw `wrong-type-argument' error instead of just going to a line.
+
+`read-number' also accepts what is not a number at all in any useful
+sense: \"1e999\" reads as an infinite float, and rounding that signals
+a raw `overflow-error' -- \"Arithmetic overflow error\", the debugger
+under `debug-on-error', and nothing about lines.  Refused as a
+`user-error' that names the input instead, with point left where it
+was.  A huge but finite number needs no such care: `round' gives a
+bignum and `forward-line' clamps it to the last line."
   (interactive)
-  (let ((target-line (round (read-number "Line: "))))
+  (let* ((input (read-number "Line: "))
+         (target-line (condition-case nil
+                          (round input)
+                        (overflow-error
+                         (user-error "Not a line number: %s" input)))))
     (goto-char (point-min))
     (forward-line (1- target-line))))
 
