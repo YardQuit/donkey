@@ -5776,17 +5776,47 @@ Filtered rather than pruned, because narrowing is temporary: the
 overlays survive untouched and count again once the buffer is widened.
 Everything reading spans therefore agrees on one definition -- what is
 banked AND reachable right now -- so the counts reported while narrowed
-describe exactly what \"y\" and \"d\" will act on."
+describe exactly what \"y\" and \"d\" will act on.
+
+Every span is widened to the whole lines its overlay touches, through
+the same `donkey--whole-line-span' that banking went through.  An
+overlay is made over whole lines, but ordinary editing can leave it
+covering less: `g j' on a banked line replaces the newline the overlay
+ended on with a space, `D' at the end of the line takes that newline,
+and `\\[delete-indentation]' on the line below does the same from the
+other side -- and each left an overlay over PART of a line.  Confirmed
+live: banking \"abc\", joining \"def\" onto it and pressing `y' put
+\"abc \" on the kill ring and reported \"Copied 1 line\", and `d' removed
+those four characters and left \"def\" standing under a message that
+said the line was gone.  A bank is whole lines by promise, the
+docstring of `donkey-banked-spans' says so to other packages, and the
+overlay is only the record of which lines; reading it back through
+the widening keeps the promise however the text has moved.
+
+Two overlays that come to share a line -- two banked lines joined into
+one -- widen to the same span, and are reported ONCE.  Only spans that
+overlap are coalesced; spans that merely touch stay separate, as the
+docstring of `donkey-banked-spans' promises.
+
+The widening comes AFTER the narrowing filter, on the overlay's own
+positions: an overlay partly outside the accessible portion is left out
+as before, and one inside it widens within it, `donkey--whole-line-span'
+never reaching past `point-min' or `point-max'."
   (donkey--prune-banked-overlays)
-  (sort (delq nil
-              (mapcar (lambda (ov)
-                        (let ((start (overlay-start ov))
-                              (end (overlay-end ov)))
-                          (and (>= start (point-min))
-                               (<= end (point-max))
-                               (cons start end))))
-                      donkey--banked-overlays))
-        (lambda (a b) (< (car a) (car b)))))
+  (let ((spans (sort (delq nil
+                           (mapcar (lambda (ov)
+                                     (let ((start (overlay-start ov))
+                                           (end (overlay-end ov)))
+                                       (and (>= start (point-min))
+                                            (<= end (point-max))
+                                            (donkey--whole-line-span start end))))
+                                   donkey--banked-overlays))
+                     (lambda (a b) (< (car a) (car b)))))
+        merged)
+    (dolist (span spans (nreverse merged))
+      (if (and merged (< (car span) (cdr (car merged))))
+          (setcdr (car merged) (max (cdr (car merged)) (cdr span)))
+        (push span merged)))))
 
 (defun donkey-banked-spans ()
   "Return this buffer's banked lines as a list of (START . END) conses.
@@ -5956,12 +5986,10 @@ else."
                  (if (= 1 lines) "" "s")
                  (donkey--banked-line-count)
                  (if unbanking "" " -- navigate, then y/d/p")))
-    (let ((existing (donkey--banked-overlay-at (point))))
+    (let ((existing (donkey--banked-overlays-at (point))))
       (if existing
           (progn
-            (delete-overlay existing)
-            (setq donkey--banked-overlays
-                  (delq existing donkey--banked-overlays))
+            (donkey--delete-banked-overlays existing)
             (message "Unbanked this line (%d total)"
                      (donkey--banked-line-count)))
         (let ((span (donkey--whole-line-span (point) (point))))
@@ -5978,15 +6006,24 @@ else."
             (message "Banked this line (%d total) -- navigate, then y/d/p"
                      (donkey--banked-line-count))))))))
 
-(defun donkey--banked-overlay-at (pos)
-  "Return the banked overlay covering the line POS is on, or nil.
+(defun donkey--banked-overlays-at (pos)
+  "Return every banked overlay touching the line POS is on.
 
-The containment test is anchored at that line's own start rather than
-at POS itself.  A strict interior test on POS misses point sitting at
-`point-max' on a banked FINAL line with no trailing newline, where the
-overlay ends exactly at point -- confirmed: pressing the bank key there
-re-banked the line instead of toggling it off, since the lookup found
-nothing to remove.
+The test is whether the overlay and the line share any text, asked of
+the whole line rather than of POS.  A strict interior test on POS
+missed point sitting at `point-max' on a banked FINAL line with no
+trailing newline, where the overlay ends exactly at point -- confirmed:
+pressing the bank key there re-banked the line instead of toggling it
+off, since the lookup found nothing to remove.  And a test anchored at
+the line's START missed an overlay that no longer reaches it: joining
+a banked line onto the line above leaves its overlay starting
+mid-line, where `donkey--banked-spans' still reports the whole line as
+banked, so the bank key re-banked a line it was being asked to let go
+of.  Asking about the line as a whole answers both.
+
+A LIST, because one line can hold several: two banked lines joined
+into one keep both overlays, and letting go of the line has to let go
+of both -- see `donkey--banked-spans' for how they read as one span.
 
 Candidates come from `overlays-in', which Emacs answers from its own
 position index, rather than from a scan of `donkey--banked-overlays'.
@@ -5996,13 +6033,23 @@ quadratic time: 0.01s for 200 lines, 0.22s for 1000, and 1.81s for 3000
 -- a visible freeze for something as ordinary as selecting a whole file
 and banking it.  The `donkey-banked' property is what distinguishes our
 overlays from any other package's at the same position."
-  (let* ((line-start (car (donkey--whole-line-span pos pos)))
-         (probe-end (min (point-max) (1+ line-start))))
-    (seq-find (lambda (ov)
-                (and (overlay-get ov 'donkey-banked)
-                     (<= (overlay-start ov) line-start)
-                     (< line-start (overlay-end ov))))
-              (overlays-in line-start probe-end))))
+  (let ((span (donkey--whole-line-span pos pos)))
+    (seq-filter (lambda (ov) (overlay-get ov 'donkey-banked))
+                (overlays-in (car span) (cdr span)))))
+
+(defun donkey--banked-overlay-at (pos)
+  "Return a banked overlay covering the line POS is on, or nil.
+
+The yes-or-no form of `donkey--banked-overlays-at', for the callers
+that only ask whether the line is banked.  Anything that REMOVES a bank
+goes through the list, since a line can carry more than one overlay."
+  (car (donkey--banked-overlays-at pos)))
+
+(defun donkey--delete-banked-overlays (overlays)
+  "Delete OVERLAYS and forget them, so the line they covered is unbanked."
+  (dolist (ov overlays)
+    (delete-overlay ov)
+    (setq donkey--banked-overlays (delq ov donkey--banked-overlays))))
 
 (defun donkey--banked-run-at (pos)
   "Return the contiguous banked run covering POS as (START . END), or nil.
@@ -6027,11 +6074,10 @@ safe to lean on when clearing up a bank without watching the state of
 each line.  To drop a whole contiguous run at once use
 `donkey-unbank-section'; for everything, `donkey-clear-banked-selection'."
   (interactive)
-  (let ((ov (donkey--banked-overlay-at (point))))
-    (if (not ov)
+  (let ((overlays (donkey--banked-overlays-at (point))))
+    (if (not overlays)
         (message "No banked line at point")
-      (delete-overlay ov)
-      (setq donkey--banked-overlays (delq ov donkey--banked-overlays))
+      (donkey--delete-banked-overlays overlays)
       (message "Unbanked this line (%d total)"
                (donkey--banked-line-count)))))
 
@@ -6097,14 +6143,15 @@ single-line toggle follows."
     all))
 
 (defun donkey--unbank-span (beg end)
-  "Unbank every whole line in BEG..END that is currently banked."
+  "Unbank every whole line in BEG..END that is currently banked.
+
+Every overlay touching each line goes, not the first found: a line
+that two banked lines were joined into carries both, and leaving one
+behind would leave the line banked after the press that let go of it."
   (donkey--map-line-spans beg end
     (lambda (span)
-      (let ((ov (donkey--banked-overlay-at (car span))))
-        (when ov
-          (delete-overlay ov)
-          (setq donkey--banked-overlays
-                (delq ov donkey--banked-overlays)))))))
+      (donkey--delete-banked-overlays
+       (donkey--banked-overlays-at (car span))))))
 
 (defun donkey--bank-span (beg end)
   "Bank every whole line in BEG..END that is not already banked.

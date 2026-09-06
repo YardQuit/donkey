@@ -1248,6 +1248,146 @@ whole line, and a caller can use a span without widening it first."
                      (save-excursion (goto-char (cdr span))
                                      (line-beginning-position)))))))
 
+(ert-deftest donkey-a-banked-line-joined-with-the-next-stays-a-whole-line ()
+  "After `m l g j' the bank is the whole joined line, counted once.
+
+Regression: the overlay ended on the newline `g j' replaced with a
+space, so it came to cover \"abc \" -- four characters of a line the
+bank claimed whole.  Spans are read back through
+`donkey--whole-line-span' now, so the bank is the line however the
+text has moved."
+  (donkey-test-keys--harness "*donkey-bank-join*" #'text-mode ()
+      "abc\ndef\nghi\n" "m l g j"
+    (should (equal (buffer-string) "abc def\nghi\n"))
+    (should (equal (donkey-banked-spans) '((1 . 9))))
+    (should (= 1 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-copying-a-banked-line-after-a-join-takes-the-whole-line ()
+  "`m l g j y' puts the whole joined line on the kill ring.
+
+It used to put \"abc \" there under \"Copied 1 line\", and `d' removed
+those four characters and left \"def\" standing under a message that
+said the line was gone."
+  (donkey-test-keys--harness "*donkey-bank-join-y*" #'text-mode ()
+      "abc\ndef\nghi\n" "m l g j y"
+    (should (equal (car kill-ring) "abc def\n"))
+    (should (equal donkey-test-keys--said "Copied 1 line"))
+    (should (null (donkey-banked-spans)))))
+
+(ert-deftest donkey-a-banked-line-losing-its-newline-to-kill-line-stays-whole ()
+  "`D' at the end of a banked line takes its newline, not its bank.
+
+The overlay ends on the newline `D' kills there, and was left covering
+the text of the line alone.  `d' then deleted that text and left the
+line's new tail -- the line pulled up from below -- standing."
+  (donkey-test-keys--harness "*donkey-bank-D*" #'text-mode ()
+      "abc\ndef\nghi\n" "m l g l D d"
+    (should (equal (buffer-string) "ghi\n"))
+    (should (equal (car kill-ring) "abcdef\n"))
+    (should (equal donkey-test-keys--said "Deleted 1 line"))
+    (should (null (donkey-banked-spans)))))
+
+(ert-deftest donkey-two-banked-lines-joined-into-one-count-as-one ()
+  "Two banked lines joined by `g j' are one banked line.
+
+Both overlays survive the join and share the line; the spans report it
+once and the count is one, while the line itself still carries two
+overlays for `donkey--banked-overlays-at' to find."
+  (donkey-test-keys--harness "*donkey-bank-join2*" #'text-mode ()
+      "abc\ndef\nghi\n" "m l j m l k g j"
+    (should (equal (buffer-string) "abc def\nghi\n"))
+    (should (equal (donkey-banked-spans) '((1 . 9))))
+    (should (= 1 (donkey--banked-line-count)))
+    (should (= 2 (length (donkey--banked-overlays-at (point)))))))
+
+(ert-deftest donkey-two-banked-lines-joined-into-one-are-let-go-of-at-once ()
+  "The bank key on a line two banks were joined into takes both away.
+
+It used to remove one overlay and leave the line banked under a
+message that said it was not."
+  (donkey-test-keys--harness "*donkey-bank-join2-ml*" #'text-mode ()
+      "abc\ndef\nghi\n" "m l j m l k g j m l"
+    (should (equal donkey-test-keys--said "Unbanked this line (0 total)"))
+    (should (null (donkey-banked-spans)))
+    (should (null donkey--banked-overlays))))
+
+(ert-deftest donkey-m-u-on-a-line-two-banks-were-joined-into-takes-both ()
+  "`m u' removes every overlay on the line, not the first it finds."
+  (donkey-test-keys--harness "*donkey-bank-join2-mu*" #'text-mode ()
+      "abc\ndef\nghi\n" "m l j m l k g j m u"
+    (should (equal donkey-test-keys--said "Unbanked this line (0 total)"))
+    (should (null donkey--banked-overlays))))
+
+(ert-deftest donkey-m-U-on-a-line-two-banks-were-joined-into-takes-both ()
+  "`m U' removes every overlay on each line of the run, not one per line."
+  (donkey-test-keys--harness "*donkey-bank-join2-mU*" #'text-mode ()
+      "abc\ndef\nghi\n" "m l j m l k g j m U"
+    (should (equal donkey-test-keys--said "Unbanked 1 line (0 total)"))
+    (should (null donkey--banked-overlays))))
+
+(ert-deftest donkey-a-foreign-overlay-on-a-line-is-not-a-bank ()
+  "Another package's overlay on a line does not read as a bank.
+
+The `donkey-banked' property is what tells DONKEY's overlays from any
+other package's at the same position -- `hl-line-mode' draws one over
+the current line, for instance -- and only the property counts: the
+lookup must not bank, unbank or count a line for a stranger's overlay."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 3)
+    (let ((foreign (make-overlay 1 4)))
+      (overlay-put foreign 'face 'highlight)
+      (should (null (donkey--banked-overlays-at 1)))
+      (should (null (donkey--banked-overlay-at 1)))
+      (donkey-bank-selection)
+      (should (= 1 (donkey--banked-line-count)))
+      (should (= 1 (length (donkey--banked-overlays-at 1))))
+      (should-not (memq foreign (donkey--banked-overlays-at 1)))
+      (donkey-unbank-line)
+      (should (= 0 (donkey--banked-line-count)))
+      (should (overlay-buffer foreign)))))
+
+(ert-deftest donkey-a-bank-joined-onto-the-line-above-covers-that-line ()
+  "Joining a banked line onto the line above banks the line they make.
+
+The overlay then starts mid-line.  A bank is whole lines, so the span
+is the whole of the joined line, and the lookup finds it from anywhere
+on the line -- the start-anchored lookup did not."
+  (donkey-test-keys--harness "*donkey-bank-above*" #'text-mode ()
+      "abc\ndef\nghi\n" "j m l k g l D"
+    (should (equal (buffer-string) "abcdef\nghi\n"))
+    (should (equal (donkey-banked-spans) '((1 . 8))))
+    (should (= 1 (donkey--banked-line-count)))
+    (should (donkey--banked-overlay-at (point)))))
+
+(ert-deftest donkey-a-bank-joined-onto-the-line-above-is-let-go-of-by-m-u ()
+  "`m u' on the joined line finds the mid-line overlay and removes it.
+
+The start-anchored lookup missed it, so the bank key re-banked a line
+that was being let go of and `m u' said there was nothing there."
+  (donkey-test-keys--harness "*donkey-bank-above-mu*" #'text-mode ()
+      "abc\ndef\nghi\n" "j m l k g l D m u"
+    (should (equal donkey-test-keys--said "Unbanked this line (0 total)"))
+    (should (null (donkey-banked-spans)))))
+
+(ert-deftest donkey-banked-spans-coalesce-only-spans-that-share-a-line ()
+  "Two overlays on one line read as one span; two touching lines stay two.
+
+The first is the joined-lines case, the second the promise
+`donkey-banked-spans' makes to callers that merge for themselves."
+  (with-temp-buffer
+    (donkey--test-lines-buffer 3)
+    ;; Two overlays over the same first line, the shape a join leaves.
+    (donkey--bank-span 1 4)
+    (push (let ((ov (make-overlay 2 4 nil nil t)))
+            (overlay-put ov 'donkey-banked t) ov)
+          donkey--banked-overlays)
+    (should (equal (donkey--banked-spans) '((1 . 4))))
+    (should (= 1 (donkey--banked-line-count)))
+    ;; A touching bank on the second line stays its own span.
+    (donkey--bank-span 4 7)
+    (should (equal (donkey--banked-spans) '((1 . 4) (4 . 7))))
+    (should (= 2 (donkey--banked-line-count)))))
+
 (ert-deftest donkey-banked-spans-does-not-merge-touching-banks ()
   "Two banked blocks that touch arrive as two spans, not one.
 The docstring says so, and a caller merging them itself depends on it:
@@ -1555,8 +1695,14 @@ nothing, but still counted as a live bank."
 Regression: `donkey--banked-selection-p' stayed true for a zero-width
 overlay, so `donkey-copy' took the banked branch, reported \"Copied 0
 lines\" and pushed \"\" over whatever was previously copied -- the same
-empty-kill failure already guarded against at `point-max'."
-  (let ((kill-ring (list "IMPORTANT")) kill-ring-yank-pointer)
+empty-kill failure already guarded against at `point-max'.
+
+`last-command' is bound: `kill-ring-save' APPENDS to the newest kill
+when it is `kill-region', and left to whatever test ran before, the
+shuffled order of seed 2 handed this one a `kill-region' and it read
+\"IMPORTANTo\" -- an ordering accident, not the regression above."
+  (let ((kill-ring (list "IMPORTANT")) kill-ring-yank-pointer
+        (last-command nil))
     (with-temp-buffer
       (insert "one\ntwo\nthree\n")
       (goto-char (point-min))
