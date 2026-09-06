@@ -5647,13 +5647,26 @@ marks one, as a bare press does -- see `donkey--object-count'."
       ;; paragraph, and a backward press with no text above steps
       ;; forward first rather than dragging the leading blank lines in.
       ;; A line with text on it is never a gap, wherever on it point is.
+      ;;
+      ;; From a line with text on it the start is found the way
+      ;; `mark-paragraph' finds it: forward to the paragraph's end and
+      ;; back from there.  `backward-paragraph' alone is not safe from
+      ;; the paragraph's FIRST character: it takes a shortcut when the
+      ;; line above is truly empty and lands on it, but when that line
+      ;; holds whitespace it walks back over the separator into the
+      ;; paragraph before, so `m p' on the first character of a
+      ;; paragraph under a spaces-only line marked the paragraph ABOVE.
+      ;; Confirmed live in fundamental, text and org modes.  Going
+      ;; forward first lands on the same paragraph from any position in
+      ;; it, and still on the empty line before it where there is one,
+      ;; so the one-blank-line rule reads as before.
       (if (and (save-excursion
                  (beginning-of-line)
                  (looking-at-p "[[:space:]]*$"))
-               (or (eq donkey--mark-reach 'ahead)
-                   (not (donkey--text-before-p origin))))
-          (progn (forward-paragraph 1)
-                 (backward-paragraph 1))
+               (eq donkey--mark-reach 'behind)
+               (donkey--text-before-p origin))
+          (backward-paragraph 1)
+        (forward-paragraph 1)
         (backward-paragraph 1))
       (let ((start (point)))
         (forward-paragraph n)

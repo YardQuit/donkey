@@ -1132,6 +1132,37 @@ reason."
       (ignore-errors (donkey-mark-paragraph))
       (should-not (use-region-p)))))
 
+(ert-deftest donkey-mark-paragraph-from-its-first-character-under-a-whitespace-line ()
+  "`m p' on a paragraph's first character marks that paragraph.
+
+Regression: with a spaces-only line above, `backward-paragraph' from
+the first character walked back over the separator into the paragraph
+before, so `m p' marked the paragraph ABOVE; with a truly empty line
+it took a shortcut and was right.  The start is found forward-then-back
+now, as `mark-paragraph' finds it.  `m P' goes through the same
+normalization and is asserted alongside."
+  (dolist (sep '("  " "\t" ""))
+    (dolist (key '("m p" "m P"))
+      (donkey-test-keys--harness "*donkey-mp-first*" #'text-mode ()
+          (concat "Alpha.\n" sep "\nBeta.\n\nGamma.\n") (concat "j j " key)
+        (should (equal (list sep key
+                             (buffer-substring-no-properties
+                              (region-beginning) (region-end)))
+                       (list sep key (if (equal sep "")
+                                         "\nBeta.\n"
+                                       "Beta.\n\n"))))))))
+
+(ert-deftest donkey-mark-paragraph-from-inside-is-unchanged-by-the-normalization ()
+  "From inside a paragraph `m p' selects what it always did, empty separator or not."
+  (donkey-test-keys--harness "*donkey-mp-inside*" #'text-mode ()
+      "Alpha.\n\nBeta one.\nBeta two.\n\nGamma.\n" "j j j l l m p"
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "\nBeta one.\nBeta two.\n")))
+  (donkey-test-keys--harness "*donkey-mp-inside*" #'text-mode ()
+      "Alpha.\n  \nBeta one.\nBeta two.\n\nGamma.\n" "j j j l l m p"
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "Beta one.\nBeta two.\n\n"))))
+
 (ert-deftest donkey-mark-paragraph-zero-count-marks-the-paragraph ()
   "A zero count marks the paragraph, as a bare press does.
 
