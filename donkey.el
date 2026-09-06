@@ -2132,6 +2132,61 @@ with their real counterpart (`)') instead of themselves; otherwise
 OPEN-CHAR is symmetric (e.g. `\"') and closes with itself."
   (or (cdr (assq open-char donkey-mark-pair-delimiters)) open-char))
 
+(defun donkey--insertion-read-only-p (pos)
+  "Return non-nil when inserting text at POS would be refused as read-only.
+
+The buffer's own flag is `barf-if-buffer-read-only's business; this is
+the `read-only' TEXT PROPERTY, which refuses an insertion only through
+stickiness: the character before POS refuses when its `read-only' is
+rear-sticky, which it is unless that character's `rear-nonsticky'
+covers it (or `text-property-default-nonsticky' does), and the
+character after POS refuses when its `read-only' is front-sticky, which
+it is only when that character's `front-sticky' covers it.  That is
+the rule Emacs applies inside `insert', and the two halves here were
+checked against real insertions over 240 positions -- every span and
+stickiness spelling of the property, `fence' and `inhibit-read-only'
+included -- with no disagreement.
+
+Asked by `donkey-wrap-region' of the places a wrap inserts at, so the
+refusal can come BEFORE Insert state is entered, as the buffer flag's
+does, rather than from inside the insertion."
+  (or (and (> pos (point-min))
+           (get-text-property (1- pos) 'read-only)
+           (let ((nonsticky (get-text-property (1- pos) 'rear-nonsticky)))
+             (not (or (eq nonsticky t)
+                      (and (listp nonsticky) (memq 'read-only nonsticky))
+                      (cdr (assq 'read-only text-property-default-nonsticky))))))
+      (and (< pos (point-max))
+           (get-text-property pos 'read-only)
+           (let ((sticky (get-text-property pos 'front-sticky)))
+             (or (eq sticky t)
+                 (and (listp sticky) (memq 'read-only sticky)))))))
+
+(defun donkey--wrap-refused-by-read-only-text-p ()
+  "Return non-nil when the selection's wrap would land beside read-only text.
+
+The places asked are the ones a wrap inserts at: point and both ends
+of a linear region -- a pairing package puts the closer at the far
+end -- and both column edges of every row of a rectangle.  See
+`donkey--insertion-read-only-p' for the rule at each.
+
+The region's ends are read from the mark directly rather than through
+`region-beginning', which signals when no mark is set: the caller
+reaches here only with a live region, but its tests stand in for one
+by stubbing `use-region-p' in a buffer that never set a mark, and a
+missing mark reads as point here rather than as an error."
+  (let* ((mark (or (mark t) (point)))
+         (beg (min mark (point)))
+         (end (max mark (point))))
+    (if (bound-and-true-p rectangle-mark-mode)
+        (seq-some (lambda (row)
+                    (or (donkey--insertion-read-only-p (car row))
+                        (donkey--insertion-read-only-p (cdr row))))
+                  (extract-rectangle-bounds beg end))
+      (or (donkey--insertion-read-only-p (point))
+          (donkey--insertion-read-only-p beg)
+          (donkey--insertion-read-only-p end)))))
+
 (defun donkey--wrap-rectangle-region (open-char)
   "Wrap each line of the active rectangle selection with OPEN-CHAR.
 
@@ -2193,15 +2248,22 @@ to Normal state, even if the insertion signals.
 
 A read-only buffer is refused before any of that, with the selection
 left standing -- see the comment in the body for why the refusal has
-to come first.  Read-only TEXT is refused the same way, though it can
-only be found out by trying: `barf-if-buffer-read-only' knows the
-buffer's flag and not the `read-only' property of the characters the
-delimiter would land beside, so the refusal there comes from
-`self-insert-command' itself, from inside INSERT state, and is let
-through with the mark kept.  Confirmed live in a terminal frame and a
-graphical one: `v w (' over a word carrying the property said \"Text
-is read-only\" and dropped the selection, exactly as the read-only
-buffer once did.
+to come first.  Read-only TEXT is refused the same way and at the same
+moment: `barf-if-buffer-read-only' knows only the buffer's flag, so
+`donkey--wrap-refused-by-read-only-text-p' asks, of every place the
+wrap inserts at, whether the `read-only' property of the characters
+there would refuse the insertion.  It used to be found out by trying,
+from inside INSERT state, which cost two things.  The refusal came
+from `self-insert-command' and the way back deactivated the mark, so
+`v w (' over such text said \"Text is read-only\" and dropped the
+selection, exactly as the read-only buffer once did.  And a pairing
+package that had already put its opener down before the closer was
+refused left the opener behind: under `electric-pair-mode' with the
+selection's last character read-only, `m w (' left \"(alpha beta\".
+Confirmed live in a terminal frame and a graphical one.  The refusal
+from inside the insertion is still caught and let through with the
+mark kept, for a pairing package that inserts somewhere this check
+did not ask about.
 
 Which delimiters actually wrap is the pairing package's decision, not
 this command's, and `electric-pair-mode' does not cover all six
@@ -2275,6 +2337,10 @@ a selection is an abort."
     ;; Confirmed live.  Both paths now refuse alike and keep what was
     ;; selected.
     (barf-if-buffer-read-only)
+    ;; The text-property twin of the check above, at the same moment
+    ;; and for the same reason; signaled as Emacs itself signals it.
+    (when (donkey--wrap-refused-by-read-only-text-p)
+      (signal 'text-read-only nil))
     (if (bound-and-true-p rectangle-mark-mode)
         (donkey--wrap-rectangle-region last-command-event)
       (donkey-insert-mode 1)

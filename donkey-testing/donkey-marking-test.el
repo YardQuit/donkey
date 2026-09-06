@@ -1953,8 +1953,16 @@ delimiters -- e.g. \"(a(b)c)\" from the outer `(' must select
 (ert-deftest donkey-mark-inner-nested-same-type-triple-nesting ()
   "The nesting scan resolves three levels of the same delimiter.
 
-This holds both from the outermost pair and from a middle pair."
+This holds both from the outermost pair and from a middle pair.
+
+`this-command' is bound to nil: the second press is meant to be
+FRESH, and `donkey--mark-extending-p' reads a press as a repeat
+whenever `this-command' and `last-command' agree -- which, left to
+whatever test ran before, they did in shuffle seed 4, so the press
+widened from the first pair's anchor and reported that there was no
+level beyond it.  An ordering accident, not the scan."
   (with-temp-buffer
+    (setq this-command nil)
     (insert "(a(b(c)d)e)")
     (goto-char (point-min))
     (donkey-mark-inner)

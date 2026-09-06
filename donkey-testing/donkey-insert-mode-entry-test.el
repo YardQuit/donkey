@@ -1554,6 +1554,89 @@ end where `v w' leaves it."
       (should (bound-and-true-p donkey-normal-mode))
       (should-not (bound-and-true-p donkey-insert-mode)))))
 
+(ert-deftest donkey-insertion-read-only-p-agrees-with-emacs ()
+  "The predicate answers as a real insertion would, for every stickiness shape.
+
+Every spelling of the property that changes the answer -- bare, with
+`rear-nonsticky' as t or as a list, with `front-sticky' as t or as a
+list, both at once, with `inhibit-read-only', and the `fence' value --
+over five spans of a five-character buffer, at all six positions."
+  (dolist (props '((read-only t)
+                   (read-only t rear-nonsticky t)
+                   (read-only t rear-nonsticky (read-only))
+                   (read-only t front-sticky t)
+                   (read-only t front-sticky (read-only))
+                   (read-only t front-sticky t rear-nonsticky t)
+                   (read-only t inhibit-read-only t)
+                   (read-only fence)))
+    (dolist (span '((1 . 3) (3 . 5) (2 . 4) (1 . 6) (4 . 6)))
+      (with-temp-buffer
+        (insert "abcde")
+        (add-text-properties (car span) (cdr span) props)
+        (dotimes (i 6)
+          (let* ((pos (1+ i))
+                 (real (save-excursion
+                         (goto-char pos)
+                         (condition-case nil
+                             (progn (insert "x") (delete-region pos (1+ pos)) nil)
+                           (text-read-only t)))))
+            (should (equal (list props span pos
+                                 (and (donkey--insertion-read-only-p pos) t))
+                           (list props span pos real)))))))))
+
+(ert-deftest donkey-wrap-over-read-only-text-is-refused-before-insert-state ()
+  "The refusal comes before INSERT is entered, so no pairing package gets a turn.
+
+Regression: under `electric-pair-mode' with the selection's last
+character read-only, the opener went in before the closer was refused,
+leaving \"(alpha beta\" behind.  Real keys, `electric-pair-mode' on:
+the buffer is unchanged, the selection kept, and Insert state never
+entered."
+  (let (entered)
+    (unwind-protect
+        (progn
+          (electric-pair-mode 1)
+          (donkey-test-keys--harness "*donkey-wrap-ro-text*" #'text-mode ()
+              "alpha beta\n" "m w"
+            (let ((inhibit-read-only t))
+              (put-text-property 5 6 'read-only t))
+            (cl-letf* ((orig (symbol-function 'donkey-insert-mode))
+                       ((symbol-function 'donkey-insert-mode)
+                        (lambda (&rest args) (setq entered t) (apply orig args))))
+              (should-error (execute-kbd-macro (kbd "(")) :type 'text-read-only))
+            (should-not entered)
+            (should (equal (buffer-string) "alpha beta\n"))
+            (should (region-active-p))
+            (should (= (region-beginning) 1))
+            (should (= (region-end) 6))
+            (should (bound-and-true-p donkey-normal-mode))))
+      (electric-pair-mode -1))))
+
+(ert-deftest donkey-rectangle-wrap-over-read-only-text-wraps-no-row ()
+  "A read-only character on a middle row refuses the whole block, before any row is wrapped."
+  (donkey-test-keys--harness "*donkey-wrap-ro-rect*" #'text-mode ()
+      "abcd\nefgh\nijkl\n" "m v l l j j"
+    (let ((inhibit-read-only t))
+      (put-text-property 8 9 'read-only t))
+    (should-error (execute-kbd-macro (kbd "(")) :type 'text-read-only)
+    (should (equal (buffer-string) "abcd\nefgh\nijkl\n"))
+    (should (bound-and-true-p rectangle-mark-mode))))
+
+(ert-deftest donkey-wrap-beside-non-sticky-read-only-text-still-wraps ()
+  "Read-only text that does not stick to an insertion does not refuse the wrap.
+
+The rule is Emacs's, not \"any read-only character nearby\": a
+`rear-nonsticky' property on the character before the closer's spot
+lets the closer in, and the wrap goes through."
+  (donkey-test-keys--harness "*donkey-wrap-ro-ns*" #'text-mode ()
+      "alpha beta\n" "m w"
+    (let ((inhibit-read-only t))
+      (add-text-properties 5 6 '(read-only t rear-nonsticky t)))
+    (execute-kbd-macro (kbd "("))
+    ;; No pairing package here, so the delimiter lands at point, which
+    ;; `m w' leaves at the selection's start.
+    (should (equal (buffer-string) "(alpha beta\n"))))
+
 (ert-deftest donkey-leave-insert-can-keep-the-mark ()
   "`donkey--leave-insert' with KEEP-MARK leaves the region active.
 
