@@ -1210,8 +1210,11 @@ DONKEY's =donkey-enter-dwim= command dispatches the Enter (RET) key based
 on context. In editing modes, Enter is blocked to prevent accidental
 line breaks. In non-editing modes, the native RET binding is invoked.
 
-For =org-mode= and =markdown-mode=, DONKEY uses a rule-based dispatch
-system to execute context-aware actions when Enter is pressed.
+For =org-mode=, DONKEY uses a rule-based dispatch system to execute
+context-aware actions when Enter is pressed. In =markdown-mode= and
+=gfm-mode=, Enter follows the link at point through markdown-mode's
+own =markdown-follow-thing-at-point= (its =C-c C-o=) and does nothing
+elsewhere on the page.
 
 ** Which Modes Block Enter
 
@@ -1250,10 +1253,8 @@ The following rules are installed by default (controlled by
   ;; Toggle TODO/DONE on org headlines
   (donkey-add-enter-rule headline :todo-type donkey-org-todo)
 
-  ;; Follow links in org, markdown, or plain text
-  (donkey-add-enter-rule link nil org-open-at-point
-                       markdown-follow-thing-at-point
-                       browse-url-at-point)
+  ;; Follow links in org
+  (donkey-add-enter-rule link nil org-open-at-point)
 
 #+end_src
 
@@ -1329,10 +1330,14 @@ macro. Example:
 2. Context element (most specific, e.g. a link inside a headline)
 3. Parent element (e.g. the headline itself)
 4. Ancestor elements (walking up the org element tree)
-5. Non-editing mode native RET binding
+5. The link at point in =markdown-mode= or =gfm-mode=, through
+   =markdown-follow-thing-at-point=
+6. Non-editing mode native RET binding
 
 All rules are checked at each level before moving to the next. This
-ensures the most specific match fires first.
+ensures the most specific match fires first. Steps 2 to 4 run in Org
+buffers only: the rules match Org elements, and Org's parser is not
+asked to read any other kind of buffer.
 
 ** Available Element Types
 

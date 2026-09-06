@@ -292,10 +292,10 @@ example (adding a link-handling rule last so it takes priority)."
     (when donkey-default-enter-rules-enabled
       (donkey-add-enter-rule item :checkbox org-toggle-checkbox)
       (donkey-add-enter-rule headline :todo-type donkey-org-todo)
-      (donkey-add-enter-rule link nil org-open-at-point markdown-follow-thing-at-point browse-url-at-point))
+      (donkey-add-enter-rule link nil org-open-at-point))
     (should (member '(item :checkbox org-toggle-checkbox) donkey--enter-rules))
     (should (member '(headline :todo-type donkey-org-todo) donkey--enter-rules))
-    (should (member '(link nil org-open-at-point markdown-follow-thing-at-point browse-url-at-point) donkey--enter-rules))
+    (should (member '(link nil org-open-at-point) donkey--enter-rules))
     (should-not (cl-find 'table donkey--enter-rules :key #'car :test 'eq))))
 
 (ert-deftest donkey-enter-dwim-config-custom-rules ()
@@ -700,45 +700,100 @@ gates the handler."
 ;;; donkey-enter-dwim dispatcher - Markdown Mode
 ;;; ---------------------------------------------------------------------------
 
-(ert-deftest donkey-enter-dwim-markdown-follows-mdfn ()
-  "In markdown-mode with link element, calls `markdown-follow-thing-at-point'.
-`org-open-at-point' (earlier in the link rule's command list) is
-explicitly forced unbound here so the test verifies the fallback to
-the markdown-specific command rather than depending on whether org
-happens to be loaded in this process."
-  (let (called-cmd)
+(ert-deftest donkey-enter-dwim-markdown-follows-the-link-at-point ()
+  "In `markdown-mode' RET on a link runs `markdown-follow-thing-at-point'.
+
+Markdown's own predicates say whether point is on a link, and its own
+follow command follows it -- Org's rules and Org's parser are not part
+of it.  The parser is stubbed to record a call so the test fails if it
+is asked, which is the regression: with Org loaded every press warned
+three times in *Warnings*, and a task-list item signaled from Org's
+element cache about Org's tab width."
+  (let (called-cmd parser-asked)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(paragraph (:begin 1 :end 10))))
+               (lambda (&rest _) (setq parser-asked t) nil))
               ((symbol-function 'org-element-context)
-               (lambda () '(link (:path "http://example.com"))))
-              ((symbol-function 'org-open-at-point) nil)
+               (lambda (&rest _) (setq parser-asked t) nil))
+              ((symbol-function 'markdown-link-p) (lambda () t))
+              ((symbol-function 'markdown-wiki-link-p) (lambda () nil))
               ((symbol-function 'markdown-follow-thing-at-point)
-               (lambda (&optional pos) (interactive) nil))
+               (lambda (&optional _arg) (interactive "P") nil))
+              ((symbol-function 'call-interactively)
+               (lambda (cmd) (setq called-cmd cmd))))
+      (let ((major-mode 'markdown-mode))
+        (donkey-enter-dwim)))
+    (should (eq called-cmd 'markdown-follow-thing-at-point))
+    (should-not parser-asked)))
+
+(ert-deftest donkey-enter-dwim-markdown-off-a-link-does-nothing ()
+  "In `markdown-mode' RET away from any link is inert, and asks Org nothing.
+
+An editing mode's RET does nothing by default; Markdown adds the link
+at point and no more.  `donkey-editing-modes' lists `markdown-mode', so
+the non-editing fallback is not reached either."
+  (let (called-cmd parser-asked)
+    (cl-letf (((symbol-function 'org-element-at-point)
+               (lambda (&rest _) (setq parser-asked t) nil))
+              ((symbol-function 'org-element-context)
+               (lambda (&rest _) (setq parser-asked t) nil))
+              ((symbol-function 'markdown-link-p) (lambda () nil))
+              ((symbol-function 'markdown-wiki-link-p) (lambda () nil))
+              ((symbol-function 'markdown-follow-thing-at-point)
+               (lambda (&optional _arg) (interactive "P") nil))
+              ((symbol-function 'call-interactively)
+               (lambda (cmd) (setq called-cmd cmd))))
+      (let ((major-mode 'markdown-mode)
+            (donkey--saved-ret-binding nil))
+        (donkey-enter-dwim)))
+    (should (null called-cmd))
+    (should-not parser-asked)))
+
+(ert-deftest donkey-enter-dwim-markdown-wiki-link-is-followed-too ()
+  "A wiki link is a link to follow, by Markdown's own second predicate."
+  (let (called-cmd)
+    (cl-letf (((symbol-function 'markdown-link-p) (lambda () nil))
+              ((symbol-function 'markdown-wiki-link-p) (lambda () t))
+              ((symbol-function 'markdown-follow-thing-at-point)
+               (lambda (&optional _arg) (interactive "P") nil))
               ((symbol-function 'call-interactively)
                (lambda (cmd) (setq called-cmd cmd))))
       (let ((major-mode 'markdown-mode))
         (donkey-enter-dwim)))
     (should (eq called-cmd 'markdown-follow-thing-at-point))))
 
-(ert-deftest donkey-enter-dwim-markdown-fallback-to-browse-url ()
-  "Markdown link following falls back to `browse-url-at-point'.
+(ert-deftest donkey-enter-dwim-markdown-handler-is-for-markdown-buffers-only ()
+  "Markdown's link test is not consulted outside a Markdown buffer.
 
-In markdown-mode without org-open-at-point or the markdown function
-available, falls back to `browse-url-at-point'."
+With `markdown-mode' loaded its predicates exist in every buffer, and
+`markdown-link-p' would say yes to a bare URL in a `text-mode' buffer
+-- where RET is inert by the editing-mode rule."
   (let (called-cmd)
-    (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(paragraph (:begin 1 :end 10))))
-              ((symbol-function 'org-element-context)
-               (lambda () '(link (:path "http://example.com"))))
-              ((symbol-function 'org-open-at-point) nil)
-              ((symbol-function 'markdown-follow-thing-at-point) nil)
-              ((symbol-function 'browse-url-at-point)
-               (lambda () (interactive) nil))
+    (cl-letf (((symbol-function 'markdown-link-p) (lambda () t))
+              ((symbol-function 'markdown-wiki-link-p) (lambda () t))
+              ((symbol-function 'markdown-follow-thing-at-point)
+               (lambda (&optional _arg) (interactive "P") nil))
               ((symbol-function 'call-interactively)
                (lambda (cmd) (setq called-cmd cmd))))
-      (let ((major-mode 'markdown-mode))
+      (let ((major-mode 'text-mode)
+            (donkey--saved-ret-binding nil))
         (donkey-enter-dwim)))
-    (should (eq called-cmd 'browse-url-at-point))))
+    (should (null called-cmd))))
+
+(ert-deftest donkey-find-enter-handler-asks-org-nothing-outside-org ()
+  "`donkey--find-enter-handler' is nil outside Org without calling its parser.
+
+The funnel every rule match goes through, guarded where the parser is
+called: `org-element-at-point' warns in any buffer that is not Org's,
+once per call."
+  (let (parser-asked)
+    (cl-letf (((symbol-function 'org-element-at-point)
+               (lambda (&rest _) (setq parser-asked t) '(link nil)))
+              ((symbol-function 'org-element-context)
+               (lambda (&rest _) (setq parser-asked t) '(link nil))))
+      (with-temp-buffer
+        (text-mode)
+        (should (null (donkey--find-enter-handler))))
+      (should-not parser-asked))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-enter-dwim dispatcher - Non-editing modes

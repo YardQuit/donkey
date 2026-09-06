@@ -51,6 +51,9 @@
   (declare-function org-element-at-point "org")  ;(donkey-enter-dwim)
   (declare-function org-edit-src-exit "org")     ;(donkey-comment-dwim)
   (declare-function org-edit-special "org")      ;(donkey-comment-dwim)
+  (declare-function markdown-link-p "markdown-mode")              ;(donkey--markdown-enter-handler)
+  (declare-function markdown-wiki-link-p "markdown-mode")         ;(donkey--markdown-enter-handler)
+  (declare-function markdown-follow-thing-at-point "markdown-mode") ;(donkey--markdown-enter-handler)
   (defvar donkey-normal-mode-map nil)
   (defvar donkey-insert-mode-map nil))
 
@@ -830,10 +833,28 @@ Set to nil in `config.el' if you want to define rules manually."
 
 Checks context first, then parent, then ancestors — always trying all rules
 against more specific elements before broader ancestors.
-Returns command symbol or nil if no handler matches."
-  (let* ((parent (and (fboundp 'org-element-at-point)
+Returns command symbol or nil if no handler matches.
+
+Nil outside an Org buffer, without asking Org's parser anything.  The
+rules are matched against Org elements, and `org-element-at-point' is
+Org's to run: in any other buffer it answers by WARNING, a line in
+*Warnings* for every call -- three per press here, from the context,
+the element and its line-start fallback -- and its cache asserts Org's
+tab width, which in a Markdown buffer with a task-list item at point
+came out as \"Tab width in Org files must be 8, not 4\", a `user-error'
+from RET.  Both confirmed live with Org loaded in a `markdown-mode'
+buffer, which used to come through here; Markdown has its own handler
+now, `donkey--markdown-enter-handler'.  Derivation counts, as it does
+for `donkey-editing-modes' and the agenda handler: a mode built on
+`org-mode' -- `org-journal-mode' is one -- is Org syntax, and the
+parser reads it the same.  This is the one place the mode is tested
+for the Org rules; `donkey--org-mode-enter-handler' relies on it."
+  (let* ((in-org (derived-mode-p 'org-mode))
+         (parent (and in-org
+                      (fboundp 'org-element-at-point)
                       (org-element-at-point)))
-         (ctx (and (fboundp 'org-element-context)
+         (ctx (and in-org
+                   (fboundp 'org-element-context)
                    (org-element-context)))
          (ancestors (and parent
                          (fboundp 'org-element-lineage)
@@ -849,7 +870,8 @@ Returns command symbol or nil if no handler matches."
          ;; checking the real `ancestors' list first would let a broader,
          ;; less specific enclosing element (e.g. an outer TODO headline)
          ;; win over the correct, more specific match.
-         (fallback-parent (and (fboundp 'org-element-at-point)
+         (fallback-parent (and in-org
+                               (fboundp 'org-element-at-point)
                                (= (point) (line-beginning-position))
                                (< (point) (point-max))
                                (org-element-at-point (1+ (point)))))
@@ -897,7 +919,7 @@ Returns command symbol or nil if no handler matches."
         t))))
 
 (defun donkey--org-mode-enter-handler ()
-  "Handle Enter in `org-mode' and markdown modes.  Return t if handled.
+  "Handle Enter in `org-mode'.  Return t if handled.
 
 Derivation counts, as it does for `donkey-editing-modes' and the
 agenda handler: a mode built on `org-mode' -- `org-journal-mode' is
@@ -905,12 +927,55 @@ one -- is Org syntax, and `org-element-at-point' reads it the same.
 Matching `major-mode' by `eq' left RET doing nothing at all in such
 a buffer, since the mode is an editing mode and the non-editing
 fallback never fires there, while the same headline under plain
-`org-mode' toggled.  `gfm-mode' derives from `markdown-mode'."
-  (when (derived-mode-p 'org-mode 'markdown-mode)
-    (let ((handler (donkey--find-enter-handler)))
-      (when handler
-        (donkey--execute-handler handler)
-        t))))
+`org-mode' toggled.
+
+The mode test lives in `donkey--find-enter-handler', the one place
+Org's parser is called, and not here as well: it answers nil in any
+buffer that is not Org's, and a second test here would be the same
+invariant at a second address.
+
+Markdown used to come through here too, on the theory that Org's
+element parser would read it well enough for the link rule to match.
+It does not -- see `donkey--markdown-enter-handler', which is where
+`markdown-mode' and `gfm-mode' go now."
+  (let ((handler (donkey--find-enter-handler)))
+    (when handler
+      (donkey--execute-handler handler)
+      t)))
+
+(defun donkey--markdown-enter-handler ()
+  "Follow the link at point in a Markdown buffer.  Return t if handled.
+
+Markdown has no element tree for `donkey--enter-rules' to match
+against, so the rules are not consulted: `markdown-mode' itself says
+whether point is on a link -- `markdown-link-p' for inline, reference,
+bare and angle-bracket URLs, `markdown-wiki-link-p' for wiki links --
+and `markdown-follow-thing-at-point', the command behind its own
+follow-link key, follows it.
+Anywhere else on the page RET stays inert, as in every editing mode.
+Derivation counts, so `gfm-mode' is covered.
+
+The functions are looked up rather than required: a buffer in a mode
+derived from `markdown-mode' has the library loaded, and the guards
+are for the tests, which stand in for it.
+
+Markdown used to be dispatched through the Org rules, with Org's
+parser asked to read the buffer.  With Org loaded that answered with
+warnings -- three lines in *Warnings* per press -- and on a task-list
+item with a `user-error' from the element cache about Org's tab width;
+with Org not yet loaded the parser was absent and RET did nothing at
+all.  Inline links were followed in neither case: `[text](url)' is a
+paragraph to Org's parser, and the link rule's first callable command
+was Org's rather than Markdown's whenever Org was loaded.  Confirmed
+live in a terminal frame and a graphical one, with and without Org
+loaded, under `markdown-mode' and `gfm-mode'."
+  (when (and (derived-mode-p 'markdown-mode)
+             (fboundp 'markdown-link-p)
+             (fboundp 'markdown-wiki-link-p)
+             (fboundp 'markdown-follow-thing-at-point)
+             (or (markdown-link-p) (markdown-wiki-link-p)))
+    (call-interactively #'markdown-follow-thing-at-point)
+    t))
 
 (defun donkey--non-editing-enter-handler ()
   "Handle Enter in non-editing modes.  Return t if handled."
@@ -955,7 +1020,12 @@ though the feature existed."
 (when donkey-default-enter-rules-enabled
   (donkey-add-enter-rule item :checkbox org-toggle-checkbox)
   (donkey-add-enter-rule headline :todo-type donkey-org-todo)
-  (donkey-add-enter-rule link nil org-open-at-point markdown-follow-thing-at-point browse-url-at-point))
+  ;; Org's command alone.  `markdown-follow-thing-at-point' and
+  ;; `browse-url-at-point' used to follow it as fallbacks, and neither
+  ;; could ever run: the rules are matched in Org buffers only, where
+  ;; `org-open-at-point' is always callable.  Markdown links are
+  ;; `donkey--markdown-enter-handler's.
+  (donkey-add-enter-rule link nil org-open-at-point))
 
 (defun donkey-enter-dwim ()
   "Smart Return handler for DONKEY Normal state.
@@ -965,12 +1035,15 @@ order, stopping at the first one that reports it handled the key:
 
 1. `donkey--org-agenda-enter-handler' -- delegates to whatever
    `org-agenda-mode-map' itself binds RET to (open item, visit entry).
-2. `donkey--org-mode-enter-handler' -- in `org-mode' and
-   `markdown-mode' buffers, derived modes such as `gfm-mode' included,
-   dispatches via `donkey--find-enter-handler' against the
-   element at point (see `donkey-add-enter-rule' to register more
-   element-type/command rules, e.g. from `config.el').
-3. `donkey--non-editing-enter-handler' -- outside `donkey-editing-modes'
+2. `donkey--org-mode-enter-handler' -- in `org-mode' buffers, derived
+   modes such as `org-journal-mode' included, dispatches via
+   `donkey--find-enter-handler' against the element at point (see
+   `donkey-add-enter-rule' to register more element-type/command
+   rules, e.g. from `config.el').
+3. `donkey--markdown-enter-handler' -- in `markdown-mode' and
+   `gfm-mode' buffers, follows the link at point through
+   `markdown-follow-thing-at-point', Markdown's own key for it.
+4. `donkey--non-editing-enter-handler' -- outside `donkey-editing-modes'
    (`dired-mode', `magit-status-mode', etc.), falls through to
    whatever RET was ORIGINALLY bound to before Normal state's keymap
    took over, via `donkey--saved-ret-binding'.
@@ -983,6 +1056,7 @@ was intended, which is the entire reason `donkey-editing-modes' exists."
   (cond
    ((donkey--org-agenda-enter-handler))
    ((donkey--org-mode-enter-handler))
+   ((donkey--markdown-enter-handler))
    ((donkey--non-editing-enter-handler))))
 
 (add-hook 'donkey-normal-mode-hook
