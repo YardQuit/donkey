@@ -392,7 +392,7 @@ next navigation keypress self-insert.
 | =x=   | =donkey-delete=                | Delete char or region (Vim)      |
 | =D=   | =kill-line=                  | Kill to end of line              |
 | =C=   | =donkey-comment-dwim=          | Comment/uncomment line or region |
-| =g j= | =donkey-join-line=             | Pull the following line up       |
+| =g j= | =donkey-join-line=             | Join the next line or selection  |
 | =>=   | =donkey-indent-region-or-line= | Indent region or line            |
 
 =g j= absorbs the line *below* the one you are on, the direction vi's
@@ -400,6 +400,15 @@ next navigation keypress self-insert.
 this one. Emacs' own =M-^= goes the other way — pulling the current
 line up onto the previous one — and is untouched, since every =M-= key
 falls through in Normal state.
+
+With lines selected, =g j= joins the whole selection into one line and
+drops the selection, the way vi's =J= reads a visual selection: =V J J
+g j= makes three lines one. A selection that ends at the start of a
+line leaves that line out; a selection inside a single line joins that
+line with the next, vi's minimum of two; a rectangle's rows are lines
+like any other selection's. The count is not read while a selection
+is. Banked lines are left alone — =y=, =d= and =p= are the keys that
+spend a bank.
 
 On the last line there is nothing below to pull up, so nothing happens
 and it says so. Left to =join-line= this quietly removed the buffer's
@@ -733,7 +742,7 @@ Notes:
 | =g e= | =end-of-buffer=          | Go to end of buffer               |
 | =G=   | =end-of-buffer=          | Go to end of buffer (Vim)         |
 | =g h= | =beginning-of-line=      | Go to beginning of line     |
-| =g j= | =donkey-join-line=       | Pull the following line up  |
+| =g j= | =donkey-join-line=       | Join next line or selection |
 | =g l= | =move-end-of-line=       | Go to end of line           |
 | =g q= | =fill-region=            | Fill region                 |
 | =g Q= | =fill-paragraph=         | Fill paragraph              |

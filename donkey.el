@@ -1879,7 +1879,7 @@ the same place."
     (message "End of buffer -- nothing to delete")))))
 
 (defun donkey-join-line (&optional count)
-  "Pull the FOLLOWING line up onto this one, fixing up whitespace.
+  "Pull the following line up onto this one, or join the selected lines.
 
 The direction every modal editor uses: vi's `J' and Helix's `J' both
 absorb the line below the one point is on, which is the direction you
@@ -1920,24 +1920,63 @@ vi's `J' stops at the last line for the same reason, and every other
 whole-line command here already leaves the final newline alone: `V d',
 `V y', a banked copy and `D' were all checked.
 
-A selection is not consulted.  With lines selected the command still
-joins the line point is on with the next, and the selection is
-dropped: `V J J g j' on four lines joins the third with the fourth,
-not the three selected into one.  Confirmed live for a `v' region and
-a `V' session alike.  COUNT is how several lines are joined at once.
-vi's `J' does read a selection and joins every line in it, so the
-difference is worth knowing about; it is recorded here rather than
-changed, because a key that today ignores the selection would start
-consuming it."
+With a selection, the lines it touches become ONE line and the
+selection is spent -- vi's `J' reading of a visual selection: `V J J
+g j' on four lines makes the three selected into one and leaves the
+fourth.  Which lines a selection touches is `donkey--region-line-count'
+-- one that ends at the start of a line leaves that line out.  A
+selection inside a single line joins that line with the next, vi's
+minimum of two, so the key does not sit idle on a selection that could
+not mean anything else.  The rows of a rectangle are lines like any
+other selection's, and every kind is spent the same way: the function
+`deactivate-mark' takes the visual-line anchor and `rectangle-mark-mode'
+with it.  COUNT is not read while a selection is -- the selection says
+how many.  Banked lines are not consulted; a bank is spent by `y', `d'
+and `p' only.
+
+The selection used to be ignored -- `V J J g j' joined the third line
+with the fourth and dropped the selection, recorded at the time as a
+difference from vi worth knowing about rather than changed.  Changed on
+request: lines you can see selected are the natural way to say which
+lines, and a count a poorer one.  A selection nothing can be done with
+-- one line, the last in the buffer -- is kept, the way a refused wrap
+key keeps its selection; the message is the same as without one."
   (interactive "p")
-  (let ((n (max 0 (or count 1)))
+  (let ((n (if (use-region-p)
+               (max 1 (1- (donkey--region-line-count)))
+             (max 0 (or count 1))))
         (joined 0))
+    ;; The join starts on the selection's first line, and the selection
+    ;; is spent there -- unless nothing is below that line, in which case
+    ;; nothing is done and the selection stays where it was.
+    (when (and (use-region-p)
+               (not (save-excursion (goto-char (region-beginning))
+                                    (donkey--no-line-below-p))))
+      (goto-char (region-beginning))
+      (deactivate-mark))
     (while (and (> n 0) (not (donkey--no-line-below-p)))
       (join-line 1)
       (setq joined (1+ joined)
             n (1- n)))
-    (when (and (zerop joined) (> (or count 1) 0))
+    ;; N is untouched when nothing joined, so it still says whether a
+    ;; join was asked for: a COUNT below 1 asks for none.
+    (when (and (zerop joined) (> n 0))
       (message "No line below to join"))))
+
+(defun donkey--region-line-count ()
+  "Return how many lines the active region touches.
+
+A region that ends at the start of a line does not touch that line: the
+highlight shows nothing of it, and `donkey-comment-dwim' reads a region
+stopping at a line's beginning the same way.  That is exactly the count
+`count-lines' gives for the region's two ends -- the newlines between
+them, plus one when the end is not at a line's beginning -- and where
+the region starts within its first line makes no difference to it, so
+neither end needs widening first.  A `V' session ends at the END of its
+last line -- see `donkey--visual-line-region-bounds' -- so all of its
+lines count, and a region on the last line of a buffer with no newline
+after it counts that line too."
+  (count-lines (region-beginning) (region-end)))
 
 (defun donkey--no-line-below-p ()
   "Return non-nil when no line follows the one point is on.
@@ -6770,6 +6809,11 @@ to absorb what follows.
 A count joins that many lines at once, so \\`C-u 2' \\[donkey-join-line] from the first
 line would have done both in one go.  On the last line there is nothing
 below to pull up, so nothing happens and it tells you.
+
+Selected lines join as one.  \\[donkey-visual-line-toggle] \\[donkey-visual-next-line] \\[donkey-visual-next-line] \\[donkey-join-line] on the three lines above
+would have made the one line too, and dropped the selection -- the way
+vi's J reads a selection.  A selection inside one line joins that line
+with the next, so the key never sits idle on one.
 
 Emacs\\=' own \\`M-^' is untouched and joins the other way -- it pulls the
 line you are ON up onto the one above.  Every Meta binding still works

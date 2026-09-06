@@ -1316,7 +1316,9 @@ selected, and a reader who notices reports it as a bug."
             ;; the direction matters: it must say the line BELOW comes up
             (should (string-match-p "line BELOW up onto the one you are on" text))
             ;; and that Emacs\' own join, the other way, still works
-            (should (string-match-p "M-\\^" text)))))
+            (should (string-match-p "M-\\^" text))
+            ;; and what a selection does to it
+            (should (string-match-p "Selected lines join as one" text)))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 (ert-deftest donkey-tutor-lesson-6-join-exercise-works-with-real-keys ()
@@ -1334,7 +1336,14 @@ selected, and a reader who notices reports it as a bug."
    (donkey-tutor-test--goline "---> a sentence broken")
    (donkey-tutor-test--keys "C-u 2 g j")
    (should (equal (donkey-tutor-test--line)
-                  "   ---> a sentence broken ---> across three ---> separate lines"))))
+                  "   ---> a sentence broken ---> across three ---> separate lines")))
+  ;; "Selected lines join as one" -- the three lines selected with V J J.
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> a sentence broken")
+   (donkey-tutor-test--keys "V J J g j")
+   (should (equal (donkey-tutor-test--line)
+                  "   ---> a sentence broken ---> across three ---> separate lines"))
+   (should-not (region-active-p))))
 
 (ert-deftest donkey-tutor-both-delete-keys-really-work ()
   "Every exercise the tutor gives for the delete command works on both keys.

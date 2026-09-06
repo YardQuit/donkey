@@ -3188,7 +3188,12 @@ silently flipped the direction of a command they asked to do less of."
       (insert "alpha\nbeta\ngamma\n")
       (goto-char (point-min))
       (forward-line 1)
-      (donkey-join-line n)
+      (let (shown)
+        (cl-letf (((symbol-function 'message)
+                   (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+          (donkey-join-line n))
+        ;; and says nothing: there IS a line below, none was asked for
+        (should-not shown))
       (should (equal (buffer-string) "alpha\nbeta\ngamma\n")))))
 
 (ert-deftest donkey-join-line-at-last-line-is-harmless ()
@@ -3411,6 +3416,146 @@ and then took the newline as well."
                  (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
         (donkey-join-line 1))
       (should (equal shown "No line below to join")))))
+
+(ert-deftest donkey-join-line-joins-the-selected-lines-into-one ()
+  "`V J J g j' makes the three selected lines one and leaves the fourth.
+
+vi's reading of `J' over a visual selection.  Until this was pinned the
+selection was ignored: the same keys joined the THIRD line with the
+fourth -- the line point had reached -- and dropped the selection, so a
+selection that plainly said which lines was answered by joining lines
+it did not name.  The selection is spent by the join, and the `V'
+session with it."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode ()
+      "one\ntwo\nthree\nfour\n" "V J J g j"
+    (should (equal (buffer-string) "one two three\nfour\n"))
+    (should-not (region-active-p))
+    (should-not (donkey--visual-line-session-active-p))
+    ;; point is left at the last join, where a count leaves it too
+    (should (looking-at " three\n"))))
+
+(ert-deftest donkey-join-line-selection-ending-at-a-line-start-leaves-that-line ()
+  "A `v' region that stops at a line's beginning does not take that line.
+
+`v j j' from the start of the first line highlights two whole lines and
+none of the third, so two lines join, not three.  Pinned because the
+opposite reading -- point IS on the third line -- is also defensible,
+and `donkey-comment-dwim' already settled it the way the highlight
+shows.  A region that reaches one character into the third line takes
+it: `j v j l g j' joins the second with the third."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode ()
+      "one\ntwo\nthree\nfour\n" "v j j g j"
+    (should (equal (buffer-string) "one two\nthree\nfour\n"))
+    (should-not (region-active-p)))
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode ()
+      "one\ntwo\nthree\nfour\n" "j v j l g j"
+    (should (equal (buffer-string) "one\ntwo three\nfour\n"))
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-join-line-selection-inside-one-line-joins-it-with-the-next ()
+  "A selection that touches a single line joins that line with the next.
+
+vi's minimum of two: a one-line visual `J' joins with the line below
+rather than doing nothing.  Pinned so the key never sits idle on a
+selection that could not have meant anything else -- and so the
+selection is still spent, the way it is for every other join."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode ()
+      "one\ntwo\nthree\n" "v l l g j"
+    (should (equal (buffer-string) "one two\nthree\n"))
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-join-line-ignores-the-count-while-lines-are-selected ()
+  "`V J \\[universal-argument] 3 g j' joins the two selected lines, not three.
+
+The selection says how many lines; a count alongside it would have to
+be reconciled with it somehow, and vi's visual `J' does not read one
+either.  Pinned so the count path and the selection path stay separate."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode ()
+      "a\nb\nc\nd\ne\n" "V J C-u 3 g j"
+    (should (equal (buffer-string) "a b\nc\nd\ne\n"))
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-join-line-treats-rectangle-rows-as-lines ()
+  "`m v j l g j' joins the two rows of a rectangle and ends the rectangle.
+
+A rectangle's rows are lines like any other selection's, and the
+function `deactivate-mark' takes `rectangle-mark-mode' with it, so
+nothing special is needed -- pinned so nothing special is ever added."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode ()
+      "ab\ncd\nef\n" "m v j l g j"
+    (should (equal (buffer-string) "ab cd\nef\n"))
+    (should-not (region-active-p))
+    (should-not rectangle-mark-mode)))
+
+(ert-deftest donkey-join-line-over-a-selection-keeps-the-final-newline ()
+  "`V J g j' on the last two lines leaves the buffer's final newline.
+
+The `V' session's region ends at the END of its last line, so the last
+line counts, and the newline after it is never one of the joins.  Two
+lines selected means one join, not two."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode ()
+      "a\nb\n" "V J g j"
+    (should (equal (buffer-string) "a b\n"))
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-join-line-keeps-a-selection-it-can-do-nothing-with ()
+  "`j V g j' on the buffer's last line: no join, selection kept, told.
+
+There is nothing below the selected line, so the join is refused the
+way it is without a selection -- same message -- and the selection is
+left standing rather than spent for nothing, the way a refused wrap key
+keeps its selection.  Point stays where it was."
+  (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode ()
+      "a\nb\n" "j V g j"
+    (should (equal (buffer-string) "a\nb\n"))
+    (should (region-active-p))
+    (should (donkey--visual-line-session-active-p))
+    (should (equal donkey-test-keys--said "No line below to join"))
+    (should (= (point) 4))))
+
+(ert-deftest donkey-join-line-spends-the-selection-itself ()
+  "Called from Lisp with a region active, the join still ends the region.
+
+Under the command loop the buffer change alone would deactivate the
+mark afterwards, so a join that forgot to would pass every key-driven
+test here and still leave a Lisp caller -- a keyboard macro, another
+command -- holding a region whose ends the join has moved.  Pinned by
+calling the function directly, where nothing tidies up after it."
+  (with-temp-buffer
+    (insert "one\ntwo\nthree\n")
+    (transient-mark-mode 1)
+    (goto-char 7)
+    (push-mark 1 t t)
+    (should (region-active-p))
+    (donkey-join-line 1)
+    (should (equal (buffer-string) "one two\nthree\n"))
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-region-line-count-reads-the-lines-a-region-touches ()
+  "The helper behind the selection join, pinned line by line.
+
+A region ending at a line's beginning leaves that line out; one ending
+mid-line takes it; a region on a last line with no newline after it
+still counts that line; a region inside one line is one line."
+  (with-temp-buffer
+    (insert "one\ntwo\nthree")
+    (transient-mark-mode 1)
+    (cl-flet ((count-between
+               (a b)
+               (goto-char b)
+               (push-mark a t t)
+               (prog1 (donkey--region-line-count)
+                 (deactivate-mark))))
+      ;; bol of "one" to bol of "three": two lines, not three.
+      (should (= (count-between 1 9) 2))
+      ;; one character into "three" takes it.
+      (should (= (count-between 1 10) 3))
+      ;; ending at the newline-less end of the buffer takes the last line.
+      (should (= (count-between 5 14) 2))
+      ;; inside "two".
+      (should (= (count-between 5 7) 1))
+      ;; the order of point and mark does not matter.
+      (should (= (count-between 10 1) 3)))))
 
 (ert-deftest donkey-whole-line-commands-all-keep-the-final-newline ()
   "Every whole-line command leaves the buffer\='s last newline alone.
