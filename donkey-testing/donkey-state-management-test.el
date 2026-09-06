@@ -2523,6 +2523,25 @@ is worth that."
     (setq defining-kbd-macro nil)
     (donkey-mode -1)))
 
+(ert-deftest donkey-leave-insert-leaves-a-recording-macro-alone ()
+  "The state change on its own does not stop a recording macro.
+
+`donkey--leave-insert' is what a command passing through INSERT calls
+on its way back; only `donkey--exit-insert', the `C-g' key, adds the
+abort.  Pinned directly so the split cannot quietly close again."
+  (unwind-protect
+      (with-temp-buffer
+        (text-mode)
+        (donkey-mode 1)
+        (donkey-enter-insert)
+        (setq defining-kbd-macro t)
+        (donkey--leave-insert)
+        (should defining-kbd-macro)
+        (should (bound-and-true-p donkey-normal-mode))
+        (should-not (bound-and-true-p donkey-insert-mode)))
+    (setq defining-kbd-macro nil)
+    (donkey-mode -1)))
+
 (ert-deftest donkey-macro-abort-does-nothing-when-no-macro-is-recording ()
   "The ordinary case is untouched: no recording, nothing to stop."
   (unwind-protect

@@ -2114,7 +2114,18 @@ with no pairing package the count would insert N delimiters at point,
 and under 30's `electric-pair-mode' it wraps once and then inserts N-1
 bare characters, so there is no one meaning to give it.  Confirmed
 live in `emacs -nw' on 30.2 and 31.1: with the binding, v w
-\\[universal-argument] 3 ( yields \"(alpha) beta\" on both."
+\\[universal-argument] 3 ( yields \"(alpha) beta\" on both.
+
+The way back to Normal is `donkey--leave-insert', the state change on
+its own, and not `donkey--exit-insert', which is what `C-g' runs.
+That key has an errand of its own beyond the state change: it stops a
+keyboard macro that is being recorded, as `keyboard-quit' does.  A
+wrap key came back through it, so a wrap pressed while
+\\[kmacro-start-macro] was recording ended the recording without a
+word -- confirmed live in a terminal frame and a graphical one, where
+`v w (' left the variable `defining-kbd-macro' nil while the rectangle
+path, which never enters INSERT, recorded on.  Nothing about wrapping
+a selection is an abort."
   (interactive)
   (cond
    ((not (use-region-p))
@@ -2132,7 +2143,7 @@ live in `emacs -nw' on 30.2 and 31.1: with the binding, v w
     ;; that the selection outlives the refusal.  `self-insert-command'
     ;; refuses it too, but by then INSERT state has been entered, and
     ;; the `unwind-protect' below leaves it again through
-    ;; `donkey--exit-insert', which deactivates the mark: `v w (' in a
+    ;; `donkey--leave-insert', which deactivates the mark: `v w (' in a
     ;; read-only buffer said "Buffer is read-only" and dropped the
     ;; selection with it, so that after making the buffer writable the
     ;; user had to select again.  The rectangle path kept its block,
@@ -2150,7 +2161,10 @@ live in `emacs -nw' on 30.2 and 31.1: with the binding, v w
           ;; docstring.
           (let ((current-prefix-arg nil))
             (self-insert-command 1))
-        (donkey--exit-insert))))))
+        ;; Not `donkey--exit-insert': that is the `C-g' key, and its
+        ;; errands include stopping a keyboard macro being recorded.
+        ;; See the docstring.
+        (donkey--leave-insert))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mark and Text Object Selection Commands
@@ -7927,11 +7941,51 @@ Operates on the current buffer only."
   (setq donkey--just-exited-from-insert nil)
   (remove-hook 'pre-command-hook #'donkey--reset-exit-guard t))
 
+(defun donkey--leave-insert ()
+  "Leave INSERT state for NORMAL and tidy up after the change.
+
+The state change and nothing else: the mark is let go of, Normal state
+is entered, and the overlay cleanup is scheduled.  `donkey--exit-insert'
+is this plus the errand that belongs to `C-g' as a KEY -- stopping a
+keyboard macro being recorded -- and it used to be the only way back,
+so a command that merely passes through INSERT to do its work got the
+errand too.  `donkey-wrap-region' enters INSERT for one
+`self-insert-command' and returned through the `C-g' path, and a wrap
+pressed while \\[kmacro-start-macro] was recording ended the recording
+without a word.  Confirmed live in a terminal frame and a graphical
+one: `v w (' left the variable `defining-kbd-macro' nil, where the
+rectangle wrap, which never enters INSERT, recorded on.
+
+Letting go of the mark is guarded, because it runs `deactivate-mark-hook',
+which is not DONKEY's: anything the user or a package put there could
+signal, and this is the only step BEFORE the state change.  Left
+unguarded, a stranger's broken hook would strand the user in Insert
+state on the very keypress meant to get them out.
+
+From the state change on the promise is kept whatever happens.
+`define-minor-mode' sets the variable before running the body and
+hooks, so even a `donkey-normal-mode-hook' that errors leaves Normal
+state on."
+  (condition-case err
+      (deactivate-mark)
+    (error (message "DONKEY: deactivate-mark failed: %s"
+                    (error-message-string err))))
+  (donkey-enter-normal)
+  (unless (bound-and-true-p donkey-normal-mode)
+    (donkey-normal-mode 1))
+  (donkey--schedule-overlay-cleanup))
+
 (defun donkey--exit-insert ()
   "Exit insert state and enter normal mode.
 
-Removes active mark, enters normal mode, and schedules deferred
-overlay cleanup.  In the minibuffer, in a `donkey-excluded-modes'
+The `C-g' key of INSERT state.  Leaves the state through
+`donkey--leave-insert' and then stops a keyboard macro that is being
+recorded -- the one errand of `keyboard-quit' that the key keeps, see
+`donkey--abort-keyboard-macro-definition'.  A command that only passes
+through INSERT calls `donkey--leave-insert' itself, since it has no
+`C-g' to stand in for.
+
+In the minibuffer, in a `donkey-excluded-modes'
 buffer, or when `donkey-insert-mode' is not actually active in the
 current buffer, delegates to `keyboard-quit' instead.  The
 `donkey-insert-mode' check matters because `donkey-setup-smartparens'
@@ -7957,23 +8011,10 @@ subprocess or aborting a recursive edit)."
           (minibufferp)
           (donkey--excluded-mode-p))
       (keyboard-quit)
-    ;; Guarded because it runs `deactivate-mark-hook', which is not
-    ;; DONKEY's: anything the user or a package put there could signal,
-    ;; and this is the only step BEFORE the state transition.  Left
-    ;; unguarded, a stranger's broken hook would strand the user in
-    ;; Insert state on the very keypress meant to get them out.
-    (condition-case err
-        (deactivate-mark)
-      (error (message "DONKEY: deactivate-mark failed: %s"
-                      (error-message-string err))))
-    ;; From here the promise is kept whatever happens.  `define-minor-mode'
-    ;; sets the variable before running the body and hooks, so even a
-    ;; `donkey-normal-mode-hook' that errors leaves Normal state on.
-    (donkey-enter-normal)
-    (unless (bound-and-true-p donkey-normal-mode)
-      (donkey-normal-mode 1))
-    (donkey--abort-keyboard-macro-definition)
-    (donkey--schedule-overlay-cleanup)))
+    (donkey--leave-insert)
+    ;; After the state change, which it cannot prevent -- see the
+    ;; function for why it is caught rather than allowed to signal.
+    (donkey--abort-keyboard-macro-definition)))
 
 (defun donkey--abort-keyboard-macro-definition ()
   "Stop a keyboard macro that is being recorded, the way `keyboard-quit' does.

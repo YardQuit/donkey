@@ -1232,10 +1232,12 @@ character a user has not added to `donkey-mark-pair-delimiters')."
   (should (equal (donkey--wrap-close-char ?!) ?!)))
 
 (ert-deftest donkey-wrap-region-with-region-enters-insert-inserts-then-exits ()
-  "Wrapping enters Insert, self-inserts, then exits to Normal.
+  "Wrapping enters Insert, self-inserts, then leaves for Normal.
 
-With an active region, enters Insert, self-inserts, then exits back
-to Normal, in that order."
+With an active region, enters Insert, self-inserts, then leaves for
+Normal, in that order -- through `donkey--leave-insert', the state
+change alone, and not `donkey--exit-insert', which is the `C-g' key
+and stops a recording macro on its way out."
   (let (calls)
     (with-temp-buffer
       (insert "hello\n")
@@ -1247,11 +1249,33 @@ to Normal, in that order."
                  (lambda (&rest _) (push 'insert-mode calls)))
                 ((symbol-function 'self-insert-command)
                  (lambda (&rest _) (push 'self-insert calls)))
-                ((symbol-function 'donkey--exit-insert)
-                 (lambda () (push 'exit-insert calls))))
+                ((symbol-function 'donkey--leave-insert)
+                 (lambda () (push 'leave-insert calls))))
         (let ((last-command-event ?\())
           (donkey-wrap-region)))
-      (should (equal (nreverse calls) '(insert-mode self-insert exit-insert))))))
+      (should (equal (nreverse calls) '(insert-mode self-insert leave-insert))))))
+
+(ert-deftest donkey-a-wrap-key-does-not-stop-a-recording-macro ()
+  "A wrap key pressed while a keyboard macro is recording records on.
+
+Regression: `donkey-wrap-region' returned to Normal through
+`donkey--exit-insert', the `C-g' key, whose errands include stopping a
+recording macro -- so `v w (' inside \\[kmacro-start-macro] ended the
+recording silently, while the rectangle path, which never enters
+INSERT, recorded on.  Real keys, with a real recording started around
+them: the variable `defining-kbd-macro' must still be non-nil once the
+wrap is done, and the wrap itself must have happened."
+  (unwind-protect
+      (progn
+        (start-kbd-macro nil)
+        (donkey-test-keys--harness "*donkey-wrap-macro*" #'text-mode ()
+            "alpha beta\n" "v w ("
+          (should defining-kbd-macro)
+          (should (equal (buffer-string) "alpha( beta\n"))
+          (should (bound-and-true-p donkey-normal-mode))
+          (should-not (bound-and-true-p donkey-insert-mode))))
+    (when defining-kbd-macro
+      (end-kbd-macro))))
 
 (ert-deftest donkey-wrap-region-does-not-deactivate-mark-itself ()
   "Wrapping does not deactivate the mark itself.
@@ -1266,7 +1290,7 @@ the region must stay active for packages hooking
       (cl-letf (((symbol-function 'use-region-p) (lambda () t))
                 ((symbol-function 'donkey-insert-mode) (lambda (&rest _) nil))
                 ((symbol-function 'self-insert-command) (lambda (&rest _) nil))
-                ((symbol-function 'donkey--exit-insert) (lambda () nil))
+                ((symbol-function 'donkey--leave-insert) (lambda () nil))
                 ((symbol-function 'deactivate-mark)
                  (lambda () (setq deactivated t))))
         (donkey-wrap-region))
