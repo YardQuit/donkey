@@ -932,6 +932,44 @@ every later `V' in the file would be refused too."
        :type 'user-error)
     (donkey--mark-run-exit)))
 
+(ert-deftest donkey-J-inside-a-rectangle-grows-it-by-a-row ()
+  "`J' in a rectangle moves like `j' there, keeping the column.
+
+The block is three columns wide: `m v' widens a fresh rectangle by one
+column of its own, and the two `l' add two more.
+
+Regression: the key fell through to `forward-line', which lands on
+column 0, so `m v l l J' collapsed the block to zero width and `d'
+then had nothing to delete."
+  (donkey-test-keys--harness "*donkey-rect-J*" #'text-mode ()
+      "abcd\nefgh\nijkl\nmnop\n" "m v l l J"
+    (should (bound-and-true-p rectangle-mark-mode))
+    (should (equal (extract-rectangle (region-beginning) (region-end))
+                   '("abc" "efg")))
+    (execute-kbd-macro (kbd "C-u 2 J"))
+    (should (equal (extract-rectangle (region-beginning) (region-end))
+                   '("abc" "efg" "ijk" "mno")))
+    (execute-kbd-macro (kbd "K"))
+    (should (equal (extract-rectangle (region-beginning) (region-end))
+                   '("abc" "efg" "ijk")))
+    (execute-kbd-macro (kbd "C-u - 1 J"))
+    (should (equal (extract-rectangle (region-beginning) (region-end))
+                   '("abc" "efg")))))
+
+(ert-deftest donkey-J-inside-a-rectangle-then-d-kills-the-block ()
+  "The grown block is what `d' takes -- the end-to-end shape of the report."
+  (donkey-test-keys--harness "*donkey-rect-J*" #'text-mode ()
+      "abcd\nefgh\nijkl\n" "m v l l J d"
+    (should (equal (buffer-string) "d\nh\nijkl\n"))
+    (should (equal killed-rectangle '("abc" "efg")))))
+
+(ert-deftest donkey-J-outside-any-selection-is-still-forward-line ()
+  "Without a session or a rectangle `J' is the plain line motion it was."
+  (donkey-test-keys--harness "*donkey-rect-J*" #'text-mode ()
+      "abcd\nefgh\nijkl\n" "l l J"
+    (should (= (point) 6))
+    (should-not (region-active-p))))
+
 (ert-deftest donkey-visual-line-toggle-call-interactively ()
   "Can be called via `call-interactively'."
   (with-temp-buffer

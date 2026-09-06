@@ -298,6 +298,10 @@ Three exceptions:
 - Reaching =m v= *from* =V= gives a full-width block. =V= selects whole
   lines, so the corners =m v= inherits are the whole line's width.
   Start =m v= from nothing, or from a =v= selection, for a narrow one.
+- Inside a rectangle =J= and =K= move as =j= and =k= do there, keeping
+  the column, so the block grows by a row. They are the visual-line
+  keys and a rectangle is no visual-line session; falling through to a
+  plain line motion used to land on column 0 and collapse the block.
 
 The =m= keys end nothing: =m w= inside a run grows the run, and outside
 one it marks and leaves you selecting. Over a rectangle it clears the

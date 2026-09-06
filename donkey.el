@@ -2700,23 +2700,35 @@ accumulated as it goes, so a count needs no special handling: the
 branch below is the same one a run of single presses would end on.
 Counts are what `j' and `k' already do -- they are bound straight to
 `next-line' and `previous-line' -- so leaving them off here made
-\[universal-argument] 5 J move a single line while
-\[universal-argument] 5 j moved five."
+\\[universal-argument] 5 J move a single line while
+\\[universal-argument] 5 j moved five.
+
+Inside a rectangle this moves as `j' does there: `rectangle-mark-mode'
+remaps `next-line' to `rectangle-next-line', which keeps the column,
+so the block grows by a row.  A rectangle is not a visual-line session,
+and the plain `forward-line' this fell through to lands on column 0,
+which collapsed the block to nothing on the very key a reader who
+grows selections with `J' reaches for.  Confirmed live: `m v l l J'
+left a zero-width block and `d' then said there was nothing to delete.
+`donkey-visual-previous-line' mirrors it."
   (interactive "p")
-  (if (donkey--visual-line-session-active-p)
+  (cond
+   ((donkey--visual-line-session-active-p)
+    (forward-line (or count 1))
+    (if (> (line-beginning-position) donkey-visual-anchor)
+        (progn
+          (set-mark donkey-visual-anchor)
+          (end-of-line))
       (progn
-        (forward-line (or count 1))
-        (if (> (line-beginning-position) donkey-visual-anchor)
-            (progn
-              (set-mark donkey-visual-anchor)
-              (end-of-line))
-          (progn
-            (set-mark (save-excursion
-                        (goto-char donkey-visual-anchor)
-                        (line-end-position)))
-            (beginning-of-line)))
-        (activate-mark))
-    (forward-line (or count 1))))
+        (set-mark (save-excursion
+                    (goto-char donkey-visual-anchor)
+                    (line-end-position)))
+        (beginning-of-line)))
+    (activate-mark))
+   ((bound-and-true-p rectangle-mark-mode)
+    (rectangle-next-line (or count 1)))
+   (t
+    (forward-line (or count 1)))))
 
 (defun donkey-visual-previous-line (&optional count)
   "Move up COUNT lines, extending the visual-line selection if active.
@@ -2730,22 +2742,29 @@ shrinks the selection back down toward it instead, covering the case
 where `K' moves point up past the anchor line.
 
 COUNT defaults to 1, and a negative COUNT moves down instead; see
-`donkey-visual-next-line' for why no accumulation is needed."
+`donkey-visual-next-line' for why no accumulation is needed.
+
+Inside a rectangle this moves as `k' does there, through
+`rectangle-previous-line', for the reason `donkey-visual-next-line'
+gives."
   (interactive "p")
-  (if (donkey--visual-line-session-active-p)
+  (cond
+   ((donkey--visual-line-session-active-p)
+    (forward-line (- (or count 1)))
+    (if (< (line-beginning-position) donkey-visual-anchor)
+        (progn
+          (set-mark (save-excursion
+                      (goto-char donkey-visual-anchor)
+                      (line-end-position)))
+          (beginning-of-line))
       (progn
-        (forward-line (- (or count 1)))
-        (if (< (line-beginning-position) donkey-visual-anchor)
-            (progn
-              (set-mark (save-excursion
-                          (goto-char donkey-visual-anchor)
-                          (line-end-position)))
-              (beginning-of-line))
-          (progn
-            (set-mark donkey-visual-anchor)
-            (end-of-line)))
-        (activate-mark))
-    (forward-line (- (or count 1)))))
+        (set-mark donkey-visual-anchor)
+        (end-of-line)))
+    (activate-mark))
+   ((bound-and-true-p rectangle-mark-mode)
+    (rectangle-previous-line (or count 1)))
+   (t
+    (forward-line (- (or count 1))))))
 
 (defun donkey-rectangle-mark-mode ()
   "Toggle rectangle mark mode.
