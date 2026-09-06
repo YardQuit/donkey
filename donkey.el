@@ -2335,11 +2335,14 @@ the anchor here is what makes the highlight and the action agree.  The
 predicate's positional check stays for selections made by commands
 outside this package, which never come through here.
 
-Called at the start of every Donkey command that establishes a new
-selection, before that command's own `push-mark'/`set-mark' call -- and
-so before its search, which means a command that then fails to find its
-object leaves the old selection standing as a plain region, as it
-already left a rectangle.  `donkey-mark-run-toggle' does not come
+Called by every Donkey command that establishes a new selection,
+before that command's own `push-mark'/`set-mark' call.  The four
+delimiter commands call it only once their search has FOUND a pair or
+an expression, so a press that finds none leaves the old selection
+standing whole, kind and all; the object commands call it before
+their search, whose refusals put point back and mark nothing, so the
+old selection's highlight is gone with its kind.
+`donkey-mark-run-toggle' does not come
 through here itself: adopting a live session needs the anchor, which
 `donkey-mark-run-adopt' widens the session through before clearing it,
 and the branch that starts a run afresh marks its word with
@@ -3240,8 +3243,10 @@ further out per press, so `m i m i' reaches what `C-u 2 m i' reaches.
 
 Point is left at the START of the selection and the mark at its end,
 the same way round as every other DONKEY mark command and as
-`mark-sexp'."
-  (donkey--ensure-non-rectangle-selection)
+`mark-sexp'.
+
+The selection standing before the press is cleared only once the pair
+has been FOUND -- see the comment at the marking below."
   ;; A repeat re-runs the ORIGINAL search one level wider rather than
   ;; searching afresh from wherever the last selection left point.  Two
   ;; things fall out of that, and neither is available to a fresh search:
@@ -3259,8 +3264,7 @@ the same way round as every other DONKEY mark command and as
   ;;
   ;; And repeating agrees with counting, the way it does for the other
   ;; mark commands: both walk outward from the same anchor.
-  (let* ((origin (point))
-         (state (and (donkey--mark-extending-p) donkey--mark-pair-state))
+  (let* ((state (and (donkey--mark-extending-p) donkey--mark-pair-state))
          (anchor (if state (nth 0 state) (point)))
          (spec (if state
                    (progn (donkey--suppress-one-pair-delimiter)
@@ -3270,37 +3274,48 @@ the same way round as every other DONKEY mark command and as
          (close-char (nth 1 spec))
          (on-opener (nth 2 spec))
          (level (+ (if state (nth 3 spec) 0) (max 1 (or count 1)))))
-    (pcase-let ((`(,start-pos . ,end-pos)
-                 (save-excursion
-                   (goto-char anchor)
-                   (donkey--mark-pair-positions-nth open-char close-char
-                                                    on-opener level))))
+    (pcase-let* ((`(,start-pos . ,end-pos)
+                  (save-excursion
+                    (goto-char anchor)
+                    (donkey--mark-pair-positions-nth open-char close-char
+                                                     on-opener level)))
+                 (start (if inner-p (1+ start-pos) start-pos))
+                 (end (if inner-p (1- end-pos) end-pos)))
+      ;; Refused BEFORE anything is marked, so that a refusal changes
+      ;; nothing: point is where the key was pressed, and whatever was
+      ;; selected before the press is still selected -- see below.  The
+      ;; anchor is not recorded either, a press that marked nothing being
+      ;; no press to widen from.
+      ;;
+      ;; A `user-error': an empty pair is ordinary in code -- `()' for a
+      ;; no-argument call, `""' for an empty string -- so pressing `m i'
+      ;; on one is a miss, not a malfunction, and a bare `error' popped
+      ;; the debugger under `debug-on-error'.  `m a' on the same pair
+      ;; still works, since there the delimiters themselves are content.
+      (when (>= start end)
+        (user-error "Empty selection between %c and %c" open-char close-char))
+      ;; Only now, with a pair in hand, is the selection that stood before
+      ;; the press let go of.  Every selection command clears the previous
+      ;; selection's KIND -- the visual-line anchor, `rectangle-mark-mode'
+      ;; -- through `donkey--ensure-non-rectangle-selection' before it
+      ;; marks, and this one used to do so before its SEARCH: a `V'
+      ;; session or a rectangle followed by an `m i' that found no pair
+      ;; kept its highlight and lost its kind, so the `d' that followed
+      ;; took the highlighted text as a plain region -- the line's text
+      ;; without its newline, the block as one linear span.  A refused
+      ;; key changes nothing, the way a refused wrap key keeps its
+      ;; selection.  Confirmed live in a terminal frame and a graphical
+      ;; one.  `donkey--mark-sexp-select' clears at the same moment.
+      (donkey--ensure-non-rectangle-selection)
       ;; Mark at the end, point at the start.  It used to be the other way
       ;; round, which made these the only mark commands to invert the rest;
       ;; `mark-sexp' and DONKEY's own four linear mark commands all finish
       ;; with point at the start of what they selected.
-      (push-mark (if inner-p (1- end-pos) end-pos))
-      (goto-char (if inner-p (1+ start-pos) start-pos))
+      (push-mark end)
+      (goto-char start)
       (activate-mark)
       (setq donkey--mark-pair-state
             (list anchor open-char close-char on-opener level))
-      (when (>= (region-beginning) (region-end))
-        (deactivate-mark)
-        ;; Point is put back first.  The two lines above have already
-        ;; walked it inside the pair by the time the region turns out to
-        ;; be empty, so the report came from one character along from
-        ;; where the key was pressed -- measured, 6 to 7 on "empty()
-        ;; here" -- which is the same thing `donkey-mark-word' and the
-        ;; other three answer for.  The anchor kept in
-        ;; `donkey--mark-pair-state' is untouched by this, so a second
-        ;; press still widens a level from where the first started.
-        (goto-char origin)
-        ;; A `user-error': an empty pair is ordinary in code -- `()' for a
-        ;; no-argument call, `""' for an empty string -- so pressing `m i'
-        ;; on one is a miss, not a malfunction, and a bare `error' popped
-        ;; the debugger under `debug-on-error'.  `m a' on the same pair
-        ;; still works, since there the delimiters themselves are content.
-        (user-error "Empty selection between %c and %c" open-char close-char))
       (message (if inner-p
                    "Selected content for '%c'"
                  "Selected OUTER content including '%c'")
@@ -3405,8 +3420,11 @@ otherwise selects the delimiters too.
 
 Point is left at the START of the selection and the mark at its end,
 which is where `mark-sexp' leaves them and where every other DONKEY
-mark command does."
-  (donkey--ensure-non-rectangle-selection)
+mark command does.
+
+The selection standing before the press is cleared only once the
+expression has been found, as `donkey--mark-pair-select' does and for
+the reason given there: a refused key changes nothing."
   ;; A repeat widens the ORIGINAL search rather than searching afresh
   ;; from where the last one left point -- see `donkey--mark-pair-select'
   ;; for why the two are not the same thing.  `m A' used to appear to
@@ -3438,6 +3456,9 @@ mark command does."
               (cons start end)))))
       (when (and inner-p (>= start end))
         (user-error "Empty expression"))
+      ;; With the expression in hand, and not before -- see
+      ;; `donkey--mark-pair-select'.
+      (donkey--ensure-non-rectangle-selection)
       ;; Mark at the end, point at the start -- the same reversal as in
       ;; `donkey--mark-pair-select', and for the same reason.
       (push-mark end t)

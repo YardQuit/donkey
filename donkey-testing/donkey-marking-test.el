@@ -3906,6 +3906,65 @@ three of them.  Bare \\[universal-argument] means FOUR, so plain
     (goto-char (point-min))
     (should-error (donkey-mark-sentence 1) :type 'user-error)))
 
+(ert-deftest donkey-a-failed-m-i-leaves-a-visual-line-session-whole ()
+  "`m i (' finding no pair leaves a `V' session as it was, kind included.
+
+Regression: the session's anchor was cleared before the search, so the
+line kept its highlight and lost its kind -- `d' then removed the text
+and left the newline, where `V d' removes the line.  The failing key
+is run inside the body, since a signal would end the harness's own run."
+  (donkey-test-keys--harness "*donkey-mi-fail*" #'text-mode ()
+      "alpha beta\ngamma\n" "V"
+    (should-error (execute-kbd-macro (kbd "m i (")) :type 'user-error)
+    (should (donkey--visual-line-session-active-p))
+    (should (= (point) 11))
+    (execute-kbd-macro (kbd "d"))
+    (should (equal (buffer-string) "gamma\n"))
+    (should (equal (car kill-ring) "alpha beta\n"))))
+
+(ert-deftest donkey-a-failed-m-i-leaves-a-rectangle-whole ()
+  "`m i (' finding no pair leaves `rectangle-mark-mode' on, and `d' kills the block."
+  (donkey-test-keys--harness "*donkey-mi-fail*" #'text-mode ()
+      "alpha\nbeta\n" "m v j l"
+    (should-error (execute-kbd-macro (kbd "m i (")) :type 'user-error)
+    (should (bound-and-true-p rectangle-mark-mode))
+    (execute-kbd-macro (kbd "d"))
+    (should (equal killed-rectangle '("al" "be")))
+    (should (equal (buffer-string) "pha\nta\n"))))
+
+(ert-deftest donkey-an-empty-pair-under-m-i-leaves-the-old-selection-whole ()
+  "`m i' on an empty pair refuses before marking, so a `V' session survives it.
+
+`V' leaves point at the line's end, so the four steps back land it on
+the opening paren, where the delimiter is read from the buffer."
+  (donkey-test-keys--harness "*donkey-mi-fail*" #'text-mode ()
+      "call() x\nnext\n" "V h h h h"
+    (should (= (point) 5))
+    (should-error (execute-kbd-macro (kbd "m i")) :type 'user-error)
+    (should (donkey--visual-line-session-active-p))
+    (should (= (point) 5))))
+
+(ert-deftest donkey-a-failed-m-I-leaves-a-visual-line-session-whole ()
+  "`m I' outside any balanced expression leaves a `V' session as it was."
+  (donkey-test-keys--harness "*donkey-mi-fail*" #'emacs-lisp-mode ()
+      "alpha beta\ngamma\n" "V"
+    (should-error (execute-kbd-macro (kbd "m I")) :type 'user-error)
+    (should (donkey--visual-line-session-active-p))
+    (execute-kbd-macro (kbd "J"))
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "alpha beta\ngamma"))))
+
+(ert-deftest donkey-a-successful-m-i-still-ends-a-visual-line-session ()
+  "A pair found over a `V' session replaces it, anchor and all.
+
+Point is walked back into the pair first: from the line's end, where
+`V' leaves it, the search is outside every pair and refuses."
+  (donkey-test-keys--harness "*donkey-mi-ok*" #'text-mode ()
+      "call(arg) x\nnext\n" "V h h h h m i ("
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end)) "arg"))
+    (should-not (donkey--visual-line-session-active-p))
+    (should (null donkey-visual-anchor))))
+
 (ert-deftest donkey-mark-inner-count-past-outermost-pair-reports-the-level ()
   "A count past the outermost pair blames the count, not the delimiter.
 
