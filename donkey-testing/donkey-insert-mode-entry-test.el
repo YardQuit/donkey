@@ -1299,7 +1299,7 @@ and stops a recording macro on its way out."
                 ((symbol-function 'self-insert-command)
                  (lambda (&rest _) (push 'self-insert calls)))
                 ((symbol-function 'donkey--leave-insert)
-                 (lambda () (push 'leave-insert calls))))
+                 (lambda (&optional _keep) (push 'leave-insert calls))))
         (let ((last-command-event ?\())
           (donkey-wrap-region)))
       (should (equal (nreverse calls) '(insert-mode self-insert leave-insert))))))
@@ -1339,7 +1339,7 @@ the region must stay active for packages hooking
       (cl-letf (((symbol-function 'use-region-p) (lambda () t))
                 ((symbol-function 'donkey-insert-mode) (lambda (&rest _) nil))
                 ((symbol-function 'self-insert-command) (lambda (&rest _) nil))
-                ((symbol-function 'donkey--leave-insert) (lambda () nil))
+                ((symbol-function 'donkey--leave-insert) (lambda (&optional _keep) nil))
                 ((symbol-function 'deactivate-mark)
                  (lambda () (setq deactivated t))))
         (donkey-wrap-region))
@@ -1523,6 +1523,58 @@ unchanged as well, the refusal being the whole of what the press does."
       (should (= (point) 3))
       (should (string= (buffer-string) "hello"))
       (should (bound-and-true-p donkey-normal-mode)))))
+
+(ert-deftest donkey-wrap-region-over-read-only-text-keeps-the-selection ()
+  "A wrap key over text with the `read-only' property refuses and keeps the region.
+
+Regression, the text-property twin of the read-only buffer: the
+refusal comes from `self-insert-command' inside INSERT state, and the
+way back deactivated the mark, so `v w (' over such text said \"Text
+is read-only\" and threw the selection away.  The buffer is asserted
+unchanged, the state Normal, and the error still signaled -- shaped
+like the read-only buffer test above it, with point at the region's
+end where `v w' leaves it."
+  (with-temp-buffer
+    (donkey-normal-mode 1)
+    (let ((transient-mark-mode t)
+          (donkey-mode t)
+          (inhibit-read-only t))
+      (insert "alpha beta")
+      (put-text-property 1 6 'read-only t))
+    (let ((transient-mark-mode t)
+          (donkey-mode t))
+      (push-mark 1 t t)
+      (goto-char 6)
+      (let ((last-command-event ?\())
+        (should-error (donkey-wrap-region) :type 'text-read-only))
+      (should (region-active-p))
+      (should (= (mark) 1))
+      (should (= (point) 6))
+      (should (string= (buffer-string) "alpha beta"))
+      (should (bound-and-true-p donkey-normal-mode))
+      (should-not (bound-and-true-p donkey-insert-mode)))))
+
+(ert-deftest donkey-leave-insert-can-keep-the-mark ()
+  "`donkey--leave-insert' with KEEP-MARK leaves the region active.
+
+The one caller is `donkey-wrap-region' after a refused insertion; the
+bare call still lets the mark go, as `C-g' must."
+  (with-temp-buffer
+    (donkey-mode 1)
+    (unwind-protect
+        (let ((transient-mark-mode t))
+          (insert "alpha")
+          (push-mark 1 t t)
+          (goto-char 3)
+          (donkey-enter-insert)
+          (donkey--leave-insert t)
+          (should (region-active-p))
+          (should (bound-and-true-p donkey-normal-mode))
+          (donkey-enter-insert)
+          (donkey--leave-insert)
+          (should-not (region-active-p))
+          (should (bound-and-true-p donkey-normal-mode)))
+      (donkey-mode -1))))
 
 (ert-deftest donkey-wrap-region-bound-for-each-default-delimiter ()
   "Every default wrap delimiter is bound in Normal state.

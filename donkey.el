@@ -2181,7 +2181,15 @@ to Normal state, even if the insertion signals.
 
 A read-only buffer is refused before any of that, with the selection
 left standing -- see the comment in the body for why the refusal has
-to come first.
+to come first.  Read-only TEXT is refused the same way, though it can
+only be found out by trying: `barf-if-buffer-read-only' knows the
+buffer's flag and not the `read-only' property of the characters the
+delimiter would land beside, so the refusal there comes from
+`self-insert-command' itself, from inside INSERT state, and is let
+through with the mark kept.  Confirmed live in a terminal frame and a
+graphical one: `v w (' over a word carrying the property said \"Text
+is read-only\" and dropped the selection, exactly as the read-only
+buffer once did.
 
 Which delimiters actually wrap is the pairing package's decision, not
 this command's, and `electric-pair-mode' does not cover all six
@@ -2258,17 +2266,27 @@ a selection is an abort."
     (if (bound-and-true-p rectangle-mark-mode)
         (donkey--wrap-rectangle-region last-command-event)
       (donkey-insert-mode 1)
-      (unwind-protect
-          ;; Emacs 31's electric-pair reads the count from
-          ;; `current-prefix-arg', not from the argument below, and
-          ;; deletes that many characters before wrapping.  See the
-          ;; docstring.
-          (let ((current-prefix-arg nil))
-            (self-insert-command 1))
-        ;; Not `donkey--exit-insert': that is the `C-g' key, and its
-        ;; errands include stopping a keyboard macro being recorded.
-        ;; See the docstring.
-        (donkey--leave-insert))))))
+      ;; A refusal from the insertion itself -- read-only TEXT, which
+      ;; the check above cannot see -- is held until INSERT state has
+      ;; been left with the mark kept, and signaled again from Normal
+      ;; state.  `buffer-read-only' is the parent of `text-read-only',
+      ;; so it names the whole family.
+      (let (refusal)
+        (unwind-protect
+            (condition-case err
+                ;; Emacs 31's electric-pair reads the count from
+                ;; `current-prefix-arg', not from the argument below,
+                ;; and deletes that many characters before wrapping.
+                ;; See the docstring.
+                (let ((current-prefix-arg nil))
+                  (self-insert-command 1))
+              (buffer-read-only (setq refusal err)))
+          ;; Not `donkey--exit-insert': that is the `C-g' key, and its
+          ;; errands include stopping a keyboard macro being recorded.
+          ;; See the docstring.
+          (donkey--leave-insert (and refusal t)))
+        (when refusal
+          (signal (car refusal) (cdr refusal))))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mark and Text Object Selection Commands
@@ -8155,11 +8173,14 @@ Operates on the current buffer only."
   (setq donkey--just-exited-from-insert nil)
   (remove-hook 'pre-command-hook #'donkey--reset-exit-guard t))
 
-(defun donkey--leave-insert ()
+(defun donkey--leave-insert (&optional keep-mark)
   "Leave INSERT state for NORMAL and tidy up after the change.
 
 The state change and nothing else: the mark is let go of, Normal state
-is entered, and the overlay cleanup is scheduled.  `donkey--exit-insert'
+is entered, and the overlay cleanup is scheduled.  With KEEP-MARK
+non-nil the mark is left as it is, for a caller whose edit was refused
+and whose selection therefore still means something -- see
+`donkey-wrap-region', the one caller that passes it.  `donkey--exit-insert'
 is this plus the errand that belongs to `C-g' as a KEY -- stopping a
 keyboard macro being recorded -- and it used to be the only way back,
 so a command that merely passes through INSERT to do its work got the
@@ -8180,10 +8201,11 @@ From the state change on the promise is kept whatever happens.
 `define-minor-mode' sets the variable before running the body and
 hooks, so even a `donkey-normal-mode-hook' that errors leaves Normal
 state on."
-  (condition-case err
-      (deactivate-mark)
-    (error (message "DONKEY: deactivate-mark failed: %s"
-                    (error-message-string err))))
+  (unless keep-mark
+    (condition-case err
+        (deactivate-mark)
+      (error (message "DONKEY: deactivate-mark failed: %s"
+                      (error-message-string err)))))
   (donkey-enter-normal)
   (unless (bound-and-true-p donkey-normal-mode)
     (donkey-normal-mode 1))
