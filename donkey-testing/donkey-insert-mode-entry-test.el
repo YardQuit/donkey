@@ -787,6 +787,55 @@ afterward, unlike every sibling command in the same category."
       (should entered)
       (should (= (point) 7)))))
 
+(ert-deftest donkey-a-counted-open-below-adds-blank-lines-under-the-cursor ()
+  "`C-u 3 o' opens the usual line and two empty lines under it.
+
+The cursor stays on the line a bare press opens, next to the line it
+came from; the extra lines are the room asked for, beyond it."
+  (donkey-test-keys--harness "*donkey-open-count*" #'text-mode ()
+      "abc\ndef\n" "C-u 3 o"
+    (should (equal (buffer-string) "abc\n\n\n\ndef\n"))
+    (should (= (point) 5))
+    (should (bound-and-true-p donkey-insert-mode))))
+
+(ert-deftest donkey-a-counted-open-above-adds-blank-lines-over-the-cursor ()
+  "`C-u 3 O' opens the usual line above and two empty lines above that.
+
+The cursor stays on the line directly above the one it came from."
+  (donkey-test-keys--harness "*donkey-open-count*" #'text-mode ()
+      "abc\ndef\n" "j C-u 3 O"
+    (should (equal (buffer-string) "abc\n\n\n\ndef\n"))
+    (should (= (point) 7))
+    (should (bound-and-true-p donkey-insert-mode))))
+
+(ert-deftest donkey-a-counted-open-indents-only-the-cursor-line ()
+  "Under a mode that indents, the blanks stay blank and the cursor line does not.
+
+Only the line to be typed on is opened by the mode's indentation; an
+empty line left with whitespace on it is exactly the stray the old
+docstring objected to."
+  (donkey-test-keys--harness "*donkey-open-count*" #'emacs-lisp-mode ()
+      "(progn\n  (a)\n  (b))\n" "j C-u 2 o"
+    (should (equal (buffer-string) "(progn\n  (a)\n  \n\n  (b))\n"))
+    (should (= (point) 16)))
+  (donkey-test-keys--harness "*donkey-open-count*" #'emacs-lisp-mode ()
+      "(progn\n  (a)\n  (b))\n" "j j C-u 2 O"
+    (should (equal (buffer-string) "(progn\n  (a)\n\n  \n  (b))\n"))
+    (should (= (point) 17))))
+
+(ert-deftest donkey-open-keys-read-a-count-below-one-as-one ()
+  "`C-u 0 o', `C-u - 2 o' and their `O' twins open one line, as a bare press does."
+  (dolist (keys '("C-u 0 o" "C-u - 2 o"))
+    (donkey-test-keys--harness "*donkey-open-count*" #'text-mode ()
+        "abc\ndef\n" keys
+      (should (equal (buffer-string) "abc\n\ndef\n"))
+      (should (= (point) 5))))
+  (dolist (keys '("C-u 0 O" "C-u - 2 O"))
+    (donkey-test-keys--harness "*donkey-open-count*" #'text-mode ()
+        "abc\ndef\n" (concat "j " keys)
+      (should (equal (buffer-string) "abc\n\ndef\n"))
+      (should (= (point) 5)))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-change
 ;;; ---------------------------------------------------------------------------

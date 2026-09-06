@@ -576,8 +576,8 @@ Takes no COUNT."
   (move-end-of-line 1)
   (donkey-enter-insert))
 
-(defun donkey-open-below ()
-  "Open a new line below the current one, and enter INSERT state.
+(defun donkey-open-below (&optional count)
+  "Open COUNT new lines below the current one, and enter INSERT state.
 
 Any active selection is dropped first and nothing is done to it -- a
 drawn rectangle included, which is worth saying because `donkey-change'
@@ -590,22 +590,38 @@ It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
 bank; entering INSERT is not an operation on a selection, so there is
 nothing here for a bank to mean.
 
-Takes no COUNT.
+COUNT opens that many lines.  The first is the line a bare press opens,
+indented by the mode with the cursor on it; the rest are empty lines
+below it, so \\[universal-argument] 3 \\[donkey-open-below] is the
+usual new line with two blank ones under it.  Only the cursor's line is
+indented: the blanks are plain, and leave no whitespace behind when
+nothing is typed on them.  A COUNT below 1 opens one line, as a bare
+press does -- there is no meaning for zero lines on a key that exists
+to open one.
 
-A count would read naturally here -- vi's 3o is a real thing -- but
-what it means there is the text typed afterwards repeated three times,
-which needs machinery for capturing an insert and replaying it that
-DONKEY does not have.  The reading that IS easy, three blank lines with
-point on the first, leaves two stray blanks under whatever gets typed
-and is not what anyone means by it."
-  (interactive)
+Took no count for a long time, on the reasoning that vi's 3o repeats
+the TEXT typed afterwards, which needs a replay DONKEY does not have,
+and that blank lines under what gets typed are stray.  Changed on
+request: the blanks are the room asked for, and the cursor stays on the
+line next to the one it came from, so a bare press and a counted press
+differ only in the room opened beyond it.  `donkey-open-above' reads
+its count the same way, the blanks above the cursor's line."
+  (interactive "p")
   (donkey--deactivate-region-if-active)
   (move-end-of-line 1)
   (newline-and-indent)
+  ;; The extra lines go BEYOND the cursor's line, under `save-excursion'
+  ;; so the cursor keeps the line a bare press would have left it on,
+  ;; and after the indentation so that only that line carries any.  A
+  ;; count below 1 leaves nothing to add, which is the whole of how it
+  ;; reads as a bare press.
+  (let ((extra (1- (or count 1))))
+    (when (> extra 0)
+      (save-excursion (insert (make-string extra ?\n)))))
   (donkey-enter-insert))
 
-(defun donkey-open-above ()
-  "Open a new line above the current one, and enter INSERT state.
+(defun donkey-open-above (&optional count)
+  "Open COUNT new lines above the current one, and enter INSERT state.
 
 Any active selection is dropped first and nothing is done to it -- a
 drawn rectangle included, which is worth saying because `donkey-change'
@@ -618,15 +634,29 @@ It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
 bank; entering INSERT is not an operation on a selection, so there is
 nothing here for a bank to mean.
 
-Takes no COUNT.
-
-See `donkey-open-below' for why neither of these takes a count."
-  (interactive)
+COUNT opens that many lines: the line a bare press opens, directly
+above the one the cursor came from and indented by the mode with the
+cursor on it, and COUNT - 1 empty lines above that.  A COUNT below 1
+opens one line, as a bare press does.  See `donkey-open-below' for the
+reading and for why the two keys took no count before."
+  (interactive "p")
   (donkey--deactivate-region-if-active)
   (move-beginning-of-line 1)
   (newline-and-indent)
   (forward-line -1)
   (indent-according-to-mode)
+  ;; The extra lines go ABOVE the cursor's line, inserted at its start
+  ;; so the line is pushed down and the cursor stays next to the line
+  ;; it came from, as it does below.  Not under `save-excursion': the
+  ;; insertion lands AT point on an unindented line, and the saved
+  ;; position stays before text inserted at it, which left the cursor
+  ;; on the topmost blank.  The opened line holds nothing but its
+  ;; indentation, so its end is where the mode left the cursor.
+  (let ((extra (1- (or count 1))))
+    (when (> extra 0)
+      (beginning-of-line)
+      (insert (make-string extra ?\n))
+      (end-of-line)))
   (donkey-enter-insert))
 
 ;; Two notes on the choices here:
@@ -6647,9 +6677,9 @@ A count works wherever \"how many\" means something, and it always means
 exactly that.  Give it as C-u N before the key.
 
 Every motion takes one, and so does every \\`m' key that selects a thing,
-along with DONKEY-DELETE-KEYS, \\[donkey-copy], \\[donkey-change] and \\[donkey-yank].  The keys with no \"how many\" in them --
-entering INSERT, toggling a state, asking for help -- ignore a count
-rather than refusing it, so a guess there costs nothing.
+along with DONKEY-DELETE-KEYS, \\[donkey-copy], \\[donkey-change], \\[donkey-yank], \\[donkey-open-below] and \\[donkey-open-above].  The keys with no \"how many\" in them
+-- entering INSERT at the cursor, toggling a state, asking for help --
+ignore a count rather than refusing it, so a guess there costs nothing.
 
 If you are coming from vi, note the \\`C-u'.  A bare \\`3' does NOT start a
 count here -- digits are unbound in NORMAL state.  Worse than doing
@@ -6693,6 +6723,9 @@ and Emacs behaves exactly as it always does.
     \\[donkey-insert-here] before the cursor      \\[donkey-insert-after] after the cursor
     \\[donkey-insert-beginning-of-line] at the start of the line   \\[donkey-insert-end-of-line] at the end of the line
     \\[donkey-open-below] open a line below       \\[donkey-open-above] open a line above
+
+Both open keys take a count: \\`C-u 3' \\[donkey-open-below] opens three lines below and
+leaves you on the first of them, with two empty lines under it.
 
 >> Put the cursor on the full stop below, press \\[donkey-insert-here], type the missing
    word -- it is \"dog\" -- then press \\`C-g' to return to NORMAL.

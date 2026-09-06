@@ -364,8 +364,8 @@ reporting it: the newline goes along even though nothing marks it.
 | =a= | =donkey-insert-after=             | Insert after current char           |
 | =I= | =donkey-insert-beginning-of-line= | Insert at beginning of line         |
 | =A= | =donkey-insert-end-of-line=       | Insert at end of line               |
-| =o= | =donkey-open-below=               | Open new line below, enter Insert   |
-| =O= | =donkey-open-above=               | Open new line above, enter Insert   |
+| =o= | =donkey-open-below=               | Open a line below, enter Insert     |
+| =O= | =donkey-open-above=               | Open a line above, enter Insert     |
 | =c= | =donkey-change=                   | Change char or region, enter Insert |
 
 During a visual-line session (=V=), =c= does *not* take the trailing
@@ -756,9 +756,9 @@ Notes:
 A count works wherever "how many" means something, and it always means
 exactly that — so =C-u 3 x= deletes three characters and =C-u 2 m s=
 marks two sentences. Every motion takes one, as does every =m= key that
-selects a thing, along with =d=, =y=, =c= and =p=. The keys with no "how
-many" in them — entering INSERT, toggling a state, asking for help —
-ignore a count rather than refusing it.
+selects a thing, along with =d=, =y=, =c=, =p=, =o= and =O=. The keys
+with no "how many" in them — entering INSERT at the cursor, toggling a
+state, asking for help — ignore a count rather than refusing it.
 
 | Keys        | Effect                                  |
 |-------------+-----------------------------------------|
@@ -769,6 +769,8 @@ ignore a count rather than refusing it.
 | =C-u 3 x=   | delete three characters                 |
 | =C-u 3 y=   | copy three characters                   |
 | =C-u 3 c=   | change three characters                 |
+| =C-u 3 o=   | open three lines below, cursor on the first |
+| =C-u 3 O=   | open three lines above, cursor on the lowest |
 | =C-u 3 m w= | mark three words                        |
 | =C-u 3 m b= | mark the word and the two before it     |
 | =C-u 2 m W= | mark two symbols                        |
