@@ -8171,16 +8171,9 @@ Updates the custom variable and saves to your customization file."
 (defvar donkey--minibuffer-pre-state-stack nil
   "Stack of DONKEY states saved before minibuffer activations.
 
-Each element is (BUFFER . STATE), STATE being normal, insert, or
-nil.  A stack rather than a single slot so recursive minibuffer
-activations (nested reads, e.g. via `enable-recursive-minibuffers')
-each restore their own saved state on exit instead of clobbering one
-another.  Not buffer-local because we need to read it after switching
-buffers.
-
-The buffer is recorded, not looked up again at exit: the command run
-from the minibuffer may have switched the window to another buffer by
-then, and the saved state belongs to the buffer it was saved from.")
+Each element is (BUFFER . STATE), STATE being `normal', `insert' or
+nil, one element per open minibuffer, innermost first.  Global, so it
+can be read from whatever buffer is current at exit.")
 
 (defun donkey--minibuffer-current-state ()
   "Return the current DONKEY state as a symbol."
@@ -8192,13 +8185,9 @@ then, and the saved state belongs to the buffer it was saved from.")
 (defun donkey--minibuffer-setup ()
   "Save the originating buffer's DONKEY state; never leave Normal state on.
 
-The minibuffer is never actively put into Insert state here -- it
-never runs `donkey--ensure-default-state' the way an ordinary buffer's
-major-mode setup does, so `donkey-normal-mode' is essentially never
-already on in a fresh minibuffer.  This is a defensive check for the
-rare case where it somehow is, so the minibuffer instead falls through
-to plain Emacs passthrough by default, same as any other buffer
-Donkey never activated in."
+Pushes (BUFFER . STATE) for the buffer the minibuffer was entered
+from, and switches Normal state off in the minibuffer should it be on,
+so the minibuffer is plain Emacs passthrough."
   ;; Capture state from the buffer that initiated the minibuffer
   (let ((orig (window-buffer (minibuffer-selected-window))))
     (push (cons orig (with-current-buffer orig
@@ -8211,15 +8200,9 @@ Donkey never activated in."
 (defun donkey--minibuffer-exit ()
   "Restore the originating buffer's saved DONKEY state.
 
-Always pops `donkey--minibuffer-pre-state-stack' to keep it balanced
-with `donkey--minibuffer-setup', but only re-enters Normal/Insert
-state when `donkey-mode' is still globally on.  Without this check,
-disabling `donkey-mode' while a minibuffer session is in progress
-\(e.g. via a keybinding, from a recursive minibuffer) would have this
-hook resurrect Normal or Insert state in the originating buffer on
-exit, the same way a stray `C-g' through `donkey-setup-smartparens''
-keymaps could before `donkey--exit-insert' gained its own
-`donkey-mode' guard."
+Always pops `donkey--minibuffer-pre-state-stack', to stay balanced
+with `donkey--minibuffer-setup', but re-enters a state only while
+`donkey-mode' is still on and the buffer is still live."
   (pcase-let ((`(,buf . ,saved-state)
                (pop donkey--minibuffer-pre-state-stack)))
     (when (and (bound-and-true-p donkey-mode)
