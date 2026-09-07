@@ -8218,58 +8218,20 @@ is off.  For building your own mode line; the lighter of
 (defvar donkey--startup-resweep-timer nil
   "One-shot idle timer for `donkey--startup-resweep', or nil.
 
-Stored so `donkey-mode's disable path can cancel it.  The resweep
-itself refuses to run with the mode off, but a live timer belonging to
-a switched-off mode is still DONKEY state, and the teardown promises
-to clear all of it.")
+Stored so the disable path of `donkey-mode' can cancel it.")
 
 (defun donkey--startup-resweep ()
   "Apply DONKEY\\='s default state to buffers created during startup.
 
-When `donkey-mode' is enabled from an init file, its sweep over
-`buffer-list' covers only the buffers existing at that moment, and
-`after-change-major-mode-hook' covers buffers that pick a major mode
-later.  The startup screen (*GNU Emacs*) slips through both nets: it
-is created after EVERY startup hook -- probed live: it does not exist
-yet when `after-init-hook', `emacs-startup-hook' or even
-`window-setup-hook' runs -- and it stays in `fundamental-mode', the
-mode buffers are born in, so no mode function ever fires the hook for
-it.  A user landing there found the mode on with every key dead --
-literally: the splash suppresses self-insert itself, so \"j\" was not
-even typing, it was `undefined', in a package whose whole point is
-that \"j\" moves.
+Scheduled unconditionally from the enable path on a one-shot idle
+timer, for buffers that appear after the enable sweep and never pick
+a major mode -- the startup screen foremost.  An extra sweep costs
+nothing: `donkey--ensure-default-state' touches only buffers holding
+no DONKEY state.
 
-This function is the missing sweep, scheduled from the enable path on
-a one-shot idle timer because no hook is late enough.  Scheduled
-UNCONDITIONALLY, because the enable path cannot tell whether startup
-is still in progress: guarding on a nil `after-init-time' was tried
-and rejected -- that variable is already set while \"-l\" files and
-`after-init-hook' functions run, yet the splash arrives later still,
-so the guard skipped exactly the enables it was meant to serve.  An
-extra sweep costs nothing when nothing was missed:
-`donkey--ensure-default-state' only touches buffers holding no DONKEY
-state at all.
-
-Daemon sessions get nothing from this timer, and the guarantee above
-is weaker there than it reads.  An \"emacs --daemon\" reaches its first
-idle within a fraction of a second of the enable -- measured at
-0.21 s, before any client frame exists, sweeping only buffers the
-enable sweep had already covered.  What protects a frame made later by
-\"emacsclient -c\" is `after-change-major-mode-hook' instead, and it
-reaches more than it looks: `set-buffer-major-mode' calls the mode
-function even when the mode stays `fundamental-mode', so the
-switch-to-a-new-name path fires the hook too.  Probed live in a
-graphical client frame: the visited file and *scratch* both carry
-state, and the only buffers left without it are internal,
-leading-space ones no user visits.
-
-What stays uncovered is the class the splash belonged to, not just
-that one buffer: a buffer made by a bare `get-buffer-create' after
-this timer has run, and never given a major mode, holds no state
-permanently.  No such buffer is reachable in normal use today -- the
-audit that measured the timing found none -- so this function fixes
-the instance and the class is left open deliberately, to be closed if
-a real one ever turns up."
+Coverage stops at a buffer made by a bare `get-buffer-create' after
+this timer has run and never given a major mode; none is reachable in
+normal use."
   (setq donkey--startup-resweep-timer nil)
   (when (bound-and-true-p donkey-mode)
     (donkey--sweep-buffers)))
@@ -8283,13 +8245,8 @@ directions run the user-facing `donkey-normal-mode-hook' and
 `donkey-insert-mode-hook' in every buffer, and both have the same
 stake in one hook's signal not aborting the rest of the loop.
 
-Each buffer is its own `condition-case': one of those hooks signaling
-in one buffer used to abort the whole sweep -- with the global hooks
-already installed and `donkey-mode' already t, leaving the mode half
-on -- and the disable direction had the mirror image, global hooks
-already gone and buffers past the error left holding their state for
-good.  The error is reported, the buffer is skipped, and the sweep
-goes on."
+Each buffer is its own `condition-case': an error is reported, the
+buffer is skipped, and the sweep goes on."
   (let ((fn (or fn #'donkey--ensure-default-state)))
     (dolist (buf (buffer-list))
       (when (buffer-live-p buf)
@@ -8309,74 +8266,26 @@ so one buffer's erroring hook cannot strand the rest."
     (donkey-normal-mode -1))
   (when (bound-and-true-p donkey-insert-mode)
     (donkey-insert-mode -1))
-  ;; Installed buffer-locally by `donkey-visual-line-toggle', so the
-  ;; `donkey--global-hooks' teardown never sees it; without this line
-  ;; it would keep running on every mark deactivation in this buffer
-  ;; for the rest of the session, mode off or not.
+  ;; Installed buffer-locally by `donkey-visual-line-toggle'.
   (remove-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor t)
-  ;; And its sibling, installed the same way by `donkey-set-mark' and
-  ;; `donkey-rectangle-mark-mode'.  It arrived after the line above and
-  ;; was not added to it, so a buffer that had ever held a linear
-  ;; selection or a rectangle went on running DONKEY code on every mark
-  ;; deactivation with the mode off -- the very thing the line above
-  ;; exists to prevent, missed because each names its own function
-  ;; rather than asking what is on the hook.
+  ;; Its sibling, installed by `donkey-set-mark' and
+  ;; `donkey-rectangle-mark-mode'.
   (remove-hook 'deactivate-mark-hook #'donkey--clear-selection-hint t)
   (setq donkey--linear-selection-active nil)
-  ;; The third of the same kind, on `pre-command-hook' rather than on
-  ;; `deactivate-mark-hook', which is why the sweep of that hook did not
-  ;; find it.  `donkey--intercept-quit-in-insert' installs it locally
-  ;; when \\=`C-g' leaves Insert state, to run once and take itself off;
-  ;; disabling in the window between the two left it on the hook of a
-  ;; buffer whose mode is off.
-  ;;
-  ;; The flag goes with it, and must: nothing else clears
-  ;; `donkey--just-exited-from-insert', so removing the hook alone would
-  ;; strand it set for the life of the buffer.  What that costs is the
-  ;; backup this pair exists for -- with \\=`C-g' bound by some other
-  ;; package, `donkey--intercept-quit-in-insert' tests the flag before
-  ;; it fires, and a stranded one means Insert state cannot be left that
-  ;; way at all.  Measured, both halves.  The states are swept off above
-  ;; and neither sets the flag, so here is late enough.
+  ;; The local reset hook `donkey--intercept-quit-in-insert' installs,
+  ;; and the flag it clears.
   (remove-hook 'pre-command-hook #'donkey--reset-exit-guard t)
   (setq donkey--just-exited-from-insert nil)
-  ;; And the idle timer `donkey--schedule-overlay-cleanup' arms, which
-  ;; otherwise fires after the mode is off and reaches into the overlay
-  ;; lists of `smartparens', `show-paren' and `highlight-parentheses'.
-  ;; It is cancelled rather than run: a mode being switched off has no
-  ;; business sweeping another package's overlays, and those packages
-  ;; redraw their own on the next command.
-  ;;
-  ;; Guarded, and the guard is the point: this sweep visits EVERY
-  ;; buffer, almost none of which ever armed a timer, and
-  ;; `cancel-timer' signals `wrong-type-argument' on nil -- which
-  ;; `donkey--sweep-buffers' would catch and report once per buffer,
-  ;; turning one stray timer into a screen of errors on disable.
+  ;; The idle timer `donkey--schedule-overlay-cleanup' arms: cancelled,
+  ;; not run, and only when there is one.
   (when donkey--deferred-overlay-cleanup-timer
     (cancel-timer donkey--deferred-overlay-cleanup-timer)
     (setq donkey--deferred-overlay-cleanup-timer nil))
-  ;; And the anchor that hook exists to clear.  With the hook just
-  ;; removed nothing else can, so a live \"V\" session at the moment of
-  ;; disabling left its anchor in the buffer for good and carried it
-  ;; into the next enable.  `donkey--visual-line-session-active-p'
-  ;; checks the mark as well, so a stale anchor cannot resurrect a
-  ;; session -- what it breaks is the promise to leave nothing behind.
+  ;; The anchor the removed hook existed to clear.
   (donkey--clear-visual-anchor)
-  ;; Banked lines are Donkey state drawn on the buffer, and this
-  ;; mode promises to clear all of it.  Left behind, the
-  ;; highlights would be permanent: the only command that removes
-  ;; them is `donkey-clear-banked-selection', reachable solely
-  ;; through a Normal-state key that no longer exists once the
-  ;; mode is off.
+  ;; Banked lines are DONKEY state drawn on the buffer.
   (donkey-clear-banked-selection)
-  ;; Markers are not free: Emacs walks a buffer's marker list on every
-  ;; insertion and deletion, so a ring left behind taxes editing in a
-  ;; buffer whose mode is off, up to `donkey-position-ring-max' of them
-  ;; per buffer.  Pointed nowhere first, the way the trimming in
-  ;; `donkey--track-position' releases the entries it drops; dropping
-  ;; the list alone would leave them live until the collector noticed.
-  ;; Nothing is lost by it -- the ring is a recovery key rather than a
-  ;; filing system, and a later enable starts recording again.
+  ;; Markers are pointed nowhere before the list is dropped.
   (dolist (m donkey--position-ring)
     (set-marker m nil))
   (setq donkey--position-ring nil
@@ -8390,16 +8299,10 @@ so one buffer's erroring hook cannot strand the rest."
     (input-method-deactivate-hook . donkey--on-input-method-deactivate))
   "The (HOOK . FUNCTION) entries the STATE modes need, `donkey-mode' or not.
 
-A subset of `donkey--global-hooks'.  `donkey-normal-mode' and
-`donkey-insert-mode' are usable standalone, without ever enabling
-`donkey-mode' -- `donkey--intercept-quit-in-insert's docstring states
-the contract, and its guard tests `donkey-insert-mode' for exactly
-that reason -- and these three are the global hooks that contract
-depends on: the `C-g' backup for packages that shadow the key, and
-the input-method fences around Normal state.  When the hook-lifecycle
-cleanup moved every global hook behind `donkey-mode', standalone
-sessions silently lost all three; `donkey--install-state-hooks' is
-what gives them back.")
+A subset of `donkey--global-hooks': the `C-g' backup for packages
+that shadow the key, and the input-method fences around Normal state.
+`donkey--install-state-hooks' adds them when a state is turned on
+without `donkey-mode'.")
 
 (defun donkey--install-state-hooks ()
   "Add the hooks in `donkey--state-hooks' when a DONKEY state is on.
@@ -8407,13 +8310,7 @@ what gives them back.")
 Registered on `donkey-normal-mode-hook' and `donkey-insert-mode-hook',
 so a standalone state activation -- no `donkey-mode' involved --
 installs what it needs the moment it happens.  Guarded on a state
-actually being on because those mode hooks also fire on the way OFF:
-`donkey-mode's disable path removes every global hook first and sweeps
-the states off after, and an unguarded install here would resurrect
-these three behind the teardown's back.  Each function on these hooks
-guards on the state that concerns it, so between standalone sessions
-the installed hooks are inert, exactly as they were when load time
-installed them for good."
+actually being on, because those mode hooks also fire on the way off."
   (when (or (bound-and-true-p donkey-normal-mode)
             (bound-and-true-p donkey-insert-mode))
     (pcase-dolist (`(,hook . ,fn) donkey--state-hooks)
@@ -8433,19 +8330,12 @@ installed them for good."
     ,@donkey--state-hooks)
   "Every (HOOK . FUNCTION) `donkey-mode' adds to Emacs\\='s own hooks.
 
-One list, so the enable and disable paths cannot drift apart.  All of
-these used to be added at load time -- some of them by a bare
-`require', before the mode was ever turned on -- and none were removed
-on disable, so a session that had merely loaded the file ran DONKEY
-code on every command, every minibuffer and every input-method toggle
-for good.  (`deactivate-mark-hook' is not here:
-`donkey--clear-visual-anchor' is installed buffer-locally by the
-command that needs it.)  A global minor mode\\='s hooks
-belong to the mode.
-
-The `donkey--state-hooks' tail is shared with the standalone state
-modes, which reinstall those three on their own when activated without
-`donkey-mode' -- see `donkey--install-state-hooks'.")
+One list, so the enable and disable paths cannot drift apart.
+`deactivate-mark-hook' is not here: its functions are installed
+buffer-locally by the commands that need them.  The
+`donkey--state-hooks' tail is shared with the standalone state modes,
+which reinstall those three on their own -- see
+`donkey--install-state-hooks'.")
 
 (defun donkey--install-global-hooks ()
   "Add every hook in `donkey--global-hooks'."
@@ -8474,13 +8364,8 @@ donkey-mode' to toggle."
       (progn
         (donkey--install-global-hooks)
         (donkey--sweep-buffers)
-        ;; Buffers the startup sequence creates after this sweep -- the
-        ;; startup screen foremost -- are missed by it, and by
-        ;; `after-change-major-mode-hook' too when they stay in
-        ;; `fundamental-mode'.  Sweep once more at first idle, which is
-        ;; the earliest moment guaranteed to fall after startup has
-        ;; finished.  See `donkey--startup-resweep' for why there is no
-        ;; am-I-in-startup guard here.
+        ;; Once more at first idle, for buffers the startup sequence
+        ;; creates after this sweep; see `donkey--startup-resweep'.
         (unless donkey--startup-resweep-timer
           (setq donkey--startup-resweep-timer
                 (run-with-idle-timer 0.1 nil #'donkey--startup-resweep)))
@@ -8489,31 +8374,17 @@ donkey-mode' to toggle."
         ;; `donkey--recover-quit-in-insert'.
         (add-function :around command-error-function
                       #'donkey--recover-quit-in-insert))
-    ;; Mark run mode is the one piece of DONKEY state that is neither a
-    ;; hook nor buffer-local: its map lives in
-    ;; `overriding-terminal-local-map', which is terminal-wide.  Left
-    ;; armed by a disable that happened mid-run, `w' went on marking
-    ;; words in EVERY buffer with the mode off -- the promise above
-    ;; broken as widely as it can be.  Reaching for `M-x' healed it by
-    ;; luck, that being a foreign command the reminder hook exits on,
-    ;; but a Lisp call, an init hook or `unload-feature' left it.
-    ;; `donkey--mark-run-exit' owns all four pieces -- the map, the
-    ;; hook, the exit function and the macro flag -- and is a no-op
-    ;; when the mode was never armed.
+    ;; Mark run mode's map lives in `overriding-terminal-local-map',
+    ;; terminal-wide; `donkey--mark-run-exit' takes down all of it and
+    ;; is a no-op when nothing was armed.
     (donkey--mark-run-exit)
     (donkey--remove-global-hooks)
-    ;; A pending resweep would no-op behind its own donkey-mode guard,
-    ;; but a timer left ticking for a switched-off mode is still state
-    ;; this teardown promises to clear -- same reasoning as the banked
-    ;; lines below.
+    ;; A timer left ticking for a switched-off mode is still state.
     (when donkey--startup-resweep-timer
       (cancel-timer donkey--startup-resweep-timer)
       (setq donkey--startup-resweep-timer nil))
-    ;; Same promise as the timer above.  With the exit hook just
-    ;; removed, an entry pushed by a still-open minibuffer has lost the
-    ;; pop that balanced it; left on the stack, a later enable's first
-    ;; minibuffer exit would pop it and force a stale state into
-    ;; whatever buffer it named, off by one for every nesting after.
+    ;; An entry pushed by a still-open minibuffer has lost the pop
+    ;; that balanced it.
     (setq donkey--minibuffer-pre-state-stack nil)
     (remove-function command-error-function #'donkey--recover-quit-in-insert)
     (donkey--sweep-buffers #'donkey--disable-in-buffer)))
