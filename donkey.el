@@ -1022,15 +1022,7 @@ Output goes to a temporary buffer named '*DONKEY Platform Debug*'."
 If `clipboard-yank' signals an error (empty or inaccessible clipboard),
 falls back to `yank' from the kill ring and emits an informative message
 with platform context.  Shows platform-appropriate installation tips
-only once per session.
-
-`clipboard-yank' is called without a `fboundp' guard, and the docstring
-used to describe a fallback for when it \"is available; otherwise\" --
-there is no otherwise.  The function is preloaded from menu-bar.el in
-every Emacs this package runs on, so the guard could never be false and
-the fallback it selected could never run.  The same discovery retired
-`kill-active-region' from `donkey--delete-active-region-safe': a branch
-that cannot run is documentation that cannot be true."
+only once per session."
   (condition-case err
       (clipboard-yank)
     (error
@@ -1041,16 +1033,8 @@ that cannot run is documentation that cannot be true."
                ((eq system-type 'windows-nt) "Windows")
                (t "Linux/BSD"))
               (error-message-string err))))
-  ;; Show tip only once, and only for platforms that actually need
-  ;; external tools.  The flag is set when the tip FIRES, not on the
-  ;; first paste whatever the answer: `display-graphic-p' is
-  ;; frame-dependent, and a daemon session whose first paste happened
-  ;; in a GUI frame -- where the tip is never eligible -- must still
-  ;; show it on a later `emacsclient -t' paste with the tools missing.
-  ;; The per-paste cost that once justified first-paste latching is
-  ;; gone a different way: the PATH walk inside
-  ;; `donkey--detect-clipboard-tools' is memoized in
-  ;; `donkey--clipboard-executables'.
+  ;; The tip fires once, on the first paste where it is eligible;
+  ;; `display-graphic-p' is frame-dependent.
   (when (and (not donkey--clipboard-warning-shown)
              (not (display-graphic-p))
              (not (eq system-type 'darwin))
@@ -1062,20 +1046,9 @@ that cannot run is documentation that cannot be true."
 (defun donkey--delete-active-region-safe ()
   "Delete the active region, if there is one, to make room for a paste.
 
-DELETED rather than killed, deliberately.  The function
-`delete-active-region' takes
-a KILLP argument that would push the replaced text onto the kill ring,
-and every caller here is about to paste: killing first would make the
-`yank' that follows pull back the text just removed instead of what the
-user asked to paste.  The replaced text stays recoverable through
-\\[undo], which is where a paste-over normally leaves it.
-
-Previously this called `kill-active-region' as \"available (Emacs 29+)\",
-falling back to the function `delete-active-region'.  There is no such
-function --
-not in Emacs 29, 30, 31 or 32, and not anywhere in the Emacs Lisp tree --
-so the fallback was the only branch that ever ran.  Removed rather than
-fixed, since killing is the wrong thing here for the reason above."
+Deleted rather than killed: every caller is about to paste, and
+killing first would make the yank that follows pull back the text just
+removed.  The replaced text stays recoverable through \\[undo]."
   (when (use-region-p)
     (delete-active-region)))
 
@@ -1089,12 +1062,7 @@ something to paste even when the kill ring is empty.  DO-NOT-MOVE keeps
 the probe from rotating `kill-ring-yank-pointer' underneath the paste
 that follows.
 
-Checked BEFORE anything is removed.  `donkey-yank' used to delete the
-selection and only then discover it had nothing to insert, which left
-the selected text gone, nothing pasted, and a bare \"Kill ring is empty\"
-on screen -- and gone for real, since the region is deleted rather than
-killed.  Confirmed live: two selected lines vanished with the kill ring
-still empty afterwards."
+Checked before anything is removed."
   (condition-case nil
       (progn (current-kill 0 t) nil)
     (error t)))
@@ -1112,21 +1080,11 @@ it for every other rectangle operation."
 (defun donkey--replace-rectangle-selection-with-killed-rectangle ()
   "Replace the active `rectangle-mark-mode' selection with `killed-rectangle'.
 
-Refuses via `user-error', without touching the buffer at all, when the
-selection's row count doesn't match `killed-rectangle's row count --
-silently replacing a differently-sized selection would either lose
-rows of the pasted content or leave rows of the selection only
-partially overwritten, either way not what \"replace this rectangle
-with that one\" should ever silently do.
-
-Uses `delete-rectangle', not `killed-rectangle', to clear the
-destination: `killed-rectangle' would ALSO save what it deletes into the
-very same `killed-rectangle' slot we're about to read from, clobbering
-the source rectangle before it's ever pasted back.  The top-left
-corner is captured before deleting -- deleting the rectangle only
-ever removes text at or after that position on its own row, never
-before it, so the captured position stays valid afterward without
-needing any adjustment."
+Refuses via `user-error', without touching the buffer, when the
+selection's row count differs from `killed-rectangle's.  The
+destination is cleared with `delete-rectangle', not `kill-rectangle',
+which would overwrite `killed-rectangle' with what it deletes; the
+top-left corner is captured before the deletion."
   (let* ((start (region-beginning))
          (end (region-end))
          (source killed-rectangle)
@@ -1143,15 +1101,9 @@ needing any adjustment."
 (defun donkey--yank-rectangle-times (n)
   "Paste `killed-rectangle' with each of its rows repeated N times.
 
-Sideways, not stacked.  A rectangle is a block of columns, so repeating
-it means a wider block -- which is what a count on a blockwise paste
-does in vi, and what `donkey--paste-times' cannot express: calling
-`yank-rectangle' N times pastes the second block wherever the first one
-left point, which is partway down and across the first, so two copies of
-a three-row block came out as a staircase rather than as anything a user
-asked for.
-
-N below 1 pastes nothing, matching `donkey--paste-times'."
+Sideways, not stacked: a rectangle is a block of columns, so repeating
+it means a wider block.  N below 1 pastes nothing, matching
+`donkey--paste-times'."
   (when (> n 0)
     (let ((killed-rectangle
            (mapcar (lambda (row) (mapconcat #'identity (make-list n row) ""))
@@ -1166,10 +1118,9 @@ repeatedly rather than its text being fetched once and inserted N times,
 so the clipboard fallback and the rectangle path each keep their own
 behavior instead of being re-implemented here.
 
-A count below 1 inserts nothing, the way `donkey-copy' copies nothing and
-`donkey-delete' deletes nothing at zero.  Negative gets the same answer
-rather than a separate one: a paste has no backward direction for a
-negative count to mean, so there is nothing for it to do but nothing."
+A count below 1 inserts nothing, negative included, the way
+`donkey-copy' copies nothing and `donkey-delete' deletes nothing at
+zero."
   (dotimes (_ (max 0 n))
     (funcall inserter)))
 
@@ -1189,18 +1140,10 @@ The rule this enforces: replacing a line selection preserves the
 buffer's line structure.  A kill taken with \"V y\" carries its final
 newline and slots in as the complete line it is; a fragment killed
 mid-line becomes the line's new content instead of splicing onto the
-line below.  Each selection used to get one of those wrong, in opposite
-directions: \"V p\" left the target's newline standing, so a whole-line
-kill brought a second one and opened an empty line under every replaced
-line, while the bank always took the newline and never gave it back, so
-pasting a fragment over a banked line glued it to the line after.
+line below.
 
-Whether anything was pasted is measured by point, not by N: N above
-zero still inserts nothing when the newest kill is empty, and restoring
-a newline behind a paste of nothing would conjure a blank line for a
-press that visibly did nothing -- at the top of the buffer, where no
-earlier line ending covers for it, dropping the point check does
-exactly that."
+Whether anything was pasted is measured by point, not by N: a paste
+of nothing restores no newline."
   (let ((before (point)))
     (donkey--paste-times n #'donkey--clipboard-yank)
     (when (and took-newline
@@ -1218,15 +1161,6 @@ lands where they began.  Deleted rather than killed, for the reason
 `donkey--delete-active-region-safe' gives: the yank that follows must
 pull what is being pasted, not what was just removed.
 
-The final newline traveling with the lines is the point of this
-function.  It used to stay behind, because the paste deleted the raw
-region the highlight shows -- one character short of the lines it
-presents as, see `donkey--visual-line-region-bounds' -- so pasting the
-complete line \"V y\" kills put its newline next to the survivor and
-opened an empty line under every replaced line.  A kill that brings no
-newline gets the deleted one restored after it;
-`donkey--paste-restoring-line-ending' states the whole rule.
-
 An N below 1 pastes nothing, and the lines are still removed: asking to
 replace them with nothing is a delete, the same reading the banked
 counterpart gives its own count of zero."
@@ -1237,19 +1171,6 @@ counterpart gives its own count of zero."
     (goto-char (car span))
     (donkey--paste-restoring-line-ending n took-newline)))
 
-;; Why pasting takes two keys rather than one:
-;;
-;; "p" used to decide for you, by tracking which of the two stores had been
-;; written more recently -- but Emacs gives a rectangle no way to say so.
-;; The kill ring is untyped text and `killed-rectangle' is a separate
-;; variable that is only ever written, never cleared, so the answer had to
-;; be carried in a flag alongside them, maintained by advice on `kill-new'.
-;;
-;; That flag went stale in ways no reader could predict.  `current-kill'
-;; calls `kill-new' to import the system clipboard, so a PASTE reached the
-;; advice and retired the pending rectangle -- in graphical sessions only.
-;; The same keys gave different buffers on a GUI and in a terminal, and the
-;; tutor could not state which.  Two keys need no such bookkeeping.
 (defun donkey-yank (&optional count)
   "Paste clipboard content, replacing the active region if present.
 
@@ -1281,11 +1202,8 @@ only one.  \\[donkey-yank-rectangle] is what pastes over a rectangle
 selection.
 
 COUNT inserts that many copies, so \\[universal-argument] 3 p pastes
-three.  That is what a count on a paste means in vi, and it is the
-reading this keymap wants: `C-y' is untouched in INSERT state, so
-anyone reaching for Emacs\\=' own meaning -- a prefix argument
-selecting WHICH `kill-ring' entry to pull -- still has it here, on the
-key it belongs to.
+three.  Emacs\\=' own meaning of a prefix on a paste -- which
+`kill-ring' entry to pull -- is still on `C-y' in INSERT state.
 
 A COUNT below 1 inserts nothing, matching what zero and negative
 counts do for the other editing commands.  Any selection is still
@@ -1329,19 +1247,12 @@ Banked lines are not a selection here.  \\[donkey-yank] replaces them,
 because linear text can stand in for whole lines; a block of columns
 cannot, so this key leaves the bank alone and lands at point.
 
-COUNT repeats each ROW sideways rather than stacking copies -- see
-`donkey--yank-rectangle-times' for why a blockwise count has to mean a
-wider block.  A COUNT below 1 inserts nothing, as it does for
+COUNT repeats each ROW sideways rather than stacking copies, so the
+block gets wider.  A COUNT below 1 inserts nothing, as it does for
 \\[donkey-yank]."
   (interactive "p")
   (cond
-   ;; A rectangle of nothing but empty rows counts as nothing to paste,
-   ;; not as a paste of nothing.  It is one press away -- copying a
-   ;; zero-width rectangle, which `m v' draws from an existing empty
-   ;; region, stores ("" "") -- and pasting it used to change no text and
-   ;; say nothing at all, leaving a reader who believed the store was
-   ;; loaded with no clue why the key did nothing.  Two routes to the
-   ;; same situation now reach the same message.
+   ;; A rectangle of nothing but empty rows is nothing to paste.
    ((or (null killed-rectangle)
         (seq-every-p #'string-empty-p killed-rectangle))
     (message "No rectangle to paste"))
@@ -1354,33 +1265,11 @@ wider block.  A COUNT below 1 inserts nothing, as it does for
 (defun donkey--visual-line-region-bounds ()
   "Return the active region as (BEG . END), whole-lined for a `V' session.
 
-`donkey-visual-line-toggle' and its `J'/`K' motions leave point at the
-END of the last selected line, so the newline that ends it falls outside
-the region.  That geometry is deliberate -- the highlight stops where the
-text does, and the motion logic counts lines from where point sits -- but
-it means a selection presented as whole lines is one character short of
-being them.
-
-The consequences landed on `y' and `d' rather than on the selection: `d'
-removed the text and left an empty line behind, so `V d' had to be
-followed by another `d' to clear up after it, and `y' produced a kill
-with no final newline, which the next `p' spliced onto whatever line it
-landed in.  `donkey-bank-selection' has always spanned whole lines, via
-`donkey--whole-line-span'; routing a visual-line session through the same
-helper makes donkey's two line selections finally agree.
-
-`p' joined `y' and `d' later, for the same reason: pasting over a \"V\"
-selection deleted the raw region and left the un-shown newline standing,
-so the complete line `y' now kills arrived with one newline too many and
-opened an empty line under every line it replaced.
-
-Widened here rather than in the motions: moving point past the line
-instead would make `forward-line' count from one line further along than
-the user is on, so a single `J' grew the selection by two lines.  Tried
-and rejected -- the geometry the motions rely on is load-bearing.
-
-Only for a live visual-line session.  A character-wise region made with
-`v' means the characters it covers, and is returned untouched."
+A `V' session's region stops before the newline that ends its last
+line; the span returned takes it in, through `donkey--whole-line-span',
+so the two line selections agree on whole lines.  A character-wise
+region made with `v' means the characters it covers, and is returned
+untouched."
   (if (donkey--visual-line-session-active-p)
       (donkey--whole-line-span (region-beginning) (region-end))
     (cons (region-beginning) (region-end))))
@@ -1390,23 +1279,9 @@ Only for a live visual-line session.  A character-wise region made with
 
 The test `donkey-copy', `donkey-delete' and `donkey-change' share for
 the linear case, in place of a bare `use-region-p'.  That one is nil
-for an EMPTY active region -- `use-empty-active-region' is nil by
-default, and this package leaves it so -- which is right for a `v'
-selection that has not moved yet, and wrong for a `V' session on an
-empty line.  The session presents the line as selected, and the line
-has a newline to take, but its region runs from the line's start to
-the line's end, which on an empty line is no distance at all.  All
-three keys therefore fell through to their no-selection branches and
-acted on the character at point as though nothing had been selected.
-Confirmed live, on \"a\", an empty line and \"b\" with `V' pressed on
-the empty one: `d' removed the newline with `delete-region', off the
-kill ring, so `p' then had nothing to put back; `c' removed the
-newline and joined \"b\" up onto the empty line, where changing a line
-leaves an empty line to type on; and `y' saved the newline only
-because the character at point happened to be it, so that a count
-reached past the line the session showed.  `donkey-yank' asked
-`donkey--visual-line-session-active-p' itself all along, which is why
-`V p' on the same line already worked.
+for an EMPTY active region, which is right for a `v' selection that
+has not moved yet and wrong for a `V' session on an empty line, whose
+newline is there to take.
 
 A session whose widened span is EMPTY -- `V' on the buffer's last
 line, when that line is empty and ends without a newline -- is still
@@ -1418,34 +1293,6 @@ nothing would push \"\" onto the ring; the count branches report
            (let ((bounds (donkey--visual-line-region-bounds)))
              (< (car bounds) (cdr bounds))))))
 
-;; Why a rectangle copy never reaches the clipboard, and why `y' does not
-;; use `kill-ring-save':
-;;
-;; `copy-rectangle-as-kill' and `kill-rectangle' both leave the kill ring
-;; and the system clipboard alone, and a rectangle has no meaning outside a
-;; buffer that could survive the trip through a flat clipboard.  It reads
-;; like an oversight every time someone looks -- it has been raised,
-;; investigated and set aside more than once, and a test pins it.  Note also
-;; that a rectangle is pasted by its own key, "P", so pushing the text onto
-;; the kill ring as well would put one copy in two stores that are emptied
-;; independently.
-;;
-;; The rectangle branch used to go the other way: "y" over a rectangle you
-;; had just drawn copied whole banked lines and left `killed-rectangle'
-;; empty, so the rectangle was not there to paste afterwards either.
-;;
-;; `kill-ring-save' is not called directly because its interactive spec
-;; reads `region-beginning'/`region-end', which use wherever the mark last
-;; happened to be regardless of whether the region is ACTIVE.  A mark left
-;; over from an earlier command (a stale `donkey-mark-inner' selection, say)
-;; would then be copied instead of the single character at point.
-;;
-;; Copying nothing at `point-max', and at a count of zero, is for one
-;; reason: copying the empty range would push an empty string and displace
-;; the kill ring's newest entry, so one stray "y" past the last character
-;; would make the next paste insert nothing with no error to explain it.
-;; Confirmed live -- with "IMPORTANT" freshly copied, "y" at `point-max'
-;; left the newest entry as "".
 (defun donkey--kill-rectangle-guarded (kill-command empty-message)
   "Run KILL-COMMAND, keeping `killed-rectangle' safe from a no-width take.
 
@@ -1454,23 +1301,10 @@ Interactively invokes KILL-COMMAND -- `copy-rectangle-as-kill' or
 `killed-rectangle' only when it holds any text.  Returns non-nil exactly
 when it does.
 
-A rectangle with no width takes nothing but empty rows, and both
-commands overwrite `killed-rectangle' before anyone can look at what
-they took -- so a stored rectangle waiting to be pasted was replaced by
-emptiness on a press that visibly did nothing.  When that happens the
+A rectangle with no width takes nothing but empty rows.  Then the
 store is left alone, EMPTY-MESSAGE is shown, and the variable
-`deactivate-mark' is cleared so the rectangle stays on screen: both
-commands set that variable themselves, and the command loop acts on it
-after the calling command returns, so declining to call the function
-`deactivate-mark' is not on its own enough.
-
-One function rather than the same guard written into `donkey-copy' and
-`donkey-delete' separately, which is how it started: an invariant
-maintained by copy-paste is an invariant one future edit can break in
-one place and not the other, and this package has repaired exactly that
-drift twice before -- the trailing-punctuation trim and the
-paragraph blank-line rule each had to be re-taught to a branch that
-missed the lesson."
+`deactivate-mark' is cleared so the rectangle stays on screen, both
+commands having set it themselves."
   (let ((taken (let ((killed-rectangle nil))
                  (call-interactively kill-command)
                  killed-rectangle)))
@@ -1492,10 +1326,8 @@ A visual-line selection made with `V' is widened to whole lines before
 being copied.  The highlight stops at the end of the last line, so the
 newline ending it never looks selected -- but it IS copied, and the kill
 pastes back as a complete line instead of splicing onto whatever line
-\"p\" lands in.  See `donkey--visual-line-region-bounds'.  An empty line
-is a line too: `V y' on one copies its newline, and a count typed with
-it does not reach past the line -- see `donkey--selection-to-act-on-p'
-for the empty region that used to fall through to the count.
+\"p\" lands in.  An empty line is a line too: `V y' on one copies its
+newline.
 
 With `rectangle-mark-mode' active, copies the rectangle instead of a
 linear region -- and does so even when lines are banked, leaving every
@@ -1517,29 +1349,13 @@ copies nothing at all."
   (interactive "p")
   (let* ((n (or count 1))
          (target (max (point-min) (min (point-max) (+ (point) n)))))
-   ;; Each branch answers whether it copied anything, because only a copy
-   ;; that happened should clear the selection.  The `deactivate-mark'
-   ;; used to sit outside this `cond' and fire on every branch, including
-   ;; the two that report having nothing to take -- so a rectangle drawn
-   ;; where there was nothing to copy vanished on the press that told you
-   ;; so, and had to be drawn again.  `donkey-delete' cannot get this
-   ;; wrong: it never deactivates explicitly, and a deletion that deletes
-   ;; nothing leaves the selection standing by doing nothing at all.
-   ;;
-   ;; A successful copy still clears it.  Nothing else would -- the buffer
-   ;; is untouched, so there is no edit for the command loop to notice --
-   ;; and a selection surviving the key that consumed it is the surprise
-   ;; running the other way.
+   ;; Only a copy that happened clears the selection.
    (let ((copied
           (cond
-           ;; Before the bank: a rectangle on screen is the live
-           ;; selection, and the live selection wins.  See
-           ;; `donkey--live-rectangle-p'.
+           ;; Before the bank: the live selection wins.
            ((donkey--live-rectangle-p)
-            ;; Guarded, and the answer matters here: a no-width copy is
-            ;; not a copy, so it must not clear the selection -- see
-            ;; `donkey--kill-rectangle-guarded' for the store it is
-            ;; also protecting.
+            ;; A no-width copy is not a copy, so it must not clear the
+            ;; selection.
             (donkey--kill-rectangle-guarded
              #'copy-rectangle-as-kill
              "Nothing to copy -- the rectangle has no width"))
@@ -1562,15 +1378,6 @@ copies nothing at all."
      (when copied
        (deactivate-mark)))))
 
-;; Two things this got wrong before:
-;;
-;; The bank used to outrank a drawn rectangle here, which was worse than the
-;; same mistake in `donkey-copy': drawing a rectangle over two rows and
-;; pressing "d" deleted three whole banked lines instead, taking text the
-;; rectangle never covered.
-;;
-;; Counts used to clamp up to 1, so "delete zero characters" removed one and
-;; "delete two backwards" removed one forwards.
 (defun donkey-delete (&optional count)
   "Delete character or region.
 
@@ -1584,15 +1391,12 @@ removes those lines outright rather than emptying them and leaving the
 blanks behind.  Taking one character more than was highlighted is
 deliberate, not an off-by-one: see `donkey--visual-line-region-bounds'.
 An empty line goes the same way, its newline on the kill ring for
-\\[donkey-yank] to put back.  It used to go through `delete-region'
-instead, off the ring, its region being empty and `use-region-p'
-therefore nil -- see `donkey--selection-to-act-on-p'.
+\\[donkey-yank] to put back.
 
 With `rectangle-mark-mode' active, kills the rectangle via
 `kill-rectangle', which fills `killed-rectangle' -- the store
 \\[donkey-yank-rectangle] pastes from.  Like `donkey-copy', that
-reaches `killed-rectangle' only and never the system clipboard; see
-there for why that is deliberate.
+reaches `killed-rectangle' only and never the system clipboard.
 
 Banked lines do not override that: the rectangle is the live selection
 and wins, and the banks survive untouched.  See
@@ -1617,13 +1421,9 @@ the same place."
   (let* ((n (or count 1))
          (target (max (point-min) (min (point-max) (+ (point) n)))))
    (cond
-    ;; Before the bank, for the reason `donkey-copy' gives: see
-    ;; `donkey--live-rectangle-p'.
+    ;; Before the bank: the live selection wins.
     ((donkey--live-rectangle-p)
-     ;; The return value is unused: a kill that took text has already
-     ;; changed the buffer, which is all this branch owes anyone.  The
-     ;; guard is for the no-width press -- see
-     ;; `donkey--kill-rectangle-guarded'.
+     ;; The guard is for the no-width press.
      (donkey--kill-rectangle-guarded
       #'kill-rectangle
       "Nothing to delete -- the rectangle has no width"))
@@ -1638,55 +1438,23 @@ the same place."
    ((< n 0)
     (message "Beginning of buffer -- nothing to delete"))
    (t
-    ;; At `point-max' there is no character to delete and `delete-char'
-    ;; signals a bare `end-of-buffer', which pops the debugger for anyone
-    ;; running with `debug-on-error' on.  `donkey-copy' and `donkey-change'
-    ;; both already guard this exact position; this one was missed.
-    ;; Reached by pressing "x" or "d" once too often at the end of a
-    ;; buffer, which \\[end-of-buffer] lands on directly.
+    ;; At `point-max' `delete-char' would signal a bare `end-of-buffer'.
     (message "End of buffer -- nothing to delete")))))
 
 (defun donkey-join-line (&optional count)
   "Pull the following line up onto this one, or join the selected lines.
 
-The direction every modal editor uses: vi's `J' and Helix's `J' both
-absorb the line below the one point is on, which is the direction you
-want when you are sitting on a line deciding to take in what comes
-next.  Emacs\\='s own `\\[delete-indentation]' goes the other way,
-pulling the CURRENT line up onto the previous one, and is untouched --
-every `M-' key falls through in Normal state, so both directions are
-available.
-
-This is a fix as well as a move.  Joining was on `C-j' and ran
-`join-line' with no argument -- the Emacs direction -- while the README
-had always described it as \"Join line with next\".  The documentation
-promised the modal reading and the key delivered the Emacs one.
-
-Off `C-j' because that key is not free in Emacs the way it looks: it is
-globally `electric-newline-and-maybe-indent', and in `*scratch*' and
-any `lisp-interaction-mode' buffer it is `eval-print-last-sexp'.  A
-minor-mode map outranks the major mode, so binding it here cost the
-scratch buffer its evaluate-and-print key -- the only stock Emacs
-command Normal state took away that a user would actually miss.
+The direction every modal editor uses: the line below is absorbed
+into the one point is on.  Emacs\\='s own `\\[delete-indentation]' goes
+the other way, pulling the current line up onto the previous one, and
+is untouched, so both directions are available.
 
 COUNT joins that many following lines, so `C-u 3 g j' collapses three
-lines into this one.  A COUNT below 1 joins nothing:
-`join-line' reads any nil-or-non-positive argument as \"join to the
-PREVIOUS line\" instead, which would silently reverse the direction of
-a command the user asked to do less of.
+lines into this one.  A COUNT below 1 joins nothing.
 
-On the last line there is nothing to pull up and nothing happens.  Left
-to `join-line' this quietly ate the buffer's final newline instead: the
-\"line\" below the last one is the empty position after it, and joining
-that removes the newline separating them.  Nothing visible changes --
-the screen looks identical and point sits at `point-max' either way --
-so the first sign is a diff reporting \"\\\\ No newline at end of file\"
-later on.  A count that overshoots hit the same thing on its last
-iteration.
-
-vi's `J' stops at the last line for the same reason, and every other
-whole-line command here already leaves the final newline alone: `V d',
-`V y', a banked copy and `D' were all checked.
+On the last line there is nothing to pull up and nothing happens; the
+buffer's final newline is left alone, as every other whole-line
+command here leaves it.
 
 With a selection, the lines it touches become ONE line and the
 selection is spent -- vi's `J' reading of a visual selection: `V J J
@@ -1702,13 +1470,8 @@ with it.  COUNT is not read while a selection is -- the selection says
 how many.  Banked lines are not consulted; a bank is spent by `y', `d'
 and `p' only.
 
-The selection used to be ignored -- `V J J g j' joined the third line
-with the fourth and dropped the selection, recorded at the time as a
-difference from vi worth knowing about rather than changed.  Changed on
-request: lines you can see selected are the natural way to say which
-lines, and a count a poorer one.  A selection nothing can be done with
--- one line, the last in the buffer -- is kept, the way a refused wrap
-key keeps its selection; the message is the same as without one."
+A selection nothing can be done with -- one line, the last in the
+buffer -- is kept, and the message is the same as without one."
   (interactive "p")
   (let ((n (if (use-region-p)
                (max 1 (1- (donkey--region-line-count)))
@@ -1734,14 +1497,9 @@ key keeps its selection; the message is the same as without one."
 (defun donkey--region-line-count ()
   "Return how many lines the active region touches.
 
-A region that ends at the start of a line does not touch that line: the
-highlight shows nothing of it, and `donkey-comment-dwim' reads a region
-stopping at a line's beginning the same way.  That is exactly the count
-`count-lines' gives for the region's two ends -- the newlines between
-them, plus one when the end is not at a line's beginning -- and where
-the region starts within its first line makes no difference to it, so
-neither end needs widening first.  A `V' session ends at the END of its
-last line -- see `donkey--visual-line-region-bounds' -- so all of its
+A region that ends at the start of a line does not touch that line,
+which is exactly the count `count-lines' gives for the region's two
+ends.  A `V' session ends at the END of its last line, so all of its
 lines count, and a region on the last line of a buffer with no newline
 after it counts that line too."
   (count-lines (region-beginning) (region-end)))
