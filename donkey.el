@@ -8534,46 +8534,13 @@ overlays."
 
 Installed around `command-error-function' while `donkey-mode' is on.
 ORIG is the wrapped handler; DATA, CONTEXT and CALLER are what the
-command loop hands it.  Everything except a quit-in-Insert is passed
-through untouched.
+command loop hands it.  A quit that unwinds while Insert state is on,
+outside the minibuffer and outside an excluded mode, runs
+`donkey--exit-insert'; everything else is passed to ORIG untouched,
+as is a quit whose exit signals, after a message.
 
-The failure this recovers: `C-g' is also Emacs\\='s interrupt
-character.  A press that lands while Lisp is running -- refontifying
-after an edit, a spell-checker\\='s pass over the visible window, a
-checker, a garbage collection -- is consumed interrupting that work
-and never becomes a key.  No keymap and no hook can see it; it is
-absent even from `view-lossage'.  Measured live with real terminal
-bytes: with a large window, a `C-g' 30 ms after \"o\" was eaten by
-`jit-lock' once in fifteen tries, leaving the user in Insert with
-\"Quit\" in the echo area -- pressed again a beat later, it worked.
-This handler runs when such a quit unwinds to the command loop, and
-finishes the exit the press was for.
-
-Converting is sound because keys only ever land BETWEEN commands: any
-quit that unwinds while Insert state is on came from a `C-g' pressed
-DURING execution, and in Insert state that key has exactly one
-meaning.  Had the same press arrived a tick later it would have run
-`donkey--exit-insert' itself.  The work it interrupted stays
-interrupted either way; this only stops the press\\='s second job --
-the state change -- from being lost with it.
-
-The minibuffer and excluded modes fall through to ORIG, mirroring
-`donkey--exit-insert', which delegates those to `keyboard-quit': in
-buffers where Insert is permanent, a quit is a quit.  A quit with
-Insert off -- Normal state\\='s ordinary `keyboard-quit', an aborted
-command in some other buffer -- is not this handler\\='s business and
-passes through.
-
-Coverage is partial by design, and cannot be otherwise: a quit that
-some other code swallows before it reaches the command loop --
-redisplay reports its own as \"Error during redisplay\", timers catch
-theirs -- never arrives here.  This recovers the flavor that surfaces
-as a bare \"Quit\", which is the one users actually see.
-
-The exit is wrapped like `donkey--intercept-quit-in-insert' wraps its
-own: an error inside a `command-error-function' must never escape, so
-it is reported and the original handler still runs, keeping the error
-visible through the standard path."
+Coverage stops at quits the command loop never sees: one that
+redisplay or a timer reports as its own does not arrive here."
   (if (and (eq (car-safe data) 'quit)
            (bound-and-true-p donkey-insert-mode)
            (not (minibufferp))
