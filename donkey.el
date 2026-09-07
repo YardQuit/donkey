@@ -8728,21 +8728,13 @@ regardless of which Donkey state is active when it's called."
 (defun donkey--ensure-default-state ()
   "Enable DONKEY Normal state unless the current major mode is excluded.
 
-For excluded modes, enable DONKEY Insert state (passthrough) instead.
-Returns non-nil if DONKEY was enabled.
+For an excluded mode, enable Insert state (passthrough) instead.  A
+minibuffer gets no state at all.  Returns non-nil if a state was
+enabled.
 
-Minibuffers get NO state at all -- they stay in plain Emacs
-passthrough, the answer `donkey--minibuffer-setup' already gives.
-This function is the one funnel every sweep pours through -- the
-enable-time sweep over `buffer-list', the startup resweep, and
-`after-change-major-mode-hook' -- and before this guard, the
-minibuffer was protected only by hook ORDER: entry survived because
-`minibuffer-setup-hook' happens to run after the major-mode hook and
-switched Normal back off.  Nothing protected it after entry.  Probed
-live: a resweep fired while a prompt was open put Normal state INTO
-the active minibuffer, where the letters being typed are commands.
-Ordering luck is state you must trust; this guard is state you can
-verify."
+Every sweep that enables DONKEY in a buffer goes through this
+function: the sweep over `buffer-list' at enable time, the startup
+resweep, and `after-change-major-mode-hook'."
   (cond
    ((minibufferp) nil)
    (t
