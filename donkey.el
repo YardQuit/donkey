@@ -367,30 +367,16 @@ it, with point left where it was."
   (donkey-insert-mode 1))
 
 (defun donkey--deactivate-region-if-active ()
-  "Deactivate the mark if there is an active region.
-
-Uses `use-region-p' rather than `region-active-p': the latter is
-`(and transient-mark-mode mark-active)' with no regard for whether the
-region is empty, whereas `use-region-p' additionally requires it be
-non-empty (per `use-empty-active-region'), matching what these Insert-
-entry commands actually care about -- an empty active region has
-nothing meaningful to deselect."
+  "Deactivate the mark if there is an active, non-empty region."
   (when (use-region-p)
     (deactivate-mark)))
 
 (defun donkey-insert-here ()
   "Insert at point, and enter INSERT state.
 
-Any active selection is dropped first and nothing is done to it -- a
-drawn rectangle included, which is worth saying because `donkey-change'
-is the one insert-entry key that does the opposite: under
-`rectangle-mark-mode' it replaces every row of the block.  The two keys
-sit beside each other and answer differently.
-
-Banked lines are left standing, again as `donkey-change' leaves them.
-It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
-bank; entering INSERT is not an operation on a selection, so there is
-nothing here for a bank to mean.
+Any active selection is dropped, a rectangle included, and banked
+lines are left standing; `donkey-change' is the insert-entry key that
+acts on them instead.
 
 Takes no COUNT."
   (interactive)
@@ -400,21 +386,11 @@ Takes no COUNT."
 (defun donkey-insert-after ()
   "Insert after the character at point, and enter INSERT state.
 
-At the very end of the buffer there is no character to step over, so
-point stays put rather than `forward-char' signaling -- which would
-abort before the state change and leave Normal state active, with only
-an end-of-buffer message to explain it.
+At the very end of the buffer point stays put.
 
-Any active selection is dropped first and nothing is done to it -- a
-drawn rectangle included, which is worth saying because `donkey-change'
-is the one insert-entry key that does the opposite: under
-`rectangle-mark-mode' it replaces every row of the block.  The two keys
-sit beside each other and answer differently.
-
-Banked lines are left standing, again as `donkey-change' leaves them.
-It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
-bank; entering INSERT is not an operation on a selection, so there is
-nothing here for a bank to mean.
+Any active selection is dropped, a rectangle included, and banked
+lines are left standing; `donkey-change' is the insert-entry key that
+acts on them instead.
 
 Takes no COUNT."
   (interactive)
@@ -427,16 +403,9 @@ Takes no COUNT."
 (defun donkey-insert-beginning-of-line ()
   "Move to the beginning of the line, and enter INSERT state.
 
-Any active selection is dropped first and nothing is done to it -- a
-drawn rectangle included, which is worth saying because `donkey-change'
-is the one insert-entry key that does the opposite: under
-`rectangle-mark-mode' it replaces every row of the block.  The two keys
-sit beside each other and answer differently.
-
-Banked lines are left standing, again as `donkey-change' leaves them.
-It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
-bank; entering INSERT is not an operation on a selection, so there is
-nothing here for a bank to mean.
+Any active selection is dropped, a rectangle included, and banked
+lines are left standing; `donkey-change' is the insert-entry key that
+acts on them instead.
 
 Takes no COUNT."
   (interactive)
@@ -447,16 +416,9 @@ Takes no COUNT."
 (defun donkey-insert-end-of-line ()
   "Move to the end of the line, and enter INSERT state.
 
-Any active selection is dropped first and nothing is done to it -- a
-drawn rectangle included, which is worth saying because `donkey-change'
-is the one insert-entry key that does the opposite: under
-`rectangle-mark-mode' it replaces every row of the block.  The two keys
-sit beside each other and answer differently.
-
-Banked lines are left standing, again as `donkey-change' leaves them.
-It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
-bank; entering INSERT is not an operation on a selection, so there is
-nothing here for a bank to mean.
+Any active selection is dropped, a rectangle included, and banked
+lines are left standing; `donkey-change' is the insert-entry key that
+acts on them instead.
 
 Takes no COUNT."
   (interactive)
@@ -467,16 +429,9 @@ Takes no COUNT."
 (defun donkey-open-below (&optional count)
   "Open COUNT new lines below the current one, and enter INSERT state.
 
-Any active selection is dropped first and nothing is done to it -- a
-drawn rectangle included, which is worth saying because `donkey-change'
-is the one insert-entry key that does the opposite: under
-`rectangle-mark-mode' it replaces every row of the block.  The two keys
-sit beside each other and answer differently.
-
-Banked lines are left standing, again as `donkey-change' leaves them.
-It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
-bank; entering INSERT is not an operation on a selection, so there is
-nothing here for a bank to mean.
+Any active selection is dropped, a rectangle included, and banked
+lines are left standing; `donkey-change' is the insert-entry key that
+acts on them instead.
 
 COUNT opens that many lines.  The first is the line a bare press opens,
 indented by the mode with the cursor on it; the rest are empty lines
@@ -487,22 +442,14 @@ nothing is typed on them.  A COUNT below 1 opens one line, as a bare
 press does -- there is no meaning for zero lines on a key that exists
 to open one.
 
-Took no count for a long time, on the reasoning that vi's 3o repeats
-the TEXT typed afterwards, which needs a replay DONKEY does not have,
-and that blank lines under what gets typed are stray.  Changed on
-request: the blanks are the room asked for, and the cursor stays on the
-line next to the one it came from, so a bare press and a counted press
-differ only in the room opened beyond it.  `donkey-open-above' reads
-its count the same way, the blanks above the cursor's line."
+`donkey-open-above' reads its count the same way, the blanks above
+the cursor's line."
   (interactive "p")
   (donkey--deactivate-region-if-active)
   (move-end-of-line 1)
   (newline-and-indent)
-  ;; The extra lines go BEYOND the cursor's line, under `save-excursion'
-  ;; so the cursor keeps the line a bare press would have left it on,
-  ;; and after the indentation so that only that line carries any.  A
-  ;; count below 1 leaves nothing to add, which is the whole of how it
-  ;; reads as a bare press.
+  ;; The extra lines go beyond the cursor's line, after the
+  ;; indentation, so only that line carries any.
   (let ((extra (1- (or count 1))))
     (when (> extra 0)
       (save-excursion (insert (make-string extra ?\n)))))
@@ -511,35 +458,22 @@ its count the same way, the blanks above the cursor's line."
 (defun donkey-open-above (&optional count)
   "Open COUNT new lines above the current one, and enter INSERT state.
 
-Any active selection is dropped first and nothing is done to it -- a
-drawn rectangle included, which is worth saying because `donkey-change'
-is the one insert-entry key that does the opposite: under
-`rectangle-mark-mode' it replaces every row of the block.  The two keys
-sit beside each other and answer differently.
-
-Banked lines are left standing, again as `donkey-change' leaves them.
-It is `donkey-copy', `donkey-delete' and `donkey-yank' that spend a
-bank; entering INSERT is not an operation on a selection, so there is
-nothing here for a bank to mean.
+Any active selection is dropped, a rectangle included, and banked
+lines are left standing; `donkey-change' is the insert-entry key that
+acts on them instead.
 
 COUNT opens that many lines: the line a bare press opens, directly
 above the one the cursor came from and indented by the mode with the
 cursor on it, and COUNT - 1 empty lines above that.  A COUNT below 1
-opens one line, as a bare press does.  See `donkey-open-below' for the
-reading and for why the two keys took no count before."
+opens one line, as a bare press does."
   (interactive "p")
   (donkey--deactivate-region-if-active)
   (move-beginning-of-line 1)
   (newline-and-indent)
   (forward-line -1)
   (indent-according-to-mode)
-  ;; The extra lines go ABOVE the cursor's line, inserted at its start
-  ;; so the line is pushed down and the cursor stays next to the line
-  ;; it came from, as it does below.  Not under `save-excursion': the
-  ;; insertion lands AT point on an unindented line, and the saved
-  ;; position stays before text inserted at it, which left the cursor
-  ;; on the topmost blank.  The opened line holds nothing but its
-  ;; indentation, so its end is where the mode left the cursor.
+  ;; Inserted at the line's start, so the line is pushed down and the
+  ;; cursor stays beside the line it came from.
   (let ((extra (1- (or count 1))))
     (when (> extra 0)
       (beginning-of-line)
@@ -547,49 +481,21 @@ reading and for why the two keys took no count before."
       (end-of-line)))
   (donkey-enter-insert))
 
-;; Two notes on the choices here:
-;;
-;; Nothing has been decided about what changing a multi-line BANK ought to
-;; do, and guessing at it silently would be worse than the present split, so
-;; "c" leaves banks alone while "y", "d" and "p" spend them.  A known
-;; difference rather than a discovery.
-;;
-;; The end-of-buffer guard exists because `delete-char' signals there, which
-;; would abort before the state transition and leave Normal state active --
-;; pressing "change" and silently staying in Normal, with only an "End of
-;; buffer" message to explain it.  Caught the same way `donkey-insert-after'
-;; catches it for its own `forward-char'.
 (defun donkey-change (&optional count)
   "Delete the active region (or the character at point) and enter INSERT state.
 
 Under `rectangle-mark-mode' the region is replaced via
-`string-rectangle' and DONKEY stays in NORMAL state instead.
-`string-rectangle' prompts for the replacement text in the minibuffer
-and applies it to every covered line itself, so by the time it returns
-the edit is already complete and there is nothing left to type --
-dropping into INSERT there just means the next navigation keypress
-self-inserts.  Confirmed live: after `m v', `c', a replacement string
-and RET, pressing `j' and `l' typed a literal \"jl\" into the buffer
-instead of moving.
+`string-rectangle', which prompts for the replacement text and applies
+it to every covered line, and DONKEY stays in NORMAL state.
 
 A visual-line selection made with `V' is NOT widened to whole lines
-here, unlike `donkey-copy', `donkey-delete' and `donkey-yank' -- see
-`donkey--visual-line-region-bounds' for the widening those three do.  The
+here, unlike `donkey-copy', `donkey-delete' and `donkey-yank'.  The
 newline ending the last line is kept, so `V c' empties the line and
-leaves point on it ready to type, rather than removing the line and
-dropping INSERT state onto the following one.  That is what changing a
-line means in vi, where `cc' is precisely the linewise change that keeps
-its line; `V J c' likewise collapses the span to a single empty line.
-Deliberate, and the one place the two line commands part company: `V d'
-takes the newline because you asked for the line to go, `V c' keeps it
-because you asked to replace what is on it.
+leaves point on it ready to type, and `V J c' collapses the span to a
+single empty line.  `V d' takes the newline; `V c' keeps it.
 
 An EMPTY line under `V' is changed the same way: it stays, empty, with
-INSERT state on it.  Its region is empty, which `use-region-p' does not
-count as a selection, so the press used to take the no-selection branch
-below and remove the character at point -- the newline -- joining the
-next line up onto the one being changed.  See
-`donkey--selection-to-act-on-p'.
+INSERT state on it.
 
 Banked lines are not honored either.  With lines banked via
 `donkey-bank-selection' and no active region, this changes the character
@@ -597,70 +503,43 @@ at point and leaves the banks standing -- `y', `d' and `p' all act on
 the bank instead.
 
 What a SELECTION replaces goes on the `kill-ring', so
-\\[donkey-yank] brings it back -- the same store `donkey-delete' fills
-for the same selection.  A rectangle goes to `killed-rectangle'
-instead, where \\[donkey-yank-rectangle] pastes it from.  Nothing was
-saved at all before, so changing a marked word and pasting gave whatever
-happened to be on the ring already.
+\\[donkey-yank] brings it back, as it does after `donkey-delete'.  A
+rectangle goes to `killed-rectangle' instead, where
+\\[donkey-yank-rectangle] pastes it from.
 
-With NO selection nothing is saved, and that is the rule rather than an
-oversight: a character changed under the cursor is a typo being fixed,
-not a cut, and filling the ring with single characters would push out
-what was put there deliberately.  A COUNT does not change that --
-\\`C-u 3 c' is still no selection -- so the text it removes is gone
-except through `undo'.  `donkey-delete' draws the same line in the
-same place.
+With NO selection nothing is saved: a character changed under the
+cursor is a typo being fixed, not a cut.  A COUNT does not change that
+-- \\`C-u 3 c' is still no selection -- so the text it removes is gone
+except through `undo'.  `donkey-delete' draws the same line.
 
 INSERT state is entered even when there is nothing to delete, such as at
 the very end of the buffer.
 
 COUNT changes that many characters when no selection is active.  A
 negative COUNT changes that many characters before point, and a COUNT of
-zero changes none while still entering INSERT state -- the same reading
-`donkey-delete' gives its own argument, since the two remove text
-identically and differ only in what happens next."
+zero changes none while still entering INSERT state, the same reading
+`donkey-delete' gives its own argument."
   (interactive "p")
   (if (donkey--selection-to-act-on-p)
       (if (bound-and-true-p rectangle-mark-mode)
           (progn
-            ;; Saved before it goes, the same way `donkey-delete' fills
-            ;; `killed-rectangle' -- a rectangle is a selection, and what
-            ;; a selection replaces is recoverable.  `string-rectangle'
-            ;; replaces in place and saves nothing itself.
-            ;;
-            ;; Necessarily before the prompt rather than after: by the
-            ;; time `string-rectangle' returns the old columns are gone.
-            ;; So aborting the prompt with \[keyboard-quit] leaves
-            ;; `killed-rectangle' holding the rectangle that was NOT
-            ;; replaced.  Real text from the buffer either way, but worth
-            ;; knowing if a rectangle was waiting there to be pasted.
+            ;; Saved to `killed-rectangle' before the prompt, as
+            ;; `donkey-delete' saves it; aborting the prompt leaves it
+            ;; there.
             (call-interactively #'copy-rectangle-as-kill)
             (call-interactively #'string-rectangle)
-            ;; Explicit rather than implicit: the minibuffer
-            ;; save/restore in `donkey--minibuffer-exit' already tends to
-            ;; land back in Normal here, but that depends on this having
-            ;; been reached FROM Normal state, which nothing guarantees
-            ;; for a command also callable via \\[execute-extended-command].
+            ;; Explicit: the command may be reached from Insert state
+            ;; through \\[execute-extended-command].
             (donkey-enter-normal))
-        ;; `kill-region' rather than `delete-region': a selection that
-        ;; gets replaced is recoverable, which is what `donkey-delete'
-        ;; already did for the same selection.  `c' saved nothing at all
-        ;; before this, so \[donkey-yank] after changing a marked word
-        ;; pasted whatever happened to be on the ring instead.
-        ;;
-        ;; Not over NOTHING, though.  A `V' session on an empty line is
-        ;; a selection with no text in it -- see
-        ;; `donkey--selection-to-act-on-p' -- and `kill-region' over an
-        ;; empty span still pushes "" onto the ring, so the next paste
-        ;; would put back nothing where the last kill was expected.
-        ;; The selection is let go of as the kill would have let go of
-        ;; it, and INSERT state opens on the line that stays empty.
+        ;; `kill-region', not `delete-region': what a selection replaces
+        ;; is recoverable.  Not over an empty span, which would push ""
+        ;; onto the ring.
         (if (= (mark) (point))
             (deactivate-mark)
           (kill-region (mark) (point)))
         (donkey-enter-insert))
-    ;; NOT killed: no selection was made, so there is nothing to put
-    ;; back.  See the docstring -- this is the rule, not an oversight.
+    ;; Not killed: no selection was made, so there is nothing to put
+    ;; back.
     (delete-region (point)
                    (max (point-min)
                         (min (point-max) (+ (point) (or count 1)))))
