@@ -9,6 +9,46 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.7.2 — 2026-09-07
+
+Not a line of code differs from 1.7.1. Everything here is what the
+package says about itself: in its help text, in its Commentary, and in
+the README.
+
+*Changed — you will notice these*
+
+- =C-h f= on any DONKEY command shows how to use it and nothing else:
+  what the key does, what a count means, what it does with a
+  selection, which commands share the rule, where its coverage stops.
+  The docstrings used to carry the reasoning behind each design as
+  well — what a key used to do, what was observed live, what was tried
+  and declined. That layer is kept in the maintainer's notes outside
+  the repository now, and the file is about 1,600 lines shorter for
+  it.
+
+*Changed*
+
+- The Commentary, which package archives show as the description, now
+  reaches its Usage section — a three-semicolon heading had ended it
+  early — and says up front how little DONKEY takes from Emacs: one
+  key in Insert state, four named things in Normal state, nothing else
+  shadowed, every Meta binding untouched. The README's Overview says
+  the same, with the numbers.
+- The =Assisted-by:= header lines take MELPA's =AGENT:MODEL= form, one
+  line per assistant.
+
+*Under the hood*
+
+- A test walks the Normal, Insert and mark run keymaps to every leaf
+  and fails on any Meta or ESC binding, so the sentence above cannot
+  drift.
+- Seven tests recount Lesson 5 of the tutor, and two exercises there
+  are driven with real keys.
+
+*Upgrading*
+
+Nothing to do. Every key does what it did in 1.7.1.
+
 * 1.7.1 — 2026-09-07
 
 Text, and only text: not a line of code differs from 1.7.0. Lesson 5
