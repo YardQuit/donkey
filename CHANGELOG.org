@@ -9,6 +9,39 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.7.1 — 2026-09-07
+
+Text, and only text: not a line of code differs from 1.7.0. Lesson 5
+of the tutor now says what =m i= and =m a= look for and what =m I= and
+=m A= read, and seven tests hold it to that.
+
+*Added*
+
+- Lesson 5 says that standing on either end of a pair, =m i= and =m a=
+  ask nothing — the character under the cursor is the answer, and the
+  one typed from habit does no harm — with an exercise on the paren of
+  its =call(...)= line.
+- It says the pairs =m i= and =m a= know are a fixed list, looked for
+  as characters wherever they stand: a =<= is a pair to them in plain
+  text as much as in HTML, and a bracket inside a string or a comment
+  counts like any other. And that the list is yours: it names
+  =donkey-mark-pair-delimiters=, gives =#= and =X= as additions, and
+  points at =C-h v= and at the README.
+- It says =m I= and =m A= read the buffer's syntax table, so which
+  characters count is the major mode's decision — in an HTML buffer
+  =<= and =>= are a pair to =m I=, in plain text or C they are not —
+  with a demo line where =m i <= selects the inside and =m I= from the
+  same spot refuses, the tutor being =text-mode=.
+
+*Internal*
+
+- Seven tests recount the lesson's claims: both exercises driven with
+  real keys in the tutor buffer, the delimiters it names checked
+  against the variable's default value, the paren-inside-a-string
+  contrast in =emacs-lisp-mode=, the =#= and =X= additions with the
+  refusal beforehand, =<= under =m I= in =html-mode=, =text-mode= and
+  =c-mode=, and the variable's name pinned inside Lesson 5.
+
 * 1.7.0 — 2026-09-06
 
 A round of live function tests, driven with real keys in a terminal
