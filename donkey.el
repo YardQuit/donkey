@@ -251,14 +251,8 @@ interaction entirely."
 (defun donkey-insert-org-scratch-message ()
   "Insert the *org-scratch* header naming the `save-some-buffers' key.
 
-The key is quoted as a reference, the way `initial-scratch-message'
-quotes its `\\[find-file]'.  Between plain apostrophes,
-`substitute-command-keys' curled both as CLOSING quotes, and every
-*org-scratch* buffer opened with the key sitting between two ’.
-
-No `purecopy' around the text: `initial-scratch-message' dropped its
-own in Emacs 31, where the function is obsolete, and outside the dump
-it returned its argument unchanged anyway."
+The key is rendered through `substitute-command-keys', so the header
+shows the binding in force."
   (insert
    (substitute-command-keys
     (concat "# This buffer is for scribbling in org-mode.\n"
