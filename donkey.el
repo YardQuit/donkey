@@ -8017,24 +8017,9 @@ Operates on the current buffer only."
         (when (and (overlayp ov) (overlay-start ov))
           (delete-overlay ov)
           (setq cleared (1+ cleared)))))
-    ;; Strategies 2 and 3 share ONE scan.  `overlays-in' over the whole
-    ;; buffer conses a fresh list of every overlay, and this runs on
-    ;; every Insert -> Normal exit: in an Org, LSP or Flycheck buffer
-    ;; that is thousands of overlays, and two scans were twice that.
-    ;;
-    ;; Strategy 2: transient faces.
-    ;; Strategy 3: overlays carrying smartparens keymap properties.
-    ;;
-    ;; For overlays Smartparens is actively tracking in
-    ;; `sp-pair-overlay-list', go through its own `sp--remove-overlay'
-    ;; instead of a raw `delete-overlay': deleting a still-tracked pair
-    ;; overlay out from under Smartparens leaves a stale, deleted-overlay
-    ;; reference sitting in that list.  `overlay-start'/`overlay-end' on
-    ;; a deleted overlay return nil, and the very next command then
-    ;; crashes `sp--pair-overlay-post-command-handler' (still registered
-    ;; as a local `post-command-hook', since only `sp--remove-overlay'
-    ;; also unregisters it) with
-    ;; (wrong-type-argument number-or-marker-p nil).
+    ;; Strategies 2 (transient faces) and 3 (smartparens keymap
+    ;; overlays) share one scan.  An overlay Smartparens still tracks
+    ;; goes through its own `sp--remove-overlay'.
     (dolist (ov (overlays-in beg end))
       (when (overlay-start ov)
         (let ((face (overlay-get ov 'face))
@@ -8089,26 +8074,11 @@ is entered, and the overlay cleanup is scheduled.  With KEEP-MARK
 non-nil the mark is left as it is, for a caller whose edit was refused
 and whose selection therefore still means something -- see
 `donkey-wrap-region', the one caller that passes it.  `donkey--exit-insert'
-is this plus the errand that belongs to `C-g' as a KEY -- stopping a
-keyboard macro being recorded -- and it used to be the only way back,
-so a command that merely passes through INSERT to do its work got the
-errand too.  `donkey-wrap-region' enters INSERT for one
-`self-insert-command' and returned through the `C-g' path, and a wrap
-pressed while \\[kmacro-start-macro] was recording ended the recording
-without a word.  Confirmed live in a terminal frame and a graphical
-one: `v w (' left the variable `defining-kbd-macro' nil, where the
-rectangle wrap, which never enters INSERT, recorded on.
+is this plus the errand that belongs to `C-g' as a key.
 
-Letting go of the mark is guarded, because it runs `deactivate-mark-hook',
-which is not DONKEY's: anything the user or a package put there could
-signal, and this is the only step BEFORE the state change.  Left
-unguarded, a stranger's broken hook would strand the user in Insert
-state on the very keypress meant to get them out.
-
-From the state change on the promise is kept whatever happens.
-`define-minor-mode' sets the variable before running the body and
-hooks, so even a `donkey-normal-mode-hook' that errors leaves Normal
-state on."
+Letting go of the mark is guarded, `deactivate-mark-hook' not being
+DONKEY's; from the state change on, Normal state is entered whatever
+a hook does."
   (unless keep-mark
     (condition-case err
         (deactivate-mark)
@@ -8129,62 +8099,23 @@ recorded -- the one errand of `keyboard-quit' that the key keeps, see
 through INSERT calls `donkey--leave-insert' itself, since it has no
 `C-g' to stand in for.
 
-In the minibuffer, in a `donkey-excluded-modes'
-buffer, or when `donkey-insert-mode' is not actually active in the
-current buffer, delegates to `keyboard-quit' instead.  The
-`donkey-insert-mode' check matters because `donkey-setup-smartparens'
-binds this command directly into Smartparens' own keymaps
-\(`smartparens-mode-map' and its overlay keymaps), which are
-independent of DONKEY's lifecycle: disabling `donkey-mode' turns off
-`donkey-insert-mode' in every buffer but does not undo that binding,
-so without this guard a stray `C-g' reaching this function through it
-afterward would still turn `donkey-normal-mode' back on.  Checking
-`donkey-insert-mode' rather than the global `donkey-mode' matters too:
-`donkey-insert-mode'/`donkey-normal-mode' are usable standalone
-without ever enabling `donkey-mode', and a `donkey-mode' check would
-make `C-g' always fall through to `keyboard-quit' for that usage,
-never actually transitioning to Normal state.
-
-For the minibuffer/excluded-mode case: those buffers stay in Insert
-state permanently, so forcing a Normal-state transition here would
-just get reverted immediately, silently swallowing `C-g' and
-preventing it from reaching the underlying mode (e.g. interrupting a
-subprocess or aborting a recursive edit)."
+In the minibuffer, in a `donkey-excluded-modes' buffer, or when
+`donkey-insert-mode' is not active in the current buffer, delegates to
+`keyboard-quit' instead."
   (interactive)
   (if (or (not (bound-and-true-p donkey-insert-mode))
           (minibufferp)
           (donkey--excluded-mode-p))
       (keyboard-quit)
     (donkey--leave-insert)
-    ;; After the state change, which it cannot prevent -- see the
-    ;; function for why it is caught rather than allowed to signal.
+    ;; After the state change.
     (donkey--abort-keyboard-macro-definition)))
 
 (defun donkey--abort-keyboard-macro-definition ()
   "Stop a keyboard macro that is being recorded, the way `keyboard-quit' does.
 
-The one errand of Emacs\\=' own `C-g' that leaving Insert state used to
-skip.  Pressing `C-g' part way through `\\[kmacro-start-macro]' looked
-like it had abandoned the recording -- Normal state, box cursor, nothing
-to suggest otherwise -- while every later keystroke was still being
-recorded.  The only signal was `\\[kmacro-start-macro]' refusing later
-with \"Already defining keyboard macro\".
-
-Recoverable rather than destructive: `C-g' from NORMAL state runs the
-real `keyboard-quit', which does stop it, so the escape always worked in
-two presses.  This makes the first press mean what it looks like.
-
-Runs AFTER the state transition and cannot prevent it.  Any condition is
-caught and reported: this is reached from `pre-command-hook' via
-`donkey--intercept-quit-in-insert', where a signal costs the user the
-whole interception mechanism for the session, and no macro is worth
-that.
-
-Deliberately not the rest of `keyboard-quit'.  Insert state\\='s `C-g' is
-an exit key, not a general abort, and folding in every stock side effect
-would make it less predictable rather than more.  A macro left recording
-is the one omission that leaves the editor in a state the user believes
-it is not in."
+Runs after the state transition and cannot prevent it.  Any condition
+is caught and reported."
   (when (bound-and-true-p defining-kbd-macro)
     (condition-case err
         (progn
@@ -8201,40 +8132,10 @@ it is not in."
 Detects a raw quit keypress (or `sp-cancel') while in `donkey-insert-mode',
 then calls `donkey--exit-insert' directly to ensure state transition occurs.
 
-Skips excluded-mode buffers entirely: there, `donkey--exit-insert'
-calls `keyboard-quit', which signals a `quit' condition.  Emacs's
-command loop treats ANY signal from a `pre-command-hook' function as a
-malfunction, reports \"Error in pre-command-hook\", and permanently
-removes the offending function from the hook — silently and
-permanently disabling this whole interception mechanism, in every
-buffer, after the very first `C-g' in an excluded-mode buffer.
-Skipping here lets the raw key fall through to the direct `C-g'
-binding instead, so `keyboard-quit' runs as an ordinary command
-instead of from inside a hook, where signaling `quit' is safe.
-
-The excluded-mode skip only closed the one path that was found.  Every
-OTHER way `donkey--exit-insert' can signal removes this function just
-as permanently, and there are several: the function `deactivate-mark'
-runs `deactivate-mark-hook', entering Normal state runs
-`donkey-normal-mode-hook' -- which is a user-facing hook anyone may
-have added a cursor, theme or modeline function to -- and the overlay
-cleanup cancels and schedules timers.  One error in any of them and
-this whole mechanism is gone for the session, in every buffer, leaving
-only a line in *Messages* to say so.
-
-Confirmed by driving a real `C-g' through `execute-kbd-macro' with a
-`donkey-normal-mode-hook' that errors: the interception was on the hook
-before the keypress and gone after it.
-
-So the call is wrapped.  Any condition is caught and reported rather
-than allowed to propagate, because losing this function is worse than
-whatever raised it: `C-g' returning to Normal state is the one promise
-DONKEY makes unconditionally, and this hook is what keeps it when
-something else has taken the key -- nested smartparens overlays, a
-package binding `C-g' in its own map, a terminal where the direct
-binding is not reached.  `donkey--exit-insert' guards its own one step
-that runs before the state transition, so a failure partway through
-still leaves the user in Normal state, which is what they asked for."
+Skips the minibuffer and excluded-mode buffers, where the raw key
+falls through to the direct `C-g' binding.  The exit is wrapped: any
+condition is caught and reported rather than allowed to remove this
+function from the hook."
   (when (and (bound-and-true-p donkey-insert-mode)
              (not donkey--just-exited-from-insert)
              (not (minibufferp))
@@ -8243,15 +8144,11 @@ still leaves the user in Normal state, which is what they asked for."
                  (eq this-command 'sp-cancel)))
     (setq this-command 'ignore
           donkey--just-exited-from-insert t)
-    ;; LOCAL (4th arg) so the reset only fires once THIS buffer is
-    ;; current again for its next command, not whichever buffer
-    ;; happens to run the next command globally.
+    ;; Local, so the reset fires for this buffer's next command.
     (add-hook 'pre-command-hook #'donkey--reset-exit-guard -100 t)
     (condition-case err
         (donkey--exit-insert)
-      ;; Reported, not swallowed: a real bug in the exit path should
-      ;; still be visible, it just must not cost the user their escape
-      ;; key for the rest of the session.
+      ;; Reported, not swallowed.
       (error
        (message "DONKEY: error leaving Insert state: %s"
                 (error-message-string err)))
