@@ -6619,17 +6619,9 @@ such as \"<backspace>\" -- is a single key."
 (defun donkey--desc-bindings-insert-map (map)
   "Insert MAP's leaf bindings at point, grouped by prefix.
 
-The rendering half of `donkey-describe-bindings', split out when the
-buffer grew a second map to show: the normal-state keys and mark run
-mode's, which are the same shape and want the same grouping, headers
-and clickable command names.
-
-Sorted by GROUP first, then by key within the group.  Sorting by key
-alone interleaves single keys with the prefix groups alphabetically
-\(\"h\" between \"g t\" and \"m a\"), and since a header is emitted on
-every group transition, \"Single Keys\" then appeared four separate
-times -- not the grouping the command promises.  Single keys lead,
-prefixes follow in alphabetical order."
+Single keys lead, the prefix groups follow in alphabetical order, and
+keys sort within their group.  Each group gets a header, and command
+names are clickable buttons."
   (let ((sorted-raw
          (sort (donkey--desc-bindings-collect-leaves map "")
                (lambda (a b)
@@ -6647,10 +6639,8 @@ prefixes follow in alphabetical order."
                (def      (cdr entry))
                (group    (donkey--desc-bindings-group full-key))
                (new-block-p (not (equal prev-group group))))
-          ;; Header for every group, including the first -- otherwise
-          ;; the leading block (single keys) is the one group left
-          ;; unlabelled.  The blank separator is only wanted between
-          ;; blocks, so it is skipped for the first.
+          ;; A header for every group, the first included; the blank
+          ;; separator only between blocks.
           (when new-block-p
             (when (> lines-added 0) (insert "\n"))
             (insert (propertize (format "  %s" (donkey--binding-group-name group))
@@ -6679,11 +6669,8 @@ Bindings are grouped by prefix, separated by blank rows and section
 headers.  Command names are clickable buttons that open their
 documentation.
 
-Mark run mode gets a section of its own because its keys are
-reachable from nowhere else: they live in a transient map that any
-foreign key lapses, so pressing \\[describe-bindings] from inside the
-mode ends it before the help can see it, and the reminder in the echo
-area cannot hold them all."
+Mark run mode's keys are listed here because \\[describe-bindings]
+cannot show them: they live in a transient map."
   (interactive)
   (unless (boundp 'donkey-normal-mode-map)
     (user-error "Variable `donkey-normal-mode-map' is not defined yet"))
@@ -6702,19 +6689,14 @@ area cannot hold them all."
       (insert (propertize (make-string 50 ?-)
                           'face 'font-lock-comment-face) "\n")
       (donkey--desc-bindings-insert-map donkey-normal-mode-map)
-      ;; Mark run mode, under a title of its own: these keys are live
-      ;; only while the mode is, and every one of them is a key that
-      ;; means something else in normal state.
+      ;; Mark run mode, under a title of its own.
       (insert "\n")
       (insert (propertize "Mark Run Mode Key Bindings\n"
                           'face '(bold font-lock-function-name-face :height 1.2)))
       (insert (propertize (make-string 50 ?=)
                           'face 'font-lock-comment-face) "\n")
-      ;; The key is read out of `donkey-normal-mode-map' rather than
-      ;; written with \\=\\[...]: `substitute-command-keys' looks in the
-      ;; buffer's ACTIVE maps, and the buffer it runs in here is this
-      ;; help buffer, where donkey's maps are not on -- so the line came
-      ;; out as "M-x donkey-mark-run-toggle starts it" every time.
+      ;; The key is looked up in `donkey-normal-mode-map' directly; no
+      ;; DONKEY map is active in this help buffer.
       (insert (propertize
                (format "Live only while the mode is on -- %s starts it.\n"
                        (key-description
