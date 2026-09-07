@@ -553,18 +553,12 @@ zero changes none while still entering INSERT state, the same reading
   "List of (ELEMENT-TYPE PROPERTY COMMAND1 COMMAND2 ...) for ENTER DWIM dispatch.")
 
 (defvar-local donkey--saved-ret-binding nil
-  "Saved RET binding from buffer's local map when entering DONKEY Normal.
+  "Saved RET binding from the buffer's local map when entering Normal state.
 
-Captured once, in a `donkey-normal-mode-hook' function further down
-this section, for any buffer whose major mode is NOT in
-`donkey-editing-modes' -- e.g. `dired-mode', `magit-status-mode', an
-`org-agenda' buffer, or any other special-mode-derived listing/UI
-buffer where RET normally does something specific to that mode
-\(open a file, visit a commit, jump to an entry...\).  Read back by
-`donkey--non-editing-enter-handler', which calls it directly instead
-of blocking Enter the way `donkey-enter-dwim' does in editing modes --
-so Enter still does whatever that buffer's own major mode expects,
-even though `donkey-normal-mode' has taken over its keymap.")
+Captured, by a `donkey-normal-mode-hook' function in this section,
+for a buffer whose major mode is not in `donkey-editing-modes', and
+read back by `donkey--non-editing-enter-handler', so RET still does
+what that mode expects.")
 
 (defcustom donkey-editing-modes
   '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
@@ -632,20 +626,9 @@ Checks context first, then parent, then ancestors — always trying all rules
 against more specific elements before broader ancestors.
 Returns command symbol or nil if no handler matches.
 
-Nil outside an Org buffer, without asking Org's parser anything.  The
-rules are matched against Org elements, and `org-element-at-point' is
-Org's to run: in any other buffer it answers by WARNING, a line in
-*Warnings* for every call -- three per press here, from the context,
-the element and its line-start fallback -- and its cache asserts Org's
-tab width, which in a Markdown buffer with a task-list item at point
-came out as \"Tab width in Org files must be 8, not 4\", a `user-error'
-from RET.  Both confirmed live with Org loaded in a `markdown-mode'
-buffer, which used to come through here; Markdown has its own handler
-now, `donkey--markdown-enter-handler'.  Derivation counts, as it does
-for `donkey-editing-modes' and the agenda handler: a mode built on
-`org-mode' -- `org-journal-mode' is one -- is Org syntax, and the
-parser reads it the same.  This is the one place the mode is tested
-for the Org rules; `donkey--org-mode-enter-handler' relies on it."
+Nil outside a buffer derived from `org-mode', without asking Org's
+parser anything; Markdown has `donkey--markdown-enter-handler'.  This
+is the one place the mode is tested for the Org rules."
   (let* ((in-org (derived-mode-p 'org-mode))
          (parent (and in-org
                       (fboundp 'org-element-at-point)
@@ -656,17 +639,9 @@ for the Org rules; `donkey--org-mode-enter-handler' relies on it."
          (ancestors (and parent
                          (fboundp 'org-element-lineage)
                          (org-element-lineage parent)))
-         ;; `org-element-at-point' resolves to the enclosing container
-         ;; (e.g. plain-list, for a checkbox `item') rather than the
-         ;; specific element covering point, when point sits exactly at
-         ;; `line-beginning-position' -- a very common position after
-         ;; most navigation (e.g. `j'/`k').  One character forward
-         ;; reliably resolves to the actual element there.  It must be
-         ;; tried right after `parent' and before `ancestors': `parent'
-         ;; here is itself just an outer ancestor (e.g. plain-list), so
-         ;; checking the real `ancestors' list first would let a broader,
-         ;; less specific enclosing element (e.g. an outer TODO headline)
-         ;; win over the correct, more specific match.
+         ;; At a line start `org-element-at-point' resolves to the
+         ;; enclosing container; one character forward gives the element
+         ;; there.  Tried before the ancestors.
          (fallback-parent (and in-org
                                (fboundp 'org-element-at-point)
                                (= (point) (line-beginning-position))
@@ -718,23 +693,9 @@ for the Org rules; `donkey--org-mode-enter-handler' relies on it."
 (defun donkey--org-mode-enter-handler ()
   "Handle Enter in `org-mode'.  Return t if handled.
 
-Derivation counts, as it does for `donkey-editing-modes' and the
-agenda handler: a mode built on `org-mode' -- `org-journal-mode' is
-one -- is Org syntax, and `org-element-at-point' reads it the same.
-Matching `major-mode' by `eq' left RET doing nothing at all in such
-a buffer, since the mode is an editing mode and the non-editing
-fallback never fires there, while the same headline under plain
-`org-mode' toggled.
-
-The mode test lives in `donkey--find-enter-handler', the one place
-Org's parser is called, and not here as well: it answers nil in any
-buffer that is not Org's, and a second test here would be the same
-invariant at a second address.
-
-Markdown used to come through here too, on the theory that Org's
-element parser would read it well enough for the link rule to match.
-It does not -- see `donkey--markdown-enter-handler', which is where
-`markdown-mode' and `gfm-mode' go now."
+Derivation counts: a mode built on `org-mode', such as
+`org-journal-mode', dispatches the same.  The mode test lives in
+`donkey--find-enter-handler'."
   (let ((handler (donkey--find-enter-handler)))
     (when handler
       (donkey--execute-handler handler)
@@ -754,18 +715,7 @@ Derivation counts, so `gfm-mode' is covered.
 
 The functions are looked up rather than required: a buffer in a mode
 derived from `markdown-mode' has the library loaded, and the guards
-are for the tests, which stand in for it.
-
-Markdown used to be dispatched through the Org rules, with Org's
-parser asked to read the buffer.  With Org loaded that answered with
-warnings -- three lines in *Warnings* per press -- and on a task-list
-item with a `user-error' from the element cache about Org's tab width;
-with Org not yet loaded the parser was absent and RET did nothing at
-all.  Inline links were followed in neither case: `[text](url)' is a
-paragraph to Org's parser, and the link rule's first callable command
-was Org's rather than Markdown's whenever Org was loaded.  Confirmed
-live in a terminal frame and a graphical one, with and without Org
-loaded, under `markdown-mode' and `gfm-mode'."
+are for the tests, which stand in for it."
   (when (and (derived-mode-p 'markdown-mode)
              (fboundp 'markdown-link-p)
              (fboundp 'markdown-wiki-link-p)
@@ -790,16 +740,7 @@ loaded, under `markdown-mode' and `gfm-mode'."
 Uses `org-element-at-point' to detect the :todo-type property and
 dispatches `org-todo' accordingly.  No keyword string parsing needed.
 
-A headline with no keyword is left alone.  RET is a reader\\='s key in an
-Org buffer -- it ticks a checkbox, it follows a link -- and turning a
-plain heading into a TODO is a different kind of act: it adds structure
-that was not there, to a heading someone may simply have been reading.
-
-That is also the only way this can be reached.  The rule registering it
-is (headline :todo-type donkey-org-todo), so a nil :todo-type never
-matches and the command is never called on a plain heading.  A branch
-here that added the keyword anyway could not run from RET, and read as
-though the feature existed."
+A headline with no keyword is left alone."
   (interactive)
   (when (and (fboundp 'org-element-at-point)
              (fboundp 'org-element-property)
@@ -817,10 +758,7 @@ though the feature existed."
 (when donkey-default-enter-rules-enabled
   (donkey-add-enter-rule item :checkbox org-toggle-checkbox)
   (donkey-add-enter-rule headline :todo-type donkey-org-todo)
-  ;; Org's command alone.  `markdown-follow-thing-at-point' and
-  ;; `browse-url-at-point' used to follow it as fallbacks, and neither
-  ;; could ever run: the rules are matched in Org buffers only, where
-  ;; `org-open-at-point' is always callable.  Markdown links are
+  ;; Org's command alone; Markdown links are
   ;; `donkey--markdown-enter-handler's.
   (donkey-add-enter-rule link nil org-open-at-point))
 
@@ -847,8 +785,7 @@ order, stopping at the first one that reports it handled the key:
 
 If none of these handle it -- ordinary `prog-mode'/`text-mode' buffers
 being edited as code or plain text -- RET does nothing at all, on
-purpose: inserting a literal newline in Normal state is rarely what
-was intended, which is the entire reason `donkey-editing-modes' exists."
+purpose."
   (interactive)
   (cond
    ((donkey--org-agenda-enter-handler))
@@ -859,11 +796,8 @@ was intended, which is the entire reason `donkey-editing-modes' exists."
 (add-hook 'donkey-normal-mode-hook
           (lambda ()
             (unless (donkey--editing-mode-p)
-              ;; A mode with no local map at all -- `fundamental-mode'
-              ;; buffers, and any mode that never made one -- returns
-              ;; nil here, and `lookup-key' signals on nil rather than
-              ;; treating it as empty.  From this hook, that aborts
-              ;; `donkey-normal-mode' itself.
+              ;; `current-local-map' is nil for a mode without one, and
+              ;; `lookup-key' signals on nil.
               (setq donkey--saved-ret-binding
                     (let ((map (current-local-map)))
                       (and map (lookup-key map (kbd "RET")))))))
