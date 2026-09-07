@@ -230,33 +230,15 @@ shows the binding in force."
 
 Zero switches position tracking off: nothing is retained, so
 `donkey-jump-back' has nowhere to go and says so.  Anything that is not
-a number is read the same way rather than signaling -- see
-`donkey--position-ring-limit' for why erroring there is not an option."
+a number is read the same way rather than signaling."
   :type 'integer
   :group 'donkey)
 
 (defun donkey--position-ring-limit ()
   "Return `donkey-position-ring-max' as a usable count, never signaling.
 
-`donkey--track-position' runs on `post-command-hook', where an error is
-not merely noisy: Emacs REMOVES the offending function from the hook and
-carries on.  One bad command therefore switches position tracking off
-for the rest of the session, and repairing the variable afterwards does
-not bring it back -- the hook no longer holds the function.  `S' then
-reports \"Position 1/1\" forever, pointing at whatever marker happened to
-land before the break, with nothing on screen to connect the two.
-
-Reached by a plausible misconfiguration, not a perverse one:
-`donkey-position-ring-max' blesses 0 as the way to switch tracking off,
-and setting it to nil is the obvious guess for anyone who reaches for
-nil to mean \"no limit\" or \"disabled\".  Confirmed by
-driving real keys through `execute-kbd-macro': the second keypress
-logged \"Error in post-command-hook\" and the tracker was gone from both
-the global and the buffer-local hook value.
-
-A non-number is read as 0 -- tracking off, which is what nil was reaching
-for anyway.  A negative count means the same.  A float is truncated
-rather than rejected, since it already worked."
+A non-number or a negative value reads as 0, tracking off; a float is
+truncated."
   (if (numberp donkey-position-ring-max)
       (max 0 (truncate donkey-position-ring-max))
     0))
@@ -271,12 +253,7 @@ rather than rejected, since it already worked."
 recorded.")
 
 (defvar-local donkey--last-tracked-state nil
-  "Where point stood after the previous command, or nil for not yet.
-
-A bare position.  It was a (BUFFER . POINT) cons, and nothing ever
-read the BUFFER: the variable is buffer-local, so the buffer is the
-one holding the value, and carrying it as well suggested a
-cross-buffer rule that does not exist.")
+  "Where point stood after the previous command, or nil for not yet.")
 
 (defun donkey--track-position ()
   "Record the previous cursor position.
@@ -284,10 +261,8 @@ cross-buffer rule that does not exist.")
 Runs on `post-command-hook', recording point whenever it has moved
 since the last command.  Independent of the mark ring and region.
 
-Must not signal.  Emacs removes a `post-command-hook' function that
-errors, so a single bad command would switch position tracking off for
-the rest of the session -- see `donkey--position-ring-limit', which is
-where the one value a user can get wrong is made safe."
+Must not signal, being on `post-command-hook'; the one value a user
+can get wrong is made safe by `donkey--position-ring-limit'."
   (unless (minibufferp)
     (let ((now-pt (point)))
       (when (and donkey--last-tracked-state
@@ -296,23 +271,9 @@ where the one value a user can get wrong is made safe."
               (limit (donkey--position-ring-limit)))
           (set-marker m donkey--last-tracked-state)
           (push m donkey--position-ring)
-          ;; Trimmed DOWN TO the limit, not by one.  Dropping a single
-          ;; entry per call cancels exactly against the one just pushed,
-          ;; so a ring that has already grown past a newly lowered
-          ;; `donkey-position-ring-max' stays at its old length forever:
-          ;; with the ring at 10 and the option set to 2, five further
-          ;; moves left it at 10, and `S' walked back through six
-          ;; positions where two were configured.  Growing from empty
-          ;; was never affected, which is why it went unnoticed.
-          ;;
-          ;; `butlast' rather than `nbutlast': the destructive version
-          ;; cannot empty a ONE-element list -- it returns nil while
-          ;; leaving the variable pointing at the original cons -- and a
-          ;; limit of 0 (a reasonable way to switch tracking off) is
-          ;; exactly that case, which used to leave the ring holding a
-          ;; marker that had just been pointed nowhere, so
-          ;; `donkey-jump-back' failed with "Marker does not point
-          ;; anywhere".
+          ;; Trimmed down to the limit, not by one, so a lowered limit
+          ;; takes effect; `butlast' rather than `nbutlast', which
+          ;; cannot empty a one-element list.
           (when (> (length donkey--position-ring) limit)
             (dolist (stale (nthcdr limit donkey--position-ring))
               (set-marker stale nil))
@@ -322,16 +283,6 @@ where the one value a user can get wrong is made safe."
         (setq donkey--position-index 0))
       (setq donkey--last-tracked-state now-pt))))
 
-;; Why narrowed-out positions are skipped:
-;;
-;; Marker positions are absolute and narrowing does not move them, so a ring
-;; recorded before `narrow-to-region' (or `org-narrow-to-subtree', which Org
-;; users press constantly) mostly holds positions the buffer is no longer
-;; showing.  `goto-char' silently CLAMPS to the narrowing edge rather than
-;; signaling, so those entries used to land point on the first or last
-;; visible character while still reporting "Position 2/3" -- a claimed jump
-;; to a recorded position that was really just a jump to the boundary.
-;; `donkey--banked-spans' filters the same way and for the same reason.
 (defun donkey-jump-back (&optional count)
   "Rotate to the next stored position in the ring and jump there.
 
@@ -339,19 +290,12 @@ Press repeatedly to cycle through the last `donkey-position-ring-max'
 recorded positions in this buffer.
 
 COUNT jumps back that many recorded positions at once, reaching the same
-place a run of COUNT presses reaches.  A COUNT below 1 is treated as 1:
-the ring is walked in one direction only, so zero has nothing to mean
-here and a negative count would have to invent a forward walk this key
-does not do.
+place a run of COUNT presses reaches.  A COUNT below 1 is treated as 1.
 
-Intended mainly for undoing navigation mistakes: a big jump is easy to
-mis-key, and this makes one cheap to take back -- reaching for `g l' and
-slipping to `g e' lands you at the end of the buffer rather than the end
-of the line, and one keystroke puts it right.
-Other uses suggest themselves, but it is a recovery key rather than a
-filing system, and no substitute for Emacs' own bookmarks: positions are
-recorded automatically as you move, so nothing here is a place you chose
-to remember.
+Meant for taking back a mis-keyed jump: reaching for `g l' and
+slipping to `g e' lands you at the end of the buffer, and one press
+puts it right.  Positions are recorded automatically as you move, so
+it is a recovery key rather than a bookmark.
 
 Positions outside the accessible portion are skipped rather than jumped
 to, and the count in the message is of the visible entries, so it matches
@@ -369,24 +313,12 @@ what pressing again will cycle through."
      ((null visible)
       (user-error "No recorded position in the visible portion"))
      (t
-      ;; The counter is used BEFORE it is advanced.  Advancing first made
-      ;; the very first press skip the most recent entry and land on the
-      ;; one before it -- so the key meant for taking a jump back always
-      ;; overshot by exactly one recorded position.  Since a position is
-      ;; recorded on every movement, that is one LINE out after `j'/`k'
-      ;; and one CHARACTER out after `h'/`l', which is why it read as a
-      ;; near miss rather than as landing somewhere unrelated.  Confirmed
-      ;; live: from line 5, `G' then `S' arrived at line 4.
+      ;; The counter is used before it is advanced.
       (let* ((ring-len (length visible))
              (idx (if (>= donkey--position-index ring-len)
                       0
                     donkey--position-index)))
-        ;; A COUNT is N presses in one, wrapping where N presses would
-        ;; wrap: each press walks the ring by one and starts over at the
-        ;; top on reaching the end, so the (N-1)th entry along from here
-        ;; is exactly where N presses would have arrived.  The index left
-        ;; behind is the one they would have left too, so a count and a
-        ;; run of presses stay interchangeable in either order.
+        ;; A COUNT is N presses in one, wrapping as N presses would.
         (setq idx (mod (+ idx (1- (max 1 (or count 1)))) ring-len))
         (goto-char (nth idx visible))
         (setq donkey--position-index (1+ idx))
@@ -396,21 +328,11 @@ what pressing again will cycle through."
 (defun donkey-goto-line ()
   "Prompt for a line number and move point to the start of that line.
 
-Out-of-range input is simply clamped by `forward-line' itself (past
-the end of the buffer moves to the last line; zero, negative, or any
-undershoot stops at the first).  `read-number' accepts fractional
-input (e.g. \"3.5\", an easy typo for \"35\" or \"3\"), which is
-rounded to the nearest whole line here rather than passed straight to
-`forward-line' -- which requires an integer and would otherwise signal
-a raw `wrong-type-argument' error instead of just going to a line.
-
-`read-number' also accepts what is not a number at all in any useful
-sense: \"1e999\" reads as an infinite float, and rounding that signals
-a raw `overflow-error' -- \"Arithmetic overflow error\", the debugger
-under `debug-on-error', and nothing about lines.  Refused as a
-`user-error' that names the input instead, with point left where it
-was.  A huge but finite number needs no such care: `round' gives a
-bignum and `forward-line' clamps it to the last line."
+Out-of-range input is clamped by `forward-line' itself: past the end
+of the buffer moves to the last line, zero or below to the first.
+Fractional input is rounded to the nearest line.  Input that is not a
+finite number, such as \"1e999\", is refused with a `user-error' naming
+it, with point left where it was."
   (interactive)
   (let* ((input (read-number "Line: "))
          (target-line (condition-case nil
