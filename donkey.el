@@ -5583,19 +5583,12 @@ establishes a selection has to do this."
   '((t :inherit secondary-selection))
   "Face marking lines banked with `donkey-bank-selection'.
 
-Inherits `secondary-selection' so banked lines stay visually distinct
-from the live region, which is the whole point: while banking you are
-looking at two different things at once -- what is already set aside,
-and what is selected right now."
+Inherits `secondary-selection', so banked lines stay distinct from
+the live region."
   :group 'donkey)
 
 (defvar-local donkey--banked-overlays nil
-  "Overlays covering the whole lines banked in this buffer.
-
-Overlays rather than plain positions: they move with the text as the
-buffer is edited, they die automatically with the buffer, and they
-double as the visual feedback -- one structure instead of a position
-list plus a parallel set of highlights that could drift apart.")
+  "Overlays covering the whole lines banked in this buffer.")
 
 (defun donkey--whole-line-span (beg end)
   "Return (START . END) covering every whole line touched by BEG..END.
@@ -5618,15 +5611,8 @@ line rather than leaving a blank."
 (defun donkey--prune-banked-overlays ()
   "Drop banked overlays that no longer cover any text.
 
-An overlay collapses to zero width when the line it banked is later
-removed by ordinary editing.  Such an overlay highlights nothing, so
-the bank is invisible, yet it would still count as live: `y'/`d' would
-act on the empty bank instead of on the character at point, pushing
-\"\" over whatever was last copied -- the same silent empty-kill this
-package already guards against at `point-max'.  It could not even be
-toggled off, since `donkey--banked-overlay-at' requires POS to be
-strictly inside the overlay and no position is ever inside an empty
-range."
+An overlay collapses to zero width when the line it banked is removed
+by ordinary editing; such a bank highlights nothing, and is dropped."
   (setq donkey--banked-overlays
         (seq-filter (lambda (ov)
                       (or (and (overlay-buffer ov)
@@ -5637,47 +5623,12 @@ range."
 (defun donkey--banked-spans ()
   "Return usable banked spans as a list of (START . END), in buffer order.
 
-Prunes collapsed overlays first (see `donkey--prune-banked-overlays'),
-so every span returned covers real text.
-
-Spans reaching outside the buffer's accessible portion are then left
-out.  Overlay positions are absolute and unaffected by narrowing, so a
-line banked before a `narrow-to-region' still reports its original
-positions afterwards -- and `buffer-substring'/`delete-region' signal a
-bare `args-out-of-range' for those.  Confirmed live: banking a line,
-narrowing past it with \\[narrow-to-region], then pressing \"y\" reported
-\"Args out of range: #<buffer *live*>, 1, 6\".
-
-Filtered rather than pruned, because narrowing is temporary: the
-overlays survive untouched and count again once the buffer is widened.
-Everything reading spans therefore agrees on one definition -- what is
-banked AND reachable right now -- so the counts reported while narrowed
-describe exactly what \"y\" and \"d\" will act on.
-
-Every span is widened to the whole lines its overlay touches, through
-the same `donkey--whole-line-span' that banking went through.  An
-overlay is made over whole lines, but ordinary editing can leave it
-covering less: `g j' on a banked line replaces the newline the overlay
-ended on with a space, `D' at the end of the line takes that newline,
-and `\\[delete-indentation]' on the line below does the same from the
-other side -- and each left an overlay over PART of a line.  Confirmed
-live: banking \"abc\", joining \"def\" onto it and pressing `y' put
-\"abc \" on the kill ring and reported \"Copied 1 line\", and `d' removed
-those four characters and left \"def\" standing under a message that
-said the line was gone.  A bank is whole lines by promise, the
-docstring of `donkey-banked-spans' says so to other packages, and the
-overlay is only the record of which lines; reading it back through
-the widening keeps the promise however the text has moved.
-
-Two overlays that come to share a line -- two banked lines joined into
-one -- widen to the same span, and are reported ONCE.  Only spans that
-overlap are coalesced; spans that merely touch stay separate, as the
-docstring of `donkey-banked-spans' promises.
-
-The widening comes AFTER the narrowing filter, on the overlay's own
-positions: an overlay partly outside the accessible portion is left out
-as before, and one inside it widens within it, `donkey--whole-line-span'
-never reaching past `point-min' or `point-max'."
+Prunes collapsed overlays first, so every span returned covers real
+text.  Spans reaching outside the buffer's accessible portion are left
+out, not pruned: they count again once the buffer is widened.  Every
+span is widened to the whole lines its overlay touches, two overlays
+that come to share a line are reported once, and spans that merely
+touch stay separate."
   (donkey--prune-banked-overlays)
   (let ((spans (sort (delq nil
                            (mapcar (lambda (ov)
@@ -5732,36 +5683,10 @@ donkey's own and free to change shape, this one is not."
 (defun donkey--live-rectangle-p ()
   "Return non-nil when a rectangle selection is on screen right now.
 
-The first half of donkey's rule for the one case banking cannot
-compose with: THE LIVE SELECTION YOU ARE LOOKING AT WINS, AND THE BANK
-IS THE FALLBACK.  A rectangle is columns and a bank is whole lines, so
-no command can act on both; something has to give way, and the thing
-you just drew and can see is the better guess at what you meant.
-
-`y' and `d' therefore take the rectangle and leave every bank standing,
-and `p' does the reverse in the reverse situation -- a bank outranks a
-rectangle merely sitting in `killed-rectangle' from an earlier copy,
-because that one is not on screen and the banks are.
-
-The three used to disagree, each silently: `y' and `d' took the banks
-and ignored a rectangle the user was looking at (leaving
-`killed-rectangle' empty, so the rectangle they thought they had cut
-was not even there to paste), while `p' took the rectangle and ignored
-banks highlighted on screen.  Drawing a rectangle over two rows and
-pressing `d' deleted three whole lines.
-
-Discarding the banks at `m v' instead was considered and rejected:
-banks are not in the undo system, `m v' sits on the same prefix as
-`m w', `m u' and `m U', and a slip would throw away a collection built
-up across a long file with no way back.  `m DEL' stays the only key
-that discards everything.  This rule costs nothing and keeps the
-workflow it would have broken -- banking lines as you scroll, fixing a
-column somewhere in the middle, and still having the banks afterwards.
-
-Note `m l' already collapses the two states in the other direction: it
-banks the whole lines a rectangle covers and drops
-`rectangle-mark-mode' with it, since `donkey-bank-selection'
-deactivates the mark."
+The live selection you are looking at wins, and the bank is the
+fallback: `y' and `d' take the rectangle and leave every bank
+standing, and `p' over banks ignores a rectangle merely sitting in
+`killed-rectangle'."
   (and (use-region-p) (bound-and-true-p rectangle-mark-mode)))
 
 (defun donkey-clear-banked-selection ()
@@ -5773,11 +5698,8 @@ away what `donkey-bank-selection' set aside."
   (let ((count (donkey--banked-line-count)))
     (mapc #'delete-overlay donkey--banked-overlays)
     (setq donkey--banked-overlays nil)
-    ;; `any' rather than `interactive': the point is to stay quiet when
-    ;; `donkey-copy'/`donkey-delete' clear the bank as part of consuming
-    ;; it, which are plain Lisp calls.  `interactive' would additionally
-    ;; report nothing under `noninteractive' or a keyboard macro, where
-    ;; the feedback is still wanted.
+    ;; `any', so the commands that spend a bank stay quiet and a
+    ;; keyboard macro still reports.
     (when (called-interactively-p 'any)
       (message (if (zerop count)
                    "No banked lines"
@@ -5810,11 +5732,8 @@ needed: `donkey-copy', `donkey-delete' and `donkey-yank' then act on all
 banked lines at once, plus whatever region happens to be active at the
 time, so the final piece never has to be banked explicitly.
 
-`donkey-change' is the exception -- it changes the character at point
-and leaves banks standing; see there.  The prompt says \"y/d/p\" for
-that reason, and said \"y/d\" until `donkey-yank' learned to replace a
-bank, which left the one command that had grown a new use unadvertised
-on screen.
+`donkey-change' is the exception: it changes the character at point
+and leaves banks standing.
 
 COUNT banks that many lines starting at the one point is on, exactly as
 selecting them first and pressing this once would -- the toggle below
@@ -5835,13 +5754,8 @@ a narrowed buffer survive to count again;
 `donkey-clear-banked-selection' discards them without doing anything
 else."
   (interactive "p")
-  ;; A COUNT with no region reads as the region it would have taken to
-  ;; select those lines, so `C-u 3 m l' and selecting three lines before
-  ;; pressing it are the same press -- including the toggle rule, which
-  ;; the shared branch below already implements: three banked lines come
-  ;; back off, a partly-banked three completes instead.  Writing it as a
-  ;; span rather than as a loop over the single-line branch is what keeps
-  ;; those two readings from drifting apart.
+  ;; A COUNT with no region reads as the region it would have taken
+  ;; to select those lines, the toggle rule included.
   (if (or (use-region-p) (> (prefix-numeric-value count) 1))
       (let* ((span (if (use-region-p)
                        (donkey--whole-line-span (region-beginning) (region-end))
@@ -5869,13 +5783,8 @@ else."
             (message "Unbanked this line (%d total)"
                      (donkey--banked-line-count)))
         (let ((span (donkey--whole-line-span (point) (point))))
-          ;; The empty final line of a newline-terminated buffer spans no
-          ;; text at all: `line-beginning-position' and the clamped end
-          ;; both land on `point-max'.  `donkey--bank-span' walks the span
-          ;; line by line, so its loop body never runs and no overlay is
-          ;; created -- reporting "Banked this line" there claimed a bank
-          ;; that did not exist, in the same breath as "(0 total)".  Most
-          ;; files end in a newline, so `g e' lands on exactly this spot.
+          ;; The empty final line of a newline-terminated buffer spans
+          ;; no text; there is nothing to bank.
           (if (>= (car span) (cdr span))
               (message "Nothing to bank -- empty final line")
             (donkey--bank-span (car span) (cdr span))
@@ -5886,29 +5795,10 @@ else."
   "Return every banked overlay touching the line POS is on.
 
 The test is whether the overlay and the line share any text, asked of
-the whole line rather than of POS.  A strict interior test on POS
-missed point sitting at `point-max' on a banked FINAL line with no
-trailing newline, where the overlay ends exactly at point -- confirmed:
-pressing the bank key there re-banked the line instead of toggling it
-off, since the lookup found nothing to remove.  And a test anchored at
-the line's START missed an overlay that no longer reaches it: joining
-a banked line onto the line above leaves its overlay starting
-mid-line, where `donkey--banked-spans' still reports the whole line as
-banked, so the bank key re-banked a line it was being asked to let go
-of.  Asking about the line as a whole answers both.
-
-A LIST, because one line can hold several: two banked lines joined
-into one keep both overlays, and letting go of the line has to let go
-of both -- see `donkey--banked-spans' for how they read as one span.
-
-Candidates come from `overlays-in', which Emacs answers from its own
-position index, rather than from a scan of `donkey--banked-overlays'.
-Scanning made this linear in the number of banked lines, and
-`donkey--bank-span' calls it once per line, so banking a region cost
-quadratic time: 0.01s for 200 lines, 0.22s for 1000, and 1.81s for 3000
--- a visible freeze for something as ordinary as selecting a whole file
-and banking it.  The `donkey-banked' property is what distinguishes our
-overlays from any other package's at the same position."
+the whole line rather than of POS.  A list, because one line can hold
+several: two banked lines joined into one keep both overlays.
+Candidates come from `overlays-in'; the `donkey-banked' property tells
+this package's overlays from any other package's."
   (let ((span (donkey--whole-line-span pos pos)))
     (seq-filter (lambda (ov) (overlay-get ov 'donkey-banked))
                 (overlays-in (car span) (cdr span)))))
@@ -5981,19 +5871,12 @@ at."
 (defun donkey--map-line-spans (beg end fn)
   "Call FN once per whole line between BEG and END, with that line's span.
 
-FN receives a (START . END) cons.  Walking line by line, rather than
-treating BEG..END as one range, is what keeps banking per-line
-throughout -- see `donkey--bank-span' for why that matters."
+FN receives a (START . END) cons, one line at a time."
   (declare (indent 2))
   (save-excursion
     (goto-char (min beg (point-max)))
-    ;; END clamped and an explicit stop, so this cannot spin.  A span
-    ;; reaching past `point-max' -- a stale one computed before the buffer
-    ;; shrank, say -- leaves `donkey--whole-line-span' returning the
-    ;; position it was given, and the loop would never advance.  Clamping
-    ;; alone does not fix it either: `goto-char' clamps too, so jumping to
-    ;; END would leave point short of it and the condition still true.  A
-    ;; hung Emacs is a far worse failure than a span walked one line short.
+    ;; END clamped and an explicit stop, so this cannot spin on a
+    ;; stale span.
     (let ((limit (min end (point-max)))
           (done nil))
       (while (and (not done) (< (point) limit))
@@ -6021,9 +5904,8 @@ single-line toggle follows."
 (defun donkey--unbank-span (beg end)
   "Unbank every whole line in BEG..END that is currently banked.
 
-Every overlay touching each line goes, not the first found: a line
-that two banked lines were joined into carries both, and leaving one
-behind would leave the line banked after the press that let go of it."
+Every overlay touching each line goes, since a line can carry more
+than one."
   (donkey--map-line-spans beg end
     (lambda (span)
       (donkey--delete-banked-overlays
@@ -6032,17 +5914,8 @@ behind would leave the line banked after the press that let go of it."
 (defun donkey--bank-span (beg end)
   "Bank every whole line in BEG..END that is not already banked.
 
-Creates one overlay per LINE rather than one spanning the whole run.
-Adjacent lines would otherwise be absorbed into a single overlay, and
-unbanking any line of that run would then drop the entire run instead
-of just that one line -- confirmed live: banking two adjacent lines
-and pressing the bank key again on the second reported \"Unbanked this
-line (0 total)\" rather than leaving the first still banked.
-
-Nothing is lost by keeping them separate: `donkey--effective-line-spans'
-merges adjacent spans at use time, so a contiguous run is still copied
-and deleted as one piece, and identically-faced adjacent overlays are
-indistinguishable on screen."
+Creates one overlay per LINE, so any one line can be unbanked on its
+own; adjacent spans are merged at use time."
   (donkey--map-line-spans beg end
     (lambda (line-span)
       (unless (donkey--banked-overlay-at (car line-span))
@@ -6050,33 +5923,16 @@ indistinguishable on screen."
           (overlay-put ov 'face 'donkey-banked-selection)
           (overlay-put ov 'donkey-banked t)
           (overlay-put ov 'priority -50)
-          ;; Emptying a buffer collapses an overlay to zero width rather than
-          ;; removing it, and this one advances with text inserted at its end
-          ;; -- so refilling the buffer regrows it over whatever replaced the
-          ;; line it banked.  A bank of one line silently becomes a bank of
-          ;; the whole buffer, which `y' and `d' then act on while
-          ;; `donkey--banked-line-count' still reports one.
-          ;; `donkey--prune-banked-overlays' cannot catch it: the insertion
-          ;; re-expands the overlay before the spans are next asked for, so
-          ;; it never looks collapsed.  Evaporating removes it with its text.
+          ;; Evaporate, so an emptied buffer does not regrow the bank
+          ;; over whatever replaces the line.
           (overlay-put ov 'evaporate t)
           (push ov donkey--banked-overlays))))))
 
 (defun donkey--banked-line-count ()
   "Return how many lines are currently banked.
 
-Counts LINES, not overlays.  `donkey--bank-span' makes one overlay per
-line, so the two agree right up until an edit grows one past the line it
-was created for -- and an overlay that advances with text inserted at its
-end does exactly that the moment a newline is typed inside a banked line.
-Reporting the number of overlays then reported one line while `y' and `d'
-acted on two, the same divergence `donkey--bank-span' documents for the
-emptied-buffer case that `evaporate' handles: evaporating cannot help
-here, because the text was never deleted.
-
-`donkey--span-line-count' is what `donkey-copy' and `donkey-delete'
-already use for the totals they report, so counting the same way is also
-what keeps every message about the bank agreeing with every other."
+Counts LINES, not overlays, through `donkey--span-line-count', which
+is how `donkey-copy' and `donkey-delete' count what they report."
   (donkey--span-line-count (donkey--banked-spans)))
 
 (defun donkey--span-line-count (spans)
@@ -6093,13 +5949,6 @@ text, so a banked blank line still counts as a line."
 What `y', `d' and `p' spend when they act on a bank -- as against
 `donkey-clear-banked-selection', which is the explicit \"discard
 everything\" command and says so in its name.
-
-The difference only shows under narrowing, and it showed as silent loss.
-`donkey--banked-spans' filters to the accessible portion and promises
-that the rest \"survive untouched and count again once the buffer is
-widened\"; clearing the whole list broke that promise.  Banking two lines,
-narrowing past one of them and pressing `y' copied the visible line --
-correctly -- and threw the hidden one away without ever copying it.
 
 SPANS comes from `donkey--effective-line-spans', so it is exactly what
 was acted on, region included."
@@ -6126,33 +5975,14 @@ are removed once regardless, so a count of zero over banked lines is a
 delete, which is what replacing them with nothing means.
 
 Banked lines are a selection, so a paste replaces them exactly as it
-replaces an active region -- previously `donkey-yank' was the one command
-that could not see the bank at all, pasting at point and leaving the
-highlighted lines sitting there untouched and still banked, while
-`donkey-copy' and `donkey-delete' both acted on them and consumed them.
+replaces an active region.  The paste lands where the first span
+started.  The lines are deleted rather than killed, so the kill ring
+still holds what is being pasted.  A paste bringing no newline of its
+own gets the taken line ending restored behind it, as
+`donkey--paste-restoring-line-ending' states for both line selections.
 
-The paste lands where the FIRST span started, which is still a valid
-position after the deletions: they run back to front, so nothing before
-that span has moved by the time it is reached.
-
-Deleted rather than killed, unlike `donkey--delete-banked-selection'.
-That one is a kill because kill is the point of it; here `kill-new'
-would push the replaced lines onto the kill ring and the paste below
-would pull those back instead of what was being pasted.
-
-The spans are whole lines, final newlines included, so a paste bringing
-no newline of its own -- a fragment killed mid-line -- used to splice
-onto whatever line followed the bank.  The taken line ending is now
-restored behind such a paste; `donkey--paste-restoring-line-ending'
-states the rule both line selections follow.  Whether the FIRST span
-ended in a newline is what matters, because that is where the paste
-lands; the remaining spans are simply gone, as they are for a delete.
-
-Consumes the bank, the way `donkey-copy' and `donkey-delete' do --
-but only after the read-only check below.  Banking works in a
-read-only buffer (it is overlay-only), so without the check the
-first `delete-region' signaled `buffer-read-only' AFTER the bank was
-consumed: bank gone, buffer untouched, nothing pasted."
+Consumes the bank, the way `donkey-copy' and `donkey-delete' do, after
+the read-only check."
   (barf-if-buffer-read-only)
   (let* ((spans (donkey--effective-line-spans))
          (lines (donkey--span-line-count spans))
@@ -6176,11 +6006,7 @@ consumed: bank gone, buffer untouched, nothing pasted."
 Deletes back to front so each span's positions stay valid while the
 earlier ones are still being removed.
 
-The read-only check runs first, before anything is consumed, for the
-reason `donkey--replace-banked-selection-with-paste' gives: banking
-succeeds in a read-only buffer, and consuming the bank ahead of a
-`delete-region' that is going to signal destroys the selection while
-changing no text."
+The read-only check runs first, before anything is consumed."
   (barf-if-buffer-read-only)
   (let* ((spans (donkey--effective-line-spans))
          (lines (donkey--span-line-count spans))
