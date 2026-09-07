@@ -1981,14 +1981,10 @@ rear-sticky, which it is unless that character's `rear-nonsticky'
 covers it (or `text-property-default-nonsticky' does), and the
 character after POS refuses when its `read-only' is front-sticky, which
 it is only when that character's `front-sticky' covers it.  That is
-the rule Emacs applies inside `insert', and the two halves here were
-checked against real insertions over 240 positions -- every span and
-stickiness spelling of the property, `fence' and `inhibit-read-only'
-included -- with no disagreement.
+the rule Emacs applies inside `insert'.
 
 Asked by `donkey-wrap-region' of the places a wrap inserts at, so the
-refusal can come BEFORE Insert state is entered, as the buffer flag's
-does, rather than from inside the insertion."
+refusal comes before Insert state is entered."
   (or (and (> pos (point-min))
            (get-text-property (1- pos) 'read-only)
            (let ((nonsticky (get-text-property (1- pos) 'rear-nonsticky)))
@@ -2007,13 +2003,8 @@ does, rather than from inside the insertion."
 The places asked are the ones a wrap inserts at: point and both ends
 of a linear region -- a pairing package puts the closer at the far
 end -- and both column edges of every row of a rectangle.  See
-`donkey--insertion-read-only-p' for the rule at each.
-
-The region's ends are read from the mark directly rather than through
-`region-beginning', which signals when no mark is set: the caller
-reaches here only with a live region, but its tests stand in for one
-by stubbing `use-region-p' in a buffer that never set a mark, and a
-missing mark reads as point here rather than as an error."
+`donkey--insertion-read-only-p' for the rule at each.  A missing mark
+reads as point."
   (let* ((mark (or (mark t) (point)))
          (beg (min mark (point)))
          (end (max mark (point))))
@@ -2044,30 +2035,6 @@ instead of bunching both characters together at end of line."
        (insert (string open-char)))
      (region-beginning) (region-end))))
 
-;; Three things worth knowing before changing this:
-;;
-;; The rectangle branch exists because `self-insert-command' operates on
-;; `region-beginning'/`region-end' as a single linear span.  Run directly
-;; against a rectangle selection it inserts the delimiters at the
-;; rectangle's linear start/end buffer positions rather than on each covered
-;; line, corrupting the buffer instead of wrapping anything.
-;;
-;; `delete-selection-mode' does NOT eat the selection here, despite being
-;; active across the insertion: it acts from `pre-command-hook' on
-;; `this-command's `delete-selection' property, and `this-command' is this
-;; command, not the `self-insert-command' invoked from inside it.
-;;
-;; The return to Normal is in an `unwind-protect' because this is the one
-;; command that enters Insert state BEFORE doing its real work.  If
-;; `self-insert-command' signals, the transition back would be skipped and
-;; leave the buffer stuck in Insert.  A read-only buffer does exactly that --
-;; confirmed live: pressing a wrap delimiter over a region there reported
-;; "Buffer is read-only" and silently left the modeline on DONKEY[I], from a
-;; key pressed in Normal state.  The error still propagates after the
-;; cleanup runs.
-;;
-;; Wrapping with `electric-pair-mode' confirmed live: selecting "hello" and
-;; pressing "(" yields "(hello)".
 (defun donkey-wrap-region ()
   "Insert the pressed delimiter into the active region without deselecting.
 
@@ -2086,95 +2053,31 @@ is simply inserted at point, since nothing is listening.  Then returns
 to Normal state, even if the insertion signals.
 
 A read-only buffer is refused before any of that, with the selection
-left standing -- see the comment in the body for why the refusal has
-to come first.  Read-only TEXT is refused the same way and at the same
-moment: `barf-if-buffer-read-only' knows only the buffer's flag, so
-`donkey--wrap-refused-by-read-only-text-p' asks, of every place the
-wrap inserts at, whether the `read-only' property of the characters
-there would refuse the insertion.  It used to be found out by trying,
-from inside INSERT state, which cost two things.  The refusal came
-from `self-insert-command' and the way back deactivated the mark, so
-`v w (' over such text said \"Text is read-only\" and dropped the
-selection, exactly as the read-only buffer once did.  And a pairing
-package that had already put its opener down before the closer was
-refused left the opener behind: under `electric-pair-mode' with the
-selection's last character read-only, `m w (' left \"(alpha beta\".
-Confirmed live in a terminal frame and a graphical one.  The refusal
-from inside the insertion is still caught and let through with the
-mark kept, for a pairing package that inserts somewhere this check
-did not ask about.
+left standing, and read-only text the same way and at the same
+moment, through `donkey--wrap-refused-by-read-only-text-p'.  A
+refusal that still comes from inside the insertion is signaled again
+from Normal state, with the mark kept.
 
-Which delimiters actually wrap is the pairing package's decision, not
-this command's, and `electric-pair-mode' does not cover all six
-defaults.  It wraps what its own rules treat as a pair -- `(', `[',
-`{' and `\"' -- and leaves `\\='' and `\\=`' alone, inserting the character
-at POINT with the region unwrapped: after the region's end for `v w',
-whose point is there, and before its start for `m w', whose point is
-at the start.  (This used to say \"at the region's start\", which is
-only the second of those.)  Confirmed in `fundamental-mode',
-`text-mode' and `emacs-lisp-mode' alike, so it is not the major mode's
-syntax table deciding; adding them to `electric-pair-pairs' is what
-changes it.  The rectangle path is not affected, doing its own
-insertion: `m v j l \\='' wraps every line of the block in quotes.
+Which delimiters wrap is the pairing package's decision, not this
+command's.  `electric-pair-mode' wraps `(', `[', `{' and `\"' and
+inserts `\\='' and `\\=`' at point with the region unwrapped, unless they
+are added to `electric-pair-pairs'; Smartparens wraps all six unless a
+pair is excluded.  The rectangle path does its own insertion and wraps
+every line whatever the package.
 
-Smartparens wraps all six out of the box, `\\='' and `\\=`' included.  It is
-the pair definition that decides, so excluding one -- `sp-local-pair'
-with `:actions' nil, say -- stops that delimiter wrapping and leaves
-the character inserted, exactly as `electric-pair-mode' does for the
-two it never knew about.  Same outcome from opposite directions, and
-neither is this command's doing.
-
-A count is ignored: one delimiter press, one wrap.  Passing 1 to
-`self-insert-command' is not what settles that.  Since Emacs 31,
-`electric-pair-post-self-insert-function' reads `current-prefix-arg'
-for itself to learn how many characters the self-insert put down, and
-deletes that many before wrapping the region.  Emacs 30 hard-codes one.
-Fed a live count, 31 deleted characters the user never typed:
-\\[universal-argument] 3 ( on a selected \"alpha\" left \"(((alp))) beta\",
-a negative count ate the space after the selection and signaled, and a
-large one signaled `args-out-of-range'.  So `current-prefix-arg' is
-bound to nil around the insertion, and every version behaves as 30
-always did.  Honoring the count instead was considered and declined:
-with no pairing package the count would insert N delimiters at point,
-and under 30's `electric-pair-mode' it wraps once and then inserts N-1
-bare characters, so there is no one meaning to give it.  Confirmed
-live in `emacs -nw' on 30.2 and 31.1: with the binding, v w
-\\[universal-argument] 3 ( yields \"(alpha) beta\" on both.
-
-The way back to Normal is `donkey--leave-insert', the state change on
-its own, and not `donkey--exit-insert', which is what `C-g' runs.
-That key has an errand of its own beyond the state change: it stops a
-keyboard macro that is being recorded, as `keyboard-quit' does.  A
-wrap key came back through it, so a wrap pressed while
-\\[kmacro-start-macro] was recording ended the recording without a
-word -- confirmed live in a terminal frame and a graphical one, where
-`v w (' left the variable `defining-kbd-macro' nil while the rectangle
-path, which never enters INSERT, recorded on.  Nothing about wrapping
-a selection is an abort."
+A count is ignored: one delimiter press, one wrap.  A wrap does not
+stop a keyboard macro that is being recorded."
   (interactive)
   (cond
    ((not (use-region-p))
     (call-interactively #'undefined))
-   ;; The delimiter comes from `last-command-event', so this only means
-   ;; anything when the invoking event IS a character.  Reached via
-   ;; \\[execute-extended-command], or from a non-character binding such
-   ;; as a function key: the rectangle path then hands a symbol to
-   ;; `string' and signals `wrong-type-argument', and the linear path
-   ;; hands it to `self-insert-command', which cannot insert it either.
+   ;; Only a character event names a delimiter; \\[execute-extended-command]
+   ;; or a function key does not.
    ((not (characterp last-command-event))
     (call-interactively #'undefined))
    (t
-    ;; A read-only buffer is refused HERE, before anything changes, so
-    ;; that the selection outlives the refusal.  `self-insert-command'
-    ;; refuses it too, but by then INSERT state has been entered, and
-    ;; the `unwind-protect' below leaves it again through
-    ;; `donkey--leave-insert', which deactivates the mark: `v w (' in a
-    ;; read-only buffer said "Buffer is read-only" and dropped the
-    ;; selection with it, so that after making the buffer writable the
-    ;; user had to select again.  The rectangle path kept its block,
-    ;; signaling from its first edit before any state had changed.
-    ;; Confirmed live.  Both paths now refuse alike and keep what was
-    ;; selected.
+    ;; Refused here, before any state changes, so the selection
+    ;; outlives the refusal.
     (barf-if-buffer-read-only)
     ;; The text-property twin of the check above, at the same moment
     ;; and for the same reason; signaled as Emacs itself signals it.
@@ -2183,24 +2086,17 @@ a selection is an abort."
     (if (bound-and-true-p rectangle-mark-mode)
         (donkey--wrap-rectangle-region last-command-event)
       (donkey-insert-mode 1)
-      ;; A refusal from the insertion itself -- read-only TEXT, which
-      ;; the check above cannot see -- is held until INSERT state has
-      ;; been left with the mark kept, and signaled again from Normal
-      ;; state.  `buffer-read-only' is the parent of `text-read-only',
-      ;; so it names the whole family.
+      ;; A refusal from the insertion is held until Insert state has
+      ;; been left with the mark kept, then signaled again;
+      ;; `buffer-read-only' is the parent of `text-read-only'.
       (let (refusal)
         (unwind-protect
             (condition-case err
-                ;; Emacs 31's electric-pair reads the count from
-                ;; `current-prefix-arg', not from the argument below,
-                ;; and deletes that many characters before wrapping.
-                ;; See the docstring.
+                ;; The count is DONKEY's, not the pairing package's.
                 (let ((current-prefix-arg nil))
                   (self-insert-command 1))
               (buffer-read-only (setq refusal err)))
-          ;; Not `donkey--exit-insert': that is the `C-g' key, and its
-          ;; errands include stopping a keyboard macro being recorded.
-          ;; See the docstring.
+          ;; The state change alone, not the `C-g' key's errands.
           (donkey--leave-insert (and refusal t)))
         (when refusal
           (signal (car refusal) (cdr refusal))))))))
