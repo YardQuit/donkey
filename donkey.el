@@ -1683,54 +1683,14 @@ stop a keyboard macro that is being recorded."
   "Clear the selection state an earlier selection may have left behind.
 
 Disables `rectangle-mark-mode' if it is active, and forgets any
-`donkey-visual-anchor'.  Each is the state of one KIND of selection --
-a rectangle, a visual-line session -- and each is only ever taken down
-by `deactivate-mark-hook', which fires on the mark's active -> inactive
-transition and not when a command simply repositions an ALREADY-active
-mark, which is exactly what `push-mark'/`set-mark'/`activate-mark' do
-for every Donkey selection command (`donkey-mark-inner',
-`donkey-mark-paragraph', `donkey-set-mark', etc.).  So a selection of
-one kind started over a live selection of another kept the old kind's
-state underneath it, and the action keys read the new selection as the
-old kind.
+`donkey-visual-anchor', each being the state of one kind of selection
+that only `deactivate-mark-hook' would otherwise take down.
 
-The rectangle: one left active from an earlier, unrelated
-`donkey-rectangle-mark-mode' session silently persisted underneath a
-brand new, intended-to-be-linear selection, and the next
-`donkey-copy'/`donkey-delete'/`donkey-yank' took the new selection for
-a rectangle instead of the intended linear span.  Confirmed live: after
-`m v' (rectangle-mark) on one line, then `m p' (mark-paragraph)
-elsewhere without canceling the rectangle first, pressing `d' silently
-killed a zero-width \"rectangle\" (one empty string per line) instead of
-deleting the paragraph, with no error and no visible change to the
-buffer at all.
-
-The anchor, for the same reason.  `donkey--visual-line-session-active-p'
-knows a session by where the mark sits -- at the anchor, or at the
-anchor line's end -- and a fresh selection can land its mark on either:
-with point at the end of the line `V' selected, `m w' marks the last
-word and leaves the mark at that line's end, and `v' plants one at
-point.  Confirmed live: `V m w' highlighted \"beta\" alone and `d' then
-removed the whole line; `V v h h' highlighted two characters, `y'
-copied the whole line, and the reminder after each `h' read \"Visual
-line\" over a selection `v' had just started; `V m w V' said \"Visual
-line: canceled\" where a fresh session should have started.  Clearing
-the anchor here is what makes the highlight and the action agree.  The
-predicate's positional check stays for selections made by commands
-outside this package, which never come through here.
-
-Called by every Donkey command that establishes a new selection,
-before that command's own `push-mark'/`set-mark' call.  The four
-delimiter commands call it only once their search has FOUND a pair or
-an expression, so a press that finds none leaves the old selection
-standing whole, kind and all; the object commands call it before
-their search, whose refusals put point back and mark nothing, so the
-old selection's highlight is gone with its kind.
-`donkey-mark-run-toggle' does not come
-through here itself: adopting a live session needs the anchor, which
-`donkey-mark-run-adopt' widens the session through before clearing it,
-and the branch that starts a run afresh marks its word with
-`donkey-mark-word', which does."
+Called by every DONKEY command that establishes a new selection,
+before its own `push-mark' or `set-mark'.  The four delimiter commands
+call it only once their search has found a pair, so a refused press
+leaves the old selection standing whole, kind and all; the object
+commands call it before their search, whose refusals mark nothing."
   (when (bound-and-true-p rectangle-mark-mode)
     (rectangle-mark-mode -1))
   (setq donkey-visual-anchor nil))
@@ -1738,18 +1698,9 @@ and the branch that starts a run afresh marks its word with
 (defun donkey--clear-visual-anchor ()
   "Clear `donkey-visual-anchor' whenever the mark is deactivated.
 
-Runs on `deactivate-mark-hook', so the anchor never survives past its
-region regardless of what deactivated the mark — this command,
-`keyboard-quit', or anything else.  Without this, a stale anchor left
-over from an abandoned visual-line selection could hijack a later,
-unrelated region activation (e.g. via `set-mark-command') in the same
-buffer.
-
-Installed buffer-locally by `donkey-visual-line-toggle' at the moment
-it sets the anchor, rather than globally at load: an anchor is the
-only thing this has to clear, and the buffers holding one are exactly
-the buffers where the hook needs to exist.  Adding a function that is
-already present is a no-op, so repeated sessions do not grow the hook."
+On `deactivate-mark-hook', installed buffer-locally by
+`donkey-visual-line-toggle' when it sets the anchor, so the anchor
+never survives its region."
   (setq donkey-visual-anchor nil))
 
 
@@ -1763,40 +1714,11 @@ line's end.  Those are the only two values `donkey-visual-line-toggle',
 `donkey-visual-next-line' and `donkey-visual-previous-line' ever set
 the mark to, depending on which side of the anchor point is on.
 
-Checking the mark rather than `last-command' is what lets whole-line
-and character-wise motion be mixed freely within one session: `j'/`k'
-\(plain `next-line'/`previous-line') move point without touching the
-mark, so a following `J'/`K' still recognizes the session and
-re-anchors to whole lines, instead of falling through to plain
-`forward-line' as a `last-command'-based check would.
-
-The mark test also stands between a STALE anchor and a session it was
-never part of.  Every selection command of this package clears the
-anchor through `donkey--ensure-non-rectangle-selection' before it sets
-its mark, because a new mark can land exactly where a session would
-have left it -- see there.  Commands from outside the package
-\(\\[set-mark-command], `mark-word', `mark-sexp') reposition an active
-mark without passing through it, and `deactivate-mark-hook' does not
-fire for a mark that merely moves, so an anchor can outlive its session
-that way.  Those commands land the mark somewhere unrelated to the
-anchor's line, and the check below fails for them.  Confirmed live:
-`V' on a second line and then `mark-sexp', which grows an active region
-at the mark's side and so took the word before the line, left the
-anchor behind, and `J' pressed on that selection moved down one line as
-plain `forward-line' does instead of snapping the region back to the
-anchor line."
+An anchor outside the accessible portion is not a session this can
+continue."
   (and (region-active-p)
        donkey-visual-anchor
-       ;; An anchor outside the accessible portion is not a session this
-       ;; can continue.  Buffer positions are absolute and narrowing does
-       ;; not move them, so `V' followed by \\[narrow-to-region] (or
-       ;; `org-narrow-to-subtree') leaves the anchor pointing at text the
-       ;; buffer is no longer showing.  Both `goto-char' below and the
-       ;; `set-mark' the J/K commands do afterwards silently CLAMP there
-       ;; rather than signaling, so the selection quietly re-anchored on
-       ;; the narrowing edge while still presenting itself as the session
-       ;; started higher up.  Rejecting it here makes `J'/`K' fall back to
-       ;; the plain `forward-line' their docstrings describe.
+       ;; An anchor outside the accessible portion is no session.
        (<= (point-min) donkey-visual-anchor)
        (<= donkey-visual-anchor (point-max))
        (mark)
@@ -1805,16 +1727,12 @@ anchor line."
                        (goto-char donkey-visual-anchor)
                        (line-end-position))))))
 
-;; Canceling only a genuine session avoids reporting a misleading "Visual
-;; line: canceled" for a selection that was never a visual-line session.
-
 (defvar donkey--visual-line-hint
   "Visual line: J/K whole lines, j/k by char, V to cancel"
   "The echo-area reminder shown while a visual-line session is active.
 
-Shown by `donkey-visual-line-toggle' at entry and kept VISIBLE across
-the session's motions by `donkey--show-selection-hint', the way
-`donkey--mark-run-mode-hint' stays up for mark run mode.")
+Shown by `donkey-visual-line-toggle' at entry and kept visible across
+the session's motions by `donkey--show-selection-hint'.")
 
 (defconst donkey--hint-motions
   '(donkey-visual-next-line donkey-visual-previous-line
@@ -1833,40 +1751,18 @@ visual-line session, a linear selection and a rectangle.  Mark run
 mode does not use it -- its reminder follows family membership, every
 key of the mode being one of its own.
 
-Motions only, and only motions that never message: a command that DID
-message must keep its echo, and whether one just did cannot be told
-after the fact -- a stale message and a fresh one read the same from
-`current-message' -- so the rule is a whitelist of the session's own
-silent motions rather than a guess.
-
-The last four are the jumps behind `g h', `g l', `g g' and `g e': they
-move point without touching the mark, so the session survives them and
-the reminder should too -- it used to go quiet for the rest of a
-session that had used one.  The buffer pair messages \"Mark set\" only
-when there is no active region to push a mark for, which a live
-session always has.
-
-The `rectangle-' seven are the same motions again under another name.
-`rectangle-mark-mode' REMAPS the motion keys to its own commands, so a
-rectangle moving by `j' and `l' arrives here as `rectangle-next-line'
-and `rectangle-forward-char' -- and the reminder, matching on the
-names above, went quiet after the first press of a selection that had
-not moved yet.  They can only run inside a rectangle, so listing them
-costs the other reminders nothing.
-
-This is where the coverage stops: after any command not listed here,
-the reminder waits for the next listed motion instead of repainting,
-and a count's keystroke echo is never painted over because the prefix
-commands are not listed either.")
+Motions only, and only motions that never message, so a command that
+said something of its own keeps its echo: a whitelist of the sessions'
+own silent motions.  The `rectangle-' entries are the same motions
+under the names `rectangle-mark-mode' remaps them to.  After any
+command not listed here the reminder waits for the next listed
+motion.")
 
 (defun donkey--repaint-hint (hint)
   "Show HINT in the echo area without logging it.
 
-Both selection modes keep a reminder up across their own motions --
-`donkey--visual-line-hint' for a visual-line session,
-`donkey--mark-run-mode-hint' for mark run mode -- and both repaint it
-from `post-command-hook'.  Unlogged, because a dozen copies of one
-reminder is what *Messages* would otherwise keep."
+Repainted from `post-command-hook' by the selection reminders, so
+*Messages* is not filled with copies."
   (let ((message-log-max nil))
     (message "%s" hint)))
 
@@ -1877,63 +1773,30 @@ reminder is what *Messages* would otherwise keep."
 Shown by `donkey-set-mark' at entry and kept VISIBLE across the
 selection's motions by `donkey--show-selection-hint', the way
 `donkey--visual-line-hint' and `donkey--mark-run-mode-hint' stay up
-for their own modes.
-
-The wording says what the other two do not have to.  A visual-line
-session and a mark run each own their keys, so their reminders can
-list them; this one owns none -- every motion extends it, which is the
-whole of what it offers -- and the two things worth saying are that a
-second `v' re-anchors rather than cancels, and that
-\\[keyboard-quit] is what lets go.  Both are the questions the
-command's own docstring exists to answer.")
+for their own modes.")
 
 (defvar donkey--rectangle-hint
   "Rectangle: any motion sizes the block, m v or C-g to cancel"
   "The echo-area reminder shown while `rectangle-mark-mode' is on.
 
 Shown by `donkey-rectangle-mark-mode' at entry and kept VISIBLE across
-the block's motions by `donkey--show-selection-hint'.
-
-It replaces the \"Mark set (rectangle mode)\" that
-`rectangle-mark-mode' says for itself, which names the state without
-saying anything about leaving it -- and leaving is the part a
-rectangle most needs to advertise, being the one selection that
-several commands refuse outright.")
+the block's motions by `donkey--show-selection-hint'.")
 
 (defvar-local donkey--linear-selection-active nil
   "Non-nil while a selection `donkey-set-mark' started is still live.
 
-A visual-line session has `donkey-visual-anchor' and a rectangle has
-`rectangle-mark-mode'; a linear selection is just an active mark, and
-nothing about the mark says which key made it.  So the key says so
-itself, and `donkey--clear-selection-hint' takes it back on
-`deactivate-mark-hook' -- whatever deactivated the mark, this command,
-\\[keyboard-quit], or an edit that consumed the selection.
-
-Buffer-local, because a selection is: two buffers can each hold one,
-and neither should speak for the other.")
+Set by `donkey-set-mark', cleared by `donkey--clear-selection-hint' on
+`deactivate-mark-hook'.  Buffer-local, as a selection is.")
 
 (defun donkey--clear-selection-hint ()
   "Forget a linear selection, and take its reminder off the screen.
 
 On `deactivate-mark-hook', installed buffer-locally by
-`donkey-set-mark' and `donkey-rectangle-mark-mode' at the moment each
-starts a selection -- the same bargain `donkey--clear-visual-anchor'
-makes for the anchor, and for the same reason: the buffers holding a
-selection are exactly the buffers where the hook needs to exist.
-Adding a function already present is a no-op, so repeated selections
-do not grow the hook.
-
-A reminder is the only sign on screen that a selection is live, so it
-must not outlive one.  `d' or `y' over a linear selection ends it
-without a word, and the echo area went on advertising a selection that
-was already gone.  Cleared only when the reminder is what is showing:
-the same no-clobber rule `donkey--mark-run-exit' keeps, so a command
-that said something of its own keeps its echo.
-
-Both reminders are checked because both selections end here.  A
-rectangle canceled with `m v' says so for itself, but one consumed by
-an action key goes the same quiet way a linear selection does."
+`donkey-set-mark' and `donkey-rectangle-mark-mode' when each starts a
+selection.  The reminder is taken down only when it is what is
+showing, so a command that said something of its own keeps its echo;
+both the linear and the rectangle reminder are checked, since both
+selections end here."
   (setq donkey--linear-selection-active nil)
   (when (member (current-message)
                 (list donkey--linear-selection-hint donkey--rectangle-hint))
@@ -1946,35 +1809,11 @@ On `post-command-hook' for the life of `donkey-mode' -- registered in
 `donkey--global-hooks' rather than per session, so two selections in
 two buffers cannot strand or double it.
 
-One function for all three selections, deciding once.  They were three
-hooks with a set of exclusions each, and the rule they add up to --
-that only one reminder is ever on screen -- was written nowhere and
-true only by arithmetic: every hook ran, and whichever painted last
-won.  Hook ORDER settled two of the cases, which is not a rule anybody
-can hold, and a guard removed from one of them went on looking right
-until somebody reordered the list.  Here the precedence IS the `cond',
-in order, and a case that cannot arise is absent rather than guarded.
-
-A rectangle comes first: it can be entered over either of the others
-without deactivating the mark, so their grounds survive underneath it
-and it has the better claim.  Then a visual-line session, which a
-linear selection likewise survives into.  A linear selection last,
-being the one the other two get built on top of.
-
-Mark run mode is not here at all.  It repaints from its own
-`donkey--mark-run-mode-post-command', by family membership rather than
-by motion, and nothing in `donkey--hint-motions' can run while it is
-armed -- the mode rebinds every motion key it owns.
-
-The selection tests come before the motion test because most commands
-are neither: three variable reads answer for every keystroke in a
-buffer with nothing selected, and the list is only walked once
-something is.  Repaints after the motions in `donkey--hint-motions'
-and after nothing else, so a command that said something of its own
-keeps its echo and a count's keystroke echo is never painted over.
-
-Guarded, not signaling -- a function that errors on
-`post-command-hook' is silently removed for the session."
+One function for all three selections, and the precedence is the
+`cond': a rectangle first, then a visual-line session, then a linear
+selection.  Mark run mode repaints from its own hook.  Repaints after
+the motions in `donkey--hint-motions' and after nothing else.
+Guarded, not signaling."
   (when (and (or (bound-and-true-p rectangle-mark-mode)
                  donkey-visual-anchor
                  donkey--linear-selection-active)
