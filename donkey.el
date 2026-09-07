@@ -2945,29 +2945,19 @@ anywhere, in either order, and \`V' then \`M' adopts one whole.  A
 fresh press comes only where \`M' found no word to mark.
 
 The mark lands at the START OF THE NEXT LINE rather than at the end of
-this one, so the newline that ends the selection is inside it.  That
+this one, so the newline that ends the selection is inside it: that
 one character is the difference between a line selection and the text
-of a line: without it `M J d' deleted the words and left the blank
-line their newline still ended, where `V d' removes the line outright,
-and `M J y' produced a kill that the next `p' spliced into whatever
-line it landed in.  `donkey-visual-line-toggle' answers the same
-problem from the other side -- it keeps the highlight tight and widens
-at `y'/`d' through `donkey--visual-line-region-bounds' -- which it can
-do because it has an anchor to widen from and this has none.  The
-visible difference is that the highlight here reaches the next line's
-first column; the deletions and the kills now agree.
+of a line, and `M J d' removes the line outright as `V d' does.  The
+highlight reaches the next line's first column.
 
 COUNT lines; a COUNT below 1 is treated as 1, the reading the
 backward keys give theirs -- the other direction is \`K'."
   (interactive "p")
   (let ((n (max 1 (or count 1))))
     (if (donkey--mark-run-continuing-p)
-        ;; `forward-line' from the mark does both jobs the old
-        ;; end-of-line dance did: from a mark at a line start it adds
-        ;; N whole lines, and from one sitting mid-line it completes
-        ;; that line first, landing on the next line's start either
-        ;; way.  At the end of a buffer with no final newline it
-        ;; stops at `point-max', keeping what is selected.
+        ;; `forward-line' from the mark adds N whole lines, completing a
+        ;; mid-line mark's line first; at the end of a buffer with no
+        ;; final newline it stops at `point-max'.
         (set-mark (save-excursion
                     (goto-char (mark t))
                     (forward-line n)
@@ -2990,10 +2980,9 @@ word, point sitting at a line start already, it takes the line above
 as well; the word's own end stays where it is, that end being the
 partner's, so `M K J' is the whole line as `M J K' is.
 
-A fresh press marks the whole line, newline included -- see its
-partner for why the character matters.  The extending branch needs no
-counterpart: it walks POINT, which sits at a line START already, so
-the end the newline belongs to is the one the partner owns.
+A fresh press marks the whole line, newline included.  The extending
+branch walks POINT, which sits at a line START already, so the end the
+newline belongs to is the one the partner owns.
 
 COUNT lines; a COUNT below 1 is treated as 1."
   (interactive "p")
@@ -3025,10 +3014,7 @@ Press again to trade back.
 The OBJECT keys own fixed ends -- mark forward, point backward -- so
 a swap is not theirs to honor: they call `donkey--normalize-mark-run'
 and trade back before they grow.  `M * w' therefore selects what
-`M w' selects.  It used to push the mark forward from the region's
-own start and collapse the selection to nothing while still reporting
-\"Word marked\", which was the swap's one sharp edge; growing by
-objects now reads the same whichever way round the ends are.
+`M w' selects.
 
 A member of `donkey--mark-run-adjusters', so the run carries on and the
 visible-run guard applies to what follows.  Refuses without an active
@@ -3036,8 +3022,7 @@ selection: `exchange-point-and-mark' would leap to some stale mark
 and re-activate whatever lies between, which is not what a key for
 trading the ends of a VISIBLE selection can mean."
   (interactive)
-  ;; `mark-active' rather than `region-active-p', so the key works with
-  ;; `transient-mark-mode' off -- see `donkey--mark-extending-p'.
+  ;; `mark-active', so the key works with `transient-mark-mode' off.
   (if (and mark-active (mark t))
       (exchange-point-and-mark)
     (user-error "No selection to swap ends of")))
@@ -3092,59 +3077,26 @@ key whose ordinary job would discard the run silently.
 
 \`.' is `repeat', as it is in normal state, so `M w .' is three words
 and `M w . .' four, a count carrying over -- `M \\[universal-argument] 3 w .'
-is seven.  The key always did grow the selection; what it also did
-was END THE MODE, because `repeat' runs the previous command by name
-and the keep test judged the key by its own name, `repeat', rather
-than by the command it stood for.  The run then stood with nothing
-behind it: the next \`w' MOVED, dragging the highlight along, and
-\`u' undid a text edit inside the region.
-`donkey--mark-run-press-command' is what sees through the key now, for
-`donkey--mark-run-mode-keep-p' and for the history alike, so each
-\`.' is one more press and one more step for \`u' to take back.
-Bound here rather than left to the normal map so that the key is the
-mode's own -- listed with the rest, and not dependent on what \`.'
-means outside.  `M .' repeats the toggle itself, which takes the
-selection up again as if freshly pressed, with no steps behind it:
-`M' is not `w', and the key that ran was `M'.
+is seven.  `donkey--mark-run-press-command' sees through the key for
+the keep test and the history, so each \`.' is one more press and one
+more step for \`u' to take back.  `M .' repeats the toggle itself,
+which takes the selection up again as if freshly pressed.
 
-\`p' and \`P' are missing DELIBERATELY, though their objects belong
-to the family.  Holding them here shadowed the two paste keys, and
-the mode has no other way to reach them: `d', `y', `x' and `c' all
-act on a mark run selection, so replacing one with the kill ring was
-the single ordinary edit the mode made unreachable -- `M p' grew
-the selection to its paragraph and pasted nothing.  Paragraphs are
-one keystroke away either way, and pasting was none.
-
-\`m' is missing too, and that one is what makes the trade cheap: it
-still reaches the normal map's prefix, so `m w' inside the mode runs
-`donkey-mark-word' -- the same command the bare `w' here runs -- and
-both the keep test and the family test are about COMMANDS, so the
-mode survives the press and the run grows.  `M m w w' selects three
-words, and `m p' and `m P' grow a run by paragraphs from inside the
-mode exactly as the bare letters used to.")
+\`p' and \`P' are missing DELIBERATELY: they stay the paste keys, the
+one ordinary edit the mode would otherwise make unreachable, and
+paragraphs keep their `m' prefix.  \`m' is missing too, so `m w'
+inside the mode reaches the normal map and grows the run: `M m w w'
+selects three words, and `m p' and `m P' grow a run by paragraphs.")
 
 (defvar donkey--mark-run-mode-hint
   "Mark run: w/b words, W/B symbols, s/S sentences, m p/m P paragraphs, * other end, M to cancel"
   "The echo-area reminder shown while mark run mode is active.
 
-Styled after `donkey-visual-line-toggle's message, and kept VISIBLE
-for the whole mode by `donkey--mark-run-mode-post-command' -- a single
-flash at entry disappeared under the first \"Word marked\".
-
-It names the keys whose SUBJECT the mode changes, and no others.
-\`w' moves by a word in normal state and marks one here, and nobody
-could guess that from the key -- so the object keys are spelled out.
-A key that keeps its subject is not: \`h' \`j' \`k' \`l' still move,
-\`J' and \`K' still work on lines, \`.' still repeats, \`u' and \`U'
-still step back and forward, of the run rather than the buffer, which
-is the same idea one level down.  Naming those spent the line on the
-keys least in need of it, and the line is what a reader has to take in
-at a glance.
-
-Paragraphs keep their \`m' prefix -- \`p' and \`P' pass through to the
-paste commands here -- so they are the one entry the reminder has to
-spell in full.  The complete list, the motions and the jumps and the
-step keys included, is in the README and the tutor.")
+Kept visible for the whole mode by `donkey--mark-run-mode-post-command'.
+It names the keys whose SUBJECT the mode changes, and no others; a key
+that keeps its subject, such as the motions, is left out.  Paragraphs
+keep their \`m' prefix, so they are spelled in full.  The complete
+list is in the README and the tutor.")
 
 (defvar donkey--mark-run-history nil
   "The run's earlier shapes, newest first, for \`u' to step back to.
@@ -3152,16 +3104,7 @@ step keys included, is in the README and the tutor.")
 Each entry is (POINT MARK ACTIVE), the selection as it stood BEFORE
 one press changed it.  Pushed by `donkey--mark-run-mode-pre-command',
 popped by `donkey-mark-run-step-back', and emptied whenever the mode is
-disarmed, a run's history meaning nothing to the next run.
-
-A run is otherwise one-way.  Every object key GROWS -- `b' after `w'
-adds a word at the other end rather than taking one back, which is the
-fixed-ends rule and worth keeping -- so before this there was no way
-to take a press back at all: `m p' over a long paragraph, a count with
-a digit too many, or a reach that simply went further than it looked,
-left cancelling and starting again as the only way out.  Small steps
-are cheap to redo and large ones are not, and the mode cannot tell in
-advance which a press will be.")
+disarmed, a run's history meaning nothing to the next run.")
 
 (defvar donkey--mark-run-redo nil
   "The shapes \`u' has stepped back out of, newest first, for \`U'.
@@ -3171,13 +3114,7 @@ bargain: `donkey-mark-run-step-back' pushes what it is leaving here
 before it restores, `donkey-mark-run-step-forward' pops it and hands
 it back, and any OTHER press in the run empties it, a new branch
 having nothing to redo onto.  Emptied with the history whenever the
-mode is disarmed.
-
-\`U' is `undo-redo' in normal state, and inside a run it did exactly
-that: with a selection live and \`u' meaning the run rather than the
-buffer, the natural next press REDID A TEXT EDIT, dropped the
-selection and lapsed the mode, all without saying so.  Whatever the
-mode did with the key, it could not keep meaning that.")
+mode is disarmed.")
 
 (defvar donkey--mark-run-armed-in-macro nil
   "Non-nil when mark run mode was armed from inside a keyboard macro.
@@ -3243,30 +3180,16 @@ progress against its own.
 
 A \`.' is recorded as the command it repeats, which
 `donkey--mark-run-press-command' names: the press still reads
-`repeat' here, `repeat' renaming `this-command' only once it runs, so
-recording by `this-command' skipped every \`.', and \`u' after
-`M w . .' stepped back past all three words at once.
+`repeat' here, `repeat' renaming `this-command' only once it runs.
 
 It also names the nameless press -- see the comment below -- which is
 the one thing here that is not about the history.
 
 Guarded, not signaling: a function that errors on `pre-command-hook'
 is silently removed for the session."
-  ;; Name the nameless press.  A key sequence that resolves to nothing
-  ;; runs no command at all and arrives with `this-command' nil, where
-  ;; a single unbound KEY runs `undefined' -- one accident with two
-  ;; spellings, and the difference showed twice.  The mode ended, which
-  ;; `donkey--mark-run-mode-keep-p' now answers for; and the command
-  ;; loop wrote that nil into `last-command', so the next object key
-  ;; found no run to continue and marked afresh, quietly throwing away
-  ;; what the run had grown.  Calling it what the other spelling is
-  ;; called settles both: `undefined' is already a family member, so
-  ;; the run carries across the beep exactly as it does across \`~'.
-  ;;
-  ;; Done here rather than in the keep predicate because that one runs
-  ;; FIRST -- `set-transient-map' adds its hook after this one, and
-  ;; `add-hook' prepends -- so it sees the nil and needs its own answer
-  ;; to it.  This is about what the press leaves behind.
+  ;; Name the nameless press: a sequence that resolved to nothing
+  ;; arrives with `this-command' nil, and `undefined' -- a family
+  ;; member -- is what its other spelling, a single unbound key, runs.
   (when (null this-command)
     (setq this-command 'undefined))
   (let ((command (donkey--mark-run-press-command)))
@@ -3289,20 +3212,10 @@ reporting rather than guessing.  Every press the mode counts as its
 own steps back this way, the motions and \`*' included -- a simpler
 rule to hold than one that undid the object keys only.
 
-The key is free.  Inside a run \`u' otherwise reaches `undo', which
-sees an active region, tries a region undo and reports \"No further
-undo information for region\": one of the three keys in normal state
-that fail against a live run and leave it standing.  Nothing anyone
-uses is displaced.
-
 What it leaves is kept, so `donkey-mark-run-step-forward' on \`U' can
-hand it back -- until any other press in the run drops the redo, a new
-branch having nothing to redo onto.
-
-Point, the mark and whether the mark was active are all restored by
-`donkey--mark-run-restore'.  A member of `donkey--mark-run-commands',
-so the run carries on: `M w w u w' grows from the restored selection
-instead of marking afresh."
+hand it back, until any other press in the run drops the redo.  A
+member of `donkey--mark-run-commands', so the run carries on: `M w w u
+w' grows from the restored selection instead of marking afresh."
   (interactive)
   (unless donkey--mark-run-history
     (user-error "No earlier step in this run"))
@@ -3318,14 +3231,6 @@ other half of `donkey-mark-run-step-back': one press, one step, and
 that is not one of the two ends the redo, a new branch having nothing
 to redo onto, and this reports rather than guessing when there is
 nothing left.
-
-The pair matters more than the redo does.  Outside the mode \\`u' and
-\\`U' are `undo' and `undo-redo'; inside it \\`u' had been taken for
-the run while \\`U' still meant the buffer, so the press anyone would
-reach for after \\`u' redid a TEXT EDIT, dropped the selection and
-lapsed the mode without a word.  Keeping the two keys on one subject
-is what fixes that; that the subject is now the run rather than the
-buffer is the same idea one level down.
 
 A member of `donkey--mark-run-commands' like its sibling, so the run
 carries on and the next object key grows what came back."
@@ -3345,9 +3250,7 @@ differ only in the stack they take it from and the stack they leave
 the current shape on.
 
 Whether the mark was ACTIVE is restored along with the rest, so the
-shape before the first recorded press -- the word
-`donkey-mark-run-toggle' marks on the way in, or nothing at all --
-comes back as it was rather than as a selection it never was."
+shape before the first recorded press comes back as it was."
   (cl-destructuring-bind (pt mk active) state
     (goto-char pt)
     (if (and mk active)
@@ -3361,43 +3264,16 @@ On `post-command-hook' from mode entry until `donkey--mark-run-exit',
 with two jobs.
 
 The reminder is repainted after the mode's family commands and after
-nothing else: their own messages \(\"Word marked\" and kin) repeat what
-the visible selection already shows, so replacing them costs nothing,
-while during count entry the echo area belongs to the keystroke echo.
-Count entry is told apart by `prefix-arg' rather than by name, because
-the keys of a count carry no name of their own here:
-`universal-argument' and `digit-argument' copy `last-command' into
-`this-command' \(`prefix-command-preserve-state'), so that the command
-they prefix still reads as a repeat of the one before it, and mid-run
-each key of \`C-u 3' therefore arrives naming the family member it
-followed.  `prefix-arg' is non-nil after exactly those keys and nil
-again after the command they were for.  Without the test the reminder
-painted over the \`C-u 3-' echo, and the count being typed could not
-be seen.
+nothing else, and not while a count is being typed: count entry is
+told apart by `prefix-arg', since the keys of a count arrive under the
+name of the family member they followed.
 
-The exit is the transient map's backstop.  `set-transient-map' asks
-`donkey--mark-run-mode-keep-p' from `pre-command-hook', which is one
-command too late for anything that armed the map while it was already
-running: a command whose own key lookup happened long before leaves
-the mode armed behind it, and the next bare `w' the user typed marked
-a word instead of moving.  A command that is neither a family member,
-nor part of entering a count, nor `donkey-mark-run-toggle' itself --
-the arming press when it found nothing to mark or adopt, the one case
-in which it keeps its own name -- ends the mode here.
-
-A REPLAYED MACRO needs the extra arm above, because
-`this-command' cannot see it.  `kmacro-call-macro' and
-`kmacro-end-and-call-macro' deliberately leave `this-command' set to
-the macro's LAST command so that `last-command' chaining and the
-repeat key keep working; a macro ending on \`M' and a letter therefore
-reaches this hook with `this-command' naming a family member, and the
-test below reads it as an ordinary press of the mode's own key.
-`executing-kbd-macro' is the honest signal: the mode was armed while a
-macro ran, and the first command to finish outside one is the macro's
-own caller.  Noted at entry in `donkey--mark-run-armed-in-macro'.
-\(A command that merely calls `execute-kbd-macro' comes back with
-`this-command' nil and would have been caught anyway; kmacro is the
-one that restores it.)
+The exit is the transient map's backstop, for a command that armed
+the map while it was already running.  A command that is neither a
+family member, nor part of entering a count, nor `donkey-mark-run-toggle'
+itself ends the mode here; and a mode armed inside a keyboard macro,
+as noted at entry in `donkey--mark-run-armed-in-macro', ends with the
+first command to finish outside one.
 
 Guarded, not signaling: a function that errors on `post-command-hook'
 is silently removed for the session."
@@ -3405,9 +3281,7 @@ is silently removed for the session."
    ((and donkey--mark-run-armed-in-macro (not executing-kbd-macro))
     (donkey--mark-run-exit))
    ((memq this-command donkey--mark-run-commands)
-    ;; A count's keys arrive under the family member's name -- see
-    ;; the docstring -- and the echo area is theirs while one is
-    ;; being typed.
+    ;; A count's keys arrive under the family member's name.
     (unless prefix-arg
       (donkey--repaint-hint donkey--mark-run-mode-hint)))
    ((or (donkey--mark-run-mode-keep-p)
@@ -3425,30 +3299,13 @@ resolve to -- or part of entering a count, which must not end the mode
 or \`C-u 3 w' inside it would fall apart between the \`C-u' and the
 \`w'.
 
-A key that DOES NOTHING does not end it either -- see
-`donkey--mark-run-inert-commands' for which those are and why a
-mistyped key should cost a beep rather than the selection.  A mistyped
-SEQUENCE reaches no command at all and is checked separately below,
-the two spellings of one accident having arrived here differently.
-
-`donkey-mark-run-refuse' is allowed for the same reason from the other
-direction: it exists to leave the run standing, so it must not be the
-thing that ends it.  Both arrive through
-`donkey--mark-run-inert-commands', which the family list already
-appends, so the first test below covers them.
-
-\`.' is judged by the command it repeats, not by `repeat' -- see
-`donkey--mark-run-press-command'.  Judged by name it was a foreign
-key, and the mode ended on a press that grew the selection."
+A key that DOES NOTHING does not end it either, nor does a mistyped
+sequence that reached no command at all, nor `donkey-mark-run-refuse'
+-- see `donkey--mark-run-inert-commands'.  \`.' is judged by the
+command it repeats, through `donkey--mark-run-press-command'."
   (or (memq (donkey--mark-run-press-command) donkey--mark-run-commands)
-      ;; A key sequence that resolves to NOTHING never reaches a
-      ;; command, and arrives here as nil.  Emacs runs `undefined' for
-      ;; a single unbound key -- which is why \`~' was already inert --
-      ;; but a sequence that dies in a prefix map is just a beep, and
-      ;; `this-command' keeps whatever it held before.  Both are the
-      ;; same mistype, and the difference cost the run: \`m x' for
-      ;; \`m w' ended the mode silently, and the next letter then moved
-      ;; point and left an empty highlight behind it.
+      ;; A sequence that resolves to nothing arrives as nil: the same
+      ;; mistype as an unbound key, under another spelling.
       (null this-command)
       (memq this-command '(universal-argument universal-argument-more
                            digit-argument negative-argument))))
@@ -3476,23 +3333,15 @@ leaves the map armed with no further command to lapse it.
 call runs the map's ON-EXIT, which is this function again, and the nil
 is what stops the second pass.  Harmless when the mode is not armed.
 
-Reached on both sides of the foreign command that ends the mode: the
-map's ON-EXIT fires from `pre-command-hook', before that command can
-message, and the reminder hook fires after, when anything the command
-said is already in the echo area.  The clearing test reads correctly
-either way."
+Reached on both sides of the foreign command that ends the mode, and
+the reminder is cleared only when it is what is showing, so a command
+that said something of its own keeps its echo."
   (remove-hook 'pre-command-hook #'donkey--mark-run-mode-pre-command)
   (remove-hook 'post-command-hook #'donkey--mark-run-mode-post-command)
   (setq donkey--mark-run-history nil)
   (setq donkey--mark-run-redo nil)
-  ;; The reminder is the only sign on screen that the mode is on, so it
-  ;; must not outlive it.  A foreign key that neither messages nor
-  ;; signals -- `g q', `z z', a recenter -- left the echo area still
-  ;; advertising the mark run keys over a selection the mode no longer
-  ;; owned, and the next `w' moved instead of growing.  Cleared only
-  ;; when the reminder is what is showing: the same no-clobber rule
-  ;; `donkey--hint-motions' keeps in the other direction,
-  ;; so a command that said something of its own keeps its echo.
+  ;; The reminder must not outlive the mode; cleared only when it is
+  ;; what is showing.
   (when (equal (current-message) donkey--mark-run-mode-hint)
     (message nil))
   (setq donkey--mark-run-armed-in-macro nil)
@@ -3520,10 +3369,8 @@ back to nil and the only way to tell an armed-by-macro mode from an
 armed-by-keypress one is to have written it down."
   (donkey--mark-run-exit)
   (setq donkey--mark-run-armed-in-macro (and executing-kbd-macro t))
-  ;; Belt and braces: the `donkey--mark-run-exit' above has already
-  ;; emptied this and `donkey--mark-run-redo' with it, so no test can
-  ;; tell the line from its absence.  Left because a reader looking
-  ;; for where a run's steps begin should find the answer here.
+  ;; Already emptied by the exit above; kept as the place where a
+  ;; run's steps begin.
   (setq donkey--mark-run-history nil)
   (add-hook 'pre-command-hook #'donkey--mark-run-mode-pre-command)
   (add-hook 'post-command-hook #'donkey--mark-run-mode-post-command)
@@ -3536,20 +3383,11 @@ armed-by-keypress one is to have written it down."
 (defun donkey--adoptable-selection-p ()
   "Return non-nil when there is a selection worth taking into a run.
 
-Active and not empty.  `donkey-set-mark' activates a mark without
-covering anything yet, and `region-active-p' says yes to that: adopting
-it made the first object key grow from the CURSOR, so `v M w' from
-mid-word took the tail of the word where `M w' takes two whole ones.
-Asked by `donkey-mark-run-toggle' to decide whether to adopt and by
-`donkey-mark-run-adopt' to refuse when it should not have been called
--- one test, so the two cannot drift into disagreeing about what a
-selection is.
-
-`mark-active' rather than `region-active-p', so a selection made with
-`transient-mark-mode' off is still one to adopt -- see
-`donkey--mark-extending-p'.  `(mark t)' for the reading, since a mark
-that is live but not \"active\" in that mode's sense is exactly the
-case this exists to handle."
+Active and not empty: `donkey-set-mark' activates a mark without
+covering anything yet, and that is not a selection to adopt.  One
+test for `donkey-mark-run-toggle' and `donkey-mark-run-adopt' alike.
+`mark-active' and `(mark t)', so a selection made with
+`transient-mark-mode' off is still one."
   (and mark-active (mark t) (/= (point) (mark t))))
 
 (defun donkey-mark-run-adopt ()
