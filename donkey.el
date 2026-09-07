@@ -32,6 +32,20 @@
 ;; Philosophy: Leverage Emacs Native Commands and built-in functions
 ;; wherever possible.  Custom commands only where beneficial.
 ;;
+;; DONKEY is an addition to Emacs, not a replacement, and it takes as
+;; little as a modal editor can -- measured, not promised.  Every `C-x'
+;; and `C-c' sequence, `M-x', `C-h', isearch, the arrow keys, every Meta
+;; binding and every key your packages bind work exactly as they always
+;; did, in both states; no DONKEY keymap binds a Meta key or the ESC
+;; prefix at all.  INSERT state is Emacs with one key changed: `C-g'
+;; returns to NORMAL state.  NORMAL state differs in four things, all
+;; of them named: letters run commands instead of typing, digits are
+;; not counts (`C-u 3' is), RET does nothing in a buffer you are
+;; editing and is handed back to Dired, Magit and the like, and
+;; BACKSPACE and DELETE do nothing.  Nothing else is shadowed, and the
+;; test suite walks the keymaps against a plain Emacs buffer to keep
+;; each of these sentences true.
+;;
 ;; Optional Smartparens Integration:
 ;; If you use smartparens, call `(donkey-setup-smartparens)' in
 ;; your config after loading smartparens to bind C-g in smartparens

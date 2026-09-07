@@ -47,6 +47,20 @@ intact. A modal editor cannot be entirely free of friction, so the few
 native behaviors it does take are named in full below rather than left
 to be discovered.
 
+That interference is as small as a modal editor's can be, and it is
+measured rather than promised. In Insert state exactly one key
+changes: =C-g= returns to Normal state. In Normal state exactly four
+things differ: letters run commands instead of typing, digits are not
+counts (=C-u 3= is), =RET= does nothing in a buffer you are editing,
+and =BACKSPACE= and =DELETE= do nothing. No other Emacs command is
+shadowed in either state. Every =C-x= and =C-c= sequence, =M-x=,
+=C-h=, isearch, the arrow keys, every Meta binding and every key your
+packages bind work exactly as they always did — no DONKEY keymap binds
+a Meta key or the =ESC= prefix at all. A test walks every key of the
+keymaps against a plain Emacs buffer so that a fifth difference cannot
+appear unannounced. "What DONKEY takes from native Emacs" below has
+the full table.
+
 ** Design Philosophy
 
 - An addition to Emacs, not a replacement — improvements layered on

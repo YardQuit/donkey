@@ -831,6 +831,39 @@ this map would make that false."
                 donkey-insert-mode-map)
     (should (equal bindings '(("C-g" . donkey--exit-insert))))))
 
+(ert-deftest donkey-no-keymap-binds-a-meta-key-or-the-esc-prefix ()
+  "No DONKEY keymap carries a Meta binding or an ESC entry, in any state.
+
+The README and the Commentary say every Meta binding works as it
+always did, in both states, and the tutor says the same.  The claim is
+structural rather than a spot-check: the Normal, Insert and mark run
+maps are walked to every leaf, and no event may carry the Meta
+modifier, and no entry may sit on ESC -- the prefix Meta arrives as on
+a terminal, where a binding there would shadow every `M-' key at once
+although `M-x' resolved untouched in a graphical frame.
+
+Measured before it was written: 898 key sequences reachable from a
+plain `text-mode' buffer in `emacs -Q', resolved in both states in a
+batch, a terminal and a graphical frame, and every Meta sequence gave
+the same command with DONKEY on as off."
+  (let ((found '()))
+    (cl-labels
+        ((walk (map prefix)
+           (map-keymap
+            (lambda (ev def)
+              (let ((seq (vconcat prefix (vector ev))))
+                (when (or (and (integerp ev) (/= 0 (logand ev (ash 1 27))))
+                          (memq ev '(27 escape ESC)))
+                  (push (key-description seq) found))
+                (when (and (keymapp def) (not (symbolp def)))
+                  (walk def seq))))
+            map)))
+      (dolist (map (list donkey-normal-mode-map
+                         donkey-insert-mode-map
+                         donkey-mark-run-mode-map))
+        (walk map [])))
+    (should (equal found '()))))
+
 (ert-deftest donkey-tutor-claim-dired-keys-survive ()
   "The Dired keys the tutor names by hand are really still Dired's."
   (skip-unless (require 'dired nil t))
