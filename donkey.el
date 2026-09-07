@@ -3,7 +3,11 @@
 ;; Copyright (C) 2026 Michael Jones
 ;; Author: Michael Jones <yardquit@pm.me>
 ;; Maintainer: Michael Jones
-;; Assisted-by: Lumo 2.0 Max, Claude [Claude Code]
+;; Assisted-by: Lumo:2.0 Max
+;; Assisted-by: Claude:claude-opus-5
+;; Assisted-by: Claude:claude-sonnet-5
+;; Assisted-by: Claude:claude-fable-5
+;; Assisted-by: Claude:claude-fable-5-1
 ;; URL: https://github.com/yardquit/donkey
 ;; Version: 1.7.1
 ;; Package-Requires: ((emacs "29.1"))
