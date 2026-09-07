@@ -7897,20 +7897,9 @@ All keys fall through to the major mode and global keymap.
 \\[donkey--exit-insert] returns to Normal state.
 
 The lighter reads \" DONKEY[E]\" instead of \" DONKEY[I]\" in a
-`donkey-excluded-modes' buffer.  Insert state is the truthful answer
-there -- keys really do pass through -- but it is a misleading one: it
-suggests \\[donkey--exit-insert] would get you to Normal state, and in these buffers
-nothing does.  Normal state is refused permanently, by
-`donkey--ensure-default-state' on entry and
-`donkey--handle-non-editing-buffer' for anything that gets in another
-way, so a reader pressing \\[donkey--exit-insert] and watching the lighter not change had
-no way to tell a deliberate refusal from a broken key.
-
-Computed on redisplay rather than stored, because a buffer can change
-major mode underneath the state -- `M-x shell-mode' in an ordinary
-buffer makes it excluded without any DONKEY transition firing.
-`donkey--excluded-mode-p' costs about a microsecond, which is nothing
-beside the redisplay it is part of."
+`donkey-excluded-modes' buffer, where Normal state cannot be reached.
+It is computed on redisplay, so a buffer whose major mode changes
+underneath the state shows the right letter."
   :group 'donkey
   :lighter (:eval (donkey--insert-state-lighter))
   :keymap donkey-insert-mode-map
