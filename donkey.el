@@ -8763,18 +8763,13 @@ verify."
 ;;; ---------------------------------------------------------------------------
 
 (defun donkey-indicator ()
-  "Return state indicator string for modeline.
+  "Return the DONKEY state indicator string for the mode line.
 
-Returns ' DONKEY[N]' for Normal, ' DONKEY[I]' for Insert, ' DONKEY[E]'
-for Insert in a `donkey-excluded-modes' buffer, and the empty string
-otherwise.  Useful if you build your own mode-line and want to include
-the DONKEY state.
-
-The E case is still Insert state; it is reported separately because
-Normal state cannot be reached from those buffers at all, and a lighter
-that says Insert invites a reader to press \\[donkey--exit-insert] and conclude the key
-is broken when nothing happens.  Kept in step with
-`donkey-insert-mode's own lighter, which makes the same distinction."
+\" DONKEY[N]\" in Normal state, \" DONKEY[I]\" in Insert state,
+\" DONKEY[E]\" in Insert state in a `donkey-excluded-modes' buffer,
+where Normal state cannot be reached, and the empty string when DONKEY
+is off.  For building your own mode line; the lighter of
+`donkey-insert-mode' makes the same distinction."
   (cond
    ((bound-and-true-p donkey-normal-mode) " DONKEY[N]")
    ((bound-and-true-p donkey-insert-mode) (donkey--insert-state-lighter))
