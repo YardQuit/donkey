@@ -97,37 +97,14 @@ explicitly if desired."
   :type '(repeat symbol)
   :group 'donkey)
 
-;; Coerced rather than trusted, for the same reason
-;; `donkey--position-ring-limit' exists.  `donkey--excluded-mode-p' is
-;; reached from `post-command-hook' via
-;; `donkey--check-post-command-non-editing', and Emacs REMOVES a hook
-;; function that signals -- silently, and for the rest of the session.
-;; Repairing the variable afterwards does not bring it back; only
-;; toggling `donkey-mode' off and on does.
-;;
-;; The misconfiguration is a plausible one rather than a perverse one.
-;; These variables hold LISTS of modes, and
-;;
-;;   (setq donkey-excluded-modes 'dired-mode)
-;;
-;; -- one missing pair of parentheses -- is the obvious slip.  Confirmed
-;; by driving real keys: the FIRST keypress after it logged "Error in
-;; post-command-hook" and took away the catch-all that guarantees Normal
-;; state can never be active in an excluded buffer.  Nothing on screen
-;; connects the two, and the guarantee is gone for the session.
-;;
-;; A bare symbol is read as the one-element list it was meant to be,
-;; rather than discarded: that is what the user asked for, and refusing
-;; it would trade a crash for a silent no-op.
+;; Every read of a mode-list option goes through `donkey--mode-list':
+;; the readers sit on hooks, and a hook function that signals is
+;; removed for the session.
 (defun donkey--mode-list (value)
   "Return VALUE as a list of major modes, never signaling.
 
 A list is returned with any non-symbol dropped, a bare symbol is taken
-as a one-element list, and anything else reads as the empty list.  The
-filter matters as much as the coercion: a list holding a string --
-\(\"shell-mode\") for `shell-mode' -- reaches `derived-mode-p', which
-signals `wrong-type-argument' on it, from the same hook the comment
-above describes."
+as a one-element list, and anything else reads as the empty list."
   (cond ((listp value) (seq-filter #'symbolp value))
         ((symbolp value) (list value))
         (t nil)))
@@ -152,20 +129,8 @@ CACHE-VAR names a buffer-local variable holding a cons of the key
 \(MAJOR-MODE . SNAPSHOT) and the RESULT, SNAPSHOT being a copy of
 MODE-LIST as it was when the entry was computed.  The entry is reused
 only while the buffer's `major-mode' is `eq' and MODE-LIST is `equal'
-to that snapshot, so a mode change or any change to the user option --
-`setq', `add-to-list', Customize, and equally an in-place `delq',
-`nconc' or `setcdr' that hands back the same cons -- recomputes on the
-next call.  A snapshot compared by value, not the original object
-compared by `eq': (setq donkey-editing-modes (delq \\='org-mode
-donkey-editing-modes)) returns the very cons it mutated whenever the
-removed element is not first, so an `eq' check kept serving the
-pre-mutation answer.
-
-Worth caching because `donkey--major-mode-in-p' walks the mode's
-parent chain once per listed mode, and its callers sit on
-`pre-command-hook', twice on `post-command-hook', and in the
-`donkey-insert-mode' lighter, which is evaluated on every redisplay
-of every window."
+to that snapshot, so a mode change or any change to the user option,
+in place or not, recomputes on the next call."
   (let ((cache (symbol-value cache-var)))
     (if (and cache
              (eq (car (car cache)) major-mode)
@@ -188,36 +153,21 @@ of every window."
                                 donkey-excluded-modes))
 
 (defun donkey--insert-state-lighter ()
-  "Return the modeline text for Insert state in the current buffer.
+  "Return the mode-line text for Insert state in the current buffer.
 
-\" DONKEY[E]\" in a `donkey-excluded-modes' buffer, \" DONKEY[I]\"
-everywhere else.  See `donkey-insert-mode' for why the two are told
-apart at all.
-
-One function rather than the same expression in two places:
-`donkey-insert-mode's lighter and `donkey-indicator' both need it, and
-they are four hundred lines apart, so a change to one would not
-obviously want the other."
+\" DONKEY[E]\" in a `donkey-excluded-modes' buffer, where Normal state
+cannot be reached, \" DONKEY[I]\" everywhere else.  Shared by the
+`donkey-insert-mode' lighter and `donkey-indicator'."
   (if (donkey--excluded-mode-p) " DONKEY[E]" " DONKEY[I]"))
 
 (defun donkey--handle-non-editing-buffer ()
   "Bounce straight back to Insert state in an excluded major mode.
 
-Runs whenever `donkey-normal-mode' just turned on.
-`donkey--ensure-default-state' (on `after-change-major-mode-hook')
-already keeps a FRESH buffer out of Normal state in an excluded mode,
-but that only covers the buffer's initial activation.  This hook
-catches the other way in: Normal state entered directly, e.g. via `M-x
-donkey-normal-mode' or a keybinding, in a buffer that's already
-excluded (comint/term/vterm/eshell) and currently, correctly, in
-Insert state.  Registered on `donkey-normal-mode-hook', so it runs
-immediately as part of that same toggle, before the user's next
-keypress ever reaches the buffer.
-
-See `donkey--check-post-command-non-editing' for the broader,
-one-command-delayed safety net this doesn't cover: anything that sets
-`donkey-normal-mode' to t WITHOUT going through the actual minor-mode
-toggle function (so this hook never fires at all)."
+On `donkey-normal-mode-hook', so Normal state entered directly -- `M-x
+donkey-normal-mode', a key binding -- in an excluded buffer is undone
+within the same toggle.  `donkey--ensure-default-state' covers a
+buffer's first activation, and `donkey--check-post-command-non-editing'
+covers anything that sets the variable without the toggle."
   (when (donkey--excluded-mode-p)
     (when (bound-and-true-p donkey-normal-mode)
       (donkey-enter-insert))))
@@ -227,19 +177,11 @@ toggle function (so this hook never fires at all)."
 (defun donkey--check-post-command-non-editing ()
   "Force Insert state if Normal state is somehow active in an excluded mode.
 
-Checked after any command whatsoever.  Registered on the global
-`post-command-hook' by `donkey-mode', so it
-runs after EVERY command in EVERY buffer, checking the raw
-`donkey-normal-mode' variable directly rather than relying on a hook.
-This is deliberately redundant with `donkey--handle-non-editing-buffer'
-and `donkey--ensure-default-state': those two only run when the actual
-toggle function/major-mode-change machinery runs, so anything that
-sets `donkey-normal-mode' to t some OTHER way (a raw `setq-local', a
-buggy or unusual third-party integration) would slip past both of them
-undetected -- this is the catch-all that guarantees Normal state can
-never survive more than one command's delay in a mode where
-`suppress-keymap' would otherwise break subprocess/terminal
-interaction entirely."
+On the global `post-command-hook', after every command in every
+buffer, reading the `donkey-normal-mode' variable directly: the
+catch-all behind `donkey--handle-non-editing-buffer' and
+`donkey--ensure-default-state' for anything that sets the variable
+without going through the minor-mode toggle."
   (when (and (bound-and-true-p donkey-normal-mode)
              (donkey--excluded-mode-p))
     (donkey-enter-insert)))
