@@ -7748,35 +7748,25 @@ Common entries:
 Users may add entries for terminals that exhibit garbled output
 when DECSCUSR sequences are sent.
 
-Removing an entry does not always re-enable it.  \"dumb\", \"unknown\"
-and \"cons25\" are refused by `donkey--terminal-supports-decscusr-p'
-whatever this list says, because a terminal reporting one of those names
-has said it cannot render the sequences at all, and there is no setting
-worth honoring over that.  \"dumb\" appears in the default value as well,
-where it is documentation rather than the thing doing the work: taking
-it out changes nothing, while taking out \"linux\" does."
+\"dumb\", \"unknown\" and \"cons25\" are refused by
+`donkey--terminal-supports-decscusr-p' whatever this list says;
+\"dumb\" in the default value is documentation, and removing it
+changes nothing."
   :type '(repeat string)
   :group 'donkey)
 
 (defun donkey--cursor-type-to-decscusr (type)
   "Convert cursor TYPE to DECSCUSR escape sequence.
 
-Every shape Emacs accepts for `cursor-type' has a mapping, written both
-as a plain symbol and as the (SHAPE . SIZE) pair wherever Emacs takes
-both spellings.  Anything unrecognized falls back to the terminal's own
-default -- which is where the two values meaning \"whatever the frame
-says\" rather than a shape land, since neither names a shape to send."
+Every shape Emacs accepts for `cursor-type' has a mapping, as a bare
+symbol and as the (SHAPE . SIZE) pair.  Anything else falls back to
+the terminal's own default."
   (pcase type
     ('box         "\e[2 q")    ; Steady block
     ('hollow      "\e[0 q")    ; Blinking block (default)
     ('bar         "\e[6 q")    ; Steady bar
     (`(bar . ,_)  "\e[6 q")    ; Steady bar, ignore width
-    ;; Bare `hbar' as well as the (hbar . WIDTH) form.  Only the cons was
-    ;; matched, so the plain symbol -- which Emacs accepts everywhere it
-    ;; accepts the cons, and which this package's own tests use as a
-    ;; buffer-local `cursor-type' -- fell through to the default and drew
-    ;; a block where an underline was asked for.  `bar' has had both
-    ;; spellings all along; this is the same pair for the other shape.
+    ;; Bare `hbar' as well as the (hbar . WIDTH) form, as for `bar'.
     ('hbar        "\e[4 q")    ; Steady underline
     (`(hbar . ,_) "\e[4 q")    ; Steady underline, ignore height
     (_ "\e[0 q")))             ; Fallback to default
@@ -7790,17 +7780,8 @@ Falls back to the `TERM' environment variable when `tty-type'
 returns nil, and performs a conservative guess based on known
 capable terminal names.
 
-Nil under `--batch' too, whatever `TERM' says.  There is no terminal
-to shape there: `display-graphic-p' is nil, `TERM' is whatever the
-shell that started Emacs had, and `send-string-to-terminal' writes to
-standard output.  So a batch run of the test suite started from an
-xterm wrote every cursor change into its own log -- one run of 1181
-tests logged 2694 sequences, \"[2 q\" and \"[0 q\" between the test
-lines -- and slept ten milliseconds in `sit-for' between the two
-copies of each, which was two fifths of the suite's running time:
-36 seconds with the sequences, 21 without.  `noninteractive' is the
-signal, and a test that stubs a capable terminal binds it to nil to
-get past this line to the rest of the test."
+Nil under `--batch' too, whatever `TERM' says; a test that stubs a
+capable terminal binds `noninteractive' to nil."
   (and (not noninteractive)
        (not (display-graphic-p))
        (let ((tty (or (tty-type) (getenv "TERM"))))
@@ -7832,32 +7813,16 @@ on terminals that drop bytes during state transitions."
 (defvar donkey--last-applied-cursor-settings (make-hash-table :test 'eq)
   "Hash table mapping each terminal to the SETTING value last sent.
 
-Sending happens via `donkey--send-cursor-sequence'.  Caching it here
-lets `donkey--apply-cursor-setting' skip redundant terminal I/O when
-called again with an unchanged value -- notably, entering Normal or Insert
-state triggers this twice per transition, since each of
-`donkey-normal-mode' and `donkey-insert-mode' toggles the other off as
-part of its own body, running both modes' hooks (both of which include
-`donkey--update-cursor') for what is conceptually one transition.
-
-Keyed by terminal, not per-buffer: a terminal's actual cursor shape is
-a single shared, global resource, so caching this per-buffer would let
-a buffer's own cache report the shape as already-current right after a
-DIFFERENT buffer's hook most recently changed what the terminal is
-actually showing -- e.g. switching between a Normal-state window and
-an Insert-state window via `other-window' applies the correct shape
-the first time each buffer is visited, but a per-buffer cache would
-then wrongly skip resending on returning to a previously-visited
-buffer, since that buffer's own cache still (correctly, for itself)
-remembers its own last self-applied value.")
+Lets `donkey--apply-cursor-setting' skip the terminal I/O when the
+value is unchanged.  Keyed by terminal: a terminal's cursor is one
+shared resource, whatever buffer last set it.")
 
 (defvar-local donkey--cursor-type-owned nil
   "Non-nil while the buffer-local `cursor-type' is one DONKEY set.
 
 `donkey--apply-cursor-setting' with a nil SETTING removes the local
-value only when this is set.  Without the flag, the disable path --
-which visits EVERY buffer -- killed a local `cursor-type' that some
-other package had set on purpose in a buffer DONKEY never touched.")
+value only when this is set, so a `cursor-type' another package set
+is left alone.")
 
 (defun donkey--apply-cursor-setting (setting)
   "Apply SETTING, falling back to global default if SETTING is nil.
@@ -7868,43 +7833,23 @@ changed since the last call for this terminal, to avoid redundant
 terminal I/O (see `donkey--last-applied-cursor-settings').
 
 The buffer-local write is skipped the same way when the value already
-holds: this runs from `post-command-hook' after every command, and a
-`setq-local' per keystroke that changes nothing is a per-buffer
-variable write for nothing.
-
-The terminal is only driven when the current buffer is the one in the
-selected window.  A terminal has one cursor, and it shows that buffer;
-sending a shape for any other buffer is wrong on its face, and the
-buffers this is called for are not only visible ones: every
-`with-temp-buffer' that sets a major mode runs
-`after-change-major-mode-hook' and lands here through
-`donkey--ensure-default-state', from inside whatever package made the
-buffer -- and `donkey--send-cursor-sequence' pauses for redisplay.
-The terminal cache is left alone in that case too, so the next command
-in a visible buffer resyncs it through `donkey--update-cursor-passive'."
+holds.  The terminal is only driven when the current buffer is the one
+in the selected window, and the terminal cache is left alone
+otherwise, so the next command in a visible buffer resyncs it through
+`donkey--update-cursor-passive'."
   (cond
    (setting
     (unless (and (local-variable-p 'cursor-type)
                  (equal cursor-type setting))
       (setq-local cursor-type setting)
-      ;; Owned only when the write happened.  When the guard above
-      ;; skips because a FOREIGN buffer-local already equals SETTING,
-      ;; claiming ownership would make the nil branch below kill a
-      ;; value some other package set on purpose -- the case
-      ;; `donkey--cursor-type-owned' exists to protect.
+      ;; Owned only when the write happened.
       (setq donkey--cursor-type-owned t)))
    (donkey--cursor-type-owned
     (kill-local-variable 'cursor-type)
     (setq donkey--cursor-type-owned nil)))
   (when (eq (current-buffer) (window-buffer (selected-window)))
-    ;; `cursor-type' read here is what the buffer now displays: the
-    ;; branch above just wrote or killed it, and Emacs resolves the
-    ;; local-vs-default lookup itself.  Both this and `frame-terminal'
-    ;; live inside the shown-buffer check because the common callers --
-    ;; `post-command-hook' in every buffer, every `with-temp-buffer'
-    ;; that sets a major mode -- overwhelmingly return right here, and
-    ;; computing terminal identity and effective value for them was
-    ;; dead work on the per-keystroke path.
+    ;; Read after the write above; both lookups stay inside the
+    ;; shown-buffer check.
     (let ((terminal (frame-terminal))
           (effective cursor-type))
       (unless (equal effective
@@ -7918,17 +7863,10 @@ in a visible buffer resyncs it through `donkey--update-cursor-passive'."
 
 With PASSIVE non-nil, does nothing when neither `donkey-normal-mode'
 nor `donkey-insert-mode' is active in the current buffer, rather than
-resetting `cursor-type' to the default.  Used when called from the
-global `post-command-hook' (see `donkey--update-cursor-passive' and
-`donkey-mode') to resync the terminal cursor on window/buffer
-switches: that hook runs for EVERY buffer that becomes current, not
-just ones DONKEY manages, and a buffer that never ran any major-mode
-setup (so `donkey--ensure-default-state' never applied to it) would
-have `cursor-type' silently reset even though some unrelated package
-may have set it there on purpose.  Without PASSIVE -- called from
-`donkey-normal-mode-hook'/`donkey-insert-mode-hook', which only ever
-fire for buffers DONKEY itself toggled -- the reset is exactly what a
-Normal/Insert -> disabled transition needs."
+resetting `cursor-type' to the default; that is how the global
+`post-command-hook' calls it, through `donkey--update-cursor-passive'.
+Without PASSIVE, from the two state hooks, the reset is what a
+transition to disabled needs."
   (cond
    ((bound-and-true-p donkey-normal-mode)
     (donkey--apply-cursor-setting donkey-cursor-normal))
