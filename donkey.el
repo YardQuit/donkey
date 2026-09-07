@@ -2086,10 +2086,7 @@ automatically here, but ON-OPENER comes back nil so
 path instead of assuming point is the opener.
 
 AUTO is non-nil when the delimiter was read from the buffer rather
-than from a key, so the delimiter the reader types next is loose.
-Whether to swallow that press is the caller's decision, made once the
-pair has been found -- see `donkey--suppress-one-pair-delimiter' for
-why it is not made here."
+than from a key."
   (let* ((default-char (char-after))
          (on-opener (and default-char (assq default-char donkey-mark-pair-delimiters)))
          (on-closer (and default-char (not on-opener)
@@ -2147,56 +2144,18 @@ OPEN-CHAR/CLOSE-CHAR are the pair's delimiters.  ON-OPENER is non-nil
 when the character at point already matched OPEN-CHAR (i.e. no
 `read-char' prompt was needed to pick a delimiter).
 
-When ON-OPENER, point is always assumed to be the OPENING delimiter
-first, and the search goes forward for its close -- same as if the
-user had just typed it.  For symmetric delimiters (OPEN-CHAR equals
-CLOSE-CHAR, e.g. `\"', `|', `~'), that assumption can be wrong: point
-may actually be sitting on the pair's CLOSING occurrence instead (e.g.
-the closing quote of \"hello\"), which looks identical to an opening
-one.  If the forward search fails to find a close, this falls back to
-treating point as the closer instead and searches backward for the
-matching opener.  Only symmetric delimiters get this fallback:
-asymmetric ones (e.g. `(' and `)') can never have this ambiguity,
-since the closing character is never itself a member of the
-recognized-opener set, so point being ON-OPENER there always
-genuinely means the opening delimiter.
-
-For asymmetric delimiters, forward/backward searches go through
-`donkey--mark-pair-scan-forward'/`donkey--mark-pair-scan-backward'
-instead of a plain `search-forward'/`search-backward', so nested
-occurrences of the SAME delimiter (e.g. `(a(b)c)') resolve to the
-correct enclosing pair rather than the nearest occurrence of the
-character regardless of nesting.  Symmetric delimiters keep using a
-plain search: nesting has no well-defined meaning when the same
-character serves as both open and close.
+When ON-OPENER, the search goes forward from point for the close.
+For a symmetric delimiter, where point may be sitting on the pair's
+closing occurrence, a failed forward search falls back to treating
+point as the closer and searches backward for the opener.  Asymmetric
+pairs are scanned depth-aware, so nested occurrences of the same
+delimiter resolve to the enclosing pair; symmetric ones use a plain
+search, nesting having no meaning for them.
 
 START-POS is the position of the opening delimiter; END-POS is the
-position immediately after the closing delimiter.
-
-Searches are always case-sensitive (`case-fold-search' bound to nil),
-regardless of the buffer's own `case-fold-search' setting -- otherwise
-a delimiter like an uppercase `X' would also match a lowercase `x' in
-the buffer, silently pairing with the wrong occurrence.
-
-Wrapped in `save-excursion': every search above moves point as a means
-to compute START-POS/END-POS, not as a side effect callers should see.
-That matters most when no pair is found at all -- e.g. point sitting
-well outside any bracket on a line with several unrelated pairs, like
-after the last `)' on \";; To (create a (file), visit) it with...\".
-The nesting-aware backward scan there walks past several real `('/`)'
-occurrences (correctly counting depth as it goes) before ultimately
-running out of buffer and signaling `search-failed', converted to the
-error below -- but each of those intermediate matches really did move
-point, so without `save-excursion' the error would still leave point
-sitting at the last successfully-found delimiter (confusingly, on some
-unrelated `(' elsewhere in the buffer) instead of exactly where the
-user invoked the command from.
-
-Those conversions are to `user-error', not `error'.  Pressing this on a
-line with no bracket on it is an ordinary miss, not a malfunction, and a
-bare `error' pops the debugger for anyone running with `debug-on-error'
-on.  `donkey-mark-word', `donkey-mark-symbol' and `donkey-mark-sentence'
-all guard their own \"nothing there\" cases the same way."
+position immediately after the closing delimiter.  Searches are
+case-sensitive whatever the buffer's `case-fold-search'.  Point is
+left where it was, found or not, and a miss is a `user-error'."
   (let ((symmetric (= open-char close-char))
         start-pos end-pos (case-fold-search nil))
     (save-excursion
@@ -2242,33 +2201,17 @@ no nesting to step out of -- CHAR gives no way to tell an opener from a
 closer -- so a level counts OCCURRENCES instead: level 2 is the second
 CHAR back and the second CHAR forward, and so on.
 
-Once refused outright, on the reasoning that a character serving as both
-ends has no nesting for a level to refer to.  That argument proves too
-much: it rules out level 1 as well, which ships and is useful.  Marking a
-symmetric pair is already a nearest-one-each-way heuristic -- in
-\"say `alpha' beta `gamma' done\" with point in \"beta\", level 1 selects
-the GAP between two quoted strings rather than a quoted string, because
-nothing there says which quote opens.  A count inherits that heuristic
-rather than introducing a new one, and the case it makes possible is
-ordinary prose: with point in \"writing\" in
+With point in \"writing\" in
 
     \"No use \"writing on paper.\" That\"
 
 level 1 gives \"writing on paper.\" and level 2 gives the whole of the
-outer quotation, which is what asking for two levels plainly means.
+outer quotation.
 
 Signals a `user-error' when the text runs out of delimiters before the
 count does, the same one the nesting-aware path signals."
   (let ((extra (1- levels))
-        ;; Case-sensitive, like `donkey--mark-pair-positions' and for the
-        ;; same reason: `donkey-mark-pair-delimiters' is a defcustom, so a
-        ;; LETTER can be configured as a delimiter, and a case-folded
-        ;; search would count a lowercase `x' toward a count of uppercase
-        ;; `X'.  Buffers default to `case-fold-search' t, so leaving it
-        ;; alone here meant level 1 (which binds it) and level 2 (which
-        ;; did not) disagreed about what a delimiter even is: on
-        ;; "A X one x mid X TARGET X two X B" a count of 2 stopped at the
-        ;; lowercase x and marked " mid X TARGET X two ".
+        ;; Case-sensitive, like `donkey--mark-pair-positions'.
         (case-fold-search nil))
     (if (<= extra 0)
         span
@@ -2302,9 +2245,8 @@ takes a count, by one route or the other.
 Signals a `user-error' when there is no enclosing pair left."
   (let ((span (donkey--mark-pair-positions open-char close-char on-opener)))
     (when (= open-char close-char)
-      ;; Widen FIRST, with the real count, then flatten LEVELS so the
-      ;; depth-counting loop below is a no-op -- `setq' assigns left to
-      ;; right, so the other order would hand the widener a count of 1.
+      ;; Widen first, with the real count, then flatten LEVELS so the
+      ;; depth loop below is a no-op.
       (setq span (donkey--mark-pair-widen-symmetric open-char span levels)
             levels 1))
     (dotimes (_ (1- levels))
@@ -2312,19 +2254,10 @@ Signals a `user-error' when there is no enclosing pair left."
         (user-error "No enclosing `%c' beyond that level" open-char))
       (setq span (save-excursion
                    (goto-char (1- (car span)))
-                   ;; Running out of enclosing pairs is what a count too
-                   ;; large FOR THIS TEXT looks like, and it is ordinary
-                   ;; rather than exceptional: bare
-                   ;; \\[universal-argument] means FOUR, so `C-u m i' asks
-                   ;; for four levels on text that is usually one or two
-                   ;; deep.  Left to itself the scan reports "No `(' found
-                   ;; near cursor" -- which contradicts a screen plainly
-                   ;; showing one, reads like the delimiter was mistyped
-                   ;; rather than the count overshot, and being a bare
-                   ;; `error' pops the debugger for anyone running with
-                   ;; `debug-on-error' on.  The `point-min' check above
-                   ;; only catches the case where the pair found last
-                   ;; started at the very first position.
+                   ;; Running out of enclosing pairs is ordinary -- a bare
+                   ;; \\[universal-argument] asks for four levels -- so
+                   ;; it is a `user-error' naming the level, not the
+                   ;; scan's own message.
                    (condition-case nil
                        (donkey--mark-pair-positions open-char close-char nil)
                      (error
@@ -2337,10 +2270,7 @@ Signals a `user-error' when there is no enclosing pair left."
 A list (ANCHOR OPEN-CHAR CLOSE-CHAR ON-OPENER LEVEL): where the
 delimiter search ran from, what it resolved to, and how many levels out
 it went.  Read only by `donkey--mark-pair-select' and only when the same
-command repeats, so a stale entry is never consulted.  A plain position
-rather than a marker: nothing can edit the buffer between two presses of
-the same key, since an editing command in between is exactly what stops
-the second press counting as a repeat.")
+command repeats, so a stale entry is never consulted.")
 
 (defun donkey--mark-pair-select (inner-p &optional count)
   "Shared implementation for `donkey-mark-inner'/`donkey-mark-outer'.
@@ -2358,23 +2288,10 @@ the same way round as every other DONKEY mark command and as
 
 The selection standing before the press is cleared only once the pair
 has been FOUND -- see the comment at the marking below."
-  ;; A repeat re-runs the ORIGINAL search one level wider rather than
-  ;; searching afresh from wherever the last selection left point.  Two
-  ;; things fall out of that, and neither is available to a fresh search:
-  ;;
-  ;; Repeating never prompts.  The delimiter is remembered, so the second
-  ;; press does not go back through
-  ;; `donkey--mark-pair-read-delimiter' -- which auto-detects only when
-  ;; point is ON a delimiter, and would otherwise sit waiting on
-  ;; `read-char'.  Whichever end of the selection point is left at, one
-  ;; of `m i' and `m a' lands somewhere that is not a delimiter, so this
-  ;; is not something the cursor position alone can fix.  Not prompting
-  ;; leaves the delimiter the reader types next loose, exactly as the
-  ;; auto-detect does, so the repeat gets the same one-press protection
-  ;; once it has marked; see `donkey--suppress-one-pair-delimiter'.
-  ;;
-  ;; And repeating agrees with counting, the way it does for the other
-  ;; mark commands: both walk outward from the same anchor.
+  ;; A repeat re-runs the original search one level wider from the
+  ;; same anchor, so repeating agrees with counting; it never prompts,
+  ;; so the delimiter typed next is loose and swallowed once the pair
+  ;; is found.
   (let* ((state (and (donkey--mark-extending-p) donkey--mark-pair-state))
          (anchor (if state (nth 0 state) (point)))
          (spec (if state
@@ -2395,44 +2312,21 @@ has been FOUND -- see the comment at the marking below."
                                                      on-opener level)))
                  (start (if inner-p (1+ start-pos) start-pos))
                  (end (if inner-p (1- end-pos) end-pos)))
-      ;; Refused BEFORE anything is marked, so that a refusal changes
-      ;; nothing: point is where the key was pressed, and whatever was
-      ;; selected before the press is still selected -- see below.  The
-      ;; anchor is not recorded either, a press that marked nothing being
-      ;; no press to widen from.
-      ;;
-      ;; A `user-error': an empty pair is ordinary in code -- `()' for a
-      ;; no-argument call, `""' for an empty string -- so pressing `m i'
-      ;; on one is a miss, not a malfunction, and a bare `error' popped
-      ;; the debugger under `debug-on-error'.  `m a' on the same pair
-      ;; still works, since there the delimiters themselves are content.
+      ;; Refused before anything is marked, so a refusal changes
+      ;; nothing.  An empty pair is a `user-error'; `m a' on it still
+      ;; works, the delimiters being content there.
       (when (>= start end)
         (user-error "Empty selection between %c and %c" open-char close-char))
-      ;; Only now, with a pair in hand, is the selection that stood before
-      ;; the press let go of.  Every selection command clears the previous
-      ;; selection's KIND -- the visual-line anchor, `rectangle-mark-mode'
-      ;; -- through `donkey--ensure-non-rectangle-selection' before it
-      ;; marks, and this one used to do so before its SEARCH: a `V'
-      ;; session or a rectangle followed by an `m i' that found no pair
-      ;; kept its highlight and lost its kind, so the `d' that followed
-      ;; took the highlighted text as a plain region -- the line's text
-      ;; without its newline, the block as one linear span.  A refused
-      ;; key changes nothing, the way a refused wrap key keeps its
-      ;; selection.  Confirmed live in a terminal frame and a graphical
-      ;; one.  `donkey--mark-sexp-select' clears at the same moment.
+      ;; Only now, with a pair in hand, is the previous selection's
+      ;; kind let go of.
       (donkey--ensure-non-rectangle-selection)
-      ;; Mark at the end, point at the start.  It used to be the other way
-      ;; round, which made these the only mark commands to invert the rest;
-      ;; `mark-sexp' and DONKEY's own four linear mark commands all finish
-      ;; with point at the start of what they selected.
+      ;; Mark at the end, point at the start, as every mark command.
       (push-mark end)
       (goto-char start)
       (activate-mark)
       (setq donkey--mark-pair-state
             (list anchor open-char close-char on-opener level))
-      ;; Only a press that marked has a next key to protect -- see
-      ;; `donkey--suppress-one-pair-delimiter' for the refused press that
-      ;; used to eat one.
+      ;; Only a press that marked has a next key to protect.
       (when auto
         (donkey--suppress-one-pair-delimiter))
       (message (if inner-p
@@ -2452,12 +2346,10 @@ character; otherwise prompts via `read-char'.  EITHER half of a pair
 answers that prompt: \\=`m i )\\=' means what \\=`m i (\\=' means, the closer
 resolving to its opener the same way point sitting on one always has.
 
-The delimiter key is harmless when the prompt was skipped -- see
-`donkey--suppress-one-pair-delimiter', which is there because it was
-not.  For asymmetric pairs (e.g. `(' and `)'), nested
-occurrences of the SAME pair resolve to the correctly balanced match
--- e.g. the outer `(' of \"(a(b)c)\" selects \"a(b)c\", not just up to
-the first `)' found.
+The delimiter key is harmless when the prompt was skipped.  For
+asymmetric pairs (e.g. `(' and `)'), nested occurrences of the SAME
+pair resolve to the correctly balanced match -- e.g. the outer `(' of
+\"(a(b)c)\" selects \"a(b)c\", not just up to the first `)' found.
 
 This is a plain character scan, not syntax-table aware: unlike
 `donkey-mark-sexp-inner', it does not know about strings or comments,
@@ -2469,9 +2361,6 @@ With no matching pair either way (point outside any delimiter, and no
 enclosing pair to fall back on), signals an error and leaves point
 exactly where it was -- it never lands somewhere else in the buffer as
 a side effect of the failed search.
-
-See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first.
 
 Point is left at the START of the selection and the mark at its end,
 which is where `mark-sexp' leaves them and where the other DONKEY
@@ -2499,9 +2388,6 @@ matching, and its syntax-awareness caveat versus `donkey-mark-sexp-outer'
 -- all of it applies here identically, just with the delimiters
 themselves included in the selection.
 
-See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first.
-
 Point is left at the START of the selection and the mark at its end,
 which is where `mark-sexp' leaves them and where the other DONKEY
 mark commands leave them.
@@ -2517,8 +2403,7 @@ delimiters, where a level counts occurrences outward.  See
   "How the last `m I'/`m A' selection was arrived at, for growing it.
 A cons (ANCHOR . LEVEL): where the search ran from and how many levels
 out it went.  Read only by `donkey--mark-sexp-select' and only when the
-same command repeats; see `donkey--mark-pair-state' for why a plain
-position is enough.")
+same command repeats.")
 
 (defun donkey--mark-sexp-select (inner-p &optional count)
   "Shared implementation for `donkey-mark-sexp-inner'/`donkey-mark-sexp-outer'.
@@ -2542,22 +2427,13 @@ which is where `mark-sexp' leaves them and where every other DONKEY
 mark command does.
 
 The selection standing before the press is cleared only once the
-expression has been found, as `donkey--mark-pair-select' does and for
-the reason given there: a refused key changes nothing."
-  ;; A repeat widens the ORIGINAL search rather than searching afresh
-  ;; from where the last one left point -- see `donkey--mark-pair-select'
-  ;; for why the two are not the same thing.  `m A' used to appear to
-  ;; widen on a second press, but only because point had been left past
-  ;; the closing delimiter where a fresh scan happens to find the
-  ;; enclosing pair; it was an accident of position, and `m I' -- left
-  ;; inside its own content -- re-marked the same expression instead.
+expression has been found."
+  ;; A repeat widens the original search from the same anchor.
   (let* ((state (and (donkey--mark-extending-p) donkey--mark-sexp-state))
          (anchor (if state (car state) (point)))
          (levels (+ (if state (cdr state) 0) (max 1 (or count 1)))))
-    ;; Everything up to the last moment happens under `save-excursion',
-    ;; so a selection that cannot be made leaves point where it was --
-    ;; including on the repeat path, where ANCHOR is somewhere point had
-    ;; already moved away from.
+    ;; Under `save-excursion', so a refused press leaves point where
+    ;; it was.
     (pcase-let
         ((`(,start . ,end)
           (save-excursion
@@ -2575,11 +2451,9 @@ the reason given there: a refused key changes nothing."
               (cons start end)))))
       (when (and inner-p (>= start end))
         (user-error "Empty expression"))
-      ;; With the expression in hand, and not before -- see
-      ;; `donkey--mark-pair-select'.
+      ;; With the expression in hand, and not before.
       (donkey--ensure-non-rectangle-selection)
-      ;; Mark at the end, point at the start -- the same reversal as in
-      ;; `donkey--mark-pair-select', and for the same reason.
+      ;; Mark at the end, point at the start.
       (push-mark end t)
       (goto-char start)
       (activate-mark)
@@ -2594,9 +2468,6 @@ brackets, braces).  If point is on an opening or closing
 delimiter, marks content within that pair.  If point is inside
 a pair, finds the enclosing delimiters and marks everything
 within, excluding the delimiters themselves.
-
-See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first.
 
 Point is left at the START of the selection and the mark at its end,
 which is where `mark-sexp' leaves them and where the other DONKEY
@@ -2614,9 +2485,6 @@ brackets, braces).  If point is on a delimiter, marks that
 pair.  If point is inside a pair, finds the enclosing pair
 and marks it including delimiters.
 
-See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first.
-
 Point is left at the START of the selection and the mark at its end,
 which is where `mark-sexp' leaves them and where the other DONKEY
 mark commands leave them.
@@ -2628,40 +2496,11 @@ COUNT selects how many levels out to go."
 (defun donkey--back-to-symbol-char ()
   "Move point back onto the last symbol character before it.
 
-`donkey-mark-symbol' used `backward-sexp' to normalize point onto the
-symbol behind, and landed wherever a SEXP starts, which is not where a
-symbol starts.  Reported from a key sequence quoted in prose, of the
-shape `substitute-command-keys' renders a binding as -- curly quotes and
-all.  With point in the gap between its two halves that landing was the
-opening quote, punctuation with no symbol at point, and the mark was
-REFUSED although a symbol sat directly behind.  The same landing sent a
-press behind #\\='bar back to the symbol before it.
-
-Punctuation, quotes, and brackets are all crossed to reach the symbol,
-because none of them can be part of one; the search is for a character
-of word or symbol syntax and stops on the first.
-
-`skip-syntax-backward' stops in exactly two places here, at the first
-such character or at the start of the buffer, so a landing past
-`point-min' IS the character and needs no second test for it.  One was
-written and mutation testing showed it changed nothing.
-
-Nothing moves when there is no such character behind point at all, and
-the return value says which: non-nil when point moved onto a symbol
-character, nil when it stayed.  `donkey--mark-reach-from-gap' reads it
-as the answer to whether the gap has a symbol behind it, and reaches
-FORWARD instead when it has not -- the leading gap of a buffer is that
-case.
-
-The guard is a rule about this function rather than about what the user
-sees.  `donkey-mark-symbol' puts point back before it reports a refusal,
-so leaving the cursor at `point-min' here would be invisible through the
-command -- checked, across five modes and every position of fourteen
-buffers, and nothing differed.  It is written anyway, because the restore
-belongs to the refusal and this belongs to the search: a step that only
-moves when it has found something cannot strand the cursor even if the
-restore is one day taken out.  The suite holds that contract by calling
-this function directly, for the same reason."
+Punctuation, quotes and brackets are all crossed, none of them being
+part of a symbol; the search is for a character of word or symbol
+syntax and stops on the first.  Nothing moves when there is no such
+character behind point, and the return value says which: non-nil when
+point moved onto a symbol character, nil when it stayed."
   (let ((landing (save-excursion (skip-syntax-backward "^w_") (point))))
     (when (> landing (point-min))
       (goto-char (1- landing)))))
@@ -2670,24 +2509,11 @@ this function directly, for the same reason."
   "Move point forward over punctuation stuck to the front of the symbol ahead.
 
 The mirror of `donkey--trim-symbol-punctuation', called with point at
-the START of a backward symbol run.  `backward-sexp' stops where a sexp
-starts rather than where a symbol does, and scanning sweeps adjacent
-punctuation into the sexp, so a mark of a name quoted in prose came out
-holding the opening quote as well.
-
-Only PUNCTUATION syntax is shed.  An expression prefix -- \\=' and \\=`
-and # in Lisp -- introduces the form after it and belongs with it, so
-marking \\='bar still gives \\='bar; punctuation belongs to no symbol in
-any mode.  The distinction is the mode's own syntax table rather than a
-list of characters here, which is why the same rule serves prose and
-code: the curly quotes are punctuation in `text-mode' and
-`emacs-lisp-mode' alike, and in `help-mode', where they are brackets
-instead, sexp scanning already stopped in the right place and this finds
-nothing to do.
-
-The ceiling is the end of the sexp just traversed, so the rule reads the
-same as at the other end: never trim away the thing that was just added.
-A symbol that IS punctuation keeps itself that way."
+the start of a backward symbol run.  Only PUNCTUATION syntax is shed:
+an expression prefix -- \\=' and \\=` and # in Lisp -- introduces the
+form after it and belongs with it, so marking \\='bar still gives
+\\='bar.  The ceiling is the end of the sexp just traversed, so the
+thing just added is never trimmed away."
   (let ((start (point))
         (sexp-end (save-excursion
                     (condition-case nil
@@ -4236,9 +4062,6 @@ promise this key makes: the same behavior, minus the prefix."
 (defun donkey-mark-word (&optional count)
   "Select the entire word at or adjacent to point.
 
-See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first.
-
 From the gap between two words the one AHEAD is marked, and from the
 gap at the end of the buffer, where nothing is ahead, the last one.
 `donkey-mark-word-backward' takes the one BEHIND from the same gap, so
@@ -4497,9 +4320,6 @@ Converted after the fact rather than gated beforehand: the obvious gate,
 line below real prose -- a case this command handles correctly today --
 so gating on it would reject work it can actually do.
 
-See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first.
-
 From the gap between two sentences the one AHEAD is marked -- the same
 answer `donkey-mark-word', `donkey-mark-symbol' and
 `donkey-mark-paragraph' give from the gap between two of their own
@@ -4696,9 +4516,6 @@ so a selection always has a paragraph in it by the time this runs."
 (defun donkey-mark-paragraph (&optional count)
   "Select the paragraph at or adjacent to point.
 
-See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first.
-
 With no paragraph to be found -- an empty buffer, or one holding only
 blank lines or whitespace -- reports a `user-error', the way
 `donkey-mark-word', `donkey-mark-symbol' and `donkey-mark-sentence' all
@@ -4848,9 +4665,6 @@ Punctuation at either end is omitted from the selection -- a trailing
 comma or period, and the quotes around a name in prose.  An expression
 prefix is not punctuation and stays: \\='bar marks as \\='bar.  See
 `donkey--trim-symbol-punctuation' and `donkey--trim-symbol-prefix'.
-
-See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first.
 
 From the gap between two symbols the one AHEAD is marked, and from the
 gap at the end of the buffer, where nothing is ahead, the last one.
