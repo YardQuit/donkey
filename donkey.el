@@ -8563,12 +8563,8 @@ redisplay or a timer reports as its own does not arrive here."
 (defun donkey--on-normal-entry ()
   "Deactivate any active input method when entering Normal state.
 
-Saved in `donkey--saved-input-method' for `donkey--on-insert-entry' to
-restore later.  Input methods (e.g. for CJK or accented-character
-entry) are for text entry; without this, Normal state's own
-keybindings (h/j/k/l and the rest) would be run through whatever
-conversion the active input method applies to raw keystrokes instead,
-breaking navigation entirely for anyone using one."
+The method is saved in `donkey--saved-input-method' for
+`donkey--on-insert-entry' to restore."
   (when donkey-normal-mode
     (when current-input-method
       (setq donkey--saved-input-method current-input-method)
@@ -8577,10 +8573,8 @@ breaking navigation entirely for anyone using one."
 (defun donkey--on-insert-entry ()
   "Reactivate on Insert entry the input method `donkey--on-normal-entry' saved.
 
-Only acts when no input method is ALREADY active -- e.g. the user
-manually turned a different one on while still in Normal state, via
-`donkey--on-input-method-activate' below -- so this never clobbers
-whichever one is genuinely current by the time Insert state resumes."
+Only when no input method is already active, so one turned on by
+hand in the meantime is kept."
   (when donkey-insert-mode
     (when (and donkey--saved-input-method
                (not current-input-method))
@@ -8589,16 +8583,8 @@ whichever one is genuinely current by the time Insert state resumes."
 (defun donkey--on-input-method-activate ()
   "Immediately undo an input method activated while in Normal state.
 
-Saves it the same way `donkey--on-normal-entry' does.  Registered on
-the global `input-method-activate-hook' rather than a
-DONKEY mode-hook, since this needs to catch activation through ANY
-means -- `M-x set-input-method', `C-\\', a toggle command from some
-other package -- not just the Normal-state entry transition itself.
-Binds `input-method-activate-hook' to nil around the
-`deactivate-input-method' call as a defensive measure, in case
-deactivating one method ever indirectly triggers activating another
-\(e.g. a language-specific default\), which would otherwise re-enter
-this same function from within itself."
+Saves it the way `donkey--on-normal-entry' does.  On the global
+`input-method-activate-hook', so activation by any means is caught."
   (when (bound-and-true-p donkey-normal-mode)
     (when current-input-method
       (setq donkey--saved-input-method current-input-method)
@@ -8608,32 +8594,17 @@ this same function from within itself."
 (defun donkey--on-input-method-deactivate ()
   "Forget the saved input method if deactivated while still in Insert state.
 
-Only `donkey--on-normal-entry' deactivates the input method as part of
-saving it for later restoration, and by the time its
-`donkey-normal-mode-hook' runs, `donkey-insert-mode' has already been
-turned off — so this only fires for deactivations that happen some
-other way (e.g. the user manually toggles the input method off) while
-Insert state is still active.  That is a deliberate choice, and
-without clearing the saved value here, the next Normal-to-Insert
-cycle would silently reactivate the very input method the user just
-turned off."
+So the next entry into Insert state does not reactivate a method the
+user turned off by hand."
   (when (bound-and-true-p donkey-insert-mode)
     (setq donkey--saved-input-method nil)))
 
 (defun donkey-disable-input-method ()
-  "Turn off the input method for good, clearing Donkey's saved state too.
+  "Turn off the input method for good, clearing DONKEY's saved state too.
 
-Plain `deactivate-input-method' is not enough while in Normal state:
-Donkey already deactivated the live input method on entry to Normal
-and stashed it in `donkey--saved-input-method' for restoration on the
-next Insert-state entry, so `current-input-method' is already nil and
-`deactivate-input-method' -- guarded by `(when current-input-method
-...)' -- is a silent no-op.  Since nothing was actually deactivated,
-`input-method-deactivate-hook' never runs, so
-`donkey--on-input-method-deactivate' never clears the saved value,
-and the next Insert-state entry reactivates the very input method the
-user just tried to turn off.  This command clears both unconditionally
-regardless of which Donkey state is active when it's called."
+Use this rather than `deactivate-input-method' in Normal state, where
+the live input method is already off and only the saved one remains.
+Both are cleared, whatever the state."
   (interactive)
   (setq donkey--saved-input-method nil)
   (when current-input-method
