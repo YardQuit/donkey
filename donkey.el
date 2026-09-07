@@ -7140,6 +7140,13 @@ what is INSIDE the nearest pair; \\[donkey-mark-outer] includes the delimiters t
 
    ---> call(this argument here)
 
+Standing ON a delimiter, either end of the pair, nothing is asked: the
+character under the cursor is the answer, so \\[donkey-mark-inner] alone is enough
+there, and the \\`(' you type from habit does no harm.
+
+>> Put the cursor on the \"(\" of the ---> line above and press \\[donkey-mark-inner] by
+   itself.  The same text is selected, with no question asked.
+
 A count means levels out, so \\`C-u 2' \\[donkey-mark-inner] \\`(' from the inner pair selects the
 outer one.
 
@@ -7147,13 +7154,35 @@ outer one.
 
    ---> outer (middle (deep) middle) outer
 
+The pairs \\[donkey-mark-inner] and \\[donkey-mark-outer] know are a FIXED list: the brackets, quotes
+straight and curly, and a row of markup characters such as * = ~ and
+_.  They look for the character itself and nothing else, wherever it
+stands -- a \"<\" is a pair to them in plain text as much as in HTML,
+and a bracket inside a string or a comment counts the same as one
+outside it.
+
+The list is yours to change.  The variable donkey-mark-pair-delimiters
+holds the pairs, and adding # to it makes # a delimiter too -- any
+character you like, X included.  \\[describe-variable] on it shows the pairs in force,
+and the README shows the two lines an addition takes.
+
 \\[donkey-mark-sexp-inner] and \\[donkey-mark-sexp-outer] do the same job without asking.  They read the buffer's
 syntax table and find the enclosing brackets themselves, whatever kind
 those turn out to be -- useful in code, where the nearest pair is as
-likely to be square or curly as round.
+likely to be square or curly as round, and where a bracket inside a
+string is no bracket at all.  Which characters count is the major
+mode's decision, as it was for \\[donkey-mark-symbol]: in an HTML buffer \"<\" and \">\"
+are a pair to \\[donkey-mark-sexp-inner], and in plain text or C they are not.
 
-    \\[donkey-mark-inner] and \\[donkey-mark-outer]   you name the delimiter
-    \\[donkey-mark-sexp-inner] and \\[donkey-mark-sexp-outer]   DONKEY works it out
+    \\[donkey-mark-inner] and \\[donkey-mark-outer]   you name the delimiter, from a fixed list
+    \\[donkey-mark-sexp-inner] and \\[donkey-mark-sexp-outer]   DONKEY reads it from the buffer's syntax
+
+>> Put the cursor inside the angle brackets below and press \\[donkey-mark-inner] then \\`<':
+   the inside is selected.  Press \\`C-g', then \\[donkey-mark-sexp-inner] from the same
+   spot: it refuses, since this is a plain-text buffer and \"<\" is no
+   bracket here.
+
+   ---> a <tag with attributes> in text
 
 >> Put the cursor on the \"2\" below and press \\[donkey-mark-sexp-inner].  \"1 2 3\" is selected
    without you naming the bracket.  Press \\[donkey-mark-sexp-outer] instead and the square

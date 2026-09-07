@@ -1610,6 +1610,180 @@ the syntax table is what these two commands read, so verifying in
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "defun f (a b) [1 2 3]"))))
 
+(ert-deftest donkey-tutor-lesson-5-on-delimiter-exercise-asks-nothing ()
+  "From ON a paren, `m i' and `m a' select the exercise text with no prompt.
+
+The lesson promises that standing on either end of a pair skips the
+question and that a delimiter typed anyway does no harm.  `read-char'
+is replaced by a function that fails the test, so a prompt is not
+merely noticed but impossible to answer -- as it is for a reader in the
+tutor, whose next key was never meant as an answer.  Both ends are
+checked, since the prose says either end works, and the exercise line
+is compared afterwards so a typed paren that INSERTED would show."
+  (donkey-tutor-test--live
+   (cl-letf (((symbol-function 'read-char)
+              (lambda (&rest _)
+                (ert-fail "m i prompted with point on a delimiter"))))
+     (donkey-tutor-test--goline "---> call(this argument here)")
+     (let ((line (donkey-tutor-test--line)))
+       (search-forward "(")
+       (backward-char)
+       (donkey-tutor-test--keys "m i")
+       (should (equal (buffer-substring-no-properties
+                       (region-beginning) (region-end))
+                      "this argument here"))
+       (donkey-tutor-test--keys "C-g")
+       (donkey-tutor-test--goline "---> call(this argument here)")
+       (end-of-line)
+       (backward-char)
+       (should (eq (char-after) ?\)))
+       (donkey-tutor-test--keys "m a")
+       (should (equal (buffer-substring-no-properties
+                       (region-beginning) (region-end))
+                      "(this argument here)"))
+       (donkey-tutor-test--keys "C-g")
+       (donkey-tutor-test--goline "---> call(this argument here)")
+       (search-forward "(")
+       (backward-char)
+       (donkey-tutor-test--keys "m i (")
+       (should (equal (buffer-substring-no-properties
+                       (region-beginning) (region-end))
+                      "this argument here"))
+       (should (equal (donkey-tutor-test--line) line))))))
+
+(ert-deftest donkey-tutor-lesson-5-angle-bracket-exercise-really-works ()
+  "The `m i <' then `m I' exercise does what the lesson says, where it says.
+
+Run in the real tutor buffer: `m i <' selects the inside because `<'
+is on the fixed list, and `m I' refuses because the tutor is
+`text-mode', where `<' has no bracket syntax.  The refusal is what the
+prose promises, so it is asserted as a `user-error' that leaves point
+where it was and no selection behind.
+
+The refusal, not its wording: from this spot it says \"Unbalanced
+expression\" rather than \"Not inside a balanced expression\", because
+the lesson's own key mentions render as lone parens -- \"then (.\" --
+and the climb out of the angle brackets stops on one of those, with
+nothing to close it.  Should a stray closer ever be added to the text
+below, the climb would find a pair and this test would go red, which
+is the point of pinning the refusal."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> a <tag with attributes> in text")
+   (search-forward "with")
+   (let ((spot (point)))
+     (donkey-tutor-test--keys "m i <")
+     (should (equal (buffer-substring-no-properties
+                     (region-beginning) (region-end))
+                    "tag with attributes"))
+     (donkey-tutor-test--keys "C-g")
+     (should-not (region-active-p))
+     (goto-char spot)
+     (should-error (donkey-tutor-test--keys "m I") :type 'user-error)
+     (should-not (region-active-p))
+     (should (= (point) spot)))))
+
+(ert-deftest donkey-tutor-lesson-5-fixed-list-claim-recounts-the-defaults ()
+  "Every delimiter the lesson names is on the DEFAULT list, `<' included.
+
+Documentation that states an enumerable fact gets a test that recounts
+it.  The lesson says the fixed list holds the brackets, quotes straight
+and curly, and * = ~ _ among the markup characters, and that `<' is one
+of them.  Checked against the default value of
+`donkey-mark-pair-delimiters', not its current one, so a customization
+in the running session can neither make the lesson true nor false."
+  (let ((defaults (eval (car (get 'donkey-mark-pair-delimiters
+                                  'standard-value))
+                        t)))
+    (dolist (c '(?\( ?\[ ?\{ ?< ?\" ?' ?` ?‘ ?“ ?* ?= ?~ ?_))
+      (should (assq c defaults)))))
+
+(ert-deftest donkey-tutor-lesson-5-plain-scan-claim-is-true ()
+  "A paren inside a string counts to `m i' and not to `m I', as the lesson says.
+
+Real keys in `emacs-lisp-mode', where a string is a string.  From
+\"bar\" in (foo \"(\" bar), `m i (' pairs the paren INSIDE the string
+with the closer and selects from there, while `m I' takes the whole
+expression.  The lesson's contrast between the two families rests on
+exactly this difference."
+  (donkey-test-keys--harness "*donkey-tutor-scan*" #'emacs-lisp-mode ()
+      "(foo \"(\" bar)" "C-u 9 l m i ("
+    (should (equal (buffer-substring-no-properties
+                    (region-beginning) (region-end))
+                   "\" bar")))
+  (donkey-test-keys--harness "*donkey-tutor-scan*" #'emacs-lisp-mode ()
+      "(foo \"(\" bar)" "C-u 9 l m I"
+    (should (equal (buffer-substring-no-properties
+                    (region-beginning) (region-end))
+                   "foo \"(\" bar"))))
+
+(ert-deftest donkey-tutor-lesson-5-custom-delimiter-claim-is-true ()
+  "Adding # or X to `donkey-mark-pair-delimiters' makes `m i' take it.
+
+Both examples the lesson gives are driven with real keys, and the
+refusal WITHOUT the addition is checked first, so what is pinned is
+that the customization made the difference, not that # happened to
+work already.  The variable is bound, not set, so nothing leaks into
+the tests after this one."
+  (donkey-test-keys--harness "*donkey-tutor-custom*" #'text-mode ()
+      "x #abc# y" "C-u 4 l"
+    (should-error (execute-kbd-macro (kbd "m i #")) :type 'user-error)
+    (should-not (region-active-p)))
+  (donkey-test-keys--harness "*donkey-tutor-custom*" #'text-mode
+      ((donkey-mark-pair-delimiters
+        (cons '(?# . ?#) donkey-mark-pair-delimiters)))
+      "x #abc# y" "C-u 4 l m i #"
+    (should (equal (buffer-substring-no-properties
+                    (region-beginning) (region-end))
+                   "abc")))
+  (donkey-test-keys--harness "*donkey-tutor-custom*" #'text-mode
+      ((donkey-mark-pair-delimiters
+        (cons '(?X . ?X) donkey-mark-pair-delimiters)))
+      "aXbcdXe" "C-u 2 l m i X"
+    (should (equal (buffer-substring-no-properties
+                    (region-beginning) (region-end))
+                   "bcd"))))
+
+(ert-deftest donkey-tutor-lesson-5-bracket-claim-is-the-modes-call ()
+  "`<' and `>' are a pair to `m I' in HTML and not in plain text or C.
+
+The lesson's own demo line, in each of the three modes the prose
+names, driven with real keys.  `html-mode' gives the two characters
+paren syntax and the other two do not, and the lesson would be wrong
+the day either changed -- so the enumerable claim is recounted here."
+  (dolist (mode '(text-mode c-mode))
+    (donkey-test-keys--harness "*donkey-tutor-angle*" mode ()
+        "a <tag with attributes> in text" "C-u 9 l"
+      (should-error (execute-kbd-macro (kbd "m I")) :type 'user-error)
+      (should-not (region-active-p))))
+  (donkey-test-keys--harness "*donkey-tutor-angle*" #'html-mode ()
+      "a <tag with attributes> in text" "C-u 9 l m I"
+    (should (equal (buffer-substring-no-properties
+                    (region-beginning) (region-end))
+                   "tag with attributes"))))
+
+(ert-deftest donkey-tutor-lesson-5-names-the-delimiter-variable ()
+  "Lesson 5 says where the fixed list lives and which modes it contrasts.
+
+A reader told the list is theirs to change needs the variable's name
+to change it, and the mode test above recounts a claim the prose has
+to keep making.  Both are pinned inside Lesson 5, so a later edit
+cannot move them out from under their tests."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-min))
+          (should (search-forward "Lesson 5 -- selecting things" nil t))
+          (let ((lesson-5 (point))
+                (lesson-6 (save-excursion (search-forward "Lesson 6" nil t))))
+            (dolist (claim '("donkey-mark-pair-delimiters"
+                             "X included"
+                             "HTML buffer"
+                             "in plain text or C they are not"))
+              (goto-char lesson-5)
+              (should (search-forward claim lesson-6 t))))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
 (ert-deftest donkey-tutor-lesson-10-rule-table-columns-line-up ()
   "The rule table's right-hand column starts at the same offset on every row.
 
