@@ -34,7 +34,7 @@
 ;; overlay keymaps.  This improves reliability of C-g escape in terminal
 ;; mode when inside nested smartparens overlays.
 
-;;; Usage:
+;; Usage:
 ;; - Press C-g to enter DONKEY-NORMAL state.
 ;; - In NORMAL: h,j,k,l navigate; i,I,a,A,o,O,c enter INSERT state.
 ;; - In INSERT: Standard Emacs behavior, press C-g to return to NORMAL.
