@@ -6689,49 +6689,20 @@ same thing.
 Kill this buffer when you are done."
   "Text of the DONKEY tutor, before key substitution.
 
-A string constant rather than a file shipped beside `donkey.el': DONKEY
-installs by dropping a single file onto `load-path' -- the first method
-the README documents -- so a sibling data file would simply be missing
-for most installations, and missing at the moment a new user is least
-equipped to work out why.
-
-Written with `substitute-command-keys' escapes rather than literal keys,
-so a reader who has rebound anything is taught the keys they actually
-have rather than the ones this file was written with.
-
-One token is not a `substitute-command-keys' escape:
-\"DONKEY-DELETE-KEYS\" is replaced by `donkey--tutor-delete-keys' before
-substitution runs.  `\\\\[donkey-delete]' would name only one of the two
-keys it is on -- `substitute-command-keys' picks whichever it finds
-first, which is \"x\" -- so the tutor never mentioned \"d\" at all,
-despite it being the Helix binding and the one half the audience will
-reach for.")
+Written with `substitute-command-keys' escapes rather than literal
+keys, so a reader who has rebound anything is taught the keys they
+actually have.  One token is not an escape: \"DONKEY-DELETE-KEYS\" is
+replaced by `donkey--tutor-delete-keys' before substitution runs, so
+both keys of `donkey-delete' are named.")
 
 (defun donkey--tutor-delete-keys ()
   "Return the keys running `donkey-delete', as prose: \"d or x\".
 
-Computed rather than written into `donkey--tutor-content' so a reader
-who has rebound either key is still taught the keys they actually have
--- the same promise the `substitute-command-keys' escapes make, which
-`\\\\[donkey-delete]' cannot keep here because it names one binding and
-this command has two.
-
-Each key is wrapped in the \\=\\\\=` KEY \\=' escape rather than returned bare,
-so `substitute-command-keys' gives it the `help-key-binding' face -- the
-same treatment every other key in the tutor gets.  Returned as raw text
-first, the two keys were the only ones in the whole buffer rendering as
-plain prose, which reads as an oversight in a document whose entire job
-is showing you keys.  The escapes are processed because this runs BEFORE
-`substitute-command-keys', not after.
-
-Sorted, because `where-is-internal' returns keymap order: that put the
-vi key ahead of the Helix one purely by where the two `keymap-set'
-calls happen to sit, and would silently reorder the sentence if they
-were ever swapped.
-
-Falls back to naming the command when it has no keys at all, which is
-what `substitute-command-keys' does for an unbound command and is
-better than a sentence ending in nothing."
+Computed rather than written into `donkey--tutor-content', so a reader
+who has rebound either key is taught the keys they actually have.
+Each key is wrapped in the key escape, so it gets the `help-key-binding'
+face like every other key in the tutor; the keys are sorted; and with
+no key at all the command is named instead."
   (let ((keys (mapcar (lambda (k) (format "\\`%s'" (key-description k)))
                       (where-is-internal #'donkey-delete
                                          donkey-normal-mode-map))))
@@ -6741,10 +6712,6 @@ better than a sentence ending in nothing."
      ((null (cdr keys)) (car keys))
      (t (mapconcat #'identity keys "/")))))
 
-;; Progress is deliberately not saved to disk, as Emacs' own tutorial does:
-;; there is nothing here worth keeping once it has been read, and a stray
-;; file in the user's home directory is a worse outcome than retyping a
-;; lesson.
 (defun donkey-tutor ()
   "Open the DONKEY tutor: a buffer to learn DONKEY by editing it.
 
@@ -6758,18 +6725,8 @@ what starts over."
   (let ((existing (get-buffer "*DONKEY Tutor*")))
     (if existing
         (progn
-          ;; Returning to a tutor whose DONKEY has been switched off puts
-          ;; a reader in front of a document about keys where none of the
-          ;; keys work: `j\=' types a literal "j" into the lesson, and
-          ;; \=`g ?\=' -- the key for reopening this very buffer -- is not
-          ;; bound at all.  Nothing on screen explains it, since the text
-          ;; still names every binding.
-          ;;
-          ;; Only when it is OFF.  If DONKEY is live the state is left
-          ;; exactly as it was, INSERT included: coming back to a buried
-          ;; tutor mid-exercise should return the lesson as it was left,
-          ;; which is the same promise that keeps the buffer instead of
-          ;; rebuilding it.
+          ;; A tutor returned to with DONKEY off gets it back on; a
+          ;; live one is left as it was, INSERT included.
           (with-current-buffer existing
             (unless (bound-and-true-p donkey-mode)
               (donkey-mode 1)
@@ -6778,11 +6735,8 @@ what starts over."
       (let ((buf (get-buffer-create "*DONKEY Tutor*")))
         (with-current-buffer buf
           (text-mode)
-          ;; DONKEY's keymap has to be live BEFORE the text is substituted.
-          ;; `substitute-command-keys' resolves against the current buffer's
-          ;; active maps, so substituting first renders every binding as
-          ;; "M-x donkey-unbank-line" instead of "m u" -- silently, and
-          ;; worst for exactly the commands a new reader most needs named.
+          ;; The keymap must be live before `substitute-command-keys'
+          ;; resolves the bindings.
           (donkey-mode 1)
           (donkey-enter-normal)
           ;; Before `substitute-command-keys', and with the keymap already
