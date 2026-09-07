@@ -1846,13 +1846,7 @@ for.  Zero is a bare press, as it is on the mark keys.
 
 ARG is the raw prefix argument, because a bare press and
 \\[universal-argument] 1 must be told apart: only the bare press
-toggles.  Took no count for a long time, as the other selection
-toggles still do not; changed on request, since every modal editor's
-line-select key takes one and \\[universal-argument] 3 \\[donkey-visual-next-line],
-\\[universal-argument] 3 \\[donkey-bank-selection] already read a count as rows.
-
-See `donkey--ensure-non-rectangle-selection' for why a stale active
-`rectangle-mark-mode' selection is disabled first.
+toggles.
 
 What is highlighted is one character short of what `y', `d' and `p'
 take.  The selection stops at the end of the last line, so the newline
@@ -1868,10 +1862,7 @@ emptying it, `y' gives a kill that pastes back as a complete line, and
       (donkey--visual-line-start n))
      ((donkey--visual-line-session-active-p)
       ;; `deactivate-mark' clears the anchor through the buffer-local
-      ;; `deactivate-mark-hook'.  That hook is guaranteed present: an
-      ;; active session requires a non-nil anchor, and the only code
-      ;; that sets one is `donkey--visual-line-start', one line after
-      ;; installing the hook.
+      ;; hook `donkey--visual-line-start' installed.
       (deactivate-mark)
       (message "Visual line: canceled"))
      (t
@@ -1921,19 +1912,10 @@ COUNT defaults to 1, and a negative COUNT moves up instead.  The
 selection is re-derived from the anchor and wherever point lands, not
 accumulated as it goes, so a count needs no special handling: the
 branch below is the same one a run of single presses would end on.
-Counts are what `j' and `k' already do -- they are bound straight to
-`next-line' and `previous-line' -- so leaving them off here made
-\\[universal-argument] 5 J move a single line while
-\\[universal-argument] 5 j moved five.
 
-Inside a rectangle this moves as `j' does there: `rectangle-mark-mode'
-remaps `next-line' to `rectangle-next-line', which keeps the column,
-so the block grows by a row.  A rectangle is not a visual-line session,
-and the plain `forward-line' this fell through to lands on column 0,
-which collapsed the block to nothing on the very key a reader who
-grows selections with `J' reaches for.  Confirmed live: `m v l l J'
-left a zero-width block and `d' then said there was nothing to delete.
-`donkey-visual-previous-line' mirrors it."
+Inside a rectangle this moves as `j' does there, through
+`rectangle-next-line', which keeps the column, so the block grows by a
+row.  `donkey-visual-previous-line' mirrors it."
   (interactive "p")
   (cond
    ((donkey--visual-line-session-active-p)
@@ -1968,8 +1950,7 @@ COUNT defaults to 1, and a negative COUNT moves down instead; see
 `donkey-visual-next-line' for why no accumulation is needed.
 
 Inside a rectangle this moves as `k' does there, through
-`rectangle-previous-line', for the reason `donkey-visual-next-line'
-gives."
+`rectangle-previous-line'."
   (interactive "p")
   (cond
    ((donkey--visual-line-session-active-p)
@@ -1993,18 +1974,9 @@ gives."
   "Toggle rectangle mark mode.
 
 If a region is already active (e.g. from `donkey-mark-inner') when
-enabling, `rectangle-mark-mode' reinterprets that EXISTING region as a
-rectangle using its own corners, rather than starting a fresh
-single-column selection at point -- matching stock Emacs's own
-documented behavior for entering `rectangle-mark-mode' with an active
-region.  Only widen the initial selection by one column when there was
-no region to begin with: doing it unconditionally would otherwise
-silently extend an existing selection being converted to a rectangle
-by one extra character past its real, intended boundary.  Checks
-`mark-active' directly rather than `region-active-p', since the latter
-also requires `transient-mark-mode', which is off by default in
-`--batch' Emacs and would always read as nil there regardless of
-whether a region was genuinely active."
+enabling, `rectangle-mark-mode' reinterprets that existing region as
+a rectangle using its own corners.  Only a fresh selection is widened
+by one column, and not at the end of a line or of the buffer."
   (interactive)
   (if (bound-and-true-p rectangle-mark-mode)
       (progn
@@ -2014,32 +1986,15 @@ whether a region was genuinely active."
     (let ((had-active-region mark-active))
       (rectangle-mark-mode 1)
       (add-hook 'deactivate-mark-hook #'donkey--clear-selection-hint nil t)
-      ;; Give the rectangle some initial width beyond the single starting
-      ;; column, but only for a genuinely fresh selection.  At the very
-      ;; end of the buffer there's nothing to widen into, and `right-char'
-      ;; signals `end-of-buffer' -- harmless to skip, since
-      ;; rectangle-mark-mode is already correctly enabled with a (valid,
-      ;; if zero-width) selection at that point.
-      ;;
-      ;; End of LINE is skipped for a different reason: `right-char' there
-      ;; steps over the newline onto the next line at column 0, which does
-      ;; not widen the rectangle -- it MOVES it, to a column at the far
-      ;; side of the buffer from the one being looked at.  Confirmed live:
-      ;; point at the end of "alpha" (column 5), then "m v", left a
-      ;; rectangle whose columns were (0 . 0).  Anything done to it landed
-      ;; against the left margin, and appending to a block of lines --
-      ;; which is what standing at end of line and pressing "m v" means --
-      ;; was unreachable.  A zero-width rectangle at the column point is
-      ;; actually on is both correct and the useful thing there, since
-      ;; `string-rectangle' inserts rather than replaces when the width is
-      ;; zero.
+      ;; One column of width for a fresh selection.  Not at the end of
+      ;; the buffer, where there is nothing to widen into, and not at
+      ;; the end of a line, where `right-char' would move the block to
+      ;; column 0 of the next line.
       (unless (or had-active-region (eolp))
         (condition-case nil
             (right-char 1)
           (end-of-buffer nil)))
-      ;; Last, so it is what stays: `rectangle-mark-mode' says "Mark set
-      ;; (rectangle mode)" on the way in, and the widening above can
-      ;; speak too.
+      ;; Last, so it is what stays.
       (message "%s" donkey--rectangle-hint))))
 
 (defcustom donkey-mark-pair-delimiters
@@ -2064,59 +2019,26 @@ it."
 (defun donkey--mark-pair-prompt ()
   "Return the `read-char' prompt for `m i' and `m a'.
 
-It NAMES the delimiters rather than listing them.  Listing meant
-nineteen characters across the echo area, most of a line spent on
-something nobody reads twice, and the list grows with every pair a
-reader adds to `donkey-mark-pair-delimiters'.  Naming the variable
-covers the built-in pairs and any customized ones at once, and \\[describe-variable]
-on it shows both, marked as customized where they are.
-
-The README lists the defaults in full, and a test keeps that list
-honest."
+It names the delimiters rather than listing them; \\[describe-variable]
+on the variable shows the pairs in force."
   "Delimiter (see donkey-mark-pair-delimiters): ")
 
 (defun donkey--mark-pair-unsupported-error (char)
   "Signal a `user-error' for CHAR not in `donkey-mark-pair-delimiters'.
 
-A `user-error' rather than a bare `error': this is reached by answering
-the `m i'/`m a' prompt with a character that is not a delimiter, which is
-an ordinary typo -- not a malfunction.  A bare `error' pops the debugger
-for anyone running with `debug-on-error' on.
-
-The message names `donkey-mark-pair-delimiters' rather than reciting it,
-for the reason `donkey--mark-pair-prompt' gives: the list is nineteen
-characters long, it grows with customization, and \\[describe-variable] on the
-variable shows the reader their own.
-
-CHAR is spelled the way a key binding is -- `single-key-description'
--- rather than inserted as itself.  It is whatever `read-char' handed
-back, and the keys a reader is likeliest to hit by accident at a
-prompt do not print: \\`RET' made the message wrap onto a second
-line, \\`SPC' and \\`TAB' showed an empty pair of quotes, \\`DEL' and
-the control characters showed nothing at all, and a META key, which
-`read-char' returns with the modifier bit set, was not a character to
-`format' at all and turned the typo into \"Wrong type argument:
-characterp, 134217848\" -- a bare error, popping the debugger this
-function exists to keep shut.  Confirmed live for all of them.  A
-printing character comes out as itself either way."
+A `user-error', the typo being an ordinary one.  CHAR is spelled the
+way a key binding is, through `single-key-description', so an
+unprintable key reads as its name."
   (user-error "Unsupported delimiter `%s'; see donkey-mark-pair-delimiters"
               (single-key-description char)))
 
 (defun donkey--mark-pair-open-for (char)
   "Return the OPEN character of the pair CHAR belongs to.
 
-CHAR itself when it opens a pair, and the opener when it CLOSES one, so
-the prompt takes \\=`)\\=' for \\=`(\\=', and \\=`]\\=' for \\=`[\\='.  Point
-sitting on a closer has always resolved this way -- `rassq' against
-`donkey-mark-pair-delimiters' -- and there is no reason a reader who
-TYPES the closer should be told it is unsupported when the same
-character under the cursor is understood.
-
-A symmetric delimiter opens and closes with itself, so `assq' answers
-first and the second lookup never sees it.
-
-Anything else comes back unchanged, for the close lookup in the caller
-to reject by name."
+CHAR itself when it opens a pair, and the opener when it closes one,
+so the prompt takes \\=`)\\=' for \\=`(\\='.  A symmetric delimiter
+answers itself.  Anything else comes back unchanged, for the caller to
+reject by name."
   (cond ((assq char donkey-mark-pair-delimiters) char)
         ((rassq char donkey-mark-pair-delimiters)
          (car (rassq char donkey-mark-pair-delimiters)))
@@ -2126,19 +2048,8 @@ to reject by name."
   "Do nothing, silently, and keep the mark command's repeat alive.
 
 What a delimiter key runs for one press after `m i' or `m a' resolved
-its delimiter without reading a key.  Silent on purpose: the selection
-message is the answer the press was after, and overwriting it with an
-explanation would take away the one thing worth reading.
-
-`this-command' is set to `last-command' -- the `m i' or `m a' whose
-press this was -- so the command loop hands the next key the same
-`last-command' it would have seen had the delimiter never been typed.
-Without that the swallowed press itself became `last-command', and a
-following `m i' was a fresh search instead of a repeat: from inside
-\"((a (b c) d) e)\", `m i ( m i ( m i (' stalled at \"a (b c) d\", since
-a fresh search from where the selection left point finds the pair it
-is already inside.  `donkey--mark-extending-p' compares the two, and
-says why."
+its delimiter from the buffer.  Silent, and `this-command' is set to
+`last-command', so a following `m i' still reads as a repeat."
   (interactive)
   (setq this-command last-command))
 
@@ -2146,64 +2057,13 @@ says why."
   "Make the NEXT key harmless if it names a delimiter.
 
 `m i' and `m a' read their delimiter from the character at point when
-point is on one, and then they are finished -- so the delimiter the
-reader types as the third key of \\=`m i (\\=' never reaches `read-char'
-and runs as a command in its own right.  Every delimiter this package
-knows is bound to `donkey-wrap-region', which INSERTS: \\=`m i (\\=' with
-point on the paren turned \"call(alpha) end\" into \"call((alpha) end\".
-A selection key had edited the buffer, silently, from the sequence the
-reader meant to select with.
-
-The press is swallowed rather than the auto-detect being taken away, so
-both spellings work and neither edits: \\=`m i\\=' alone still selects,
-\\=`m i (\\=' selects and the paren does nothing.  One press only -- a
-second \\=`(\\=' wraps the selection, which is how somebody who wanted the
-wrap gets it.
-
-A repeat arms it too.  A second \\=`m i\\=' never reads a delimiter --
-`donkey--mark-pair-select' reuses the one it resolved -- so the paren a
-reader types after it out of habit is as loose as after the first
-press.  Unprotected, \\=`m i ( m i (\\=' from inside \"((a (b c) d) e)\"
-grew the selection a level and then ran the paren: \"(((a (b c) d) e)\"
-with nothing pairing, a wrap under `electric-pair-mode', and a `d'
-pressed next deleted one character, the insertion having ended the
-selection.  Confirmed live in `emacs -nw'.  So every press of the two
-commands that does not stop at the prompt, fresh or repeat, protects
-exactly one delimiter press -- once it has FOUND its pair.
-
-A press that finds none arms nothing.  The swallow used to be armed
-where the delimiter was read from the buffer, before the search, so a
-refused press left it standing: with the cursor on the paren of an
-unbalanced \"(abc\", \\=`m i\\=' said \"No matching )\" and then ate the
-\\=`(\\=' typed next, silently -- the one key a reader reaches for to wrap
-the selection the refusal had just left standing.  A refused key
-changes nothing, and that includes the key after it.
-
-Closing characters are bound too, point being able to sit on either
-end of a pair.
-
-Nothing is armed for a call from Lisp.  There is no next keystroke to
-protect there, and the map would be left standing: `set-transient-map'
-puts it in `overriding-terminal-local-map', which is terminal-wide and
-comes down on the next COMMAND, so a caller outside the command loop
-leaves it up for whatever runs next.  The suite showed this the moment
-it was written -- the marking tests call the command directly with
-point on a delimiter, and the check that no key of this package
-shadows an Emacs command outside the documented few then resolved
-\\=`(\\=' through the leftover map and reported one.  Three shuffled
-orders caught it; the fixed order did not.
-
-The test is that `this-command' IS one of the two commands, not merely
-that it is set.  The command loop sets it before each command and
-nothing resets it afterwards, so outside the loop it holds whatever
-ran last: an earlier test had left `kill-region' there, and a later
-Lisp call with point on a brace found it non-nil and armed the map all
-the same -- the one shuffled order that survived the first guard.
-Naming the commands also fixes what a wrapper gets: a command
-of the reader\\='s own that calls this one is not `m i', so nobody typed
-a delimiter after it, and its next key must not be eaten.
-`donkey--mark-extending-p' guards on `this-command' for the same
-reason, and says so."
+point is on one, so the delimiter a reader types from habit as the
+third key would otherwise run as a command of its own -- every
+delimiter is bound to `donkey-wrap-region'.  The press is swallowed
+for one key, once a pair has been found: \\=`m i\\=' alone selects,
+\\=`m i (\\=' selects and the paren does nothing, and a second paren
+wraps.  A repeat arms it too.  Nothing is armed for a call from Lisp:
+only when `this-command' is one of the two commands."
   (when (memq this-command '(donkey-mark-inner donkey-mark-outer))
     (let ((map (make-sparse-keymap)))
       (dolist (pair donkey-mark-pair-delimiters)
