@@ -1228,35 +1228,23 @@ then returns to the Org buffer."
 ;;; ---------------------------------------------------------------------------
 
 (defvar donkey--clipboard-warning-shown nil
-  "Non-nil after showing clipboard warning once per session.
-
-Prevents spamming users with repeated tips on every yank operation.")
+  "Non-nil once the clipboard warning has been shown this session.")
 
 (defvar donkey--clipboard-executables 'unknown
   "Memoized answer to \"is a clipboard tool on PATH?\": t, nil, or `unknown'.
 
-Caches only the `executable-find' walk from
-`donkey--detect-clipboard-tools', which is per-process -- PATH does not
-vary by frame -- so one walk serves the session.  The frame-dependent
-half of that function, `display-graphic-p', is deliberately NOT cached;
-see its docstring for the daemon scenario that keeps it live.")
+Filled by `donkey--detect-clipboard-tools' on its first call and kept
+for the session.")
 
 (defun donkey--detect-clipboard-tools ()
   "Detect available system clipboard tools.
 
 Checks for wl-clipboard (Wayland), xclip/xsel (X11), and
 pbcopy/pbpaste (macOS).  On Windows, native clipboard integration
-is assumed.  Returns non-nil if any tool or native support is found.
-
-The `display-graphic-p' branch is evaluated fresh every time, since
-that answer can differ per frame: a single `emacs --daemon' process
-can have both a GUI frame (opened via `emacsclient -c') and a terminal
-frame (via `emacsclient -t') at once, each with different clipboard
-capabilities, and a value cached once at load time would go stale for
-whichever frame didn't exist yet when the daemon started.  Only the
-PATH walk is cached, in `donkey--clipboard-executables' -- it is the
-expensive part, it cannot differ per frame, and caching it is what
-keeps this callable per paste (see `donkey--clipboard-yank')."
+is assumed, and a graphical frame counts as having a clipboard on
+every platform.  Returns non-nil if any tool or native support is
+found.  The PATH walk is done once per session; the frame check is
+made on every call, so the answer is right for the selected frame."
   (cond
    ;; macOS: always has pbcopy/pbpaste
    ((eq system-type 'darwin) t)
