@@ -9087,31 +9087,19 @@ donkey-mode' to toggle."
 ;;; ---------------------------------------------------------------------------
 
 (defconst donkey-version (package-get-version)
-  "The version of DONKEY that is LOADED, from the package header.
+  "The version of DONKEY that is loaded, from the package header.
 
-Captured at load time rather than read from disk on demand, because
-the honest answer to \"which DONKEY am I running?\" is the file this
-session loaded -- a header re-read at call time would report whatever
-sits on disk NOW, which after a git pull is a version the running
-code is not.  `package-get-version' resolves the source file behind a
-byte-compiled load, so the value is the same whether donkey.el or
-donkey.elc was loaded.
-
-Nil when no readable header was found, which `donkey-version' (the
-command) reports in words rather than passing along."
-  ;; Same name for the variable and the command, deliberately:
-  ;; `emacs-version' set the precedent, and a symbol's value and
-  ;; function cells are separate -- the first thing DONKEY's own
-  ;; documentation teaches.
-  )
+Read once, when the file is loaded, so it is the version of the code
+running in this session rather than of the file now on disk.  The same
+whether donkey.el or donkey.elc was loaded.  Nil when no readable
+header was found; the command `donkey-version' reports that in words.")
 
 (defun donkey-version ()
   "Show the version of DONKEY that is loaded in this session.
 
 Interactively, shows it in the echo area.  From Lisp, returns the
-version string -- or nil when the package header could not be read at
-load time, so callers can tell \"unknown\" from a real version instead
-of parsing a sentence."
+version string, or nil when the package header could not be read at
+load time."
   (interactive)
   (if (called-interactively-p 'interactive)
       (message "DONKEY %s" (or donkey-version "(version unknown)"))
