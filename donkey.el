@@ -1155,37 +1155,15 @@ then returns to the Org buffer."
       (condition-case err
           (progn
             (org-edit-special)
-            ;; `org-edit-special' is outside `unwind-protect' on purpose: if
-            ;; IT fails, there is no edit buffer to exit from.  Everything
-            ;; after it (notably `comment-or-uncomment-region', which
-            ;; signals when the src block's language has no comment syntax
-            ;; defined -- e.g. `fundamental-mode') must not skip
-            ;; `org-edit-src-exit' on error, or the user is left stranded
-            ;; in the temporary edit buffer/window instead of back in the
-            ;; Org buffer.
+            ;; `org-edit-special' stays outside the `unwind-protect':
+            ;; with no edit buffer there is nothing to exit from.
             (unwind-protect
                 (if has-region
                     (let* ((cur-line-in-edit (line-number-at-pos))
                            (diff (- cur-line-in-edit cur-line))
                            (last-line (line-number-at-pos (point-max)))
-                           ;; Clamp to the edit buffer's own line range: the
-                           ;; region may extend past either end of the src
-                           ;; block (e.g. selected from ordinary Org prose
-                           ;; above it down into the block), and only the
-                           ;; part actually inside the block exists here to
-                           ;; comment.  Without clamping, `forward-line'
-                           ;; silently clamps the out-of-range motions
-                           ;; itself, but does so AFTER the range's width
-                           ;; has already been computed from the unclamped
-                           ;; numbers -- shifting the whole range downward
-                           ;; and commenting the wrong lines.  Confirmed
-                           ;; live: selecting Org text above a block through
-                           ;; the block's second line commented all three of
-                           ;; its lines, including one entirely outside the
-                           ;; selection.  Point is always inside the block
-                           ;; here (`donkey--in-org-src-block-p' passed) and
-                           ;; is one end of the region, so the clamped range
-                           ;; is always non-empty.
+                           ;; Clamp to the edit buffer's own line range; the
+                           ;; region may reach past either end of the block.
                            (edit-beg-line (max 1 (+ reg-beg-line diff)))
                            (edit-end-line (min last-line (+ reg-end-line diff))))
                       (save-excursion
@@ -1277,11 +1255,8 @@ availability.  Useful for debugging platform-specific issues."
         :tty-type (tty-type)
         :term-env (getenv "TERM")
         :clipboard-tools-available (donkey--detect-clipboard-tools)
-        ;; The QUESTION, not the predicate's existence: `fboundp' here
-        ;; answered t on every Emacs this package runs on, native
-        ;; compilation or no -- the function is always defined and
-        ;; returns nil on builds without the feature.  A diagnostic that
-        ;; always says yes is not a diagnostic.
+        ;; Whether native compilation is available, not whether the
+        ;; predicate exists.
         :native-comp (native-comp-available-p)
         :emacs-version emacs-version))
 
