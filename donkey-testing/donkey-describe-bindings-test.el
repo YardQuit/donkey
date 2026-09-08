@@ -951,7 +951,7 @@ height there is none."
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
 (ert-deftest donkey-digraph-chart-spaces-its-lines-as-customized ()
-  "The chart's `line-spacing' is `donkey-digraph-line-spacing' when that is a positive number."
+  "The chart's `line-spacing' is `donkey-digraph-line-spacing' in pixels, or nothing."
   (unwind-protect
       (progn
         (let ((donkey-digraph-line-spacing 3))
@@ -960,6 +960,20 @@ height there is none."
         (let ((donkey-digraph-line-spacing "much"))
           (donkey-digraph)
           (should (null (buffer-local-value 'line-spacing (get-buffer "*DONKEY Digraphs*"))))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
+(ert-deftest donkey-digraph-chart-takes-a-fraction-of-the-padded-row ()
+  "A fractional `donkey-digraph-line-spacing' is that part of the padded row's height."
+  (skip-unless (display-graphic-p))
+  (unwind-protect
+      (let ((donkey-digraph-line-spacing 0.25))
+        (donkey-digraph)
+        (with-current-buffer "*DONKEY Digraphs*"
+          (let ((spec (donkey--digraph-row-spec (get-buffer-window (current-buffer) t))))
+            (should (equal line-spacing
+                           (round (* 0.25 (if spec
+                                              (car (plist-get (cdr spec) :height))
+                                            (frame-char-height)))))))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
 (ert-deftest donkey-digraph-chart-truncates-its-lines ()

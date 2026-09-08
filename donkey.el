@@ -4673,13 +4673,14 @@ cannot show them: they live in a transient map."
 (defcustom donkey-digraph-line-spacing 0.2
   "Extra space below each line of the `donkey-digraph' chart.
 
-A whole number is pixels; a fraction is that part of the frame's
-default line height.  The rows of the full table are already padded
-to one height, so that no glyph pushes its row out of line; this
-adds air between them, so that a tall glyph such as a floor bracket
-or a box-drawing piece stands clear of its neighbors.  Zero, or
-anything that is not a number, adds nothing.  Only a graphical frame
-shows it."
+A whole number is pixels; a fraction is that part of a padded row's
+height, so it keeps its proportion when the rows grow with their
+fonts or with the text scale.  The rows of the full table are
+already padded to one height, so that no glyph pushes its row out
+of line; this adds air between them, so that a tall glyph such as a
+floor bracket or a box-drawing piece stands clear of its neighbors.
+Zero, or anything that is not a number, adds nothing.  Only a
+graphical frame shows it."
   :type '(choice (integer :tag "Pixels")
                  (float :tag "Fraction of the line height"))
   :group 'donkey)
@@ -4802,12 +4803,22 @@ terminal."
   "Pad every row of the chart to one height, from the fonts WINDOW draws it with.
 
 The chart is the current buffer; WINDOW defaults to a window showing
-it, and nothing happens when there is none.  Runs when the chart is
-built and again whenever its text is scaled, so the rows stay even
-at every scale."
+it, and nothing happens when there is none.  Also sets the chart's
+`line-spacing' from `donkey-digraph-line-spacing', a fraction of it
+taken of the padded row's height.  Runs when the chart is built and
+again whenever its text is scaled, so the rows stay even, and evenly
+spaced, at every scale."
   (let ((window (or window (get-buffer-window (current-buffer) t))))
     (when window
-      (let ((spec (donkey--digraph-row-spec window)))
+      (let* ((spec (donkey--digraph-row-spec window))
+             (row-height (if spec
+                             (car (plist-get (cdr spec) :height))
+                           (frame-char-height (window-frame window))))
+             (spacing donkey-digraph-line-spacing))
+        (setq line-spacing
+              (cond ((and (integerp spacing) (> spacing 0)) spacing)
+                    ((and (floatp spacing) (> spacing 0))
+                     (round (* spacing row-height)))))
         (with-silent-modifications
           (save-excursion
             (goto-char (point-min))
@@ -4903,9 +4914,6 @@ ampersand in front of it.\n\n"))
       (insert (propertize "q: quit  |  C-s: search" 'face 'font-lock-comment-face))
       (special-mode)
       (setq truncate-lines t)
-      (when (and (numberp donkey-digraph-line-spacing)
-                 (> donkey-digraph-line-spacing 0))
-        (setq line-spacing donkey-digraph-line-spacing))
       (add-hook 'text-scale-mode-hook #'donkey--digraph-pad-rows nil t)
       (goto-char (point-min)))
     (let ((window (display-buffer buf)))
