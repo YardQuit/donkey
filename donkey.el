@@ -4728,6 +4728,16 @@ own table, so the list is whatever that Emacs ships, and cached."
           (setq donkey--digraph-table
                 (sort acc (lambda (a b) (string< (car a) (car b)))))))))
 
+(defun donkey--digraph-cell (text column &optional face)
+  "Insert TEXT, then a space that aligns the next cell to COLUMN.
+
+The space carries a `display' property, `(space :align-to COLUMN)',
+which the redisplay honors to the pixel in a graphical frame and to
+the column in a terminal, whatever the width of TEXT's glyphs.  FACE,
+when given, is put on TEXT."
+  (insert (if face (propertize text 'face face) text)
+          (propertize " " 'display (list 'space :align-to column))))
+
 (defun donkey--digraph-code-points (string)
   "Return STRING's code points as \"U+XXXX\", space-separated."
   (mapconcat (lambda (c) (format "U+%04X" c)) string " "))
@@ -4758,13 +4768,15 @@ directly.  These are the codes of RFC 1345, which vi types after
 \\`C-k' and Emacs holds as the rfc1345 input method, each typed with
 an ampersand in front of it.\n\n"))
       (insert (funcall head "  Common digraphs") "\n" rule "\n")
-      (insert (propertize (format "  %-10s %-9s %s\n" "DIGRAPH" "TYPE" "RESULT")
-                          'face 'font-lock-keyword-face))
+      (insert "  ")
+      (donkey--digraph-cell "DIGRAPH" 12 'font-lock-keyword-face)
+      (donkey--digraph-cell "TYPE" 22 'font-lock-keyword-face)
+      (insert (propertize "RESULT" 'face 'font-lock-keyword-face) "\n")
       (dolist (row donkey--digraph-common)
-        (insert (format "  %-10s %-9s %s\n"
-                        (propertize (car row) 'face 'font-lock-variable-name-face)
-                        (concat "&" (car row))
-                        (cdr row))))
+        (insert "  ")
+        (donkey--digraph-cell (car row) 12 'font-lock-variable-name-face)
+        (donkey--digraph-cell (concat "&" (car row)) 22)
+        (insert (cdr row) "\n"))
       (insert "\n" (funcall head "  How to type one") "\n" rule "\n")
       (insert (substitute-command-keys
                "  1. Enter INSERT state.
@@ -4790,16 +4802,20 @@ an ampersand in front of it.\n\n"))
       (let ((table (donkey--digraph-table)))
         (insert (funcall head (format "  All %d digraphs, in code order" (length table)))
                 "\n" rule "\n")
-        (insert (propertize (format "  %-8s %-7s %-10s %s\n" "DIGRAPH" "RESULT" "CODE" "NAME")
-                            'face 'font-lock-keyword-face))
+        (insert "  ")
+        (donkey--digraph-cell "DIGRAPH" 11 'font-lock-keyword-face)
+        (donkey--digraph-cell "RESULT" 19 'font-lock-keyword-face)
+        (donkey--digraph-cell "CODE" 30 'font-lock-keyword-face)
+        (insert (propertize "NAME" 'face 'font-lock-keyword-face) "\n")
         (dolist (row table)
-          (insert (format "  %-8s %-7s %-10s %s\n"
-                          (propertize (car row) 'face 'font-lock-variable-name-face)
-                          (cdr row)
-                          (donkey--digraph-code-points (cdr row))
-                          (or (and (= (length (cdr row)) 1)
-                                   (get-char-code-property (aref (cdr row) 0) 'name))
-                              "")))))
+          (insert "  ")
+          (donkey--digraph-cell (car row) 11 'font-lock-variable-name-face)
+          (donkey--digraph-cell (cdr row) 19)
+          (donkey--digraph-cell (donkey--digraph-code-points (cdr row)) 30)
+          (insert (or (and (= (length (cdr row)) 1)
+                           (get-char-code-property (aref (cdr row) 0) 'name))
+                      "")
+                  "\n")))
       (insert "\n" (propertize (make-string 50 ?=) 'face 'font-lock-comment-face) "\n")
       (insert (propertize "q: quit  |  C-s: search" 'face 'font-lock-comment-face))
       (special-mode)
