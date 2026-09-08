@@ -4671,9 +4671,13 @@ cannot show them: they live in a transient map."
 (declare-function quail-lookup-key "quail" (key &optional len not-reset-indices))
 
 (defconst donkey--digraph-common
-  '(("a'" . "á") ("a:" . "ä") ("e*" . "ε")
-    ("->" . "→") ("Eu" . "€") ("12" . "½"))
-  "Digraphs `donkey-digraph' shows as examples, each with what it types.")
+  '(("'9" . "’") ("\"6" . "“") ("\"9" . "”") ("-N" . "–")
+    ("-M" . "—") ("'6" . "‘") ("sb" . "•") ("e'" . "é")
+    ("Pd" . "£") ("Rg" . "®") ("1'" . "′") ("Eu" . "€"))
+  "Digraphs `donkey-digraph' lists first, each with what it types.
+
+They are the twelve characters English web text uses most that a
+keyboard lacks, the most frequent first.")
 
 (defun donkey--digraph-result (digraph)
   "Return the string DIGRAPH types under the `rfc1345' input method, or nil.
@@ -4768,6 +4772,8 @@ directly.  These are the codes of RFC 1345, the same ones vi uses;
 Emacs holds them as the rfc1345 input method, each typed with an
 ampersand in front of it.\n\n"))
       (insert (funcall head "  Common digraphs") "\n" rule "\n")
+      (insert "  The twelve characters English web text uses most that a keyboard
+  lacks, the most frequent first.\n\n")
       (insert "  ")
       (donkey--digraph-cell "DIGRAPH" 12 'font-lock-keyword-face)
       (donkey--digraph-cell "TYPE" 22 'font-lock-keyword-face)
@@ -4782,7 +4788,7 @@ ampersand in front of it.\n\n"))
                "  1. Enter INSERT state.
   2. Press \\[toggle-input-method] and choose rfc1345.  Once is enough:
      after that \\[toggle-input-method] switches the same method on and off.
-  3. Type an ampersand and the digraph: &a\\=' gives á.
+  3. Type an ampersand and the digraph: &e\\=' gives é.
 
   DONKEY turns the input method off in NORMAL state, so the letters
   stay commands, and back on when you return to INSERT.
