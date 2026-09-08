@@ -864,6 +864,60 @@ the same command with DONKEY on as off."
         (walk map [])))
     (should (equal found '()))))
 
+(ert-deftest donkey-digraph-opens-a-read-only-buffer-with-the-table ()
+  "`donkey-digraph' shows every common digraph and its result, read-only, q to quit."
+  (unwind-protect
+      (progn
+        (donkey-digraph)
+        (with-current-buffer "*DONKEY Digraphs*"
+          (should buffer-read-only)
+          (should (derived-mode-p 'special-mode))
+          (should (eq (lookup-key (current-local-map) (kbd "q")) #'quit-window))
+          (dolist (row donkey--digraph-common)
+            (should (string-match-p
+                     (concat "^  " (regexp-quote (car row)) " +&"
+                             (regexp-quote (car row)) " +" (regexp-quote (cdr row)) "$")
+                     (buffer-string))))
+          (should (string-match-p "How to type one" (buffer-string)))
+          (should (string-match-p "Ctrl\\+Shift\\+u" (buffer-string)))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
+(ert-deftest donkey-digraph-common-table-is-what-rfc1345-types ()
+  "Each digraph in `donkey--digraph-common' types its listed result under rfc1345.
+
+The table is an enumerable claim, recounted here against the input
+method itself, so a row cannot say something the method does not do."
+  (dolist (row donkey--digraph-common)
+    (should (equal (list (car row) (donkey--digraph-result (car row)))
+                   (list (car row) (cdr row))))))
+
+(ert-deftest donkey-digraph-table-comes-from-rfc1345-and-is-large ()
+  "The table read from the input method holds every common digraph and many more."
+  (let ((table (donkey--digraph-table)))
+    (should (> (length table) 1000))
+    (dolist (row donkey--digraph-common)
+      (should (equal (assoc (car row) table) row)))
+    (should (equal (donkey--digraph-code-points "€") "U+20AC"))))
+
+(ert-deftest donkey-digraph-buffer-lists-the-whole-table-with-code-points ()
+  "The chart shows every digraph with its result and U+ code point."
+  (unwind-protect
+      (progn
+        (donkey-digraph)
+        (with-current-buffer "*DONKEY Digraphs*"
+          (let ((text (buffer-string)))
+            (should (string-match-p (format "All %d digraphs" (length (donkey--digraph-table))) text))
+            (should (string-match-p "^  Eu +€ +U\\+20AC +EURO SIGN$" text))
+            (should (string-match-p "^  12 +½ +U\\+00BD +VULGAR FRACTION ONE HALF$" text)))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
+(ert-deftest donkey-digraph-is-not-bound-to-a-key ()
+  "`donkey-digraph' is reached by name only, as decided; no DONKEY map binds it."
+  (should-not (where-is-internal #'donkey-digraph
+                                 (list donkey-normal-mode-map
+                                       donkey-insert-mode-map
+                                       donkey-mark-run-mode-map))))
+
 (ert-deftest donkey-tutor-claim-dired-keys-survive ()
   "The Dired keys the tutor names by hand are really still Dired's."
   (skip-unless (require 'dired nil t))

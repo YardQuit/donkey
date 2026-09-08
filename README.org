@@ -18,6 +18,7 @@
 - [[#org-scratch-buffer][Org-Scratch Buffer]]
 - [[#tutor][Tutor]]
 - [[#describe-bindings][Describe Bindings]]
+- [[#digraphs-and-unicode][Digraphs and Unicode]]
 - [[#version][Version]]
 - [[#changelog][Changelog]]
 - [[#customization-group][Customization Group]]
@@ -1733,6 +1734,46 @@ section headers.
   M-x donkey-describe-bindings
 
 #+end_src
+
+* Digraphs and Unicode
+:PROPERTIES:
+:CUSTOM_ID: digraphs-and-unicode
+:END:
+
+A digraph is two characters that stand for one you cannot type
+directly: =a'= for =á=, =Eu= for =€=. The codes are those of RFC 1345,
+the same ones vi types after =C-k=, and Emacs holds the whole table as
+the =rfc1345= input method, each entry typed with an ampersand in
+front of it.
+
+=M-x donkey-digraph= opens a buffer with the common ones, the steps,
+and then the whole table: every digraph the method knows, with what
+it types, its code point and the character's name, ready to copy
+from.
+
+| Digraph | Type   | Result |
+|---------+--------+--------|
+| =a'=    | =&a'=  | á      |
+| =a:=    | =&a:=  | ä      |
+| =e*=    | =&e*=  | ε      |
+| =->=    | =&->=  | →      |
+| =Eu=    | =&Eu=  | €      |
+| =12=    | =&12=  | ½      |
+
+To type one: enter Insert state, press =C-\= and choose =rfc1345= --
+once; after that =C-\= toggles it -- then type the ampersand and the
+digraph. DONKEY turns the input method off in Normal state, so the
+letters stay commands, and back on when you return to Insert. The
+full table is =C-h I rfc1345=.
+
+For any character by code point or name, =C-x 8 RET= works in either
+state: =C-x 8 RET 20ac RET= gives =€=. On a Linux desktop,
+=Ctrl+Shift+u= starts GTK's own hex entry in a graphical frame: keep
+Ctrl and Shift held while typing the hex code, and the character
+appears when you release them; release after the =u= and the entry is
+over. With an IBus daemon running the order is the other way round:
+release after the =u=, type the code, then Space or Enter. In a
+terminal it depends on the terminal.
 
 * Version
 :PROPERTIES:

@@ -4663,6 +4663,151 @@ cannot show them: they live in a transient map."
     (display-buffer buf)))
 
 ;;; ---------------------------------------------------------------------------
+;;; Donkey Digraphs
+;;; ---------------------------------------------------------------------------
+
+(defvar quail-package-alist)
+(defvar quail-current-package)
+(declare-function quail-lookup-key "quail" (key &optional len not-reset-indices))
+
+(defconst donkey--digraph-common
+  '(("a'" . "á") ("a:" . "ä") ("e*" . "ε")
+    ("->" . "→") ("Eu" . "€") ("12" . "½"))
+  "Digraphs `donkey-digraph' shows as examples, each with what it types.")
+
+(defun donkey--digraph-result (digraph)
+  "Return the string DIGRAPH types under the `rfc1345' input method, or nil.
+
+DIGRAPH is the two characters as vi spells them; the input method
+takes them after an ampersand, and that is what is looked up."
+  (require 'quail)
+  (unless (assoc "rfc1345" quail-package-alist)
+    (load "quail/rfc1345" nil t))
+  (let* ((quail-current-package (assoc "rfc1345" quail-package-alist))
+         (key (concat "&" digraph))
+         (translation (car-safe (quail-lookup-key key (length key)))))
+    (cond ((integerp translation) (char-to-string translation))
+          ((stringp translation) translation)
+          ((and (vectorp translation) (> (length translation) 0))
+           (aref translation 0)))))
+
+(defvar donkey--digraph-table nil
+  "Every digraph of the `rfc1345' input method as (CODE . STRING).
+Built by `donkey--digraph-table' on first use, sorted by CODE.")
+
+(defun donkey--digraph-translation-string (translation)
+  "Return the string a quail map TRANSLATION stands for, or nil."
+  (cond ((integerp translation) (char-to-string translation))
+        ((stringp translation) (and (> (length translation) 0) translation))
+        ((and (vectorp translation) (> (length translation) 0))
+         (donkey--digraph-translation-string (aref translation 0)))
+        ((and (consp translation) (vectorp (cdr translation)))
+         (donkey--digraph-translation-string (cdr translation)))))
+
+(defun donkey--digraph-table ()
+  "Return every digraph of the `rfc1345' input method as (CODE . STRING).
+
+CODE is the digraph as vi spells it, without the ampersand the input
+method takes first; STRING is what it types.  Read from the method's
+own table, so the list is whatever that Emacs ships, and cached."
+  (or donkey--digraph-table
+      (progn
+        (require 'quail)
+        (unless (assoc "rfc1345" quail-package-alist)
+          (load "quail/rfc1345" nil t))
+        (let ((map (nth 2 (assoc "rfc1345" quail-package-alist)))
+              acc)
+          (cl-labels ((walk (node prefix)
+                        (when (> (length prefix) 1)
+                          (let ((str (donkey--digraph-translation-string (car node))))
+                            (when str (push (cons (substring prefix 1) str) acc))))
+                        (dolist (entry (cdr node))
+                          (when (and (consp entry) (characterp (car entry)))
+                            (walk (cdr entry) (concat prefix (char-to-string (car entry))))))))
+            (walk map ""))
+          (setq donkey--digraph-table
+                (sort acc (lambda (a b) (string< (car a) (car b)))))))))
+
+(defun donkey--digraph-code-points (string)
+  "Return STRING's code points as \"U+XXXX\", space-separated."
+  (mapconcat (lambda (c) (format "U+%04X" c)) string " "))
+
+(defun donkey-digraph ()
+  "Show how to type a character that is not on the keyboard.
+
+Opens a buffer listing common digraphs -- the two-character codes of
+RFC 1345, the same ones vi types after \\`C-k' -- and the steps that
+type one in Emacs through the `rfc1345' input method, followed by the
+two ways to type any Unicode character by code point or name, and
+then the whole table: every digraph the method knows, with what it
+types, its code point and the character's name, ready to copy from."
+  (interactive)
+  (let ((buf (get-buffer-create "*DONKEY Digraphs*"))
+        (rule (propertize (make-string 50 ?-) 'face 'font-lock-comment-face))
+        (head (lambda (text)
+                (propertize text 'face '(bold font-lock-comment-delimiter-face)))))
+    (with-current-buffer buf
+      (setq buffer-read-only nil)
+      (erase-buffer)
+      (insert (propertize "DONKEY Digraphs\n"
+                          'face '(bold font-lock-function-name-face :height 1.2)))
+      (insert (propertize (make-string 50 ?=) 'face 'font-lock-comment-face) "\n\n")
+      (insert (substitute-command-keys
+               "A digraph is two characters that stand for one you cannot type
+directly.  These are the codes of RFC 1345, which vi types after
+\\`C-k' and Emacs holds as the rfc1345 input method, each typed with
+an ampersand in front of it.\n\n"))
+      (insert (funcall head "  Common digraphs") "\n" rule "\n")
+      (insert (propertize (format "  %-10s %-9s %s\n" "DIGRAPH" "TYPE" "RESULT")
+                          'face 'font-lock-keyword-face))
+      (dolist (row donkey--digraph-common)
+        (insert (format "  %-10s %-9s %s\n"
+                        (propertize (car row) 'face 'font-lock-variable-name-face)
+                        (concat "&" (car row))
+                        (cdr row))))
+      (insert "\n" (funcall head "  How to type one") "\n" rule "\n")
+      (insert (substitute-command-keys
+               "  1. Enter INSERT state.
+  2. Press \\[toggle-input-method] and choose rfc1345.  Once is enough:
+     after that \\[toggle-input-method] switches the same method on and off.
+  3. Type an ampersand and the digraph: &a\\=' gives á.
+
+  DONKEY turns the input method off in NORMAL state, so the letters
+  stay commands, and back on when you return to INSERT.
+
+  Or copy the character straight out of the table below.\n\n"))
+      (insert (funcall head "  Any character, by code point or name") "\n" rule "\n")
+      (insert (substitute-command-keys
+               "  \\[insert-char], then a character name or its hex code, works in
+  either state: \\[insert-char] 20ac RET gives €.
+
+  On a Linux desktop, Ctrl+Shift+u starts GTK's own hex entry in a
+  graphical frame: keep Ctrl and Shift held while you type the hex
+  code, and the character appears when you release them.  Release
+  after the u and the entry is over.  With an IBus daemon running the
+  order is the other way round: release after the u, type the code,
+  then Space or Enter.  In a terminal it depends on the terminal.\n\n"))
+      (let ((table (donkey--digraph-table)))
+        (insert (funcall head (format "  All %d digraphs, in code order" (length table)))
+                "\n" rule "\n")
+        (insert (propertize (format "  %-8s %-7s %-10s %s\n" "DIGRAPH" "RESULT" "CODE" "NAME")
+                            'face 'font-lock-keyword-face))
+        (dolist (row table)
+          (insert (format "  %-8s %-7s %-10s %s\n"
+                          (propertize (car row) 'face 'font-lock-variable-name-face)
+                          (cdr row)
+                          (donkey--digraph-code-points (cdr row))
+                          (or (and (= (length (cdr row)) 1)
+                                   (get-char-code-property (aref (cdr row) 0) 'name))
+                              "")))))
+      (insert "\n" (propertize (make-string 50 ?=) 'face 'font-lock-comment-face) "\n")
+      (insert (propertize "q: quit  |  C-s: search" 'face 'font-lock-comment-face))
+      (special-mode)
+      (goto-char (point-min)))
+    (display-buffer buf)))
+
+;;; ---------------------------------------------------------------------------
+
 ;;; Donkey Tutor
 ;;; ---------------------------------------------------------------------------
 
@@ -4786,6 +4931,9 @@ and Emacs behaves exactly as it always does.
 
 Both open keys take a count: \\`C-u 3' \\[donkey-open-below] opens three lines below and
 leaves you on the first of them, with two empty lines under it.
+
+A character that is not on your keyboard has a code of its own: the
+command donkey-digraph lists them all and how to type them.
 
 >> Put the cursor on the full stop below, press \\[donkey-insert-here], type the missing
    word -- it is \"dog\" -- then press \\`C-g' to return to NORMAL.
