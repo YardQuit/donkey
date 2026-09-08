@@ -922,11 +922,13 @@ height and no air is asked for there is none."
       (let ((donkey-digraph-line-spacing 0))
         (donkey-digraph)
         (with-current-buffer "*DONKEY Digraphs*"
-          (let* ((rows (donkey--digraph-rows donkey--digraph-full-table))
-                 (spec (donkey--digraph-row-spec (get-buffer-window (current-buffer) t) rows 0)))
-            (should (= (length rows) (length (donkey--digraph-table))))
-            (dolist (row rows)
-              (should (equal (get-text-property (car row) 'display) spec))))))
+          (let ((window (get-buffer-window (current-buffer) t))
+                (groups (donkey--digraph-row-groups donkey--digraph-full-table)))
+            (should (= (length (apply #'append groups)) (length (donkey--digraph-table))))
+            (dolist (rows groups)
+              (let ((spec (donkey--digraph-row-spec window rows 0)))
+                (dolist (row rows)
+                  (should (equal (get-text-property (car row) 'display) spec))))))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
 (ert-deftest donkey-digraph-repads-its-rows-when-the-text-is-scaled ()
@@ -937,10 +939,11 @@ height and no air is asked for there is none."
         (donkey-digraph)
         (with-current-buffer "*DONKEY Digraphs*"
           (text-scale-increase 2)
-          (let* ((rows (donkey--digraph-rows donkey--digraph-full-table))
-                 (spec (donkey--digraph-row-spec (get-buffer-window (current-buffer) t) rows 0)))
-            (dolist (row rows)
-              (should (equal (get-text-property (car row) 'display) spec))))))
+          (let ((window (get-buffer-window (current-buffer) t)))
+            (dolist (rows (donkey--digraph-row-groups donkey--digraph-full-table))
+              (let ((spec (donkey--digraph-row-spec window rows 0)))
+                (dolist (row rows)
+                  (should (equal (get-text-property (car row) 'display) spec))))))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
 (defun donkey-test--digraph-row-heights ()
@@ -986,13 +989,62 @@ height and no air is asked for there is none."
                          (+ bare (round (* 0.25 bare)))))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
+(ert-deftest donkey-digraph-rows-of-a-group-are-one-height-on-screen ()
+  "Laid out, every row of a script group has the height of every other row of it.
+
+Measured through the display engine, so a font it chooses that the
+plain lookup did not is caught."
+  (skip-unless (display-graphic-p))
+  (unwind-protect
+      (let ((donkey-digraph-line-spacing 0))
+        (donkey-digraph)
+        (with-current-buffer "*DONKEY Digraphs*"
+          (let ((window (get-buffer-window (current-buffer) t)))
+            (dolist (rows (cons (donkey--digraph-rows donkey--digraph-common-table)
+                                (donkey--digraph-row-groups donkey--digraph-full-table)))
+              (let ((heights nil))
+                (dolist (row rows)
+                  (save-excursion
+                    (goto-char (car row))
+                    (cl-pushnew (cdr (window-text-pixel-size window (car row) (line-end-position) t))
+                                heights)))
+                (should (equal (list (nth 4 (car rows)) (length heights))
+                               (list (nth 4 (car rows)) 1))))))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
 (ert-deftest donkey-digraph-chart-spaces-its-lines-as-customized ()
   "`donkey-digraph-line-spacing' never touches the chart's `line-spacing'; the air is in the rows."
   (unwind-protect
-      (dolist (spacing '(3 0.25 "much"))
+      (dolist (spacing '(0 3 0.25 -2 "much"))
         (let ((donkey-digraph-line-spacing spacing))
           (donkey-digraph)
           (should (null (buffer-local-value 'line-spacing (get-buffer "*DONKEY Digraphs*"))))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
+(ert-deftest donkey-digraph-full-table-is-grouped-by-script ()
+  "The full table's rows sit under one heading per script, in `donkey--digraph-scripts' order."
+  (unwind-protect
+      (progn
+        (donkey-digraph)
+        (with-current-buffer "*DONKEY Digraphs*"
+          (let* ((table (donkey--digraph-table))
+                 (groups (donkey--digraph-groups table))
+                 (in-buffer (donkey--digraph-row-groups donkey--digraph-full-table)))
+            (should (equal (mapcar #'car groups)
+                           '("Latin" "Greek" "Cyrillic" "Hebrew" "Arabic" "Symbols"
+                             "Kana" "Bopomofo" "Han" "CJK, other" "Private use")))
+            (should (= (apply #'+ (mapcar (lambda (g) (length (cdr g))) groups))
+                       (length table)))
+            (should (equal (mapcar (lambda (rows) (cons (nth 4 (car rows)) (length rows))) in-buffer)
+                           (mapcar (lambda (g) (cons (car g) (length (cdr g)))) groups)))
+            (dolist (group groups)
+              (goto-char (point-min))
+              (should (re-search-forward (concat "^  " (regexp-quote (car group)) "$") nil t))
+              (let ((entry (seq-find (lambda (e) (equal (cadr e) (car group))) donkey--digraph-scripts)))
+                (when entry
+                  (dolist (row (cdr group))
+                    (should (memq (aref char-script-table (aref (cdr row) 0))
+                                  (cons (car entry) (cddr entry)))))))))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
 (ert-deftest donkey-digraph-chart-truncates-its-lines ()
@@ -2407,7 +2459,8 @@ docstring for two commits looking exactly like a working one.
 Faces and overlay properties are legitimate references that are neither
 `fboundp' nor `boundp', so they are allowed explicitly rather than by
 loosening the check -- an unknown symbol should still fail."
-  (let ((allowed '(donkey-banked))          ; overlay property
+  (let ((allowed '(donkey-banked                    ; overlay property
+                   donkey-digraph-row donkey-digraph-group)) ; text properties
         unresolved)
     (with-temp-buffer
       (insert-file-contents (expand-file-name "donkey.el" donkey-test--source-dir))

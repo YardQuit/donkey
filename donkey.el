@@ -4671,19 +4671,19 @@ cannot show them: they live in a transient map."
 (declare-function quail-lookup-key "quail" (key &optional len not-reset-indices))
 
 (defcustom donkey-digraph-line-spacing 0
-  "Extra space below each row of the `donkey-digraph' chart's tables.
+  "Air under each row of the `donkey-digraph' chart's tables.
 
-A whole number is pixels; a fraction is that part of a padded row's
-height, so it keeps its proportion when the rows grow with their
-fonts or with the text scale.  The rows of the full table are
-already padded to one height, so that no glyph pushes its row out
-of line; this adds air below each row of the two tables, so that a
-tall glyph such as a floor bracket or a box-drawing piece stands
-clear of its neighbors.  The text around the tables keeps its own
-spacing.  Zero, the default, adds nothing, and so does anything
-that is not a number.  Only a graphical frame shows it."
+The rows of the common table, and of each script group of the full
+table, are always padded to one height, the least the fonts drawing
+the group allow, with the baseline at one and the same offset; this
+adds that much below each row.  A whole number is pixels; a fraction
+is that part of the padded row's height, so the air keeps its
+proportion when the rows grow with their fonts or with the text
+scale.  Zero, the default, adds nothing, and so does a negative
+number or anything that is not a number.  Only a graphical frame
+shows any of it."
   :type '(choice (integer :tag "Pixels")
-                 (float :tag "Fraction of the line height"))
+                 (float :tag "Fraction of a padded row's height"))
   :group 'donkey)
 
 (defconst donkey--digraph-common
@@ -4758,31 +4758,82 @@ when given, is put on TEXT."
   (insert (if face (propertize text 'face face) text)
           (propertize " " 'display (list 'space :align-to column))))
 
+(defconst donkey--digraph-scripts
+  '((latin "Latin" phonetic) (greek "Greek") (cyrillic "Cyrillic")
+    (hebrew "Hebrew") (arabic "Arabic") (symbol "Symbols") (kana "Kana")
+    (bopomofo "Bopomofo") (han "Han") (cjk-misc "CJK, other"))
+  "The scripts the chart groups the full table by, in this order.
+
+Each entry is (SCRIPT NAME OTHER...): the `char-script-table' symbol,
+the heading the group gets, and other scripts folded into it.  A
+script not listed comes after these under its own name; characters
+of no script, the private-use ones, come last.")
+
+(defun donkey--digraph-groups (table)
+  "Return TABLE's rows grouped by script, as (NAME . ROWS) in chart order.
+
+TABLE is the digraph table.  The groups follow `donkey--digraph-scripts',
+each holding its rows in TABLE's order."
+  (let (by-script groups)
+    (dolist (row table)
+      (push row (alist-get (aref char-script-table (aref (cdr row) 0)) by-script)))
+    (dolist (entry donkey--digraph-scripts)
+      (let (rows)
+        (dolist (script (cons (car entry) (cddr entry)))
+          (setq rows (append (alist-get script by-script) rows))
+          (setf (alist-get script by-script nil t) nil))
+        (when rows
+          (push (cons (cadr entry) (sort rows (lambda (a b) (string< (car a) (car b)))))
+                groups))))
+    (dolist (entry (sort (seq-filter #'car by-script)
+                         (lambda (a b) (string< (symbol-name (car a)) (symbol-name (car b))))))
+      (push (cons (capitalize (symbol-name (car entry))) (nreverse (cdr entry))) groups))
+    (when (alist-get nil by-script)
+      (push (cons "Private use" (nreverse (alist-get nil by-script))) groups))
+    (nreverse groups)))
+
 (defconst donkey--digraph-full-table
-  '("^  DIGRAPH +RESULT +CODE +NAME$" . "  \\S-+ \\(.+?\\) \\(U\\)\\+")
-  "The full table's heading and row, as `donkey--digraph-rows' wants them.")
+  '(full . "  \\S-+ \\(.+?\\) \\(U\\)\\+")
+  "The full table's tag and row, as `donkey--digraph-rows' wants them.")
 
 (defconst donkey--digraph-common-table
-  '("^  DIGRAPH +TYPE +RESULT$" . "  \\S-+ \\(?2:&\\)\\S-+ \\(?1:\\S-+\\)$")
-  "The common table's heading and row, as `donkey--digraph-rows' wants them.")
+  '(common . "  \\S-+ \\(?2:&\\)\\S-+ \\(?1:\\S-+\\)$")
+  "The common table's tag and row, as `donkey--digraph-rows' wants them.")
 
 (defun donkey--digraph-rows (table)
   "Return the rows of TABLE in the chart, the current buffer.
 
-TABLE is (HEADING . ROW), two regexps: the table's heading line, and
-a row, whose group 1 is the result cell and group 2 one character
-in the default face.  Each row is returned as a list of its start,
-the result cell's start and end, and that character's position."
+TABLE is (TAG . ROW): the value the rows' leading blanks carry as
+their `donkey-digraph-row' property, and a regexp for a row, whose
+group 1 is the result cell and group 2 one character in the default
+face.  Each row is returned as a list of its start, the result
+cell's start and end, that character's position, and the row's
+`donkey-digraph-group'."
   (save-excursion
     (goto-char (point-min))
     (let (rows)
-      (when (re-search-forward (car table) nil t)
-        (forward-line 1)
-        (while (looking-at (cdr table))
-          (push (list (point) (match-beginning 1) (match-end 1) (match-beginning 2))
-                rows)
-          (forward-line 1)))
+      (while (not (eobp))
+        (when (and (eq (get-text-property (point) 'donkey-digraph-row) (car table))
+                   (looking-at (cdr table)))
+          (push (list (point) (match-beginning 1) (match-end 1) (match-beginning 2)
+                      (get-text-property (point) 'donkey-digraph-group))
+                rows))
+        (forward-line 1))
       (nreverse rows))))
+
+(defun donkey--digraph-row-groups (table)
+  "Return the rows of TABLE in the chart, grouped: a list of row lists.
+
+Rows are grouped as `donkey--digraph-rows' lists them, a run of rows
+with one `donkey-digraph-group' making a group."
+  (let (groups current name)
+    (dolist (row (donkey--digraph-rows table))
+      (unless (and current (equal (nth 4 row) name))
+        (when current (push (nreverse current) groups))
+        (setq current nil name (nth 4 row)))
+      (push row current))
+    (when current (push (nreverse current) groups))
+    (nreverse groups)))
 
 (defun donkey--digraph-row-spec (window rows extra)
   "Return a `display' spec giving ROWS one height, or nil.
@@ -4828,34 +4879,44 @@ height."
         (put-text-property (car row) (+ 2 (car row)) 'display spec)
       (remove-text-properties (car row) (+ 2 (car row)) '(display nil)))))
 
+(defun donkey--digraph-group-spec (window rows)
+  "Return the `display' spec padding ROWS to one height, with air, or nil.
+
+ROWS are the rows of one group of the chart, the current buffer,
+shown in WINDOW.  The spec pads them to the least height the fonts
+drawing them allow and adds the air `donkey-digraph-line-spacing'
+asks for, a fraction of it taken of the padded row's height.  Nil
+when the rows are one height already and no air is asked for."
+  (let* ((spacing donkey-digraph-line-spacing)
+         (bare (donkey--digraph-row-spec window rows 0))
+         (row-height (if bare
+                         (car (plist-get (cdr bare) :height))
+                       (frame-char-height (window-frame window))))
+         (extra (cond ((and (integerp spacing) (> spacing 0)) spacing)
+                      ((and (floatp spacing) (> spacing 0))
+                       (round (* spacing row-height)))
+                      (t 0))))
+    (if (zerop extra) bare (donkey--digraph-row-spec window rows extra))))
+
 (defun donkey--digraph-pad-rows (&optional window)
-  "Pad every row of the chart's tables to one height, with air below it.
+  "Pad the rows of the chart's tables to one height per group, with air.
 
 The chart is the current buffer; WINDOW defaults to a window showing
-it, and nothing happens when there is none.  The height comes from
-the fonts WINDOW draws the rows with and the air from
-`donkey-digraph-line-spacing', a fraction of it taken of the padded
-row's height.  Runs when the chart is built and again whenever its
+it, and nothing happens when there is none.  Every row of the common
+table, and of each script group of the full table, is padded to the
+least height the fonts WINDOW draws the group with allow, and given
+the air `donkey-digraph-line-spacing' asks for below.  The chart is
+laid out once first, so that the fonts asked about are the ones the
+display uses.  Runs when the chart is built and again whenever its
 text is scaled, so the rows stay even, and evenly spaced, at every
 scale."
   (let ((window (or window (get-buffer-window (current-buffer) t))))
     (when window
-      (let* ((full (donkey--digraph-rows donkey--digraph-full-table))
-             (common (donkey--digraph-rows donkey--digraph-common-table))
-             (bare (donkey--digraph-row-spec window full 0))
-             (row-height (if bare
-                             (car (plist-get (cdr bare) :height))
-                           (frame-char-height (window-frame window))))
-             (spacing donkey-digraph-line-spacing)
-             (extra (cond ((and (integerp spacing) (> spacing 0)) spacing)
-                          ((and (floatp spacing) (> spacing 0))
-                           (round (* spacing row-height)))
-                          (t 0))))
-        (with-silent-modifications
-          (donkey--digraph-apply-spec
-           full (if (zerop extra) bare (donkey--digraph-row-spec window full extra)))
-          (donkey--digraph-apply-spec
-           common (donkey--digraph-row-spec window common extra)))))))
+      (ignore (window-text-pixel-size window (point-min) (point-max) t))
+      (with-silent-modifications
+        (dolist (rows (cons (donkey--digraph-rows donkey--digraph-common-table)
+                            (donkey--digraph-row-groups donkey--digraph-full-table)))
+          (donkey--digraph-apply-spec rows (and rows (donkey--digraph-group-spec window rows))))))))
 
 (defun donkey--digraph-code-points (string)
   "Return STRING's code points as \"U+XXXX\", space-separated."
@@ -4868,8 +4929,9 @@ Opens a buffer listing common digraphs -- the two-character codes of
 RFC 1345, the same ones vi uses -- and the steps that type one in
 Emacs through the `rfc1345' input method, followed by the
 two ways to type any Unicode character by code point or name, and
-then the whole table: every digraph the method knows, with what it
-types, its code point and the character's name, ready to copy from."
+then the whole table, grouped by script: every digraph the method
+knows, with what it types, its code point and the character's name,
+ready to copy from."
   (interactive)
   (let ((buf (get-buffer-create "*DONKEY Digraphs*"))
         (rule (propertize (make-string 50 ?-) 'face 'font-lock-comment-face))
@@ -4894,7 +4956,7 @@ ampersand in front of it.\n\n"))
       (donkey--digraph-cell "TYPE" 22 'font-lock-keyword-face)
       (insert (propertize "RESULT" 'face 'font-lock-keyword-face) "\n")
       (dolist (row donkey--digraph-common)
-        (insert "  ")
+        (insert (propertize "  " 'donkey-digraph-row 'common))
         (donkey--digraph-cell (car row) 12 'font-lock-variable-name-face)
         (donkey--digraph-cell (concat "&" (car row)) 22)
         (insert (cdr row) "\n"))
@@ -4921,22 +4983,25 @@ ampersand in front of it.\n\n"))
   order is the other way round: release after the u, type the code,
   then Space or Enter.  In a terminal it depends on the terminal.\n\n"))
       (let ((table (donkey--digraph-table)))
-        (insert (funcall head (format "  All %d digraphs, in code order" (length table)))
+        (insert (funcall head (format "  All %d digraphs, by script" (length table)))
                 "\n" rule "\n")
         (insert "  ")
         (donkey--digraph-cell "DIGRAPH" 11 'font-lock-keyword-face)
         (donkey--digraph-cell "RESULT" 19 'font-lock-keyword-face)
         (donkey--digraph-cell "CODE" 30 'font-lock-keyword-face)
         (insert (propertize "NAME" 'face 'font-lock-keyword-face) "\n")
-        (dolist (row table)
-          (insert "  ")
-          (donkey--digraph-cell (car row) 11 'font-lock-variable-name-face)
-          (donkey--digraph-cell (cdr row) 19)
-          (donkey--digraph-cell (donkey--digraph-code-points (cdr row)) 30)
-          (insert (or (and (= (length (cdr row)) 1)
-                           (get-char-code-property (aref (cdr row) 0) 'name))
-                      "")
-                  "\n")))
+        (dolist (group (donkey--digraph-groups table))
+          (insert "\n" (funcall head (format "  %s" (car group))) "\n")
+          (dolist (row (cdr group))
+            (insert (propertize "  " 'donkey-digraph-row 'full
+                                'donkey-digraph-group (car group)))
+            (donkey--digraph-cell (car row) 11 'font-lock-variable-name-face)
+            (donkey--digraph-cell (cdr row) 19)
+            (donkey--digraph-cell (donkey--digraph-code-points (cdr row)) 30)
+            (insert (or (and (= (length (cdr row)) 1)
+                             (get-char-code-property (aref (cdr row) 0) 'name))
+                        "")
+                    "\n"))))
       (insert "\n" (propertize (make-string 50 ?=) 'face 'font-lock-comment-face) "\n")
       (insert (propertize "q: quit  |  C-s: search" 'face 'font-lock-comment-face))
       (special-mode)
