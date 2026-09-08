@@ -1753,6 +1753,26 @@ from. In a graphical frame the rows are padded to one height, and
 =donkey-digraph-line-spacing= (a fraction of the line height, or
 pixels) adds air between them so that a tall glyph stands clear.
 
+The spacing is a customization option, read each time the chart is
+built, so it can be set in =init.el= or =config.el= before or after
+DONKEY loads. The default is a fifth of the line height:
+
+#+begin_src emacs-lisp
+
+  ;; A fraction of the frame's default line height.
+  (setq donkey-digraph-line-spacing 0.3)
+
+  ;; Or a number of pixels.
+  (setq donkey-digraph-line-spacing 6)
+
+  ;; Or no extra space at all.
+  (setq donkey-digraph-line-spacing 0)
+
+#+end_src
+
+=M-x customize-variable RET donkey-digraph-line-spacing= does the
+same; a change shows the next time =M-x donkey-digraph= runs.
+
 The common ones are the twelve characters English web text uses
 most that a keyboard lacks, the most frequent first:
 
