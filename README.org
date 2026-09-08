@@ -1758,6 +1758,17 @@ bracket stands clear: a number of pixels, or a fraction of a padded
 row's height. The default is zero, and the text around the tables
 keeps its spacing whatever the value.
 
+Which height a group gets depends on the font your frame draws that
+script with: a main font that lacks Arabic or CJK sends those groups
+to a fallback font and they come out taller, while a broad font such
+as JuliaMono keeps more of them at the line's own height. The
+padding is measured when the chart is built and again when its text
+is scaled; after changing the frame's font, run the command again. A
+row whose result is blank or a box is a control character or a
+private-use code point, which RFC 1345 assigns to mnemonics that
+have no Unicode character; no font draws those. In a terminal every
+row is one cell and none of this applies.
+
 The option is read each time the chart is built, so it can be set
 in =init.el= or =config.el= before or after DONKEY loads:
 
