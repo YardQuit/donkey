@@ -914,21 +914,22 @@ method itself, so a row cannot say something the method does not do."
 (ert-deftest donkey-digraph-rows-carry-the-computed-padding ()
   "In a graphical frame each row of the full table starts with the stretch that pads it.
 
-The padding is the `display' spec `donkey--digraph-row-pads' computes
-for the row; when the frame's fonts are all one height there is none."
+The padding is the one `display' spec `donkey--digraph-row-pad'
+computes for the table; when the frame's fonts are all one height
+there is none."
   (skip-unless (display-graphic-p))
   (unwind-protect
       (progn
         (donkey-digraph)
         (with-current-buffer "*DONKEY Digraphs*"
           (let* ((table (donkey--digraph-table))
-                 (pads (donkey--digraph-row-pads table)))
+                 (pad (donkey--digraph-row-pad table)))
             (goto-char (point-min))
             (re-search-forward "^  DIGRAPH +RESULT +CODE +NAME$")
             (forward-line 1)
             (dolist (row table)
               (should (equal (list (car row) (get-text-property (line-beginning-position) 'display))
-                             (list (car row) (and pads (pop pads)))))
+                             (list (car row) pad)))
               (forward-line 1)))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 

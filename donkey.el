@@ -4764,31 +4764,31 @@ Returns nil in a frame without fonts, as in a terminal."
                   descent (max descent (cdr pair))))))
       (cons ascent descent))))
 
-(defun donkey--digraph-row-pads (table)
-  "Return a `display' spec padding each row of TABLE to one height, or nil.
+(defun donkey--digraph-row-pad (table)
+  "Return a `display' spec giving every row of TABLE one height, or nil.
 
-TABLE is the digraph table.  Each spec is a stretch of space two
-columns wide, as tall as the tallest row and with its baseline where
-that row's is, to put on the row's leading blanks: the row then keeps
-that height in a window of any width, wrapped or truncated.  Returns
-nil when the rows are already all one height, and in a terminal."
+TABLE is the digraph table.  The spec is a stretch of space two
+columns wide, with the largest ascent and the largest descent of any
+font the frame draws TABLE's characters with, to put on each row's
+leading blanks: every row is then as tall as the tallest could be,
+with its baseline at one and the same offset, in a window of any
+width, wrapped or truncated.  Returns nil when the rows are already
+all one height, and in a terminal."
   (let* ((cache (make-hash-table :test #'equal))
          (default (donkey--digraph-font-metrics "" cache))
          (metrics (and default
                        (mapcar (lambda (row) (donkey--digraph-font-metrics (cdr row) cache))
                                table)))
-         (tallest (and metrics
-                       (apply #'max (mapcar (lambda (m) (+ (car m) (cdr m))) metrics)))))
-    (when (and tallest (> tallest (+ (car default) (cdr default))))
-      (mapcar (lambda (m)
-                ;; The ascent is given as a percentage of the height:
-                ;; the smallest one that comes to the pixels wanted.
-                (let ((ascent (- tallest (cdr m))) (pct 0))
-                  (while (and (< pct 100)
-                              (< (floor (/ (* tallest pct) 100.0)) ascent))
-                    (setq pct (1+ pct)))
-                  (list 'space :width 2 :height (list tallest) :ascent pct)))
-              metrics))))
+         (ascent (and metrics (apply #'max (mapcar #'car metrics))))
+         (descent (and metrics (apply #'max (mapcar #'cdr metrics))))
+         (height (and ascent (+ ascent descent)))
+         (pct 0))
+    (when (and height (> height (+ (car default) (cdr default))))
+      ;; The ascent is given as a percentage of the height: the
+      ;; smallest one that comes to the pixels wanted.
+      (while (and (< pct 100) (< (floor (/ (* height pct) 100.0)) ascent))
+        (setq pct (1+ pct)))
+      (list 'space :width 2 :height (list height) :ascent pct))))
 
 (defun donkey--digraph-code-points (string)
   "Return STRING's code points as \"U+XXXX\", space-separated."
@@ -4854,7 +4854,7 @@ ampersand in front of it.\n\n"))
   order is the other way round: release after the u, type the code,
   then Space or Enter.  In a terminal it depends on the terminal.\n\n"))
       (let* ((table (donkey--digraph-table))
-             (pads (donkey--digraph-row-pads table)))
+             (pad (donkey--digraph-row-pad table)))
         (insert (funcall head (format "  All %d digraphs, in code order" (length table)))
                 "\n" rule "\n")
         (insert "  ")
@@ -4863,7 +4863,7 @@ ampersand in front of it.\n\n"))
         (donkey--digraph-cell "CODE" 30 'font-lock-keyword-face)
         (insert (propertize "NAME" 'face 'font-lock-keyword-face) "\n")
         (dolist (row table)
-          (insert (if pads (propertize "  " 'display (pop pads)) "  "))
+          (insert (if pad (propertize "  " 'display pad) "  "))
           (donkey--digraph-cell (car row) 11 'font-lock-variable-name-face)
           (donkey--digraph-cell (cdr row) 19)
           (donkey--digraph-cell (donkey--digraph-code-points (cdr row)) 30)
