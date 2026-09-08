@@ -4670,8 +4670,8 @@ cannot show them: they live in a transient map."
 (defvar quail-current-package)
 (declare-function quail-lookup-key "quail" (key &optional len not-reset-indices))
 
-(defcustom donkey-digraph-line-spacing 0.2
-  "Extra space below each line of the `donkey-digraph' chart.
+(defcustom donkey-digraph-line-spacing 0
+  "Extra space below each row of the `donkey-digraph' chart's tables.
 
 A whole number is pixels; a fraction is that part of a padded row's
 height, so it keeps its proportion when the rows grow with their
@@ -4680,8 +4680,8 @@ already padded to one height, so that no glyph pushes its row out
 of line; this adds air below each row of the two tables, so that a
 tall glyph such as a floor bracket or a box-drawing piece stands
 clear of its neighbors.  The text around the tables keeps its own
-spacing.  Zero, or anything that is not a number, adds nothing.
-Only a graphical frame shows it."
+spacing.  Zero, the default, adds nothing, and so does anything
+that is not a number.  Only a graphical frame shows it."
   :type '(choice (integer :tag "Pixels")
                  (float :tag "Fraction of the line height"))
   :group 'donkey)

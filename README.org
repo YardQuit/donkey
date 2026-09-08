@@ -1756,7 +1756,8 @@ glyph stands clear; the text around the tables keeps its spacing.
 
 The spacing is a customization option, read each time the chart is
 built, so it can be set in =init.el= or =config.el= before or after
-DONKEY loads. The default is a fifth of a row:
+DONKEY loads. By default nothing is added, the rows being one height
+already; to add some:
 
 #+begin_src emacs-lisp
 
@@ -1766,7 +1767,7 @@ DONKEY loads. The default is a fifth of a row:
   ;; Or a number of pixels.
   (setq donkey-digraph-line-spacing 6)
 
-  ;; Or no extra space at all.
+  ;; Or none at all, which is the default.
   (setq donkey-digraph-line-spacing 0)
 
 #+end_src
