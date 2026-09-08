@@ -911,6 +911,27 @@ method itself, so a row cannot say something the method does not do."
             (should (string-match-p "^  12 +½ +U\\+00BD +VULGAR FRACTION ONE HALF$" text)))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
+(ert-deftest donkey-digraph-rows-carry-the-computed-line-height ()
+  "In a graphical frame each row of the full table ends in the newline that pads it.
+
+The padding is the `line-height' `donkey--digraph-row-heights' computes
+for the row; when the frame's fonts are all one height there is none."
+  (skip-unless (display-graphic-p))
+  (unwind-protect
+      (progn
+        (donkey-digraph)
+        (with-current-buffer "*DONKEY Digraphs*"
+          (let* ((table (donkey--digraph-table))
+                 (heights (donkey--digraph-row-heights table)))
+            (goto-char (point-min))
+            (re-search-forward "^  DIGRAPH +RESULT +CODE +NAME$")
+            (forward-line 1)
+            (dolist (row table)
+              (should (equal (list (car row) (get-text-property (line-end-position) 'line-height))
+                             (list (car row) (and heights (pop heights)))))
+              (forward-line 1)))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
 (ert-deftest donkey-digraph-is-not-bound-to-a-key ()
   "`donkey-digraph' is reached by name only, as decided; no DONKEY map binds it."
   (should-not (where-is-internal #'donkey-digraph

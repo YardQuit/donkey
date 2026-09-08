@@ -4742,6 +4742,45 @@ when given, is put on TEXT."
   (insert (if face (propertize text 'face face) text)
           (propertize " " 'display (list 'space :align-to column))))
 
+(defun donkey--digraph-font-metrics (string cache)
+  "Return (ASCENT . DESCENT), the largest of each among STRING's fonts.
+
+The fonts are those the selected frame would draw STRING's characters
+with, and the default face's font is always counted.  CACHE is a hash
+table from font name to its (ASCENT . DESCENT), filled as it goes.
+Returns nil in a frame without fonts, as in a terminal."
+  (when (display-graphic-p)
+    (let ((ascent 0) (descent 0))
+      (dolist (c (cons nil (string-to-list string)))
+        (let* ((font (face-font 'default nil c))
+               (pair (and font
+                          (or (gethash font cache)
+                              (puthash font
+                                       (let ((info (ignore-errors (font-info font))))
+                                         (and info (cons (aref info 8) (aref info 9))))
+                                       cache)))))
+          (when pair
+            (setq ascent (max ascent (car pair))
+                  descent (max descent (cdr pair))))))
+      (cons ascent descent))))
+
+(defun donkey--digraph-row-heights (table)
+  "Return the `line-height' value for each row of TABLE, or nil.
+
+TABLE is the digraph table; the value for a row is the number that
+gives the row the height of the tallest row when put on its newline,
+so that every row is as tall as the tallest.  Returns nil when the
+rows are already all one height, and in a terminal."
+  (let* ((cache (make-hash-table :test #'equal))
+         (default (donkey--digraph-font-metrics "" cache))
+         (metrics (and default
+                       (mapcar (lambda (row) (donkey--digraph-font-metrics (cdr row) cache))
+                               table)))
+         (tallest (and metrics
+                       (apply #'max (mapcar (lambda (m) (+ (car m) (cdr m))) metrics)))))
+    (when (and tallest (> tallest (+ (car default) (cdr default))))
+      (mapcar (lambda (m) (- (+ tallest (cdr default)) (cdr m))) metrics))))
+
 (defun donkey--digraph-code-points (string)
   "Return STRING's code points as \"U+XXXX\", space-separated."
   (mapconcat (lambda (c) (format "U+%04X" c)) string " "))
@@ -4805,7 +4844,8 @@ ampersand in front of it.\n\n"))
   after the u and the entry is over.  With an IBus daemon running the
   order is the other way round: release after the u, type the code,
   then Space or Enter.  In a terminal it depends on the terminal.\n\n"))
-      (let ((table (donkey--digraph-table)))
+      (let* ((table (donkey--digraph-table))
+             (heights (donkey--digraph-row-heights table)))
         (insert (funcall head (format "  All %d digraphs, in code order" (length table)))
                 "\n" rule "\n")
         (insert "  ")
@@ -4820,8 +4860,10 @@ ampersand in front of it.\n\n"))
           (donkey--digraph-cell (donkey--digraph-code-points (cdr row)) 30)
           (insert (or (and (= (length (cdr row)) 1)
                            (get-char-code-property (aref (cdr row) 0) 'name))
-                      "")
-                  "\n")))
+                      ""))
+          (insert (if heights
+                      (propertize "\n" 'line-height (pop heights))
+                    "\n"))))
       (insert "\n" (propertize (make-string 50 ?=) 'face 'font-lock-comment-face) "\n")
       (insert (propertize "q: quit  |  C-s: search" 'face 'font-lock-comment-face))
       (special-mode)
