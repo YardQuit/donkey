@@ -4670,6 +4670,20 @@ cannot show them: they live in a transient map."
 (defvar quail-current-package)
 (declare-function quail-lookup-key "quail" (key &optional len not-reset-indices))
 
+(defcustom donkey-digraph-line-spacing 0.2
+  "Extra space below each line of the `donkey-digraph' chart.
+
+A whole number is pixels; a fraction is that part of the frame's
+default line height.  The rows of the full table are already padded
+to one height, so that no glyph pushes its row out of line; this
+adds air between them, so that a tall glyph such as a floor bracket
+or a box-drawing piece stands clear of its neighbors.  Zero, or
+anything that is not a number, adds nothing.  Only a graphical frame
+shows it."
+  :type '(choice (integer :tag "Pixels")
+                 (float :tag "Fraction of the line height"))
+  :group 'donkey)
+
 (defconst donkey--digraph-common
   '(("'9" . "’") ("\"6" . "“") ("\"9" . "”") ("-N" . "–")
     ("-M" . "—") ("'6" . "‘") ("sb" . "•") ("e'" . "é")
@@ -4889,6 +4903,9 @@ ampersand in front of it.\n\n"))
       (insert (propertize "q: quit  |  C-s: search" 'face 'font-lock-comment-face))
       (special-mode)
       (setq truncate-lines t)
+      (when (and (numberp donkey-digraph-line-spacing)
+                 (> donkey-digraph-line-spacing 0))
+        (setq line-spacing donkey-digraph-line-spacing))
       (add-hook 'text-scale-mode-hook #'donkey--digraph-pad-rows nil t)
       (goto-char (point-min)))
     (let ((window (display-buffer buf)))

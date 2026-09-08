@@ -1749,7 +1749,9 @@ of it.
 =M-x donkey-digraph= opens a buffer with the common ones, the steps,
 and then the whole table: every digraph the method knows, with what
 it types, its code point and the character's name, ready to copy
-from.
+from. In a graphical frame the rows are padded to one height, and
+=donkey-digraph-line-spacing= (a fraction of the line height, or
+pixels) adds air between them so that a tall glyph stands clear.
 
 The common ones are the twelve characters English web text uses
 most that a keyboard lacks, the most frequent first:

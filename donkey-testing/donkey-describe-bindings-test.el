@@ -950,6 +950,18 @@ height there is none."
               (forward-line 1)))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
+(ert-deftest donkey-digraph-chart-spaces-its-lines-as-customized ()
+  "The chart's `line-spacing' is `donkey-digraph-line-spacing' when that is a positive number."
+  (unwind-protect
+      (progn
+        (let ((donkey-digraph-line-spacing 3))
+          (donkey-digraph)
+          (should (equal (buffer-local-value 'line-spacing (get-buffer "*DONKEY Digraphs*")) 3)))
+        (let ((donkey-digraph-line-spacing "much"))
+          (donkey-digraph)
+          (should (null (buffer-local-value 'line-spacing (get-buffer "*DONKEY Digraphs*"))))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
 (ert-deftest donkey-digraph-chart-truncates-its-lines ()
   "The chart's lines are truncated, so a row is one screen line in any window."
   (unwind-protect
