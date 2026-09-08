@@ -1742,9 +1742,9 @@ section headers.
 
 A digraph is two characters that stand for one you cannot type
 directly: =a'= for =á=, =Eu= for =€=. The codes are those of RFC 1345,
-the same ones vi types after =C-k=, and Emacs holds the whole table as
-the =rfc1345= input method, each entry typed with an ampersand in
-front of it.
+the same ones vi uses, and Emacs holds the whole table as the
+=rfc1345= input method, each entry typed with an ampersand in front
+of it.
 
 =M-x donkey-digraph= opens a buffer with the common ones, the steps,
 and then the whole table: every digraph the method knows, with what

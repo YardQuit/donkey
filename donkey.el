@@ -4746,8 +4746,8 @@ when given, is put on TEXT."
   "Show how to type a character that is not on the keyboard.
 
 Opens a buffer listing common digraphs -- the two-character codes of
-RFC 1345, the same ones vi types after \\`C-k' -- and the steps that
-type one in Emacs through the `rfc1345' input method, followed by the
+RFC 1345, the same ones vi uses -- and the steps that type one in
+Emacs through the `rfc1345' input method, followed by the
 two ways to type any Unicode character by code point or name, and
 then the whole table: every digraph the method knows, with what it
 types, its code point and the character's name, ready to copy from."
@@ -4764,9 +4764,9 @@ types, its code point and the character's name, ready to copy from."
       (insert (propertize (make-string 50 ?=) 'face 'font-lock-comment-face) "\n\n")
       (insert (substitute-command-keys
                "A digraph is two characters that stand for one you cannot type
-directly.  These are the codes of RFC 1345, which vi types after
-\\`C-k' and Emacs holds as the rfc1345 input method, each typed with
-an ampersand in front of it.\n\n"))
+directly.  These are the codes of RFC 1345, the same ones vi uses;
+Emacs holds them as the rfc1345 input method, each typed with an
+ampersand in front of it.\n\n"))
       (insert (funcall head "  Common digraphs") "\n" rule "\n")
       (insert "  ")
       (donkey--digraph-cell "DIGRAPH" 12 'font-lock-keyword-face)
