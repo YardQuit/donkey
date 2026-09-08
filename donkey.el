@@ -4677,10 +4677,11 @@ A whole number is pixels; a fraction is that part of a padded row's
 height, so it keeps its proportion when the rows grow with their
 fonts or with the text scale.  The rows of the full table are
 already padded to one height, so that no glyph pushes its row out
-of line; this adds air between them, so that a tall glyph such as a
-floor bracket or a box-drawing piece stands clear of its neighbors.
-Zero, or anything that is not a number, adds nothing.  Only a
-graphical frame shows it."
+of line; this adds air below each row of the two tables, so that a
+tall glyph such as a floor bracket or a box-drawing piece stands
+clear of its neighbors.  The text around the tables keeps its own
+spacing.  Zero, or anything that is not a number, adds nothing.
+Only a graphical frame shows it."
   :type '(choice (integer :tag "Pixels")
                  (float :tag "Fraction of the line height"))
   :group 'donkey)
@@ -4757,78 +4758,104 @@ when given, is put on TEXT."
   (insert (if face (propertize text 'face face) text)
           (propertize " " 'display (list 'space :align-to column))))
 
-(defun donkey--digraph-row-spec (window)
-  "Return a `display' spec giving every row of the chart one height, or nil.
+(defconst donkey--digraph-full-table
+  '("^  DIGRAPH +RESULT +CODE +NAME$" . "  \\S-+ \\(.+?\\) \\(U\\)\\+")
+  "The full table's heading and row, as `donkey--digraph-rows' wants them.")
 
-The chart is the current buffer, shown in WINDOW.  The spec is a
-stretch of space two columns wide, with the largest ascent and the
-largest descent of any font WINDOW draws the table's rows with, to
-put on each row's leading blanks: every row is then as tall as the
-tallest could be, with its baseline at one and the same offset, in
-a window of any width, wrapped or truncated, at any text scale.
-Returns nil when the rows are already all one height, and in a
-terminal."
-  (when (display-graphic-p (window-frame window))
+(defconst donkey--digraph-common-table
+  '("^  DIGRAPH +TYPE +RESULT$" . "  \\S-+ \\(?2:&\\)\\S-+ \\(?1:\\S-+\\)$")
+  "The common table's heading and row, as `donkey--digraph-rows' wants them.")
+
+(defun donkey--digraph-rows (table)
+  "Return the rows of TABLE in the chart, the current buffer.
+
+TABLE is (HEADING . ROW), two regexps: the table's heading line, and
+a row, whose group 1 is the result cell and group 2 one character
+in the default face.  Each row is returned as a list of its start,
+the result cell's start and end, and that character's position."
+  (save-excursion
+    (goto-char (point-min))
+    (let (rows)
+      (when (re-search-forward (car table) nil t)
+        (forward-line 1)
+        (while (looking-at (cdr table))
+          (push (list (point) (match-beginning 1) (match-end 1) (match-beginning 2))
+                rows)
+          (forward-line 1)))
+      (nreverse rows))))
+
+(defun donkey--digraph-row-spec (window rows extra)
+  "Return a `display' spec giving ROWS one height, or nil.
+
+ROWS are rows of the chart, the current buffer, shown in WINDOW, as
+`donkey--digraph-rows' lists them.  The spec is a stretch of space two
+columns wide, with the largest ascent and the largest descent of any
+font WINDOW draws the rows' result cells with, and EXTRA pixels more
+below the baseline, to put on each row's leading blanks: every row is
+then as tall as the tallest could be, with its baseline at one and
+the same offset and EXTRA pixels of air under it, in a window of any
+width, wrapped or truncated, at any text scale.  Returns nil in a
+terminal, and when EXTRA is zero and the rows are already all one
+height."
+  (when (and rows (display-graphic-p (window-frame window)))
     (let ((cache (make-hash-table :test #'eq)) (ascent 0) (descent 0) default)
-      (save-excursion
-        (goto-char (point-min))
-        (when (re-search-forward "^  DIGRAPH +RESULT +CODE +NAME$" nil t)
-          (forward-line 1)
-          ;; The result cell's fonts, and the code cell's first
-          ;; character for the face the rest of the row is in.
-          (while (looking-at "  \\S-+ \\(\\S-+\\) \\(U\\)\\+")
-            (dolist (pos (cons (match-beginning 2)
-                               (number-sequence (match-beginning 1) (1- (match-end 1)))))
-              (let* ((font (font-at pos window))
-                     (pair (and font
-                                (or (gethash font cache)
-                                    (puthash font
-                                             (let ((info (font-info font)))
-                                               (cons (aref info 8) (aref info 9)))
-                                             cache)))))
-                (when pair
-                  (when (= pos (match-beginning 2)) (setq default pair))
-                  (setq ascent (max ascent (car pair))
-                        descent (max descent (cdr pair))))))
-            (forward-line 1))))
-      (when (and default (> (+ ascent descent) (+ (car default) (cdr default))))
-        (let ((height (+ ascent descent)) (pct 0))
-          ;; The ascent is given as a percentage of the height: the
-          ;; smallest one that comes to the pixels wanted.
-          (while (and (< pct 100) (< (floor (/ (* height pct) 100.0)) ascent))
-            (setq pct (1+ pct)))
-          (list 'space :width 2 :height (list height) :ascent pct))))))
+      (dolist (row rows)
+        (dolist (pos (cons (nth 3 row) (number-sequence (nth 1 row) (1- (nth 2 row)))))
+          (let* ((font (font-at pos window))
+                 (pair (and font
+                            (or (gethash font cache)
+                                (puthash font
+                                         (let ((info (font-info font)))
+                                           (cons (aref info 8) (aref info 9)))
+                                         cache)))))
+            (when pair
+              (when (= pos (nth 3 row)) (setq default pair))
+              (setq ascent (max ascent (car pair))
+                    descent (max descent (cdr pair)))))))
+      (when default
+        (let ((height (+ ascent descent extra)) (pct 0))
+          (when (> height (+ (car default) (cdr default)))
+            ;; The ascent is given as a percentage of the height: the
+            ;; smallest one that comes to the pixels wanted.
+            (while (and (< pct 100) (< (floor (/ (* height pct) 100.0)) ascent))
+              (setq pct (1+ pct)))
+            (list 'space :width 2 :height (list height) :ascent pct)))))))
+
+(defun donkey--digraph-apply-spec (rows spec)
+  "Put SPEC as the `display' of each of ROWS' leading blanks, or clear them."
+  (dolist (row rows)
+    (if spec
+        (put-text-property (car row) (+ 2 (car row)) 'display spec)
+      (remove-text-properties (car row) (+ 2 (car row)) '(display nil)))))
 
 (defun donkey--digraph-pad-rows (&optional window)
-  "Pad every row of the chart to one height, from the fonts WINDOW draws it with.
+  "Pad every row of the chart's tables to one height, with air below it.
 
 The chart is the current buffer; WINDOW defaults to a window showing
-it, and nothing happens when there is none.  Also sets the chart's
-`line-spacing' from `donkey-digraph-line-spacing', a fraction of it
-taken of the padded row's height.  Runs when the chart is built and
-again whenever its text is scaled, so the rows stay even, and evenly
-spaced, at every scale."
+it, and nothing happens when there is none.  The height comes from
+the fonts WINDOW draws the rows with and the air from
+`donkey-digraph-line-spacing', a fraction of it taken of the padded
+row's height.  Runs when the chart is built and again whenever its
+text is scaled, so the rows stay even, and evenly spaced, at every
+scale."
   (let ((window (or window (get-buffer-window (current-buffer) t))))
     (when window
-      (let* ((spec (donkey--digraph-row-spec window))
-             (row-height (if spec
-                             (car (plist-get (cdr spec) :height))
+      (let* ((full (donkey--digraph-rows donkey--digraph-full-table))
+             (common (donkey--digraph-rows donkey--digraph-common-table))
+             (bare (donkey--digraph-row-spec window full 0))
+             (row-height (if bare
+                             (car (plist-get (cdr bare) :height))
                            (frame-char-height (window-frame window))))
-             (spacing donkey-digraph-line-spacing))
-        (setq line-spacing
-              (cond ((and (integerp spacing) (> spacing 0)) spacing)
-                    ((and (floatp spacing) (> spacing 0))
-                     (round (* spacing row-height)))))
+             (spacing donkey-digraph-line-spacing)
+             (extra (cond ((and (integerp spacing) (> spacing 0)) spacing)
+                          ((and (floatp spacing) (> spacing 0))
+                           (round (* spacing row-height)))
+                          (t 0))))
         (with-silent-modifications
-          (save-excursion
-            (goto-char (point-min))
-            (when (re-search-forward "^  DIGRAPH +RESULT +CODE +NAME$" nil t)
-              (forward-line 1)
-              (while (looking-at "  \\S-+ ")
-                (if spec
-                    (put-text-property (point) (+ 2 (point)) 'display spec)
-                  (remove-text-properties (point) (+ 2 (point)) '(display nil)))
-                (forward-line 1)))))))))
+          (donkey--digraph-apply-spec
+           full (if (zerop extra) bare (donkey--digraph-row-spec window full extra)))
+          (donkey--digraph-apply-spec
+           common (donkey--digraph-row-spec window common extra)))))))
 
 (defun donkey--digraph-code-points (string)
   "Return STRING's code points as \"U+XXXX\", space-separated."

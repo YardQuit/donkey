@@ -916,64 +916,83 @@ method itself, so a row cannot say something the method does not do."
 
 The padding is the one `display' spec `donkey--digraph-row-spec'
 computes for the chart's window; when the frame's fonts are all one
-height there is none."
+height and no air is asked for there is none."
   (skip-unless (display-graphic-p))
   (unwind-protect
-      (progn
+      (let ((donkey-digraph-line-spacing 0))
         (donkey-digraph)
         (with-current-buffer "*DONKEY Digraphs*"
-          (let ((spec (donkey--digraph-row-spec (get-buffer-window (current-buffer) t))))
-            (goto-char (point-min))
-            (re-search-forward "^  DIGRAPH +RESULT +CODE +NAME$")
-            (forward-line 1)
-            (dolist (row (donkey--digraph-table))
-              (should (equal (list (car row) (get-text-property (line-beginning-position) 'display))
-                             (list (car row) spec)))
-              (forward-line 1)))))
+          (let* ((rows (donkey--digraph-rows donkey--digraph-full-table))
+                 (spec (donkey--digraph-row-spec (get-buffer-window (current-buffer) t) rows 0)))
+            (should (= (length rows) (length (donkey--digraph-table))))
+            (dolist (row rows)
+              (should (equal (get-text-property (car row) 'display) spec))))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
 (ert-deftest donkey-digraph-repads-its-rows-when-the-text-is-scaled ()
   "Scaling the chart's text recomputes the padding from the scaled fonts."
   (skip-unless (display-graphic-p))
   (unwind-protect
-      (progn
+      (let ((donkey-digraph-line-spacing 0))
         (donkey-digraph)
         (with-current-buffer "*DONKEY Digraphs*"
           (text-scale-increase 2)
-          (let ((spec (donkey--digraph-row-spec (get-buffer-window (current-buffer) t))))
-            (goto-char (point-min))
-            (re-search-forward "^  DIGRAPH +RESULT +CODE +NAME$")
-            (forward-line 1)
-            (dolist (row (donkey--digraph-table))
-              (should (equal (list (car row) (get-text-property (line-beginning-position) 'display))
-                             (list (car row) spec)))
-              (forward-line 1)))))
+          (let* ((rows (donkey--digraph-rows donkey--digraph-full-table))
+                 (spec (donkey--digraph-row-spec (get-buffer-window (current-buffer) t) rows 0)))
+            (dolist (row rows)
+              (should (equal (get-text-property (car row) 'display) spec))))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
-(ert-deftest donkey-digraph-chart-spaces-its-lines-as-customized ()
-  "The chart's `line-spacing' is `donkey-digraph-line-spacing' in pixels, or nothing."
+(defun donkey-test--digraph-row-heights ()
+  "Return (FULL . COMMON), the padded heights of the chart's two tables, nil for none."
+  (with-current-buffer "*DONKEY Digraphs*"
+    (let ((height (lambda (table)
+                    (let ((spec (get-text-property (car (car (donkey--digraph-rows table))) 'display)))
+                      (and spec (car (plist-get (cdr spec) :height)))))))
+      (cons (funcall height donkey--digraph-full-table)
+            (funcall height donkey--digraph-common-table)))))
+
+(ert-deftest donkey-digraph-air-goes-under-the-table-rows-only ()
+  "Pixels of `donkey-digraph-line-spacing' go into each table row's stretch, not the buffer's `line-spacing'."
+  (skip-unless (display-graphic-p))
   (unwind-protect
-      (progn
+      (let (bare)
+        (let ((donkey-digraph-line-spacing 0))
+          (donkey-digraph)
+          (setq bare (donkey-test--digraph-row-heights)))
         (let ((donkey-digraph-line-spacing 3))
           (donkey-digraph)
-          (should (equal (buffer-local-value 'line-spacing (get-buffer "*DONKEY Digraphs*")) 3)))
-        (let ((donkey-digraph-line-spacing "much"))
-          (donkey-digraph)
-          (should (null (buffer-local-value 'line-spacing (get-buffer "*DONKEY Digraphs*"))))))
+          (should (equal (donkey-test--digraph-row-heights)
+                         (cons (+ 3 (or (car bare) (frame-char-height)))
+                               (+ 3 (or (cdr bare) (frame-char-height))))))
+          (with-current-buffer "*DONKEY Digraphs*"
+            (should (null line-spacing))
+            (goto-char (point-min))
+            (re-search-forward "^A digraph is")
+            (should (null (get-text-property (line-beginning-position) 'display))))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
 (ert-deftest donkey-digraph-chart-takes-a-fraction-of-the-padded-row ()
-  "A fractional `donkey-digraph-line-spacing' is that part of the padded row's height."
+  "A fractional `donkey-digraph-line-spacing' is that part of the full table's padded row."
   (skip-unless (display-graphic-p))
   (unwind-protect
-      (let ((donkey-digraph-line-spacing 0.25))
-        (donkey-digraph)
-        (with-current-buffer "*DONKEY Digraphs*"
-          (let ((spec (donkey--digraph-row-spec (get-buffer-window (current-buffer) t))))
-            (should (equal line-spacing
-                           (round (* 0.25 (if spec
-                                              (car (plist-get (cdr spec) :height))
-                                            (frame-char-height)))))))))
+      (let (bare)
+        (let ((donkey-digraph-line-spacing 0))
+          (donkey-digraph)
+          (setq bare (or (car (donkey-test--digraph-row-heights)) (frame-char-height))))
+        (let ((donkey-digraph-line-spacing 0.25))
+          (donkey-digraph)
+          (should (equal (car (donkey-test--digraph-row-heights))
+                         (+ bare (round (* 0.25 bare)))))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
+(ert-deftest donkey-digraph-chart-spaces-its-lines-as-customized ()
+  "`donkey-digraph-line-spacing' never touches the chart's `line-spacing'; the air is in the rows."
+  (unwind-protect
+      (dolist (spacing '(3 0.25 "much"))
+        (let ((donkey-digraph-line-spacing spacing))
+          (donkey-digraph)
+          (should (null (buffer-local-value 'line-spacing (get-buffer "*DONKEY Digraphs*"))))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
 (ert-deftest donkey-digraph-chart-truncates-its-lines ()
