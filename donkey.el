@@ -4764,13 +4764,14 @@ Returns nil in a frame without fonts, as in a terminal."
                   descent (max descent (cdr pair))))))
       (cons ascent descent))))
 
-(defun donkey--digraph-row-heights (table)
-  "Return the `line-height' value for each row of TABLE, or nil.
+(defun donkey--digraph-row-pads (table)
+  "Return a `display' spec padding each row of TABLE to one height, or nil.
 
-TABLE is the digraph table; the value for a row is the number that
-gives the row the height of the tallest row when put on its newline,
-so that every row is as tall as the tallest.  Returns nil when the
-rows are already all one height, and in a terminal."
+TABLE is the digraph table.  Each spec is a stretch of space two
+columns wide, as tall as the tallest row and with its baseline where
+that row's is, to put on the row's leading blanks: the row then keeps
+that height in a window of any width, wrapped or truncated.  Returns
+nil when the rows are already all one height, and in a terminal."
   (let* ((cache (make-hash-table :test #'equal))
          (default (donkey--digraph-font-metrics "" cache))
          (metrics (and default
@@ -4779,7 +4780,15 @@ rows are already all one height, and in a terminal."
          (tallest (and metrics
                        (apply #'max (mapcar (lambda (m) (+ (car m) (cdr m))) metrics)))))
     (when (and tallest (> tallest (+ (car default) (cdr default))))
-      (mapcar (lambda (m) (- (+ tallest (cdr default)) (cdr m))) metrics))))
+      (mapcar (lambda (m)
+                ;; The ascent is given as a percentage of the height:
+                ;; the smallest one that comes to the pixels wanted.
+                (let ((ascent (- tallest (cdr m))) (pct 0))
+                  (while (and (< pct 100)
+                              (< (floor (/ (* tallest pct) 100.0)) ascent))
+                    (setq pct (1+ pct)))
+                  (list 'space :width 2 :height (list tallest) :ascent pct)))
+              metrics))))
 
 (defun donkey--digraph-code-points (string)
   "Return STRING's code points as \"U+XXXX\", space-separated."
@@ -4845,7 +4854,7 @@ ampersand in front of it.\n\n"))
   order is the other way round: release after the u, type the code,
   then Space or Enter.  In a terminal it depends on the terminal.\n\n"))
       (let* ((table (donkey--digraph-table))
-             (heights (donkey--digraph-row-heights table)))
+             (pads (donkey--digraph-row-pads table)))
         (insert (funcall head (format "  All %d digraphs, in code order" (length table)))
                 "\n" rule "\n")
         (insert "  ")
@@ -4854,19 +4863,18 @@ ampersand in front of it.\n\n"))
         (donkey--digraph-cell "CODE" 30 'font-lock-keyword-face)
         (insert (propertize "NAME" 'face 'font-lock-keyword-face) "\n")
         (dolist (row table)
-          (insert "  ")
+          (insert (if pads (propertize "  " 'display (pop pads)) "  "))
           (donkey--digraph-cell (car row) 11 'font-lock-variable-name-face)
           (donkey--digraph-cell (cdr row) 19)
           (donkey--digraph-cell (donkey--digraph-code-points (cdr row)) 30)
           (insert (or (and (= (length (cdr row)) 1)
                            (get-char-code-property (aref (cdr row) 0) 'name))
-                      ""))
-          (insert (if heights
-                      (propertize "\n" 'line-height (pop heights))
-                    "\n"))))
+                      "")
+                  "\n")))
       (insert "\n" (propertize (make-string 50 ?=) 'face 'font-lock-comment-face) "\n")
       (insert (propertize "q: quit  |  C-s: search" 'face 'font-lock-comment-face))
       (special-mode)
+      (setq truncate-lines t)
       (goto-char (point-min)))
     (display-buffer buf)))
 
