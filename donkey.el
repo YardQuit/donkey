@@ -4742,53 +4742,68 @@ when given, is put on TEXT."
   (insert (if face (propertize text 'face face) text)
           (propertize " " 'display (list 'space :align-to column))))
 
-(defun donkey--digraph-font-metrics (string cache)
-  "Return (ASCENT . DESCENT), the largest of each among STRING's fonts.
+(defun donkey--digraph-row-spec (window)
+  "Return a `display' spec giving every row of the chart one height, or nil.
 
-The fonts are those the selected frame would draw STRING's characters
-with, and the default face's font is always counted.  CACHE is a hash
-table from font name to its (ASCENT . DESCENT), filled as it goes.
-Returns nil in a frame without fonts, as in a terminal."
-  (when (display-graphic-p)
-    (let ((ascent 0) (descent 0))
-      (dolist (c (cons nil (string-to-list string)))
-        (let* ((font (face-font 'default nil c))
-               (pair (and font
-                          (or (gethash font cache)
-                              (puthash font
-                                       (let ((info (ignore-errors (font-info font))))
-                                         (and info (cons (aref info 8) (aref info 9))))
-                                       cache)))))
-          (when pair
-            (setq ascent (max ascent (car pair))
-                  descent (max descent (cdr pair))))))
-      (cons ascent descent))))
+The chart is the current buffer, shown in WINDOW.  The spec is a
+stretch of space two columns wide, with the largest ascent and the
+largest descent of any font WINDOW draws the table's rows with, to
+put on each row's leading blanks: every row is then as tall as the
+tallest could be, with its baseline at one and the same offset, in
+a window of any width, wrapped or truncated, at any text scale.
+Returns nil when the rows are already all one height, and in a
+terminal."
+  (when (display-graphic-p (window-frame window))
+    (let ((cache (make-hash-table :test #'eq)) (ascent 0) (descent 0) default)
+      (save-excursion
+        (goto-char (point-min))
+        (when (re-search-forward "^  DIGRAPH +RESULT +CODE +NAME$" nil t)
+          (forward-line 1)
+          ;; The result cell's fonts, and the code cell's first
+          ;; character for the face the rest of the row is in.
+          (while (looking-at "  \\S-+ \\(\\S-+\\) \\(U\\)\\+")
+            (dolist (pos (cons (match-beginning 2)
+                               (number-sequence (match-beginning 1) (1- (match-end 1)))))
+              (let* ((font (font-at pos window))
+                     (pair (and font
+                                (or (gethash font cache)
+                                    (puthash font
+                                             (let ((info (font-info font)))
+                                               (cons (aref info 8) (aref info 9)))
+                                             cache)))))
+                (when pair
+                  (when (= pos (match-beginning 2)) (setq default pair))
+                  (setq ascent (max ascent (car pair))
+                        descent (max descent (cdr pair))))))
+            (forward-line 1))))
+      (when (and default (> (+ ascent descent) (+ (car default) (cdr default))))
+        (let ((height (+ ascent descent)) (pct 0))
+          ;; The ascent is given as a percentage of the height: the
+          ;; smallest one that comes to the pixels wanted.
+          (while (and (< pct 100) (< (floor (/ (* height pct) 100.0)) ascent))
+            (setq pct (1+ pct)))
+          (list 'space :width 2 :height (list height) :ascent pct))))))
 
-(defun donkey--digraph-row-pad (table)
-  "Return a `display' spec giving every row of TABLE one height, or nil.
+(defun donkey--digraph-pad-rows (&optional window)
+  "Pad every row of the chart to one height, from the fonts WINDOW draws it with.
 
-TABLE is the digraph table.  The spec is a stretch of space two
-columns wide, with the largest ascent and the largest descent of any
-font the frame draws TABLE's characters with, to put on each row's
-leading blanks: every row is then as tall as the tallest could be,
-with its baseline at one and the same offset, in a window of any
-width, wrapped or truncated.  Returns nil when the rows are already
-all one height, and in a terminal."
-  (let* ((cache (make-hash-table :test #'equal))
-         (default (donkey--digraph-font-metrics "" cache))
-         (metrics (and default
-                       (mapcar (lambda (row) (donkey--digraph-font-metrics (cdr row) cache))
-                               table)))
-         (ascent (and metrics (apply #'max (mapcar #'car metrics))))
-         (descent (and metrics (apply #'max (mapcar #'cdr metrics))))
-         (height (and ascent (+ ascent descent)))
-         (pct 0))
-    (when (and height (> height (+ (car default) (cdr default))))
-      ;; The ascent is given as a percentage of the height: the
-      ;; smallest one that comes to the pixels wanted.
-      (while (and (< pct 100) (< (floor (/ (* height pct) 100.0)) ascent))
-        (setq pct (1+ pct)))
-      (list 'space :width 2 :height (list height) :ascent pct))))
+The chart is the current buffer; WINDOW defaults to a window showing
+it, and nothing happens when there is none.  Runs when the chart is
+built and again whenever its text is scaled, so the rows stay even
+at every scale."
+  (let ((window (or window (get-buffer-window (current-buffer) t))))
+    (when window
+      (let ((spec (donkey--digraph-row-spec window)))
+        (with-silent-modifications
+          (save-excursion
+            (goto-char (point-min))
+            (when (re-search-forward "^  DIGRAPH +RESULT +CODE +NAME$" nil t)
+              (forward-line 1)
+              (while (looking-at "  \\S-+ ")
+                (if spec
+                    (put-text-property (point) (+ 2 (point)) 'display spec)
+                  (remove-text-properties (point) (+ 2 (point)) '(display nil)))
+                (forward-line 1)))))))))
 
 (defun donkey--digraph-code-points (string)
   "Return STRING's code points as \"U+XXXX\", space-separated."
@@ -4853,8 +4868,7 @@ ampersand in front of it.\n\n"))
   after the u and the entry is over.  With an IBus daemon running the
   order is the other way round: release after the u, type the code,
   then Space or Enter.  In a terminal it depends on the terminal.\n\n"))
-      (let* ((table (donkey--digraph-table))
-             (pad (donkey--digraph-row-pad table)))
+      (let ((table (donkey--digraph-table)))
         (insert (funcall head (format "  All %d digraphs, in code order" (length table)))
                 "\n" rule "\n")
         (insert "  ")
@@ -4863,7 +4877,7 @@ ampersand in front of it.\n\n"))
         (donkey--digraph-cell "CODE" 30 'font-lock-keyword-face)
         (insert (propertize "NAME" 'face 'font-lock-keyword-face) "\n")
         (dolist (row table)
-          (insert (if pad (propertize "  " 'display pad) "  "))
+          (insert "  ")
           (donkey--digraph-cell (car row) 11 'font-lock-variable-name-face)
           (donkey--digraph-cell (cdr row) 19)
           (donkey--digraph-cell (donkey--digraph-code-points (cdr row)) 30)
@@ -4875,8 +4889,11 @@ ampersand in front of it.\n\n"))
       (insert (propertize "q: quit  |  C-s: search" 'face 'font-lock-comment-face))
       (special-mode)
       (setq truncate-lines t)
+      (add-hook 'text-scale-mode-hook #'donkey--digraph-pad-rows nil t)
       (goto-char (point-min)))
-    (display-buffer buf)))
+    (let ((window (display-buffer buf)))
+      (with-current-buffer buf
+        (donkey--digraph-pad-rows window)))))
 
 ;;; ---------------------------------------------------------------------------
 

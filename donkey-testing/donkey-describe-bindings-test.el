@@ -914,22 +914,39 @@ method itself, so a row cannot say something the method does not do."
 (ert-deftest donkey-digraph-rows-carry-the-computed-padding ()
   "In a graphical frame each row of the full table starts with the stretch that pads it.
 
-The padding is the one `display' spec `donkey--digraph-row-pad'
-computes for the table; when the frame's fonts are all one height
-there is none."
+The padding is the one `display' spec `donkey--digraph-row-spec'
+computes for the chart's window; when the frame's fonts are all one
+height there is none."
   (skip-unless (display-graphic-p))
   (unwind-protect
       (progn
         (donkey-digraph)
         (with-current-buffer "*DONKEY Digraphs*"
-          (let* ((table (donkey--digraph-table))
-                 (pad (donkey--digraph-row-pad table)))
+          (let ((spec (donkey--digraph-row-spec (get-buffer-window (current-buffer) t))))
             (goto-char (point-min))
             (re-search-forward "^  DIGRAPH +RESULT +CODE +NAME$")
             (forward-line 1)
-            (dolist (row table)
+            (dolist (row (donkey--digraph-table))
               (should (equal (list (car row) (get-text-property (line-beginning-position) 'display))
-                             (list (car row) pad)))
+                             (list (car row) spec)))
+              (forward-line 1)))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
+(ert-deftest donkey-digraph-repads-its-rows-when-the-text-is-scaled ()
+  "Scaling the chart's text recomputes the padding from the scaled fonts."
+  (skip-unless (display-graphic-p))
+  (unwind-protect
+      (progn
+        (donkey-digraph)
+        (with-current-buffer "*DONKEY Digraphs*"
+          (text-scale-increase 2)
+          (let ((spec (donkey--digraph-row-spec (get-buffer-window (current-buffer) t))))
+            (goto-char (point-min))
+            (re-search-forward "^  DIGRAPH +RESULT +CODE +NAME$")
+            (forward-line 1)
+            (dolist (row (donkey--digraph-table))
+              (should (equal (list (car row) (get-text-property (line-beginning-position) 'display))
+                             (list (car row) spec)))
               (forward-line 1)))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
