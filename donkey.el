@@ -4687,13 +4687,14 @@ is cut to ten.  Only a graphical frame shows any of it."
   :group 'donkey)
 
 (defconst donkey--digraph-common
-  '(("'9" . "’") ("\"6" . "“") ("\"9" . "”") ("-N" . "–")
-    ("-M" . "—") ("'6" . "‘") ("sb" . "•") ("e'" . "é")
+  '(("'6" . "‘") ("'9" . "’") ("\"6" . "“") ("\"9" . "”")
+    ("-N" . "–") ("-M" . "—") ("sb" . "•") ("e'" . "é")
     ("Pd" . "£") ("Rg" . "®") ("1'" . "′") ("Eu" . "€"))
   "Digraphs `donkey-digraph' lists first, each with what it types.
 
 They are the twelve characters English web text uses most that a
-keyboard lacks, the most frequent first.")
+keyboard lacks, the most frequent first, except that an opening
+quotation mark comes right before its closing one.")
 
 (defun donkey--digraph-result (digraph)
   "Return the string DIGRAPH types under the `rfc1345' input method, or nil.
@@ -4961,7 +4962,7 @@ Emacs holds them as the rfc1345 input method, each typed with an
 ampersand in front of it.\n\n"))
       (insert (funcall head "  Common digraphs") "\n" rule "\n")
       (insert "  The twelve characters English web text uses most that a keyboard
-  lacks, the most frequent first.\n\n")
+  lacks, the most frequent first, quotation marks in pairs.\n\n")
       (insert "  ")
       (donkey--digraph-cell "DIGRAPH" 12 'font-lock-keyword-face)
       (donkey--digraph-cell "TYPE" 22 'font-lock-keyword-face)

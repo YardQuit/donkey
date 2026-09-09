@@ -1824,16 +1824,17 @@ in =init.el= or =config.el= before or after DONKEY loads:
 same; a change shows the next time =M-x donkey-digraph= runs.
 
 The common ones are the twelve characters English web text uses
-most that a keyboard lacks, the most frequent first:
+most that a keyboard lacks, the most frequent first, quotation
+marks in pairs:
 
 | Digraph | Type   | Result |
 |---------+--------+--------|
+| ='6=    | =&'6=  | ‘      |
 | ='9=    | =&'9=  | ’      |
 | ="6=    | =&"6=  | “      |
 | ="9=    | =&"9=  | ”      |
 | =-N=    | =&-N=  | –      |
 | =-M=    | =&-M=  | —      |
-| ='6=    | =&'6=  | ‘      |
 | =sb=    | =&sb=  | •      |
 | =e'=    | =&e'=  | é      |
 | =Pd=    | =&Pd=  | £      |
