@@ -911,7 +911,7 @@ method itself, so a row cannot say something the method does not do."
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
 (ert-deftest donkey-digraph-rows-carry-the-computed-padding ()
-  "In a graphical frame each row of the full table starts with the stretch that pads it.
+  "Each row of the full table starts with the stretch that pads it.
 
 The padding is the one `display' spec `donkey--digraph-row-spec'
 computes for the chart's window; when the frame's fonts are all one
