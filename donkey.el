@@ -3330,12 +3330,13 @@ terminal until something disarms it.")
   "The terminal the armed mark run's map lives on, or nil.")
 
 (defvar donkey--mark-run-suspended nil
-  "A mark run put down while its frame lost focus, or nil.
+  "A mark run put down by a focus change or a buffer switch, or nil.
 
 A list (BUFFER TERMINAL HISTORY): the run's buffer, the terminal its
 map lived on, and its `donkey--mark-run-history', to be armed again
 by `donkey--mark-run-follow-focus' when a frame showing BUFFER gets
-the focus back.")
+the focus back, or by `donkey--mark-run-resume-when-shown' when
+BUFFER is back in the selected window.")
 
 (defun donkey--mark-run-focused-frame ()
   "Return the frame that has the keyboard focus, or nil."
@@ -3357,21 +3358,46 @@ selection intact, or forgotten.")
 (defun donkey--mark-run-settle ()
   "Keep a run a command just ended, when the command left its buffer.
 
-On `post-command-hook' once, after the command that disarmed the run.
-A run whose buffer is no longer the selected window's, with its
+On `post-command-hook' from the command that disarmed the run until
+the first command that ends with no minibuffer selected.  A run
+whose buffer is then no longer the selected window's, with its
 selection still active, becomes `donkey--mark-run-suspended', to be
 armed again when the buffer is shown again; any other run is
 forgotten.  A run armed or suspended meanwhile is left alone."
-  (remove-hook 'post-command-hook #'donkey--mark-run-settle)
-  (let ((record donkey--mark-run-pending))
-    (setq donkey--mark-run-pending nil)
-    (when (and record
-               (null donkey--mark-run-exit-function)
-               (null donkey--mark-run-suspended)
-               (buffer-live-p (car record))
-               (not (eq (window-buffer (selected-window)) (car record)))
-               (with-current-buffer (car record) (donkey--adoptable-selection-p)))
-      (setq donkey--mark-run-suspended record))))
+  ;; A prompt is a detour, not a destination: while a minibuffer is
+  ;; selected the command that disarmed the run has not finished, so
+  ;; the decision waits for the command after it.
+  (unless (minibufferp (window-buffer (selected-window)))
+    (remove-hook 'post-command-hook #'donkey--mark-run-settle)
+    (let ((record donkey--mark-run-pending))
+      (setq donkey--mark-run-pending nil)
+      (condition-case nil
+          (when (and record
+                     (null donkey--mark-run-exit-function)
+                     (null donkey--mark-run-suspended)
+                     (buffer-live-p (car record))
+                     (not (eq (window-buffer (selected-window)) (car record)))
+                     (with-current-buffer (car record) (donkey--adoptable-selection-p)))
+            (setq donkey--mark-run-suspended record))
+        (error nil)))))
+
+(defun donkey--mark-run-forget-killed-buffer ()
+  "End the mark run whose buffer is being killed, and forget one kept for it.
+
+On `kill-buffer-hook' while `donkey-mode' is on.  A run armed in the
+buffer is disarmed, and a run suspended or pending for it dropped,
+so no map outlives its buffer: a buffer killed from Lisp, by a
+package or a timer, would otherwise leave the run armed terminal-wide
+with nothing to act on."
+  (condition-case nil
+      (let ((dying (current-buffer)))
+        (when (eq dying donkey--mark-run-buffer)
+          (donkey--mark-run-exit))
+        (when (eq dying (car donkey--mark-run-pending))
+          (setq donkey--mark-run-pending nil))
+        (when (eq dying (car donkey--mark-run-suspended))
+          (setq donkey--mark-run-suspended nil)))
+    (error nil)))
 
 (defun donkey--mark-run-resume-when-shown (&rest _)
   "Arm a suspended run again once its buffer is in the selected window.
@@ -3382,7 +3408,8 @@ run put down by a buffer or window switch comes back with the
 buffer.  The buffer must be on the terminal the run's map lived on
 and its selection still active; otherwise the run is forgotten."
   (condition-case nil
-      (when (and donkey--mark-run-suspended (null donkey--mark-run-exit-function))
+      (when (and donkey--mark-run-suspended (null donkey--mark-run-exit-function)
+                 (not (minibufferp (window-buffer (selected-window)))))
         (let ((buffer (car donkey--mark-run-suspended)))
           (cond
            ((not (buffer-live-p buffer))
@@ -6896,6 +6923,7 @@ actually being on, because those mode hooks also fire on the way off."
     (minibuffer-exit-hook . donkey--minibuffer-exit)
     (window-buffer-change-functions . donkey--mark-run-resume-when-shown)
     (window-selection-change-functions . donkey--mark-run-resume-when-shown)
+    (kill-buffer-hook . donkey--mark-run-forget-killed-buffer)
     ,@donkey--state-hooks)
   "Every (HOOK . FUNCTION) `donkey-mode' adds to Emacs\\='s own hooks.
 

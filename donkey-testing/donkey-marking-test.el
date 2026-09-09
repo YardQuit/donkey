@@ -4977,6 +4977,45 @@ the returning frame brings; ending on it would undo the resume."
           (should-not donkey--mark-run-exit-function))
       (kill-buffer other))))
 
+(ert-deftest donkey-mark-run-ends-when-its-buffer-is-killed ()
+  "Killing the run's buffer from Lisp disarms the run; nothing is left pending or suspended."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (should donkey--mark-run-exit-function)
+    (kill-buffer (current-buffer))
+    (should-not donkey--mark-run-exit-function)
+    (should-not overriding-terminal-local-map)
+    (should-not donkey--mark-run-pending)
+    (should-not donkey--mark-run-suspended)))
+
+(ert-deftest donkey-mark-run-suspended-for-a-killed-buffer-is-forgotten ()
+  "A run kept for a buffer that is then killed is dropped by the kill."
+  (let ((other (get-buffer-create "*donkey-other-buffer*")))
+    (unwind-protect
+        (donkey-mark-test--keys "for text that is not saved" "w w l M w C-x b *donkey-other-buffer* RET"
+          (should donkey--mark-run-suspended)
+          (kill-buffer "*donkey-mark-test*")
+          (should-not donkey--mark-run-suspended))
+      (kill-buffer other))))
+
+(ert-deftest donkey-mark-run-ended-by-a-prompting-command-is-not-kept ()
+  "A command that prompts in the minibuffer from the run's buffer ends the run like any other."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w M-x ignore RET"
+    (should (region-active-p))
+    (should-not donkey--mark-run-exit-function)
+    (should-not donkey--mark-run-suspended)
+    (should-not donkey--mark-run-pending)))
+
+(ert-deftest donkey-mark-run-kept-away-survives-a-prompt-there ()
+  "A prompt answered in the other buffer leaves the kept run to resume."
+  (let ((other (get-buffer-create "*donkey-other-buffer*")))
+    (unwind-protect
+        (donkey-mark-test--keys "for text that is not saved" "w w l M w C-x b *donkey-other-buffer* RET M-x ignore RET"
+          (should (eq (car donkey--mark-run-suspended) (get-buffer "*donkey-mark-test*")))
+          (switch-to-buffer "*donkey-mark-test*")
+          (donkey--mark-run-resume-when-shown)
+          (should donkey--mark-run-exit-function))
+      (kill-buffer other))))
+
 (ert-deftest donkey-mode-installs-and-removes-the-focus-follower ()
   "`donkey-mode' puts `donkey--mark-run-follow-focus' on the focus function and takes it off, forgetting a suspended run."
   (unwind-protect
