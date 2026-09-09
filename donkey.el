@@ -6789,12 +6789,15 @@ Skips the minibuffer and excluded-mode buffers, where the raw key
 falls through to the direct `C-g' binding.  The exit is wrapped: any
 condition is caught and reported rather than allowed to remove this
 function from the hook."
+  ;; Cheapest and most selective first: this runs before every command
+  ;; in INSERT state, and only the quit key can ever get past it, so the
+  ;; key is what to ask about before asking about the buffer.
   (when (and (bound-and-true-p donkey-insert-mode)
+             (or (equal (this-single-command-keys) [7])
+                 (eq this-command 'sp-cancel))
              (not donkey--just-exited-from-insert)
              (not (minibufferp))
-             (not (donkey--excluded-mode-p))
-             (or (equal (this-single-command-keys) [7])
-                 (eq this-command 'sp-cancel)))
+             (not (donkey--excluded-mode-p)))
     (setq this-command 'ignore
           donkey--just-exited-from-insert t)
     ;; Local, so the reset fires for this buffer's next command.
