@@ -776,6 +776,37 @@ real raw-key check firing."
      (should (eq this-command 'ignore)))))
 
 ;;; ---------------------------------------------------------------------------
+;;; What DONKEY costs per command
+;;; ---------------------------------------------------------------------------
+
+(defun donkey-state-test--own-hook-functions (hook)
+  "Return DONKEY's functions on the global value of HOOK, sorted by name."
+  (sort (seq-filter (lambda (f) (and (symbolp f) (string-prefix-p "donkey" (symbol-name f))))
+                    (default-value hook))
+        (lambda (a b) (string< (symbol-name a) (symbol-name b)))))
+
+(ert-deftest donkey-mode-puts-five-functions-on-the-command-hooks ()
+  "One pre-command and four post-command functions with the mode on, none off.
+
+This is the package's whole per-command cost between keystrokes,
+a few microseconds; a function added to either hook is a change
+to that cost and is made here on purpose.  The mark run's hooks
+are not counted: they are on only while a run is armed or pending."
+  (donkey--with-test-buffer
+    (should (equal (donkey-state-test--own-hook-functions 'pre-command-hook)
+                   '(donkey--intercept-quit-in-insert)))
+    (should (equal (donkey-state-test--own-hook-functions 'post-command-hook)
+                   '(donkey--check-post-command-non-editing
+                     donkey--show-selection-hint
+                     donkey--track-position
+                     donkey--update-cursor-passive)))
+    (donkey-enter-normal)
+    (should (= 1 (length (donkey-state-test--own-hook-functions 'pre-command-hook))))
+    (should (= 4 (length (donkey-state-test--own-hook-functions 'post-command-hook)))))
+  (should (null (donkey-state-test--own-hook-functions 'pre-command-hook)))
+  (should (null (donkey-state-test--own-hook-functions 'post-command-hook))))
+
+;;; ---------------------------------------------------------------------------
 ;;; The SPC i keys and donkey-input-methods
 ;;; ---------------------------------------------------------------------------
 
