@@ -1046,6 +1046,37 @@ plain lookup did not is caught."
                                   (cons (car entry) (cddr entry)))))))))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
+(ert-deftest donkey-digraph-copies-plain-text ()
+  "A row copied from the chart carries none of the chart's text properties."
+  (unwind-protect
+      (let ((interprogram-cut-function nil) (kill-ring nil))
+        (donkey-digraph)
+        (with-current-buffer "*DONKEY Digraphs*"
+          (goto-char (point-min))
+          (re-search-forward "^  Eu ")
+          (kill-ring-save (line-beginning-position) (line-end-position)))
+        (let ((copied (current-kill 0)))
+          (should (string-match-p "^  Eu .*€" copied))
+          (should (null (text-property-not-all 0 (length copied) 'display nil copied)))
+          (should (null (text-property-not-all 0 (length copied) 'donkey-digraph-row nil copied)))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
+(ert-deftest donkey-digraph-caps-the-air-at-ten-rows ()
+  "An absurd `donkey-digraph-line-spacing' builds the chart with ten rows of air, not an error."
+  (unwind-protect
+      (progn
+        (let ((donkey-digraph-line-spacing 1.0e+INF))
+          (donkey-digraph))
+        (when (display-graphic-p)
+          (let (bare)
+            (let ((donkey-digraph-line-spacing 0))
+              (donkey-digraph)
+              (setq bare (or (car (donkey-test--digraph-row-heights)) (frame-char-height))))
+            (let ((donkey-digraph-line-spacing 1.0e+INF))
+              (donkey-digraph)
+              (should (equal (car (donkey-test--digraph-row-heights)) (* 11 bare)))))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
 (ert-deftest donkey-digraph-chart-truncates-its-lines ()
   "The chart's lines are truncated, so a row is one screen line in any window."
   (unwind-protect

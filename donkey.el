@@ -4680,8 +4680,8 @@ adds that much below each row.  A whole number is pixels; a fraction
 is that part of the padded row's height, so the air keeps its
 proportion when the rows grow with their fonts or with the text
 scale.  Zero, the default, adds nothing, and so does a negative
-number or anything that is not a number.  Only a graphical frame
-shows any of it."
+number or anything that is not a number; more than ten rows' worth
+is cut to ten.  Only a graphical frame shows any of it."
   :type '(choice (integer :tag "Pixels")
                  (float :tag "Fraction of a padded row's height"))
   :group 'donkey)
@@ -4892,9 +4892,10 @@ when the rows are one height already and no air is asked for."
          (row-height (if bare
                          (car (plist-get (cdr bare) :height))
                        (frame-char-height (window-frame window))))
-         (extra (cond ((and (integerp spacing) (> spacing 0)) spacing)
+         (cap (* 10 row-height))
+         (extra (cond ((and (integerp spacing) (> spacing 0)) (min spacing cap))
                       ((and (floatp spacing) (> spacing 0))
-                       (round (* spacing row-height)))
+                       (round (min (* spacing row-height) cap)))
                       (t 0))))
     (if (zerop extra) bare (donkey--digraph-row-spec window rows extra))))
 
@@ -4917,6 +4918,16 @@ scale."
         (dolist (rows (cons (donkey--digraph-rows donkey--digraph-common-table)
                             (donkey--digraph-row-groups donkey--digraph-full-table)))
           (donkey--digraph-apply-spec rows (and rows (donkey--digraph-group-spec window rows))))))))
+
+(defun donkey--digraph-plain-substring (beg end &optional delete)
+  "Return the chart's text from BEG to END without its text properties.
+
+The chart's alignment and padding are `display' properties on its
+blanks, which a copied row would otherwise carry into the buffer it
+is pasted in.  DELETE, when non-nil, deletes the text as well, as
+`filter-buffer-substring-function' asks."
+  (prog1 (buffer-substring-no-properties beg end)
+    (when delete (delete-region beg end))))
 
 (defun donkey--digraph-code-points (string)
   "Return STRING's code points as \"U+XXXX\", space-separated."
@@ -5006,6 +5017,7 @@ ampersand in front of it.\n\n"))
       (insert (propertize "q: quit  |  C-s: search" 'face 'font-lock-comment-face))
       (special-mode)
       (setq truncate-lines t)
+      (setq-local filter-buffer-substring-function #'donkey--digraph-plain-substring)
       (add-hook 'text-scale-mode-hook #'donkey--digraph-pad-rows nil t)
       (goto-char (point-min)))
     (let ((window (display-buffer buf)))
