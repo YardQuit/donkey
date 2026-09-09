@@ -4885,26 +4885,77 @@ takes them after an ampersand, and that is what is looked up."
           ((and (vectorp translation) (> (length translation) 0))
            (aref translation 0)))))
 
+(defvar donkey--digraph-prefixes nil
+  "Every proper prefix of an rfc1345 mnemonic, as a hash set, or nil until asked.")
+
+(defun donkey--digraph-prefix-p (string)
+  "Return non-nil when STRING is the start of a longer rfc1345 mnemonic."
+  (unless donkey--digraph-prefixes
+    (let ((set (make-hash-table :test #'equal)))
+      (dolist (row (donkey--digraph-table))
+        (let ((code (car row)))
+          (dotimes (i (1- (length code)))
+            (puthash (substring code 0 (1+ i)) t set))))
+      (setq donkey--digraph-prefixes set)))
+  (gethash string donkey--digraph-prefixes))
+
+(defun donkey--digraph-read ()
+  "Ask for an rfc1345 mnemonic key by key and return (KEYS . RESULT).
+
+Read the way the input method reads after its ampersand: another
+key is asked for while the keys so far start a longer mnemonic, and
+reading ends when they make one that no longer one starts with.
+RET accepts a shorter one that is complete, and so does any key
+that continues none; RESULT is nil when the keys make no mnemonic."
+  (let ((keys "") result)
+    (catch 'done
+      (while t
+        (let* ((complete (and (> (length keys) 0) (donkey--digraph-result keys)))
+               (key (read-key (if complete
+                                  (format "Digraph: %s (%s), RET or more: " keys complete)
+                                (format "Digraph: %s" keys))))
+               (next (and (characterp key) (concat keys (string key)))))
+          (cond
+           ((memq key '(return ?\r ?\n))
+            (setq result complete)
+            (throw 'done nil))
+           ((null next)
+            (throw 'done nil))
+           ((donkey--digraph-prefix-p next)
+            (setq keys next))
+           ((donkey--digraph-result next)
+            (setq keys next result (donkey--digraph-result next))
+            (throw 'done nil))
+           (complete
+            (setq result complete)
+            (throw 'done nil))
+           (t
+            (setq keys next)
+            (throw 'done nil))))))
+    (cons keys result)))
+
 (defun donkey-insert-digraph (&optional count)
   "Insert the character an rfc1345 digraph stands for, COUNT times.
 
-Asks for the digraph's two keys, typed without the ampersand, and
-inserts what `donkey-digraph' lists for them: e\\=' gives é.  No input
-method is turned on and the state does not change, so one character
-can be typed from NORMAL state as well.  A pair the method does not
-know inserts nothing and is named.  A COUNT below one inserts once.
-On SPC i & in NORMAL state."
+Asks for the digraph's keys, typed without the ampersand, and
+inserts what `donkey-digraph' lists for them: e\\=' gives é, and
+!!> gives an arrow, read the way the method reads them: key by key
+until they make a digraph no longer one starts with, RET accepting
+a shorter one that is complete.  No input method is turned on and
+the state does not change, so one character can be typed from
+NORMAL state as well.  Keys the method does not know insert nothing
+and are named.  A COUNT below one inserts once.  On SPC i & in
+NORMAL state."
   (interactive "p")
   (barf-if-buffer-read-only)
-  (let* ((first (read-char "Digraph: "))
-         (second (read-char (format "Digraph: %c" first)))
-         (digraph (string first second))
-         (result (donkey--digraph-result digraph)))
+  (let* ((read (donkey--digraph-read))
+         (keys (car read))
+         (result (cdr read)))
     (if (not result)
-        (message "No digraph %s" digraph)
+        (message "No digraph %s" keys)
       (dotimes (_ (max 1 (or count 1)))
         (insert result))
-      (message "%s: %s" digraph result))))
+      (message "%s: %s" keys result))))
 
 (defvar donkey--digraph-table nil
   "Every digraph of the `rfc1345' input method as (CODE . STRING).
@@ -5202,7 +5253,7 @@ ampersand in front of it.\n\n"))
   stay commands, and back on when you return to INSERT.
 
   For just one character, %s in NORMAL state asks for the
-  two keys and types it: no input method needed.
+  keys and types it: no input method needed.
 
   Or copy the character straight out of the table below.\n\n"
                        (donkey--digraph-key #'donkey-insert-digraph))))

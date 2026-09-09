@@ -966,10 +966,37 @@ the same command with DONKEY on as off."
     (should (equal (buffer-string) "€"))))
 
 (ert-deftest donkey-SPC-i-ampersand-refuses-a-pair-the-method-does-not-know ()
-  "An unknown pair inserts nothing and is named."
+  "Unknown keys insert nothing and are named, after two keys or after three."
   (donkey-test-keys--harness "*donkey-digraph-test*" #'text-mode () "ab" "SPC i & z z"
     (should (equal (buffer-string) "ab"))
-    (should (equal donkey-test-keys--said "No digraph zz"))))
+    (should (equal donkey-test-keys--said "No digraph zz")))
+  (donkey-test-keys--harness "*donkey-digraph-test*" #'text-mode () "ab" "SPC i & ! ! q"
+    (should (equal (buffer-string) "ab"))
+    (should (equal donkey-test-keys--said "No digraph !!q"))))
+
+(ert-deftest donkey-SPC-i-ampersand-reads-keys-the-way-the-method-does ()
+  "Three-key mnemonics are read whole; RET or a stray key accepts a complete shorter one."
+  (donkey-test-keys--harness "*donkey-digraph-test*" #'text-mode () "" "SPC i & ! ! >"
+    (should (equal (buffer-string) "↘")))
+  (donkey-test-keys--harness "*donkey-digraph-test*" #'text-mode () "" "SPC i & ! I"
+    (should (equal (buffer-string) "¡")))
+  (donkey-test-keys--harness "*donkey-digraph-test*" #'text-mode () "" "SPC i & 1 2 RET"
+    (should (equal (buffer-string) "½"))
+    (should (equal donkey-test-keys--said "12: ½")))
+  (donkey-test-keys--harness "*donkey-digraph-test*" #'text-mode () "" "SPC i & 1 2 ."
+    (should (equal (buffer-string) "⒓")))
+  ;; A key that continues no mnemonic ends a complete one and is spent.
+  (donkey-test-keys--harness "*donkey-digraph-test*" #'text-mode () "" "SPC i & 1 2 x"
+    (should (equal (buffer-string) "½"))
+    (should donkey-normal-mode))
+  (should (equal (donkey--digraph-read-test--with "!*x")
+                 (cons "!*" (donkey--digraph-result "!*")))))
+
+(defun donkey--digraph-read-test--with (keys)
+  "Return the (KEYS . RESULT) of `donkey--digraph-read' fed KEYS one by one."
+  (let ((left (append keys nil)))
+    (cl-letf (((symbol-function 'read-key) (lambda (&rest _) (pop left))))
+      (donkey--digraph-read))))
 
 (ert-deftest donkey-insert-digraph-asks-nothing-in-a-read-only-buffer ()
   "In a read-only buffer the command refuses before asking for keys."
