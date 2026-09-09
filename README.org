@@ -182,6 +182,10 @@ on Windows), then add the following to your =init.el= or =config.el=:
 
 #+end_src
 
+Loaded this way the file is interpreted, which costs several times
+more per keystroke than the compiled file; see Byte-compiling a
+manual install below.
+
 ** use-package with a manual clone
 
 Clone the repository into =donkey/= inside your
@@ -197,6 +201,56 @@ Clone the repository into =donkey/= inside your
     (donkey-mode 1))
 
 #+end_src
+
+=:load-path= adds the directory and loads what it finds there, which
+is the source; see Byte-compiling a manual install below.
+
+** Byte-compiling a manual install
+
+The two methods above load =donkey.el= as source, and Emacs then
+interprets every DONKEY function on every keystroke. Compiled, the
+same work costs about a ninth as much: in a graphical frame,
+everything DONKEY does between keystrokes falls from about nine
+microseconds to one. Neither figure is anywhere near what a hand can
+feel, so this is tidiness rather than a fix for a problem you have,
+but it is free.
+
+=straight.el=, =quelpa= and any package archive compile the file when
+they install it, and again when they update it. A clone does not, so
+compile it yourself. Once =donkey.elc= exists beside =donkey.el=, both
+methods above load it in preference with no further change.
+
+This form keeps it current. It rebuilds whenever the source is newer,
+and never loads a stale compiled file, so a failed compile falls back
+to the source rather than leaving you on an older version:
+
+#+begin_src emacs-lisp
+
+  (let* ((donkey-path (expand-file-name "donkey/donkey.el"
+                                        user-emacs-directory))
+         (donkey-elc (expand-file-name "donkey/donkey.elc"
+                                       user-emacs-directory)))
+    (when (file-newer-than-file-p donkey-path donkey-elc)
+      ;; Loaded first, so that `byte-compile-dest-file-function' is a
+      ;; special variable here: under lexical binding a `let' on it
+      ;; would otherwise bind it lexically, and the compiler would
+      ;; never read it.
+      (require 'bytecomp)
+      (let ((byte-compile-dest-file-function (lambda (_) donkey-elc)))
+        (ignore-errors (byte-compile-file donkey-path))))
+    (if (and (file-exists-p donkey-elc)
+             (not (file-newer-than-file-p donkey-path donkey-elc)))
+        (load donkey-elc nil t)
+      (load donkey-path nil t)))
+
+  (donkey-mode 1)
+
+#+end_src
+
+If you track the repository with a symlink into your configuration,
+keep the symlink. A hard link looks equivalent and is not: git
+replaces a file rather than editing it in place, so the link would go
+on pointing at the version you cloned, and nothing would say so.
 
 ** use-package with =straight.el=
 
