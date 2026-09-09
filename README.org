@@ -1119,6 +1119,33 @@ These keys are explicitly suppressed to prevent unwanted behavior:
 | =;=           | Ignored |
 | =_=           | Ignored |
 
+** Commands without a key
+
+These DONKEY commands have no key of their own and are reached with
+=M-x=, unless you bind them yourself (see Customizing Keybindings).
+The first group is meant to be run by name; the second exists so
+that you can put it on a key you like.
+
+| Command                        | What it does                                              |
+|--------------------------------+-----------------------------------------------------------|
+| =donkey-tutor=                 | Open the learn-by-doing tutor                             |
+| =donkey-digraph=               | Show the digraph and Unicode chart                        |
+| =donkey-describe-bindings=     | Show this chart of keybindings (=?= in Normal state)      |
+| =donkey-version=               | Show the version of DONKEY that is loaded                 |
+| =donkey-debug-platform=        | Show a platform report for troubleshooting                |
+| =donkey-disable-input-method=  | Turn the input method off for good                        |
+| =donkey-add-denylist-entry=    | Deny the terminal cursor shape on a terminal prefix       |
+| =donkey-remove-denylist-entry= | Allow it again                                            |
+| =donkey-setup-smartparens=     | Set up the Smartparens integration, from your config      |
+
+| Command                      | What it does                                         |
+|------------------------------+------------------------------------------------------|
+| =donkey-enter-normal=        | Switch to Normal state (=C-g= does this already)     |
+| =donkey-mark-run-adopt=      | Adopt the active selection into a mark run           |
+| =donkey-switch-other-buffer= | Switch to the previous buffer                        |
+| =donkey-org-scratch=         | Create or switch to the =_org-scratch_= buffer       |
+| =donkey-org-todo=            | Toggle a headline between TODO and DONE              |
+
 * Excluded Modes
 :PROPERTIES:
 :CUSTOM_ID: excluded-modes
