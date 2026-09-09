@@ -4690,9 +4690,6 @@ PREFIX is the accumulated key sequence string for the current path."
                (dolist (leaf (donkey--desc-bindings-collect-leaves
                               (cdr def) (concat full-key " ")))
                  (push leaf acc)))
-              ;; A (NAME . COMMAND) binding is listed as its command.
-              ((and (consp def) (stringp (car def)) (cdr def))
-               (push (cons full-key (cdr def)) acc))
               (t
                (push (cons full-key def) acc)))))))
      map)
@@ -4755,13 +4752,18 @@ names are clickable buttons."
           ;; Key column
           (insert (propertize (format "%-14s " full-key)
                               'face 'font-lock-variable-name-face))
-          ;; Command name as clickable button
-          (if (symbolp def)
-              (insert-text-button (symbol-name def)
-                                  'action (lambda (_) (describe-function def))
-                                  'follow-link t
-                                  'help-echo (format "Describe %s" def))
-            (insert "[complex]"))
+          ;; Command name as clickable button; a (NAME . COMMAND)
+          ;; binding is its command, with NAME beside it.
+          (let* ((name (and (consp def) (stringp (car def)) (cdr def) (car def)))
+                 (def (if name (cdr def) def)))
+            (if (symbolp def)
+                (insert-text-button (symbol-name def)
+                                    'action (lambda (_) (describe-function def))
+                                    'follow-link t
+                                    'help-echo (format "Describe %s" def))
+              (insert "[complex]"))
+            (when name
+              (insert (propertize (format "  %s" name) 'face 'font-lock-comment-face))))
           (insert "\n")
           (setq lines-added (1+ lines-added)
                 prev-group  group))))))
@@ -6077,9 +6079,10 @@ what starts over."
   "Keymap under SPC in NORMAL state, for keys of your own.
 
 Add to it with `keymap-set'.  A binding written as (NAME . COMMAND)
-carries NAME with it: `C-h' after the prefix, `donkey-describe-bindings'
-and which-key all show it, and nothing needs which-key to be there.
-DONKEY's own entries are prefixes on a key of their own.")
+carries NAME with it: `donkey-describe-bindings' shows it beside the
+command, and which-key, part of Emacs since 30, shows it in its
+popup; nothing needs which-key to be there.  DONKEY's own entries
+are prefixes on a key of their own.")
 (keymap-set donkey-normal-mode-map "SPC" (cons "Leader" donkey-leader-map))
 
 ;; Navigation

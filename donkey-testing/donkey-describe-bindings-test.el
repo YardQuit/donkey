@@ -444,7 +444,7 @@ Expected: at least one button present in the buffer."
       (fmakunbound 'donkey-test--leader-command))))
 
 (ert-deftest donkey-describe-bindings-names-the-leader-and-lists-a-named-leaf-as-its-command ()
-  "The chart heads the SPC group Leader and shows a (NAME . COMMAND) leaf as a button to COMMAND."
+  "The chart heads the SPC group Leader and shows a (NAME . COMMAND) leaf as a button to COMMAND, NAME beside it."
   (let ((donkey-normal-mode-map
          (let ((map (make-sparse-keymap)) (sub (make-sparse-keymap)))
            (keymap-set sub "q" '("Quit" . kill-region))
@@ -457,7 +457,11 @@ Expected: at least one button present in the buffer."
       (should-not (string-match-p "\\[complex\\]" (buffer-string)))
       (let ((button (next-button (point-min))))
         (should button)
-        (should (equal (button-label button) "kill-region"))))
+        (should (equal (button-label button) "kill-region"))
+        (should (string-match-p "kill-region  Quit$"
+                                (save-excursion
+                                  (goto-char (button-start button))
+                                  (buffer-substring (point) (line-end-position)))))))
     (kill-buffer "*DONKEY Bindings*")))
 
 (ert-deftest donkey-describe-bindings-complex-def-shown-as-text ()

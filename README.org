@@ -1259,14 +1259,34 @@ by modifying =donkey-normal-mode-map=.
 =SPC= in Normal state is a prefix, =donkey-leader-map=, that DONKEY
 keeps almost empty: it is there for keys of your own. Add to it with
 =keymap-set=. Write a binding as =(NAME . COMMAND)= and the name
-travels with the key: =SPC C-h=, =?= and which-key all show it, and
-nothing needs which-key to be installed.
+travels with the key: =?= shows it beside the command, and which-key,
+part of Emacs since 30 and a package before that, shows it in its
+popup. Nothing needs which-key to be installed, and none of its own
+functions, such as =which-key-add-key-based-replacements=, is needed
+to name a key.
 
 #+begin_src emacs-lisp
 
   (keymap-set donkey-leader-map "SPC" '("Other window" . other-window))
   (keymap-set donkey-leader-map ","   '("Switch buffer" . consult-buffer))
   (keymap-set donkey-leader-map ";"   '("Outline" . consult-outline))
+
+#+end_src
+
+A prefix of your own is named the same way, by binding its keymap
+with a name. Either define the keymap with its keys first, or let
+=keymap-set= create it and name it afterwards:
+
+#+begin_src emacs-lisp
+
+  ;; A prefix defined whole, then named.
+  (defvar my-open-map
+    (define-keymap "g" '("magit" . magit-status) "m" '("ement" . ement-connect)))
+  (keymap-set donkey-leader-map "o" (cons "open/apps" my-open-map))
+
+  ;; A prefix keymap-set made for you, named afterwards.
+  (keymap-set donkey-leader-map "t l" #'display-line-numbers-mode)
+  (keymap-set donkey-leader-map "t" (cons "toggle" (keymap-lookup donkey-leader-map "t")))
 
 #+end_src
 
