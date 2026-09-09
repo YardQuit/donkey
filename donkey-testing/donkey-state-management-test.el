@@ -852,6 +852,17 @@ real raw-key check firing."
     (should (null (lookup-key donkey-normal-mode-map (kbd "SPC i x"))))
     (should (null (lookup-key donkey-normal-mode-map (kbd "SPC i y"))))))
 
+(ert-deftest donkey-input-methods-cannot-redefine-a-donkey-command ()
+  "An entry whose label names an existing DONKEY command is left out, and the command is untouched."
+  (let ((donkey-input-methods '(("q" "Digraphs" "swedish-postfix"))))
+    (should (null (lookup-key donkey-normal-mode-map (kbd "SPC i q"))))
+    (donkey--with-test-buffer
+      (let ((default-input-method nil))
+        (cl-letf (((symbol-function 'message) #'ignore))
+          (donkey-input-method-digraphs))
+        (should (equal current-input-method "rfc1345"))
+        (deactivate-input-method)))))
+
 (ert-deftest donkey-input-method-command-names-an-unknown-method ()
   "A method Emacs does not know is refused by name, and nothing is turned on."
   (let ((donkey-input-methods '(("z" "Nope" "no-such-method"))))

@@ -1602,6 +1602,7 @@ are symbols, so every letter is free for a language of yours:
 
 | Key       | What it does                                                    |
 |-----------+-----------------------------------------------------------------|
+| =SPC i &= | Insert one digraph: asks for its two keys, no method needed     |
 | =SPC i .= | Digraphs: the =rfc1345= method the digraph chart lists          |
 | =SPC i -= | Off, for good: the held method is forgotten too                 |
 
@@ -1929,6 +1930,11 @@ after typing with another method choose =rfc1345= again the same way.
 DONKEY turns the input method off in Normal state, so the letters
 stay commands, and back on when you return to Insert. The full table
 is =C-h I rfc1345=.
+
+For just one character, =SPC i &= in Normal state asks for the two
+keys and inserts it, with no input method turned on: =SPC i & e '=
+gives =é=. A count repeats it, and a pair the method does not know
+inserts nothing.
 
 For any character by code point or name, =C-x 8 RET= works in either
 state: =C-x 8 RET 20ac RET= gives =€=. On a Linux desktop,

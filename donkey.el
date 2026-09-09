@@ -4883,6 +4883,27 @@ takes them after an ampersand, and that is what is looked up."
           ((and (vectorp translation) (> (length translation) 0))
            (aref translation 0)))))
 
+(defun donkey-insert-digraph (&optional count)
+  "Insert the character an rfc1345 digraph stands for, COUNT times.
+
+Asks for the digraph's two keys, typed without the ampersand, and
+inserts what `donkey-digraph' lists for them: e\\=' gives é.  No input
+method is turned on and the state does not change, so one character
+can be typed from NORMAL state as well.  A pair the method does not
+know inserts nothing and is named.  A COUNT below one inserts once.
+On SPC i & in NORMAL state."
+  (interactive "p")
+  (barf-if-buffer-read-only)
+  (let* ((first (read-char "Digraph: "))
+         (second (read-char (format "Digraph: %c" first)))
+         (digraph (string first second))
+         (result (donkey--digraph-result digraph)))
+    (if (not result)
+        (message "No digraph %s" digraph)
+      (dotimes (_ (max 1 (or count 1)))
+        (insert result))
+      (message "%s: %s" digraph result))))
+
 (defvar donkey--digraph-table nil
   "Every digraph of the `rfc1345' input method as (CODE . STRING).
 Built by `donkey--digraph-table' on first use, sorted by CODE.")
@@ -5166,7 +5187,17 @@ ampersand in front of it.\n\n"))
   DONKEY turns the input method off in NORMAL state, so the letters
   stay commands, and back on when you return to INSERT.
 
-  Or copy the character straight out of the table below.\n\n"))
+"))
+      (let ((key (where-is-internal #'donkey-insert-digraph
+                                    (list donkey-normal-mode-map) t)))
+        (insert (substitute-command-keys
+                 (format "  For just one character, %s in NORMAL state asks for the
+  two keys and types it: no input method needed.
+
+  Or copy the character straight out of the table below.\n\n"
+                         (if key
+                             (concat "\\`" (key-description key) "'")
+                           "\\[donkey-insert-digraph]")))))
       (insert (funcall head "  Any character, by code point or name") "\n" rule "\n")
       (insert (substitute-command-keys
                "  \\[insert-char], then a character name or its hex code, works in
@@ -6828,14 +6859,19 @@ any input method does under DONKEY; the echo says which happened."
   (donkey--input-method-on "rfc1345" "Digraphs"))
 
 (defun donkey--input-method-command (label method)
-  "Return a command, named after LABEL, to turn METHOD on."
+  "Return a command, named after LABEL, to turn METHOD on, or nil.
+
+Nil when the name is taken by a function that is not one of these,
+such as `donkey-input-method-digraphs': an entry cannot redefine it."
   (let ((name (intern (concat "donkey-input-method-"
                               (replace-regexp-in-string
                                "[^[:alnum:]]+" "-" (downcase label))))))
-    (defalias name (lambda () (interactive) (donkey--input-method-on method label))
-      (format "Turn on the %s input method, %s.\n\nFrom `donkey-input-methods'."
-              label method))
-    name))
+    (unless (and (fboundp name) (not (get name 'donkey--input-method-entry)))
+      (defalias name (lambda () (interactive) (donkey--input-method-on method label))
+        (format "Turn on the %s input method, %s.\n\nFrom `donkey-input-methods'."
+                label method))
+      (put name 'donkey--input-method-entry t)
+      name)))
 
 (defun donkey--input-method-map-refresh (entries)
   "Rebuild `donkey-input-method-map': DONKEY's keys, then ENTRIES.
@@ -6845,6 +6881,7 @@ three strings, whose key is not one, or whose key is DONKEY's own are
 left out."
   (setcdr donkey-input-method-map nil)
   (let ((map donkey-input-method-map))
+    (keymap-set map "&" '("Insert digraph" . donkey-insert-digraph))
     (keymap-set map "." '("Digraphs" . donkey-input-method-digraphs))
     (keymap-set map "-" '("Off" . donkey-disable-input-method))
     (dolist (entry entries)
@@ -6852,10 +6889,9 @@ left out."
                  (cl-every #'stringp entry)
                  (key-valid-p (nth 0 entry))
                  (not (member (nth 0 entry) donkey--input-method-own-keys)))
-        (keymap-set map (nth 0 entry)
-                    (cons (nth 1 entry)
-                          (donkey--input-method-command (nth 1 entry)
-                                                        (nth 2 entry))))))))
+        (let ((command (donkey--input-method-command (nth 1 entry) (nth 2 entry))))
+          (when command
+            (keymap-set map (nth 0 entry) (cons (nth 1 entry) command))))))))
 
 (defun donkey--input-methods-changed (_symbol value operation _where)
   "Rebuild the SPC i keymap as `donkey-input-methods' becomes VALUE by OPERATION."

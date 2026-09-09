@@ -934,6 +934,47 @@ the same command with DONKEY on as off."
                         'help-key-binding)))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
+(ert-deftest donkey-SPC-i-ampersand-inserts-one-digraph-in-normal-state ()
+  "SPC i & asks for two keys and inserts their character, staying in Normal state with no method on."
+  (donkey-test-keys--harness "*donkey-digraph-test*" #'text-mode
+      ((default-input-method nil) (donkey--saved-input-method nil))
+      "ab" "l SPC i & e '"
+    (should (equal (buffer-string) "aéb"))
+    (should donkey-normal-mode)
+    (should (null current-input-method))
+    (should (null donkey--saved-input-method))
+    (should (equal donkey-test-keys--said "e': é"))))
+
+(ert-deftest donkey-SPC-i-ampersand-takes-a-count-and-zero-is-once ()
+  "A count inserts the digraph that many times; zero and one insert it once."
+  (donkey-test-keys--harness "*donkey-digraph-test*" #'text-mode () "" "C-u 3 SPC i & E u"
+    (should (equal (buffer-string) "€€€")))
+  (donkey-test-keys--harness "*donkey-digraph-test*" #'text-mode () "" "C-u 0 SPC i & E u"
+    (should (equal (buffer-string) "€"))))
+
+(ert-deftest donkey-SPC-i-ampersand-refuses-a-pair-the-method-does-not-know ()
+  "An unknown pair inserts nothing and is named."
+  (donkey-test-keys--harness "*donkey-digraph-test*" #'text-mode () "ab" "SPC i & z z"
+    (should (equal (buffer-string) "ab"))
+    (should (equal donkey-test-keys--said "No digraph zz"))))
+
+(ert-deftest donkey-insert-digraph-asks-nothing-in-a-read-only-buffer ()
+  "In a read-only buffer the command refuses before asking for keys."
+  (with-temp-buffer
+    (setq buffer-read-only t)
+    (cl-letf (((symbol-function 'read-char)
+               (lambda (&rest _) (error "Asked anyway"))))
+      (should-error (donkey-insert-digraph) :type 'buffer-read-only))))
+
+(ert-deftest donkey-digraph-chart-names-the-one-shot-key ()
+  "The chart's steps name the key that inserts a single digraph."
+  (unwind-protect
+      (progn
+        (donkey-digraph)
+        (with-current-buffer "*DONKEY Digraphs*"
+          (should (string-match-p "For just one character, SPC i & in NORMAL state" (buffer-string)))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
 (ert-deftest donkey-digraph-common-table-is-what-rfc1345-types ()
   "Each digraph in `donkey--digraph-common' types its listed result under rfc1345.
 
