@@ -9,6 +9,73 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.9.0 — 2026-09-09
+
+A leader key, and the input methods under it. =SPC= in Normal state
+is now a prefix for keys of your own, with DONKEY's first prefix
+under it: =SPC i= chooses an input method, turns one off, or types a
+single digraph.
+
+*Added*
+
+- =SPC= in Normal state is the leader, =donkey-leader-map=, kept for
+  your own keys. Write a binding as =(NAME . COMMAND)= and the name
+  travels with it: =?= shows it beside the command and which-key,
+  part of Emacs since 30, shows it in its popup, with nothing to
+  install.
+- =SPC i= is the input method prefix. =SPC i .= turns on the rfc1345
+  digraphs, =SPC i -= turns the input method off for good, and
+  =SPC i &= asks for one digraph's two keys and inserts the character
+  with no method turned on, from Normal state too; a count repeats
+  it. A method chosen in Normal state waits for Insert state, and the
+  echo area says so.
+- =donkey-input-methods= adds your own languages under =SPC i=, one
+  =(KEY LABEL METHOD)= each, as commands named
+  =donkey-input-method-LABEL=; a plain =setq= takes effect at once,
+  and a key you have freed by hand stays free.
+
+*Changed — you will notice these*
+
+- The digraph chart's steps lead with =SPC i .= and keep Emacs's own
+  way, =C-x RET C-\= or =M-x set-input-method=, beside it; either is
+  enough once, and =C-\= then switches the method off and on. The
+  steps say that a switch shows only as =m= in the mode line, and
+  that =C-\= brings back the method the buffer used last. Until now
+  they said to press =C-\= and choose, which never asks in a buffer
+  that has used a method.
+- =SPC= alone used to be undefined in Normal state; it is a prefix
+  now.
+
+*Fixed — you will notice these*
+
+- The README's leader recipe bound the symbol =donkey-leader-map=
+  rather than the map, so any key under it failed; the map is
+  DONKEY's now and the recipe is three =keymap-set= lines.
+- =donkey-disable-input-method= says "Input method off" when run by
+  hand.
+
+*Under the hood*
+
+- The CI lint job's Emacs has no window system: =font-info= is
+  declared for it, five tests that need a graphical frame carry the
+  tag =graphical= and stay out of the Smartparens job's skip budget,
+  and one test docstring is back within checkdoc's width.
+- The bindings chart lists a =(NAME . COMMAND)= binding as its
+  command with the name beside it, and heads the =SPC= group Leader.
+- Twenty tests on the leader, the =SPC i= keys, the option, the
+  one-shot digraph and the chart's steps; the keys were driven
+  through the command loop in four frame shapes.
+
+*Upgrading*
+
+If your config bound =SPC= to a leader map of your own with the
+README's recipe, delete the recipe: =donkey-leader-map= exists, and
+your =keymap-set= lines onto it keep working. If you bound =SPC= to
+something else, your binding wins and =SPC i= is not there; put the
+prefix on a key you like with =(keymap-set donkey-leader-map "KEY"
+(cons "Input method" donkey-input-method-map))=. Nothing else changes
+what a key did.
+
 * 1.8.0 — 2026-09-09
 
 Two things you can reach that you could not before, and one key that
