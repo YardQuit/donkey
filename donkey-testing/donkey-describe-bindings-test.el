@@ -596,9 +596,8 @@ buffer's active keymaps, so running it before `donkey-mode' was enabled
 rendered every binding as an \\=`M-x\\=' invocation -- silently, and worst for
 exactly the commands a new reader most needs named.
 
-Now that `donkey-tutor' is bound to \\=`g ?\\=' there is nothing left that
-resolves to \\=`M-x\\=' at all: it was the one command deliberately shown that
-way while it had no key.  An \\=`M-x\\=' appearing here again means either a
+The tutor itself has no key, like vimtutor and its kin, so `donkey-tutor'
+is the one command the text shows as \\=`M-x\\='; any other means either a
 command lost its binding or the substitution moved back ahead of
 `donkey-mode'."
   (unwind-protect
@@ -609,7 +608,7 @@ command lost its binding or the substitution moved back ahead of
           (let ((unresolved '()))
             (while (re-search-forward "M-x \\(donkey-[a-z-]+\\)" nil t)
               (push (match-string 1) unresolved))
-            (should (equal unresolved '())))))
+            (should (equal (delete "donkey-tutor" unresolved) '())))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 (ert-deftest donkey-tutor-returns-to-an-existing-buffer ()
@@ -646,13 +645,13 @@ go unnoticed until a reader reached the lesson naming it."
         (unless (commandp sym) (push sym missing))))
     (should (equal missing '()))))
 
-(ert-deftest donkey-tutor-is-bound-in-normal-state ()
-  "The tutor is reachable without knowing its name.
-
-Under `g' rather than on a letter of its own: the letters vi uses for
-motions are all still free in this map, and spending one on a command
-read once would take a key a motion will want later."
-  (should (eq (lookup-key donkey-normal-mode-map (kbd "g ?")) 'donkey-tutor)))
+(ert-deftest donkey-tutor-is-not-bound-to-a-key ()
+  "`donkey-tutor' is reached by name only; no DONKEY map binds it."
+  (should-not (where-is-internal #'donkey-tutor
+                                 (list donkey-normal-mode-map
+                                       donkey-insert-mode-map
+                                       donkey-mark-run-mode-map)))
+  (should (null (lookup-key donkey-normal-mode-map (kbd "g ?")))))
 
 (ert-deftest donkey-tutor-names-every-key-with-the-same-markup ()
   "Every key the tutor names carries `help-key-binding', none is bare text.
@@ -2798,9 +2797,9 @@ the two selection toggles that still ignore one."
 buried lesson survives -- but it used to return that buffer exactly as
 found, DONKEY included.  With DONKEY off there, a reader came back to a
 document about keys where none of the keys worked: \\=`j\\=' typed a
-literal \"j\" into the lesson, and \\=`g ?\\=' -- the key for reopening
-this very buffer -- was not bound at all.  Nothing on screen said why,
-because the text still named every binding.
+literal \"j\" into the lesson, and \\=`?\\=' -- the key to the bindings
+chart -- was not bound at all.  Nothing on screen said why, because
+the text still named every binding.
 
 The binding of \\=`j\\=' is what is asserted rather than the mode flag: a
 flag says DONKEY is on, while the binding says the lesson is usable,
@@ -2815,7 +2814,7 @@ and it is the second one the reader cares about."
           (should (bound-and-true-p donkey-mode))
           (should (bound-and-true-p donkey-normal-mode))
           (should (eq (key-binding (kbd "j")) 'next-line))
-          (should (eq (key-binding (kbd "g ?")) 'donkey-tutor))))
+          (should (eq (key-binding (kbd "?")) 'donkey-describe-bindings))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 (ert-deftest donkey-tutor-reopened-while-live-is-left-exactly-as-found ()

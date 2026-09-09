@@ -5936,15 +5936,6 @@ what starts over."
 ;; both editors already use it for the start of the buffer.)
 (keymap-set donkey-normal-mode-map "G" #'end-of-buffer)
 (keymap-set donkey-normal-mode-map "g g" #'beginning-of-buffer)
-
-;; Under `g' rather than on a letter of its own.  The letters vi uses for
-;; motions -- f, t, F, T, e, E, n, N -- are all still free in this map, and
-;; taking one for a command a reader runs once would spend a key that a
-;; motion will want later.  `g t' is free too, but meant `beginning-of-buffer'
-;; in 1.0.1, and silently repurposing a binding someone may still have in
-;; their fingers is worse than an obscure one.  `?' already opens the
-;; bindings list, so `g ?' reads as the guided version of the same question.
-(keymap-set donkey-normal-mode-map "g ?" #'donkey-tutor)
 (keymap-set donkey-normal-mode-map "g h" #'beginning-of-line)
 (keymap-set donkey-normal-mode-map "g j" #'donkey-join-line)
 (keymap-set donkey-normal-mode-map "g l" #'move-end-of-line)
