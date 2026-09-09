@@ -304,6 +304,45 @@ each has to be released or the buffer keeps them alive for nothing."
                                  (null (marker-position m))))
                  before))))))
 
+(ert-deftest donkey-position-ring-holds-the-last-positions-in-order ()
+  "The ring holds the last few positions, newest first, after any number of moves.
+
+The ring reuses the marker it drops rather than making a new one, so
+what it holds is worth recounting after more moves than it has room
+for: the positions, their order, and that every marker in it is live
+and none appears twice."
+  (with-temp-buffer
+    (insert (make-string 200 ?x))
+    (let ((donkey--position-ring nil)
+          (donkey--position-index 0)
+          (donkey--last-tracked-state nil)
+          (donkey-position-ring-max 5)
+          (recorded nil))
+      (dolist (pos (number-sequence 10 60))
+        (goto-char pos)
+        (donkey--track-position)
+        (push pos recorded))
+      ;; The last recorded position is where point still is, so the
+      ;; ring holds the five before it.
+      (should (equal (mapcar #'marker-position donkey--position-ring)
+                     (seq-take (cdr recorded) 5)))
+      (should (= (length donkey--position-ring) 5))
+      (should (seq-every-p #'marker-position donkey--position-ring))
+      (should (= (length (seq-uniq donkey--position-ring #'eq)) 5)))))
+
+(ert-deftest donkey-position-ring-of-one-keeps-only-the-last-position ()
+  "A ring of one holds the previous position and nothing else."
+  (with-temp-buffer
+    (insert (make-string 100 ?x))
+    (let ((donkey--position-ring nil)
+          (donkey--position-index 0)
+          (donkey--last-tracked-state nil)
+          (donkey-position-ring-max 1))
+      (dolist (pos '(10 20 30 40))
+        (goto-char pos)
+        (donkey--track-position))
+      (should (equal (mapcar #'marker-position donkey--position-ring) '(30))))))
+
 (ert-deftest donkey-track-position-drop-to-zero-empties-a-filled-ring ()
   "Lowering the maximum to 0 empties the ring rather than stranding one.
 

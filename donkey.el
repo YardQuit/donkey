@@ -255,6 +255,42 @@ recorded.")
 (defvar-local donkey--last-tracked-state nil
   "Where point stood after the previous command, or nil for not yet.")
 
+(defun donkey--position-ring-record (position)
+  "Put POSITION at the front of `donkey--position-ring', within the limit.
+
+The ring stays what it was: a list of markers, most recent first, at
+most `donkey--position-ring-limit' of them, every one of them live.
+What changed is the route.  A full ring reuses the marker it is about
+to drop for POSITION and moves that cons to the front, so a point that
+keeps moving allocates nothing and copies nothing, whatever the limit;
+a ring with room still makes a marker.  A limit reached from above
+drops the surplus and points those markers nowhere, and a limit of
+zero empties the ring, tracking being off."
+  (let ((limit (donkey--position-ring-limit))
+        (ring donkey--position-ring))
+    (cond
+     ((<= limit 0)
+      (dolist (stale ring) (set-marker stale nil))
+      (setq donkey--position-ring nil))
+     ((null ring)
+      (setq donkey--position-ring (list (set-marker (make-marker) position))))
+     (t
+      ;; The cons at the limit and everything after it cannot survive
+      ;; the new entry; nil when the ring has room for one more.
+      (let ((surplus (nthcdr (1- limit) ring)))
+        (cond
+         ((null surplus)
+          (push (set-marker (make-marker) position) donkey--position-ring))
+         (t
+          (dolist (stale (cdr surplus)) (set-marker stale nil))
+          (setcdr surplus nil)
+          (unless (eq surplus ring)
+            ;; Detach it from the ring before it becomes the head.
+            (setcdr (nthcdr (- limit 2) ring) nil)
+            (setcdr surplus ring))
+          (set-marker (car surplus) position)
+          (setq donkey--position-ring surplus))))))))
+
 (defun donkey--track-position ()
   "Record the previous cursor position.
 
@@ -267,19 +303,7 @@ can get wrong is made safe by `donkey--position-ring-limit'."
     (let ((now-pt (point)))
       (when (and donkey--last-tracked-state
                  (/= donkey--last-tracked-state now-pt))
-        (let ((m (make-marker))
-              (limit (donkey--position-ring-limit)))
-          (set-marker m donkey--last-tracked-state)
-          (push m donkey--position-ring)
-          ;; Trimmed down to the limit, not by one, so a lowered limit
-          ;; takes effect; `butlast' rather than `nbutlast', which
-          ;; cannot empty a one-element list.
-          (when (> (length donkey--position-ring) limit)
-            (dolist (stale (nthcdr limit donkey--position-ring))
-              (set-marker stale nil))
-            (setq donkey--position-ring
-                  (butlast donkey--position-ring
-                           (- (length donkey--position-ring) limit)))))
+        (donkey--position-ring-record donkey--last-tracked-state)
         (setq donkey--position-index 0))
       (setq donkey--last-tracked-state now-pt))))
 
