@@ -9,6 +9,66 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.8.0 — 2026-09-09
+
+Two things you can reach that you could not before, and one key that
+moved. =M-x donkey-digraph= is a chart of every character a digraph
+types, with the ways to type one; a mark run now follows you when you
+leave its buffer or its frame and comes back when you do; and the
+tutor is reached by name, like every other editor's.
+
+*Added*
+
+- =M-x donkey-digraph= opens a chart of how to type what your keyboard
+  lacks: the twelve characters English web text uses most that have no
+  key, from the curly quotes and dashes to =é=, =£= and =€=, each with
+  the two-character code that types it under the =rfc1345= input
+  method; the steps to switch that method on in INSERT state; =C-x 8
+  RET= and the desktop's =Ctrl+Shift+u= for any character by code point
+  or name; and then every digraph the method knows, 1,893 of them,
+  grouped by script with the character, its code point and its name,
+  ready to copy as plain text. In a graphical frame the rows of each
+  group are padded to one height, so a tall glyph does not push its
+  row out of line, and =donkey-digraph-line-spacing= adds air under the
+  rows for those who want it. The chart has no key; it is =M-x= only.
+
+*Changed — you will notice these*
+
+- =M= keeps a run while you are away. Switching to another buffer or
+  window with a run open used to end the run, and with two graphical
+  frames on one display, the run's keys were live in the other frame
+  too. Now leaving the run's buffer, or its frame losing the keyboard
+  focus, puts the run down with its selection and its =u=/=U= history,
+  and coming back to that buffer, or that frame, arms it again where
+  it was: the next object key grows the selection. Everywhere else,
+  every key is itself. A command that stays in the run's buffer but is
+  not one of the run's still ends it, =M= and =C-g= still cancel it, and
+  a run whose selection is gone when you return is forgotten.
+- =g ?= no longer opens the tutor. It is =M-x donkey-tutor=, the way
+  vimtutor, Evil, Meow and Helix reach theirs; the key was the one
+  DONKEY binding that nobody pressed twice.
+
+*Under the hood*
+
+- The README lists the DONKEY commands that have no key, by purpose,
+  and says which fonts draw the digraph chart's rows at which height.
+- Two Troubleshooting entries: what a run's travel does and does not
+  cover, and the =s-w is undefined= that a Super shortcut can leave on
+  a frame you switched to, which is GDK's doing and not DONKEY's.
+- Copying a row out of the chart yields plain text; an absurd spacing
+  value is capped rather than an error.
+- Twenty-nine tests on the chart and the run's travel, driven where
+  they can be through the command loop, and two test-harness leaks
+  closed: a run's map and a macro's last command no longer outlive
+  the test that made them.
+
+*Upgrading*
+
+If =g ?= is in your fingers, it does nothing now; =M-x donkey-tutor=
+is the tutor. If you relied on a buffer switch to end a mark run, end
+it with =M= or =C-g= before you go, or let it come back with you.
+Everything else does what it did in 1.7.2.
+
 * 1.7.2 — 2026-09-07
 
 Not a line of code differs from 1.7.1. Everything here is what the
