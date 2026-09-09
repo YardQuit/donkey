@@ -6469,6 +6469,27 @@ otherwise, so the next command in a visible buffer resyncs it through
         (puthash terminal effective donkey--last-applied-cursor-settings)
         (donkey--send-cursor-sequence effective)))))
 
+(defvar donkey--cursor-last-buffer nil
+  "The buffer `donkey--update-cursor-passive' last updated the cursor in.")
+
+(defvar donkey--cursor-last-window nil
+  "The window that was selected when it last updated the cursor.")
+
+(defvar donkey--cursor-last-setting nil
+  "The setting it last applied, or `none' when no state was active.")
+
+(defvar donkey--cursor-last-type nil
+  "The `cursor-type' it left behind, to notice one another package set.")
+
+(defun donkey--cursor-setting ()
+  "Return the cursor setting the current buffer's DONKEY state asks for.
+
+The symbol `none' when neither state is active, which is not a
+setting any state asks for and so cannot be mistaken for one."
+  (cond ((bound-and-true-p donkey-normal-mode) donkey-cursor-normal)
+        ((bound-and-true-p donkey-insert-mode) donkey-cursor-insert)
+        (t 'none)))
+
 (defun donkey--update-cursor (&optional passive)
   "Update cursor based on current DONKEY state.
 
@@ -6477,7 +6498,11 @@ nor `donkey-insert-mode' is active in the current buffer, rather than
 resetting `cursor-type' to the default; that is how the global
 `post-command-hook' calls it, through `donkey--update-cursor-passive'.
 Without PASSIVE, from the two state hooks, the reset is what a
-transition to disabled needs."
+transition to disabled needs, and what the passive path remembers
+about the last update is dropped, since the state has just moved
+under it."
+  (unless passive
+    (setq donkey--cursor-last-buffer nil))
   (cond
    ((bound-and-true-p donkey-normal-mode)
     (donkey--apply-cursor-setting donkey-cursor-normal))
@@ -6492,8 +6517,25 @@ transition to disabled needs."
 Registered on the global `post-command-hook' by `donkey-mode' instead
 of `donkey--update-cursor' directly, so buffers DONKEY never activated
 Normal/Insert state in are left untouched instead of having
-`cursor-type' reset out from under them."
-  (donkey--update-cursor t))
+`cursor-type' reset out from under them.
+
+Runs after every command, so it first asks whether anything the
+answer depends on has moved since the last time: the buffer, the
+selected window, the setting the buffer\\='s state asks for, and the
+`cursor-type' left behind, which differs when another package has
+set one meanwhile.  When none of the four has, there is nothing to
+apply and nothing to send, and the command pays four comparisons
+instead of the work."
+  (let ((setting (donkey--cursor-setting)))
+    (unless (and (eq (current-buffer) donkey--cursor-last-buffer)
+                 (eq (selected-window) donkey--cursor-last-window)
+                 (equal setting donkey--cursor-last-setting)
+                 (equal cursor-type donkey--cursor-last-type))
+      (donkey--update-cursor t)
+      (setq donkey--cursor-last-buffer (current-buffer)
+            donkey--cursor-last-window (selected-window)
+            donkey--cursor-last-setting setting
+            donkey--cursor-last-type cursor-type))))
 
 (add-hook 'donkey-normal-mode-hook #'donkey--update-cursor)
 (add-hook 'donkey-insert-mode-hook #'donkey--update-cursor)

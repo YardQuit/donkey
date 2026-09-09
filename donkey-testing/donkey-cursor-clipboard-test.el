@@ -266,6 +266,101 @@ only worth making when the value changes."
         (dolist (w (get-variable-watchers 'cursor-type))
           (remove-variable-watcher 'cursor-type w))))))
 
+(defmacro donkey-cursor-test--counting-updates (&rest body)
+  "Run BODY with the passive updater's memory cleared, and count its work.
+
+Binds `updates' to the number of times `donkey--update-cursor' was
+reached, which is what the passive path's skip decides, so a test
+says what that path did rather than what the cursor ended up as."
+  (declare (indent 0))
+  `(let ((updates 0)
+         (donkey--cursor-last-buffer nil)
+         (donkey--cursor-last-window nil)
+         (donkey--cursor-last-setting nil)
+         (donkey--cursor-last-type nil))
+     (cl-letf (((symbol-function 'donkey--update-cursor)
+                (lambda (&rest _) (setq updates (1+ updates)))))
+       ,@body)))
+
+(ert-deftest donkey-update-cursor-passive-does-nothing-when-nothing-moved ()
+  "Nothing is updated by the second and third commands in a row."
+  (donkey-cursor-test--counting-updates
+    (with-temp-buffer
+      (setq-local donkey-normal-mode t)
+      (donkey--update-cursor-passive)
+      (should (= updates 1))
+      (donkey--update-cursor-passive)
+      (donkey--update-cursor-passive)
+      (should (= updates 1)))))
+
+(ert-deftest donkey-update-cursor-passive-updates-again-in-another-buffer ()
+  "A command that left the buffer updates the cursor in the new one."
+  (donkey-cursor-test--counting-updates
+    (with-temp-buffer
+      (setq-local donkey-normal-mode t)
+      (donkey--update-cursor-passive)
+      (should (= updates 1)))
+    (with-temp-buffer
+      (setq-local donkey-normal-mode t)
+      (donkey--update-cursor-passive)
+      (should (= updates 2)))))
+
+(ert-deftest donkey-update-cursor-passive-updates-again-in-another-window ()
+  "A window switch resyncs the cursor with the buffer and the state unchanged.
+
+The terminal's cursor belongs to whichever buffer is shown, so the
+window is part of what the answer depends on; see
+`donkey-mode-update-cursor-on-post-command-hook-resyncs-on-window-switch'.
+Both windows show the one buffer here, so the window is the only
+thing that moved."
+  (donkey-cursor-test--counting-updates
+    (let ((buffer (get-buffer-create "*donkey-cursor-window-test*")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (setq-local donkey-normal-mode t)
+            (set-window-buffer (selected-window) buffer)
+            (donkey--update-cursor-passive)
+            (should (= updates 1))
+            (let ((other (split-window)))
+              (unwind-protect
+                  (progn
+                    (set-window-buffer other buffer)
+                    (with-selected-window other
+                      (should (eq (current-buffer) buffer))
+                      (donkey--update-cursor-passive)
+                      (should (= updates 2))))
+                (delete-window other))))
+        (kill-buffer buffer)))))
+
+(ert-deftest donkey-update-cursor-passive-updates-again-when-someone-else-set-the-cursor ()
+  "A `cursor-type' another package set meanwhile is noticed and put back."
+  (donkey-cursor-test--counting-updates
+    (with-temp-buffer
+      (setq-local donkey-normal-mode t)
+      (donkey--update-cursor-passive)
+      (should (= updates 1))
+      (setq-local cursor-type 'hbar)
+      (donkey--update-cursor-passive)
+      (should (= updates 2)))))
+
+(ert-deftest donkey-update-cursor-passive-updates-again-after-a-state-change ()
+  "The setting the state asks for is part of what the skip decides on."
+  (donkey-cursor-test--counting-updates
+    (with-temp-buffer
+      (setq-local donkey-normal-mode t)
+      (donkey--update-cursor-passive)
+      (should (= updates 1))
+      (setq-local donkey-normal-mode nil)
+      (setq-local donkey-insert-mode t)
+      (donkey--update-cursor-passive)
+      (should (= updates 2)))))
+
+(ert-deftest donkey-update-cursor-non-passive-forgets-what-the-skip-remembered ()
+  "The call the state hooks make drops the memory, so no later skip rests on it."
+  (let ((donkey--cursor-last-buffer (current-buffer)))
+    (with-temp-buffer (donkey--update-cursor))
+    (should-not donkey--cursor-last-buffer)))
+
 (ert-deftest donkey-apply-cursor-setting-sends-decscusr-in-terminal ()
   "Sends DECSCUSR in terminal mode."
   (let ((send-called nil))
