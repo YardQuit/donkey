@@ -253,8 +253,9 @@ Expected: \"X Prefix\"."
 
 (ert-deftest donkey-describe-bindings-group-name-multi-char-prefix ()
   "Multi-character unknown prefixes are uppercased in full.
-Expected: \"SPC Prefix\"."
-  (should (equal (donkey--binding-group-name "SPC") "SPC Prefix")))
+Expected: \"TAB Prefix\"; SPC is known, as the leader."
+  (should (equal (donkey--binding-group-name "TAB") "TAB Prefix"))
+  (should (equal (donkey--binding-group-name "SPC") "Leader")))
 
 (ert-deftest donkey-describe-bindings-group-name-empty-string ()
   "Empty-string prefix yields \" Prefix\" (leading space).
@@ -422,6 +423,41 @@ Expected: at least one button present in the buffer."
       (donkey-describe-bindings))
     (with-current-buffer "*DONKEY Bindings*"
       (should (next-button (point-min))))
+    (kill-buffer "*DONKEY Bindings*")))
+
+(ert-deftest donkey-leader-map-hangs-under-SPC-in-normal-state ()
+  "SPC in Normal state is the leader prefix, carrying the name Leader with it."
+  (should (eq (lookup-key donkey-normal-mode-map (kbd "SPC")) donkey-leader-map))
+  (should (equal (cadr (assq ?\s (cdr donkey-normal-mode-map))) "Leader")))
+
+(ert-deftest donkey-leader-map-runs-a-key-of-the-users-own ()
+  "A command put under the leader with a name runs from SPC and its key."
+  (let ((ran nil))
+    (unwind-protect
+        (progn
+          (defalias 'donkey-test--leader-command (lambda () (interactive) (setq ran t)))
+          (keymap-set donkey-leader-map "q" '("Test" . donkey-test--leader-command))
+          (donkey-test-keys--harness "*donkey-leader-test*" #'text-mode () "text" "SPC q"
+            (should ran)
+            (should donkey-normal-mode)))
+      (keymap-unset donkey-leader-map "q" t)
+      (fmakunbound 'donkey-test--leader-command))))
+
+(ert-deftest donkey-describe-bindings-names-the-leader-and-lists-a-named-leaf-as-its-command ()
+  "The chart heads the SPC group Leader and shows a (NAME . COMMAND) leaf as a button to COMMAND."
+  (let ((donkey-normal-mode-map
+         (let ((map (make-sparse-keymap)) (sub (make-sparse-keymap)))
+           (keymap-set sub "q" '("Quit" . kill-region))
+           (keymap-set map "SPC" (cons "Leader" sub))
+           map)))
+    (cl-letf (((symbol-function 'display-buffer) #'ignore))
+      (donkey-describe-bindings))
+    (with-current-buffer "*DONKEY Bindings*"
+      (should (string-match-p "^  Leader$" (buffer-string)))
+      (should-not (string-match-p "\\[complex\\]" (buffer-string)))
+      (let ((button (next-button (point-min))))
+        (should button)
+        (should (equal (button-label button) "kill-region"))))
     (kill-buffer "*DONKEY Bindings*")))
 
 (ert-deftest donkey-describe-bindings-complex-def-shown-as-text ()

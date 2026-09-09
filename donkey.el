@@ -4690,6 +4690,9 @@ PREFIX is the accumulated key sequence string for the current path."
                (dolist (leaf (donkey--desc-bindings-collect-leaves
                               (cdr def) (concat full-key " ")))
                  (push leaf acc)))
+              ;; A (NAME . COMMAND) binding is listed as its command.
+              ((and (consp def) (stringp (car def)) (cdr def))
+               (push (cons full-key (cdr def)) acc))
               (t
                (push (cons full-key def) acc)))))))
      map)
@@ -4714,6 +4717,7 @@ such as \"<backspace>\" -- is a single key."
    ((string= prefix "m")      "Mark Objects")
    ((string= prefix "r")      "Search / Replace")
    ((string= prefix "z")      "Scroll")
+   ((string= prefix "SPC")    "Leader")
    (t (format "%s Prefix" (upcase prefix)))))
 
 (defun donkey--desc-bindings-insert-map (map)
@@ -6030,6 +6034,16 @@ what starts over."
   (setq donkey-normal-mode-map (make-sparse-keymap)))
 
 (suppress-keymap donkey-normal-mode-map t)
+
+;; Leader
+(defvar donkey-leader-map (make-sparse-keymap)
+  "Keymap under SPC in NORMAL state, for keys of your own.
+
+Add to it with `keymap-set'.  A binding written as (NAME . COMMAND)
+carries NAME with it: `C-h' after the prefix, `donkey-describe-bindings'
+and which-key all show it, and nothing needs which-key to be there.
+DONKEY's own entries are prefixes on a key of their own.")
+(keymap-set donkey-normal-mode-map "SPC" (cons "Leader" donkey-leader-map))
 
 ;; Navigation
 (keymap-set donkey-normal-mode-map "h" #'backward-char)

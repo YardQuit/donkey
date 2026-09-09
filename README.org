@@ -1255,18 +1255,25 @@ by modifying =donkey-normal-mode-map=.
 
 #+end_src
 
-** Add a leader key map:
+** Put your own keys under the leader, =SPC=:
+
+=SPC= in Normal state is a prefix, =donkey-leader-map=, that DONKEY
+keeps almost empty: it is there for keys of your own. Add to it with
+=keymap-set=. Write a binding as =(NAME . COMMAND)= and the name
+travels with the key: =SPC C-h=, =?= and which-key all show it, and
+nothing needs which-key to be installed.
 
 #+begin_src emacs-lisp
 
-  ;; Leader Map Definition
-  (when (boundp 'donkey-normal-mode-map)
-    (unless (boundp 'donkey-leader-map)
-      (defvar donkey-leader-map (make-sparse-keymap)
-        "Leader key map under SPC."))
-    (keymap-set donkey-normal-mode-map "SPC" 'donkey-leader-map))
+  (keymap-set donkey-leader-map "SPC" '("Other window" . other-window))
+  (keymap-set donkey-leader-map ","   '("Switch buffer" . consult-buffer))
+  (keymap-set donkey-leader-map ";"   '("Outline" . consult-outline))
 
 #+end_src
+
+DONKEY's own entries under =SPC= sit on prefixes of their own, such as
+=SPC i= for input methods (see Input Method Management), so a single
+letter of yours never collides with them.
 
 * Enter Key Rules (DWIM)
 :PROPERTIES:
