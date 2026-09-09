@@ -881,6 +881,23 @@ the same command with DONKEY on as off."
           (should (string-match-p "Ctrl\\+Shift\\+u" (buffer-string)))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
 
+(ert-deftest donkey-digraph-steps-name-set-input-method-as-a-command ()
+  "Step 2 of the chart shows its keys as keys and its command as a button to the help."
+  (unwind-protect
+      (progn
+        (donkey-digraph)
+        (with-current-buffer "*DONKEY Digraphs*"
+          (goto-char (point-min))
+          (should (re-search-forward "M-x set-input-method RET, and choose" nil t))
+          (let* ((start (match-beginning 0))
+                 (button (next-button start)))
+            (should (eq (get-text-property start 'face) 'help-key-binding))
+            (should button)
+            (should (equal (button-label button) "set-input-method"))
+            (should (eq (get-text-property (+ (button-end button) 1) 'face)
+                        'help-key-binding)))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
 (ert-deftest donkey-digraph-common-table-is-what-rfc1345-types ()
   "Each digraph in `donkey--digraph-common' types its listed result under rfc1345.
 

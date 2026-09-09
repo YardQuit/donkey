@@ -1842,11 +1842,15 @@ marks in pairs:
 | =1'=    | =&1'=  | ′      |
 | =Eu=    | =&Eu=  | €      |
 
-To type one: enter Insert state, press =C-\= and choose =rfc1345= --
-once; after that =C-\= toggles it -- then type the ampersand and the
-digraph. DONKEY turns the input method off in Normal state, so the
-letters stay commands, and back on when you return to Insert. The
-full table is =C-h I rfc1345=.
+To type one: enter Insert state, press =C-x RET C-\= or
+=M-x set-input-method RET= and choose =rfc1345= -- once; after that
+=C-\= switches it off and on -- then type the ampersand and the digraph.
+Nothing is said when the method switches; the mode line shows =m=
+while it is on. =C-\= brings back the method the buffer used last, so
+after typing with another method choose =rfc1345= again the same way.
+DONKEY turns the input method off in Normal state, so the letters
+stay commands, and back on when you return to Insert. The full table
+is =C-h I rfc1345=.
 
 For any character by code point or name, =C-x 8 RET= works in either
 state: =C-x 8 RET 20ac RET= gives =€=. On a Linux desktop,

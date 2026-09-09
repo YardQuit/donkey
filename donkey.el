@@ -5142,9 +5142,22 @@ ampersand in front of it.\n\n"))
       (insert "\n" (funcall head "  How to type one") "\n" rule "\n")
       (insert (substitute-command-keys
                "  1. Enter INSERT state.
-  2. Press \\[toggle-input-method] and choose rfc1345.  Once is enough:
-     after that \\[toggle-input-method] switches the same method on and off.
+  2. Press \\[set-input-method] or \\`M-x' "))
+      ;; The command as the bindings chart shows one: a button to its help.
+      (insert-text-button "set-input-method"
+                          'action (lambda (_) (describe-function 'set-input-method))
+                          'follow-link t
+                          'help-echo "Describe set-input-method")
+      (insert (substitute-command-keys
+               " \\`RET', and choose
+     rfc1345.  Once is enough: after that \\[toggle-input-method] switches it off
+     and on.
   3. Type an ampersand and the digraph: &e\\=' gives é.
+
+  Nothing is said when the method switches; the mode line shows m
+  while it is on.  \\[toggle-input-method] brings back the method this buffer used
+  last, so after typing with another method choose rfc1345 again
+  with step 2.
 
   DONKEY turns the input method off in NORMAL state, so the letters
   stay commands, and back on when you return to INSERT.
