@@ -4867,7 +4867,12 @@ after it, which is a gap, and from a gap `m w' marks the word ahead --
         (should donkey--mark-run-exit-function)
         (should-not donkey--mark-run-suspended)
         (should (equal donkey--mark-run-history history))
-        (should (equal (donkey-mark-test--selection) selection))))))
+        (should (equal (donkey-mark-test--selection) selection))
+        ;; The first object key after the return grows the run, called
+        ;; as the command loop would rather than through a fresh macro.
+        (let ((this-command 'donkey-mark-word))
+          (call-interactively #'donkey-mark-word))
+        (should (equal (donkey-mark-test--selection) (concat selection " saved")))))))
 
 (ert-deftest donkey-mark-run-stays-down-while-another-buffer-has-the-focus ()
   "A focused frame showing another buffer leaves the run suspended; showing the run's buffer again resumes it."
@@ -4929,15 +4934,60 @@ the returning frame brings; ending on it would undo the resume."
         (donkey--mark-run-mode-post-command)
         (should donkey--mark-run-exit-function)))))
 
+(ert-deftest donkey-mark-run-is-kept-when-a-command-leaves-its-buffer ()
+  "A buffer switch in the middle of a run keeps the run to resume; showing the buffer again arms it."
+  (let ((other (get-buffer-create "*donkey-other-buffer*")))
+    (unwind-protect
+        (donkey-mark-test--keys "for text that is not saved" "w w l M w w C-x b *donkey-other-buffer* RET"
+          (let ((run-buffer (get-buffer "*donkey-mark-test*")))
+            (should (eq (current-buffer) other))
+            (should-not donkey--mark-run-exit-function)
+            (should (eq (car donkey--mark-run-suspended) run-buffer))
+            (let ((history (nth 2 donkey--mark-run-suspended)))
+              (switch-to-buffer run-buffer)
+              (donkey--mark-run-resume-when-shown)
+              (should donkey--mark-run-exit-function)
+              (should-not donkey--mark-run-suspended)
+              (should (equal donkey--mark-run-history history))
+              (should (equal (donkey-mark-test--selection) "that is not"))
+              ;; The first object key after the return grows the run.
+              ;; Called as the command loop would, not through a
+              ;; fresh macro, which resets `last-command' at its edge.
+              (let ((this-command 'donkey-mark-word))
+                (call-interactively #'donkey-mark-word))
+              (should (equal (donkey-mark-test--selection) "that is not saved")))))
+      (kill-buffer other))))
+
+(ert-deftest donkey-mark-run-ends-on-a-command-that-stays-in-its-buffer ()
+  "A command outside the run that keeps the buffer ends the run for good."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w C-x C-x"
+    (should (region-active-p))
+    (should-not donkey--mark-run-exit-function)
+    (should-not donkey--mark-run-suspended)
+    (should-not donkey--mark-run-pending)))
+
+(ert-deftest donkey-mark-run-canceled-before-leaving-is-not-kept ()
+  "A run canceled with M is not resumed when its buffer is shown again."
+  (let ((other (get-buffer-create "*donkey-other-buffer*")))
+    (unwind-protect
+        (donkey-mark-test--keys "for text that is not saved" "w w l M w M C-x b *donkey-other-buffer* RET"
+          (should-not donkey--mark-run-suspended)
+          (switch-to-buffer "*donkey-mark-test*")
+          (donkey--mark-run-resume-when-shown)
+          (should-not donkey--mark-run-exit-function))
+      (kill-buffer other))))
+
 (ert-deftest donkey-mode-installs-and-removes-the-focus-follower ()
   "`donkey-mode' puts `donkey--mark-run-follow-focus' on the focus function and takes it off, forgetting a suspended run."
   (unwind-protect
       (progn
         (donkey-mode 1)
         (should (advice-function-member-p #'donkey--mark-run-follow-focus after-focus-change-function))
+        (should (memq #'donkey--mark-run-resume-when-shown window-buffer-change-functions))
         (setq donkey--mark-run-suspended (list (current-buffer) (frame-terminal) nil))
         (donkey-mode -1)
         (should-not (advice-function-member-p #'donkey--mark-run-follow-focus after-focus-change-function))
+        (should-not (memq #'donkey--mark-run-resume-when-shown window-buffer-change-functions))
         (should-not donkey--mark-run-suspended))
     (donkey-mode 1)))
 

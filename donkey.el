@@ -2660,14 +2660,17 @@ through them: a motion member with no active region is just the
 cursor having moved.")
 
 (defconst donkey--mark-run-inert-commands
-  '(undefined ignore donkey-mark-run-refuse)
+  '(undefined ignore donkey-mark-run-refuse
+    handle-switch-frame handle-focus-in handle-focus-out)
   "The commands that change nothing, so a mark run survives them.
 
 Every printable key the normal state leaves unbound resolves to
 `undefined', and \`DEL' to `ignore'.  Listed here, they keep the mode
 and count as companions in `donkey--mark-extending-p', so a mistyped
 key costs a beep and nothing else.  `donkey-mark-run-refuse' exists to
-leave a run standing, so it is here too.")
+leave a run standing, so it is here too, and so are the commands
+Emacs runs for a frame switch and a focus change: switching frames
+is not a keystroke, and the object key after it grows the run.")
 
 (defconst donkey--mark-run-commands
   (append
@@ -3298,8 +3301,7 @@ member -- which is what the letters of `donkey-mark-run-mode-map'
 resolve to -- or part of entering a count, which must not end the mode
 or \`C-u 3 w' inside it would fall apart between the \`C-u' and the
 \`w'.  The frame and focus events Emacs runs as commands keep it
-too: switching frames is not a keystroke, and a run put back by a
-returning focus would otherwise end on the switch that follows it.
+too, as members of `donkey--mark-run-inert-commands'.
 
 A key that DOES NOTHING does not end it either, nor does a mistyped
 sequence that reached no command at all, nor `donkey-mark-run-refuse'
@@ -3310,9 +3312,7 @@ command it repeats, through `donkey--mark-run-press-command'."
       ;; mistype as an unbound key, under another spelling.
       (null this-command)
       (memq this-command '(universal-argument universal-argument-more
-                           digit-argument negative-argument
-                           handle-switch-frame handle-focus-in
-                           handle-focus-out))))
+                           digit-argument negative-argument))))
 
 (defvar donkey--mark-run-exit-function nil
   "What disarms mark run mode, or nil when the mode is not armed.
@@ -3345,6 +3345,66 @@ the focus back.")
   "Return non-nil when TERMINAL is a live graphical terminal."
   (let ((type (terminal-live-p terminal)))
     (and type (not (eq type t)))))
+
+(defvar donkey--mark-run-pending nil
+  "A run just disarmed by a command, until that command has run, or nil.
+
+A list (BUFFER TERMINAL HISTORY) like `donkey--mark-run-suspended';
+`donkey--mark-run-settle' decides after the command whether the run
+is kept to resume, when the command left the buffer with the
+selection intact, or forgotten.")
+
+(defun donkey--mark-run-settle ()
+  "Keep a run a command just ended, when the command left its buffer.
+
+On `post-command-hook' once, after the command that disarmed the run.
+A run whose buffer is no longer the selected window's, with its
+selection still active, becomes `donkey--mark-run-suspended', to be
+armed again when the buffer is shown again; any other run is
+forgotten.  A run armed or suspended meanwhile is left alone."
+  (remove-hook 'post-command-hook #'donkey--mark-run-settle)
+  (let ((record donkey--mark-run-pending))
+    (setq donkey--mark-run-pending nil)
+    (when (and record
+               (null donkey--mark-run-exit-function)
+               (null donkey--mark-run-suspended)
+               (buffer-live-p (car record))
+               (not (eq (window-buffer (selected-window)) (car record)))
+               (with-current-buffer (car record) (donkey--adoptable-selection-p)))
+      (setq donkey--mark-run-suspended record))))
+
+(defun donkey--mark-run-resume-when-shown (&rest _)
+  "Arm a suspended run again once its buffer is in the selected window.
+
+On `window-buffer-change-functions' and
+`window-selection-change-functions' while `donkey-mode' is on, so a
+run put down by a buffer or window switch comes back with the
+buffer.  The buffer must be on the terminal the run's map lived on
+and its selection still active; otherwise the run is forgotten."
+  (condition-case nil
+      (when (and donkey--mark-run-suspended (null donkey--mark-run-exit-function))
+        (let ((buffer (car donkey--mark-run-suspended)))
+          (cond
+           ((not (buffer-live-p buffer))
+            (setq donkey--mark-run-suspended nil))
+           ((and (eq (window-buffer (selected-window)) buffer)
+                 (eq (frame-terminal (selected-frame)) (nth 1 donkey--mark-run-suspended)))
+            (let ((history (nth 2 donkey--mark-run-suspended)))
+              (setq donkey--mark-run-suspended nil)
+              (with-current-buffer buffer
+                (when (donkey--adoptable-selection-p)
+                  (donkey--mark-run-resume history))))))))
+    (error nil)))
+
+(defun donkey--mark-run-resume (history)
+  "Arm the run again in the current buffer and give it back HISTORY.
+
+The next object key must grow the selection, not mark afresh, so
+`last-command' is made to read as the adoption that starts a run
+from a selection."
+  (donkey--mark-run-enter)
+  (setq donkey--mark-run-history history)
+  (setq last-command 'donkey-mark-run-adopt))
 
 (defun donkey--mark-run-follow-focus ()
   "Suspend the mark run when its frame loses focus, resume it when it is back.
@@ -3380,8 +3440,7 @@ alone."
             (with-selected-frame frame
               (with-current-buffer shown
                 (when (donkey--adoptable-selection-p)
-                  (donkey--mark-run-enter)
-                  (setq donkey--mark-run-history history))))))))
+                  (donkey--mark-run-resume history))))))))
     (error nil)))
 
 (defun donkey--mark-run-exit ()
@@ -3403,6 +3462,12 @@ the reminder is cleared only when it is what is showing, so a command
 that said something of its own keeps its echo."
   (remove-hook 'pre-command-hook #'donkey--mark-run-mode-pre-command)
   (remove-hook 'post-command-hook #'donkey--mark-run-mode-post-command)
+  ;; An armed run is remembered for one command, for
+  ;; `donkey--mark-run-settle' to keep or forget.
+  (when (and donkey--mark-run-exit-function (buffer-live-p donkey--mark-run-buffer))
+    (setq donkey--mark-run-pending
+          (list donkey--mark-run-buffer donkey--mark-run-terminal donkey--mark-run-history))
+    (add-hook 'post-command-hook #'donkey--mark-run-settle))
   (setq donkey--mark-run-history nil)
   (setq donkey--mark-run-redo nil)
   ;; The reminder must not outlive the mode; cleared only when it is
@@ -3435,7 +3500,9 @@ later: by the time the macro's caller reaches
 back to nil and the only way to tell an armed-by-macro mode from an
 armed-by-keypress one is to have written it down."
   (donkey--mark-run-exit)
-  (setq donkey--mark-run-suspended nil)
+  (setq donkey--mark-run-suspended nil
+        donkey--mark-run-pending nil)
+  (remove-hook 'post-command-hook #'donkey--mark-run-settle)
   (setq donkey--mark-run-buffer (current-buffer)
         donkey--mark-run-terminal (frame-terminal (selected-frame)))
   (setq donkey--mark-run-armed-in-macro (and executing-kbd-macro t))
@@ -6827,6 +6894,8 @@ actually being on, because those mode hooks also fire on the way off."
     (post-command-hook . donkey--update-cursor-passive)
     (minibuffer-setup-hook . donkey--minibuffer-setup)
     (minibuffer-exit-hook . donkey--minibuffer-exit)
+    (window-buffer-change-functions . donkey--mark-run-resume-when-shown)
+    (window-selection-change-functions . donkey--mark-run-resume-when-shown)
     ,@donkey--state-hooks)
   "Every (HOOK . FUNCTION) `donkey-mode' adds to Emacs\\='s own hooks.
 
@@ -6883,7 +6952,9 @@ donkey-mode' to toggle."
     ;; is a no-op when nothing was armed.  A run put down by a focus
     ;; change is forgotten with it.
     (donkey--mark-run-exit)
-    (setq donkey--mark-run-suspended nil)
+    (setq donkey--mark-run-suspended nil
+          donkey--mark-run-pending nil)
+    (remove-hook 'post-command-hook #'donkey--mark-run-settle)
     (remove-function after-focus-change-function #'donkey--mark-run-follow-focus)
     (donkey--remove-global-hooks)
     ;; A timer left ticking for a switched-off mode is still state.

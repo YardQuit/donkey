@@ -1966,31 +1966,31 @@ recovery is; together they collapse the frequency to rare.
 :CUSTOM_ID: development
 :END:
 
-** A mark run and a second frame
+** A mark run follows you
 
-Emacs keeps a transient keymap, which is what a mark run is, in
-=overriding-terminal-local-map=, and that map is per terminal, not
-per frame or per buffer. Two graphical frames on one display are
-one terminal to Emacs, so a run started with =M= in one frame would
-be armed for the other as well, and =w= there would select a word
-instead of moving over it.
+A mark run is a transient keymap, and Emacs keeps those per
+terminal: two graphical frames on one display are one terminal to
+it, so a run started with =M= in one frame would be armed for the
+other as well, and any command outside the run ends it, a buffer
+switch included.
 
-DONKEY keeps that from happening by following the focus: when the
-run's frame loses the keyboard focus, the run is put down, with its
-selection and its =u=/=U= history kept, and when a frame showing
-the run's buffer gets the focus back, the run is armed again exactly
-as it was. In the other frame every key is itself, and back in the
-first the run continues. Three things to know:
+DONKEY keeps a run for you instead. When you leave its buffer, by
+switching buffer or window, or when its frame loses the keyboard
+focus, the run is put down with its selection and its =u=/=U=
+history kept, and when that buffer is back in the selected window,
+or its frame has the focus again, the run is armed again exactly as
+it was. Wherever you went in between, every key is itself; back at
+the run, it continues. Three things to know:
 
-- The frame that gets the focus back must show the run's buffer in
-  its selected window, and the selection must still be active;
-  otherwise the run is forgotten, like a run ended by =C-g=.
-- Clicking into a frame to focus it is a mouse command, and a mouse
-  command ends a run the way any key outside the run does. Switch
-  frames with the keyboard, or click once and start the run again.
-- Emacs must be told about focus changes: a graphical frame is,
-  while a terminal frame from =emacsclient -t= is its own terminal
-  and never shared the map in the first place.
+- The selection must still be active when you come back; a run
+  whose selection is gone is forgotten, like one ended by =C-g=.
+  So is a run you cancel with =M= before leaving.
+- A command that stays in the run's buffer but is not one of the
+  run's still ends it, as it always did: =x= deletes the selection
+  and the run is over.
+- Clicking into a frame to focus it is a mouse command in that
+  buffer, and ends the run the same way. Switch frames with the
+  keyboard, or click once and start the run again.
 
 ** Every key is undefined in a frame you just switched to
 
