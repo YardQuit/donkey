@@ -3297,7 +3297,9 @@ The mode lives while the command about to run is a mark run family
 member -- which is what the letters of `donkey-mark-run-mode-map'
 resolve to -- or part of entering a count, which must not end the mode
 or \`C-u 3 w' inside it would fall apart between the \`C-u' and the
-\`w'.
+\`w'.  The frame and focus events Emacs runs as commands keep it
+too: switching frames is not a keystroke, and a run put back by a
+returning focus would otherwise end on the switch that follows it.
 
 A key that DOES NOTHING does not end it either, nor does a mistyped
 sequence that reached no command at all, nor `donkey-mark-run-refuse'
@@ -3308,7 +3310,9 @@ command it repeats, through `donkey--mark-run-press-command'."
       ;; mistype as an unbound key, under another spelling.
       (null this-command)
       (memq this-command '(universal-argument universal-argument-more
-                           digit-argument negative-argument))))
+                           digit-argument negative-argument
+                           handle-switch-frame handle-focus-in
+                           handle-focus-out))))
 
 (defvar donkey--mark-run-exit-function nil
   "What disarms mark run mode, or nil when the mode is not armed.

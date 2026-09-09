@@ -4913,6 +4913,22 @@ after it, which is a gap, and from a gap `m w' marks the word ahead --
       (should donkey--mark-run-exit-function)
       (should-not donkey--mark-run-suspended))))
 
+(ert-deftest donkey-mark-run-survives-a-frame-switch-event ()
+  "The commands Emacs runs for a frame switch and a focus change do not end a run.
+
+A resumed run is followed by the switch-frame event the first key from
+the returning frame brings; ending on it would undo the resume."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    ;; Armed by real keys, not by the macro that typed them here: a
+    ;; run armed inside a macro ends with the first command outside
+    ;; one, which is a rule of its own and not the one under test.
+    (setq donkey--mark-run-armed-in-macro nil)
+    (dolist (command '(handle-switch-frame handle-focus-in handle-focus-out))
+      (let ((this-command command))
+        (should (donkey--mark-run-mode-keep-p))
+        (donkey--mark-run-mode-post-command)
+        (should donkey--mark-run-exit-function)))))
+
 (ert-deftest donkey-mode-installs-and-removes-the-focus-follower ()
   "`donkey-mode' puts `donkey--mark-run-follow-focus' on the focus function and takes it off, forgetting a suspended run."
   (unwind-protect
