@@ -6134,7 +6134,7 @@ carries NAME with it: `donkey-describe-bindings' shows it beside the
 command, and which-key, part of Emacs since 30, shows it in its
 popup; nothing needs which-key to be there.  DONKEY's own entries
 are prefixes on a key of their own.")
-(keymap-set donkey-normal-mode-map "SPC" (cons "Leader" donkey-leader-map))
+(keymap-set donkey-normal-mode-map "SPC" (cons "leader" donkey-leader-map))
 
 ;; Navigation
 (keymap-set donkey-normal-mode-map "h" #'backward-char)
@@ -6963,11 +6963,11 @@ key is DONKEY's own are left out."
   (donkey--input-method-map-refresh (and (memq operation '(set let unlet)) value)))
 
 (add-variable-watcher 'donkey-input-methods #'donkey--input-methods-changed)
-(keymap-set donkey-input-method-map "&" '("Insert digraph" . donkey-insert-digraph))
-(keymap-set donkey-input-method-map "." '("Digraphs" . donkey-input-method-digraphs))
-(keymap-set donkey-input-method-map "-" '("Off" . donkey-disable-input-method))
+(keymap-set donkey-input-method-map "&" '("insert digraph" . donkey-insert-digraph))
+(keymap-set donkey-input-method-map "." '("digraphs" . donkey-input-method-digraphs))
+(keymap-set donkey-input-method-map "-" '("off" . donkey-disable-input-method))
 (donkey--input-method-map-refresh donkey-input-methods)
-(keymap-set donkey-leader-map "i" (cons "Input method" donkey-input-method-map))
+(keymap-set donkey-leader-map "i" (cons "input-method" donkey-input-method-map))
 
 (add-hook 'donkey-normal-mode-hook #'donkey--on-normal-entry)
 (add-hook 'donkey-insert-mode-hook #'donkey--on-insert-entry)

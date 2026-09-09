@@ -1267,9 +1267,9 @@ to name a key.
 
 #+begin_src emacs-lisp
 
-  (keymap-set donkey-leader-map "SPC" '("Other window" . other-window))
-  (keymap-set donkey-leader-map ","   '("Switch buffer" . consult-buffer))
-  (keymap-set donkey-leader-map ";"   '("Outline" . consult-outline))
+  (keymap-set donkey-leader-map "SPC" '("other window" . other-window))
+  (keymap-set donkey-leader-map ","   '("switch buffer" . consult-buffer))
+  (keymap-set donkey-leader-map ";"   '("outline" . consult-outline))
 
 #+end_src
 
@@ -1296,7 +1296,7 @@ move a reserved prefix, bind its map elsewhere and free the key:
 
 #+begin_src emacs-lisp
 
-  (keymap-set donkey-leader-map "m" (cons "Input method" donkey-input-method-map))
+  (keymap-set donkey-leader-map "m" (cons "input-method" donkey-input-method-map))
   (keymap-unset donkey-leader-map "i" t)
 
 #+end_src
@@ -1325,8 +1325,8 @@ go:
     (donkey-digraph-line-spacing 0.2)
     :config
     (donkey-mode 1)
-    (keymap-set donkey-leader-map "SPC" '("Other window" . other-window))
-    (keymap-set donkey-leader-map ","   '("Switch buffer" . consult-buffer))
+    (keymap-set donkey-leader-map "SPC" '("other window" . other-window))
+    (keymap-set donkey-leader-map ","   '("switch buffer" . consult-buffer))
     (keymap-set donkey-normal-mode-map "n" #'forward-paragraph))
 
 #+end_src

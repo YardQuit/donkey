@@ -865,7 +865,7 @@ real raw-key check firing."
           (should (null (lookup-key donkey-input-method-map "s")))
           (should (eq (lookup-key donkey-input-method-map "n") #'donkey-input-method-norwegian)))
       (setq donkey-input-methods old)
-      (keymap-set donkey-input-method-map "-" (cons "Off" minus)))))
+      (keymap-set donkey-input-method-map "-" (cons "off" minus)))))
 
 (ert-deftest donkey-input-methods-cannot-redefine-a-donkey-command ()
   "An entry whose label names an existing DONKEY command is left out, and the command is untouched."

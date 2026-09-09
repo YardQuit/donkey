@@ -426,9 +426,9 @@ Expected: at least one button present in the buffer."
     (kill-buffer "*DONKEY Bindings*")))
 
 (ert-deftest donkey-leader-map-hangs-under-SPC-in-normal-state ()
-  "SPC in Normal state is the leader prefix, carrying the name Leader with it."
+  "SPC in Normal state is the leader prefix, carrying the name leader with it."
   (should (eq (lookup-key donkey-normal-mode-map (kbd "SPC")) donkey-leader-map))
-  (should (equal (cadr (assq ?\s (cdr donkey-normal-mode-map))) "Leader")))
+  (should (equal (cadr (assq ?\s (cdr donkey-normal-mode-map))) "leader")))
 
 (ert-deftest donkey-leader-map-runs-a-key-of-the-users-own ()
   "A command put under the leader with a name runs from SPC and its key."
