@@ -3319,6 +3319,67 @@ down lives in `overriding-terminal-local-map', which is terminal-wide:
 a mode entered in one buffer is armed for every buffer on the
 terminal until something disarms it.")
 
+(defvar donkey--mark-run-buffer nil
+  "The buffer the armed mark run belongs to, or nil when none is armed.")
+
+(defvar donkey--mark-run-terminal nil
+  "The terminal the armed mark run's map lives on, or nil.")
+
+(defvar donkey--mark-run-suspended nil
+  "A mark run put down while its frame lost focus, or nil.
+
+A list (BUFFER TERMINAL HISTORY): the run's buffer, the terminal its
+map lived on, and its `donkey--mark-run-history', to be armed again
+by `donkey--mark-run-follow-focus' when a frame showing BUFFER gets
+the focus back.")
+
+(defun donkey--mark-run-focused-frame ()
+  "Return the frame that has the keyboard focus, or nil."
+  (seq-find #'frame-focus-state (frame-list)))
+
+(defun donkey--mark-run-graphical-terminal-p (terminal)
+  "Return non-nil when TERMINAL is a live graphical terminal."
+  (let ((type (terminal-live-p terminal)))
+    (and type (not (eq type t)))))
+
+(defun donkey--mark-run-follow-focus ()
+  "Suspend the mark run when its frame loses focus, resume it when it is back.
+
+On `after-focus-change-function' while `donkey-mode' is on.  A run
+armed on a graphical terminal is put down when the focused frame is
+not one showing the run's buffer, or when no frame has the focus,
+and armed again, with its selection and its \`u'/\`U' history, when
+a frame on that terminal showing the buffer has the focus and the
+selection is still active.  A run whose selection is gone, or whose
+buffer is, is forgotten.  A run armed on a terminal frame is left
+alone."
+  (condition-case nil
+      (let* ((frame (donkey--mark-run-focused-frame))
+             (shown (and frame (window-buffer (frame-selected-window frame)))))
+        (cond
+         ((and donkey--mark-run-exit-function
+               (buffer-live-p donkey--mark-run-buffer)
+               (donkey--mark-run-graphical-terminal-p donkey--mark-run-terminal)
+               (not (eq shown donkey--mark-run-buffer)))
+          (let ((record (list donkey--mark-run-buffer donkey--mark-run-terminal
+                              donkey--mark-run-history)))
+            (donkey--mark-run-exit)
+            (setq donkey--mark-run-suspended record)))
+         ((and donkey--mark-run-suspended
+               (not (buffer-live-p (car donkey--mark-run-suspended))))
+          (setq donkey--mark-run-suspended nil))
+         ((and donkey--mark-run-suspended frame
+               (eq shown (car donkey--mark-run-suspended))
+               (eq (frame-terminal frame) (nth 1 donkey--mark-run-suspended)))
+          (let ((history (nth 2 donkey--mark-run-suspended)))
+            (setq donkey--mark-run-suspended nil)
+            (with-selected-frame frame
+              (with-current-buffer shown
+                (when (donkey--adoptable-selection-p)
+                  (donkey--mark-run-enter)
+                  (setq donkey--mark-run-history history))))))))
+    (error nil)))
+
 (defun donkey--mark-run-exit ()
   "Disarm mark run mode: the transient map and its reminder hook.
 
@@ -3345,6 +3406,8 @@ that said something of its own keeps its echo."
   (when (equal (current-message) donkey--mark-run-mode-hint)
     (message nil))
   (setq donkey--mark-run-armed-in-macro nil)
+  (setq donkey--mark-run-buffer nil
+        donkey--mark-run-terminal nil)
   (let ((exit donkey--mark-run-exit-function))
     (setq donkey--mark-run-exit-function nil)
     (when exit
@@ -3368,6 +3431,9 @@ later: by the time the macro's caller reaches
 back to nil and the only way to tell an armed-by-macro mode from an
 armed-by-keypress one is to have written it down."
   (donkey--mark-run-exit)
+  (setq donkey--mark-run-suspended nil)
+  (setq donkey--mark-run-buffer (current-buffer)
+        donkey--mark-run-terminal (frame-terminal (selected-frame)))
   (setq donkey--mark-run-armed-in-macro (and executing-kbd-macro t))
   ;; Already emptied by the exit above; kept as the place where a
   ;; run's steps begin.
@@ -6803,11 +6869,18 @@ donkey-mode' to toggle."
         ;; Lisp was running; recover its meaning.  See
         ;; `donkey--recover-quit-in-insert'.
         (add-function :around command-error-function
-                      #'donkey--recover-quit-in-insert))
+                      #'donkey--recover-quit-in-insert)
+        ;; A mark run follows its frame's focus; see
+        ;; `donkey--mark-run-follow-focus'.
+        (add-function :after after-focus-change-function
+                      #'donkey--mark-run-follow-focus))
     ;; Mark run mode's map lives in `overriding-terminal-local-map',
     ;; terminal-wide; `donkey--mark-run-exit' takes down all of it and
-    ;; is a no-op when nothing was armed.
+    ;; is a no-op when nothing was armed.  A run put down by a focus
+    ;; change is forgotten with it.
     (donkey--mark-run-exit)
+    (setq donkey--mark-run-suspended nil)
+    (remove-function after-focus-change-function #'donkey--mark-run-follow-focus)
     (donkey--remove-global-hooks)
     ;; A timer left ticking for a switched-off mode is still state.
     (when donkey--startup-resweep-timer

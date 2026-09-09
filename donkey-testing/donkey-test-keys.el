@@ -98,6 +98,9 @@ user was told without silencing the run."
                (killed-rectangle nil)
                ,@donkey-test-keys--clipboard-bindings
                (donkey-test-keys--said nil)
+               ;; The macro's last command must not outlive the test:
+               ;; a later direct call reads `this-command' as its own.
+               (this-command nil) (last-command nil)
                ,@bindings)
            (insert ,text)
            (goto-char (point-min))
@@ -111,6 +114,9 @@ user was told without silencing the run."
                          (apply orig fmt args))))
              (execute-kbd-macro (kbd ,keys)))
            ,@body))
+     ;; A macro that ends on one of the mark run's letters leaves its
+     ;; map armed, terminal-wide, for whatever test runs next.
+     (donkey--mark-run-exit)
      (when (get-buffer ,name) (kill-buffer ,name))))
 
 (provide 'donkey-test-keys)

@@ -4297,6 +4297,9 @@ full suite."
            (donkey-enter-normal)
            (execute-kbd-macro (kbd ,keys))
            ,@body))
+     ;; A macro that ends on one of the run's letters leaves the map
+     ;; armed, terminal-wide, for whatever test runs next.
+     (donkey--mark-run-exit)
      (when (get-buffer "*donkey-mark-test*") (kill-buffer "*donkey-mark-test*"))
      ;; A macro that ends on a mark-run-mode letter leaves the transient
      ;; map armed GLOBALLY: `donkey--mark-run-mode-keep-p' is only
@@ -4834,6 +4837,93 @@ after it, which is a gap, and from a gap `m w' marks the word ahead --
                    (donkey-mark-test--selection))))
     (should (equal backward "Two thing."))
     (should (equal backward forward))))
+
+(ert-deftest donkey-mark-run-is-put-down-when-its-frame-loses-focus ()
+  "A focus change to no frame, or to a frame showing another buffer, disarms the run and keeps it to resume."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (cl-letf* ((focused nil)
+               ((symbol-function 'donkey--mark-run-focused-frame) (lambda () focused))
+               ((symbol-function 'donkey--mark-run-graphical-terminal-p) (lambda (_) t)))
+      (let ((selection (donkey-mark-test--selection)))
+        (should donkey--mark-run-exit-function)
+        (donkey--mark-run-follow-focus)
+        (should-not donkey--mark-run-exit-function)
+        (should (eq (car donkey--mark-run-suspended) (current-buffer)))
+        (should (region-active-p))
+        (should (equal (donkey-mark-test--selection) selection))))))
+
+(ert-deftest donkey-mark-run-resumes-when-its-frame-gets-focus-back ()
+  "Focus returning to a frame that shows the run's buffer arms the run again with its selection and history."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w w"
+    (cl-letf* ((focused nil)
+               ((symbol-function 'donkey--mark-run-focused-frame) (lambda () focused))
+               ((symbol-function 'donkey--mark-run-graphical-terminal-p) (lambda (_) t)))
+      (let ((history donkey--mark-run-history)
+            (selection (donkey-mark-test--selection)))
+        (donkey--mark-run-follow-focus)
+        (should-not donkey--mark-run-exit-function)
+        (setq focused (selected-frame))
+        (donkey--mark-run-follow-focus)
+        (should donkey--mark-run-exit-function)
+        (should-not donkey--mark-run-suspended)
+        (should (equal donkey--mark-run-history history))
+        (should (equal (donkey-mark-test--selection) selection))))))
+
+(ert-deftest donkey-mark-run-stays-down-while-another-buffer-has-the-focus ()
+  "A focused frame showing another buffer leaves the run suspended; showing the run's buffer again resumes it."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (cl-letf* ((focused nil)
+               ((symbol-function 'donkey--mark-run-focused-frame) (lambda () focused))
+               ((symbol-function 'donkey--mark-run-graphical-terminal-p) (lambda (_) t)))
+      (let ((run-buffer (current-buffer))
+            (other (get-buffer-create "*donkey-other-frame*")))
+        (unwind-protect
+            (progn
+              (donkey--mark-run-follow-focus)
+              (setq focused (selected-frame))
+              (switch-to-buffer other)
+              (donkey--mark-run-follow-focus)
+              (should-not donkey--mark-run-exit-function)
+              (should donkey--mark-run-suspended)
+              (switch-to-buffer run-buffer)
+              (donkey--mark-run-follow-focus)
+              (should donkey--mark-run-exit-function)
+              (should-not donkey--mark-run-suspended))
+          (kill-buffer other))))))
+
+(ert-deftest donkey-mark-run-is-forgotten-when-its-selection-is-gone ()
+  "A suspended run whose selection was dropped meanwhile is not armed again."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (cl-letf* ((focused nil)
+               ((symbol-function 'donkey--mark-run-focused-frame) (lambda () focused))
+               ((symbol-function 'donkey--mark-run-graphical-terminal-p) (lambda (_) t)))
+      (donkey--mark-run-follow-focus)
+      (deactivate-mark)
+      (setq focused (selected-frame))
+      (donkey--mark-run-follow-focus)
+      (should-not donkey--mark-run-exit-function)
+      (should-not donkey--mark-run-suspended))))
+
+(ert-deftest donkey-mark-run-on-a-terminal-frame-ignores-focus ()
+  "A run whose map lives on a terminal is left armed whatever the focus does."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (cl-letf* (((symbol-function 'donkey--mark-run-focused-frame) (lambda () nil))
+               ((symbol-function 'donkey--mark-run-graphical-terminal-p) (lambda (_) nil)))
+      (donkey--mark-run-follow-focus)
+      (should donkey--mark-run-exit-function)
+      (should-not donkey--mark-run-suspended))))
+
+(ert-deftest donkey-mode-installs-and-removes-the-focus-follower ()
+  "`donkey-mode' puts `donkey--mark-run-follow-focus' on the focus function and takes it off, forgetting a suspended run."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (should (advice-function-member-p #'donkey--mark-run-follow-focus after-focus-change-function))
+        (setq donkey--mark-run-suspended (list (current-buffer) (frame-terminal) nil))
+        (donkey-mode -1)
+        (should-not (advice-function-member-p #'donkey--mark-run-follow-focus after-focus-change-function))
+        (should-not donkey--mark-run-suspended))
+    (donkey-mode 1)))
 
 (ert-deftest donkey-mark-run-mode-is-the-m-prefix-held-down ()
   "`M w b' selects exactly what `m w m w m b' selects.

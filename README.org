@@ -1966,30 +1966,31 @@ recovery is; together they collapse the frequency to rare.
 :CUSTOM_ID: development
 :END:
 
-** Keys act strangely in another frame while a mark run is open
+** A mark run and a second frame
 
-The symptom: with one Emacs serving two graphical frames, as
-=emacsclient -c= does, you start a mark run with =M= in one frame,
-switch to the other, and the keys there are not themselves. =w=
-selects a word instead of moving over it, =u= steps the run instead
-of undoing, =J= and =K= grow a selection line by line, and the
-first key the run does not know ends it and then does its ordinary
-job. =M= or =C-g= in either frame puts everything back.
+Emacs keeps a transient keymap, which is what a mark run is, in
+=overriding-terminal-local-map=, and that map is per terminal, not
+per frame or per buffer. Two graphical frames on one display are
+one terminal to Emacs, so a run started with =M= in one frame would
+be armed for the other as well, and =w= there would select a word
+instead of moving over it.
 
-This is not a DONKEY binding leaking, and no package can scope it
-narrower: Emacs keeps a transient keymap, which is what a mark run
-is, in =overriding-terminal-local-map=, and that map is per
-terminal, not per frame or per buffer. Two graphical frames on one
-display are one terminal to Emacs, so a run armed in one is armed
-for both until a key outside the run lapses it. A terminal frame
-opened with =emacsclient -t= is its own terminal and is not
-affected, and neither is a second Emacs process.
+DONKEY keeps that from happening by following the focus: when the
+run's frame loses the keyboard focus, the run is put down, with its
+selection and its =u=/=U= history kept, and when a frame showing
+the run's buffer gets the focus back, the run is armed again exactly
+as it was. In the other frame every key is itself, and back in the
+first the run continues. Three things to know:
 
-What to do: end the run before you switch frames, with =M=, =C-g=
-or any key that uses the selection. Nothing is lost either way: the
-selection in the first frame is still there when the run lapses
-from the other, and DONKEY disarms the map itself when the mode is
-switched off.
+- The frame that gets the focus back must show the run's buffer in
+  its selected window, and the selection must still be active;
+  otherwise the run is forgotten, like a run ended by =C-g=.
+- Clicking into a frame to focus it is a mouse command, and a mouse
+  command ends a run the way any key outside the run does. Switch
+  frames with the keyboard, or click once and start the run again.
+- Emacs must be told about focus changes: a graphical frame is,
+  while a terminal frame from =emacsclient -t= is its own terminal
+  and never shared the map in the first place.
 
 ** Running the checks locally
 
