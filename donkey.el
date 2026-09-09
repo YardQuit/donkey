@@ -5268,8 +5268,9 @@ ampersand in front of it.\n\n"))
      switches it off and on.
   2. In INSERT state type an ampersand and the digraph: &e\\=' gives é.
 
-  Nothing is said when the method switches; the mode line shows m
-  while it is on.  \\[toggle-input-method] brings back the method this buffer used
+  DONKEY names the method in the echo area when it switches, which
+  Emacs itself does not; the mode line shows m while it is on.
+  \\[toggle-input-method] brings back the method this buffer used
   last, so after typing with another method choose rfc1345 again
   with step 1.
 
@@ -6896,6 +6897,13 @@ redisplay or a timer reports as its own does not arrive here."
 (defvar-local donkey--saved-input-method nil
   "Buffer-local saved input method name for restoration on Insert entry.")
 
+(defvar donkey--input-method-quiet nil
+  "Non-nil while DONKEY, rather than the user, switches the input method.
+
+DONKEY switches the method off on the way into NORMAL state and on
+again on the way back, so an echo on every visit would be noise; the
+echo is for a switch the user asked for.")
+
 (defun donkey--on-normal-entry ()
   "Deactivate any active input method when entering Normal state.
 
@@ -6904,7 +6912,8 @@ The method is saved in `donkey--saved-input-method' for
   (when donkey-normal-mode
     (when current-input-method
       (setq donkey--saved-input-method current-input-method)
-      (deactivate-input-method))))
+      (let ((donkey--input-method-quiet t))
+        (deactivate-input-method)))))
 
 (defun donkey--on-insert-entry ()
   "Reactivate on Insert entry the input method `donkey--on-normal-entry' saved.
@@ -6914,26 +6923,47 @@ hand in the meantime is kept."
   (when donkey-insert-mode
     (when (and donkey--saved-input-method
                (not current-input-method))
-      (activate-input-method donkey--saved-input-method))))
+      (let ((donkey--input-method-quiet t))
+        (activate-input-method donkey--saved-input-method)))))
 
 (defun donkey--on-input-method-activate ()
-  "Immediately undo an input method activated while in Normal state.
+  "Immediately undo an input method activated while in Normal state, and say so.
 
 Saves it the way `donkey--on-normal-entry' does.  On the global
-`input-method-activate-hook', so activation by any means is caught."
-  (when (bound-and-true-p donkey-normal-mode)
-    (when current-input-method
-      (setq donkey--saved-input-method current-input-method)
-      (let (input-method-activate-hook)
-        (deactivate-input-method)))))
+`input-method-activate-hook', so activation by any means is caught.
+
+Names the method in the echo area, since Emacs itself says nothing
+when one is switched on and a mode line without the input-method
+field shows nothing either.  In NORMAL state it says the method
+waits for INSERT state, which is what the undoing amounts to.  A
+switch DONKEY made itself says nothing."
+  (let ((method current-input-method))
+    (when (bound-and-true-p donkey-normal-mode)
+      (when current-input-method
+        (setq donkey--saved-input-method current-input-method)
+        (let ((input-method-activate-hook nil)
+              (donkey--input-method-quiet t))
+          (deactivate-input-method))))
+    (when (and method (not donkey--input-method-quiet))
+      (message "%s on%s" method
+               (if (bound-and-true-p donkey-normal-mode)
+                   " when you enter INSERT state"
+                 "")))))
 
 (defun donkey--on-input-method-deactivate ()
   "Forget the saved input method if deactivated while still in Insert state.
 
 So the next entry into Insert state does not reactivate a method the
-user turned off by hand."
-  (when (bound-and-true-p donkey-insert-mode)
-    (setq donkey--saved-input-method nil)))
+user turned off by hand.  Names the method in the echo area, as
+`donkey--on-input-method-activate' does; a switch DONKEY made itself
+says nothing.  On `input-method-deactivate-hook', which runs before
+`current-input-method' is cleared, so the method still has a name
+here."
+  (let ((method current-input-method))
+    (when (bound-and-true-p donkey-insert-mode)
+      (setq donkey--saved-input-method nil))
+    (when (and method (not donkey--input-method-quiet))
+      (message "%s off" method))))
 
 (defun donkey-disable-input-method (&optional say)
   "Turn off the input method for good, clearing DONKEY's saved state too.
@@ -6945,7 +6975,8 @@ non-nil, says so.  On SPC i - in Normal state."
   (interactive (list t))
   (setq donkey--saved-input-method nil)
   (when current-input-method
-    (deactivate-input-method))
+    (let ((donkey--input-method-quiet t))
+      (deactivate-input-method)))
   (when say
     (message "Input method off")))
 
@@ -6976,7 +7007,10 @@ In NORMAL state the method waits, and comes on with INSERT state, as
 any input method does under DONKEY; the echo says which happened."
   (unless (assoc method input-method-alist)
     (user-error "DONKEY: no input method named %s" method))
-  (set-input-method method)
+  ;; Quiet, because this says it better below: with the label the
+  ;; user gave the method, and in one message rather than two.
+  (let ((donkey--input-method-quiet t))
+    (set-input-method method))
   (message "%s (%s) %s" label method
            (if (bound-and-true-p donkey-normal-mode)
                "on when you enter INSERT state"

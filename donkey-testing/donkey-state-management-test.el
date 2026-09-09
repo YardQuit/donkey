@@ -807,6 +807,98 @@ are not counted: they are on only while a run is armed or pending."
   (should (null (donkey-state-test--own-hook-functions 'post-command-hook))))
 
 ;;; ---------------------------------------------------------------------------
+;;; Saying that the input method switched
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-state-test--said (&rest body)
+  "Run BODY and return the last message it emitted, or nil."
+  (declare (indent 0))
+  `(let ((said nil))
+     (cl-letf (((symbol-function 'message)
+                (lambda (fmt &rest args) (setq said (and fmt (apply #'format fmt args))))))
+       ,@body)
+     said))
+
+(ert-deftest donkey-input-method-switched-on-in-insert-state-is-named ()
+  "Turning a method on in Insert state names it."
+  (donkey--with-test-buffer
+    (donkey-enter-insert)
+    (let ((current-input-method "test-method"))
+      (should (equal (donkey-state-test--said (donkey--on-input-method-activate))
+                     "test-method on")))))
+
+(ert-deftest donkey-input-method-switched-on-in-normal-state-says-it-waits ()
+  "Turning a method on in Normal state says it comes on with Insert state."
+  (donkey--with-test-buffer
+    (donkey-enter-normal)
+    (let ((current-input-method "test-method")
+          (donkey--saved-input-method nil))
+      (cl-letf (((symbol-function 'deactivate-input-method)
+                 (lambda () (setq current-input-method nil))))
+        (should (equal (donkey-state-test--said (donkey--on-input-method-activate))
+                       "test-method on when you enter INSERT state")))
+      (should (equal donkey--saved-input-method "test-method")))))
+
+(ert-deftest donkey-input-method-switched-off-is-named ()
+  "Turning a method off names it, the hook running before the name is cleared."
+  (donkey--with-test-buffer
+    (donkey-enter-insert)
+    (let ((current-input-method "test-method"))
+      (should (equal (donkey-state-test--said (donkey--on-input-method-deactivate))
+                     "test-method off")))))
+
+(ert-deftest donkey-says-nothing-when-it-switches-the-method-itself ()
+  "The state hooks switch the method without a word, both ways.
+
+Normal state puts the method away and Insert state brings it back on
+every visit, so an echo on each would be noise on every ESC and every
+i.  The stubs here fire the same hooks a real switch fires, so what
+is pinned is that nothing reaches the echo area, not merely that a
+flag was bound."
+  (donkey--with-test-buffer
+    (donkey-enter-insert)
+    (setq-local current-input-method "test-method")
+    (let ((said
+           (donkey-state-test--said
+             (cl-letf (((symbol-function 'deactivate-input-method)
+                        (lambda () (donkey--on-input-method-deactivate)
+                          (setq-local current-input-method nil))))
+               (donkey-enter-normal)))))
+      (should (null said)))
+    (setq donkey--saved-input-method "test-method")
+    (let ((said
+           (donkey-state-test--said
+             (cl-letf (((symbol-function 'activate-input-method)
+                        (lambda (m) (setq-local current-input-method m)
+                          (donkey--on-input-method-activate))))
+               (donkey-enter-insert)))))
+      (should (null said))
+      (should (equal current-input-method "test-method")))
+    (setq-local current-input-method nil)))
+
+(ert-deftest donkey-input-method-key-says-it-once-with-its-label ()
+  "SPC i . says the label once, not the method name as well.
+
+The key sets the method, which fires the activation hook, which has
+an echo of its own; the stub fires it the way a real activation
+does, so a second message would show up here."
+  (donkey--with-test-buffer
+    (donkey-enter-normal)
+    (let ((said nil) (count 0))
+      (cl-letf (((symbol-function 'set-input-method)
+                 (lambda (method)
+                   (setq-local current-input-method method)
+                   (donkey--on-input-method-activate)))
+                ((symbol-function 'deactivate-input-method)
+                 (lambda () (setq-local current-input-method nil)))
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (setq count (1+ count) said (and fmt (apply #'format fmt args))))))
+        (donkey-input-method-digraphs))
+      (should (= count 1))
+      (should (equal said "Digraphs (rfc1345) on when you enter INSERT state")))))
+
+;;; ---------------------------------------------------------------------------
 ;;; The SPC i keys and donkey-input-methods
 ;;; ---------------------------------------------------------------------------
 

@@ -1669,6 +1669,14 @@ non-English keyboard layouts (e.g. Swedish Postfix).
 This prevents input method key sequences from interfering with Normal
 mode keybindings.
 
+DONKEY also names the method in the echo area when it is switched on
+or off, which Emacs itself does not: =C-\= turning =rfc1345= on in
+Insert state says "rfc1345 on", turning it off says "rfc1345 off",
+and in Normal state, where the method is put away until you go back
+to Insert, it says "rfc1345 on when you enter INSERT state". The
+saving and restoring DONKEY does on every state change says nothing,
+or every =ESC= and every =i= would.
+
 ** Choosing a method: =SPC i=
 
 =SPC i= in Normal state is DONKEY's input method prefix. Its own keys
@@ -1999,8 +2007,9 @@ To type one: press =SPC i .= in Normal state, and the digraphs are on
 as soon as you enter Insert state; Emacs's own way works too, =C-x RET
 C-\= or =M-x set-input-method RET= and choosing =rfc1345=. Either way
 once is enough; after that =C-\= switches it off and on. Then, in
-Insert state, type the ampersand and the digraph. Nothing is said
-when =C-\= switches; the mode line shows =m= while the method is on.
+Insert state, type the ampersand and the digraph. DONKEY names the
+method in the echo area when it switches, which Emacs itself does
+not; the mode line shows =m= while the method is on.
 =C-\= brings back the method the buffer used last, so after typing
 with another method choose =rfc1345= again the same way.
 DONKEY turns the input method off in Normal state, so the letters
