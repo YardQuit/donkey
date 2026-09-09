@@ -1992,6 +1992,28 @@ first the run continues. Three things to know:
   while a terminal frame from =emacsclient -t= is its own terminal
   and never shared the map in the first place.
 
+** Every key is undefined in a frame you just switched to
+
+The symptom: you switch to another frame of the same Emacs with a
+desktop shortcut, press a key, and the echo area says something
+like =s-w is undefined=; every key does the same until you press
+=C-g= or a modifier key once, after which the keys are themselves
+again.
+
+The =s-= is the tell: the keys arrive with the Super modifier held.
+The shortcut that moved the focus held Super, its press reached the
+frame you switched to as part of the focus change, and its release
+went to the compositor instead, so GDK, which Emacs's PGTK build
+reads its modifiers from, keeps Super down on that frame until it
+sees the key again. DONKEY never sees the keys: =s-w= is not =w=,
+and nothing binds it. The log tells the story: =C-h l= shows the
+keys with the modifier you did not press.
+
+What to do: tap Super once after switching, or switch frames with
+a click or a shortcut that releases its modifier before the frame
+has the focus. A terminal frame does not have the problem, and
+neither does a second Emacs process on its own display.
+
 ** Running the checks locally
 
 CI runs on every push to =master= and on every pull request (see
