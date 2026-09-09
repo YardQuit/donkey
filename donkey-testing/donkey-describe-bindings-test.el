@@ -833,12 +833,15 @@ are listed for completeness and checked by name in the test above.  This
 test earned its keep on that change, failing the moment the keymap grew
 past what the docs described."
   (let ((documented '("RET" "<backspace>" "<delete>" "DEL" "<deletechar>"))
-        (found '()))
+        (found '())
+        (was-on (bound-and-true-p donkey-mode)))
     (cl-labels
         ((walk (map prefix)
            (map-keymap
             (lambda (ev def)
-              (let ((seq (vconcat prefix (vector ev))))
+              (let ((seq (vconcat prefix (vector ev)))
+                    ;; A (NAME . DEF) binding is DEF with a name on it.
+                    (def (if (and (consp def) (stringp (car def))) (cdr def) def)))
                 (if (keymapp def)
                     (walk def seq)
                   (when def
@@ -853,7 +856,13 @@ past what the docs described."
                                  (not (eq vanilla def)))
                         (push (key-description seq) found)))))))
             map)))
-      (walk donkey-normal-mode-map []))
+      ;; A plain buffer means DONKEY off: a test before this one may
+      ;; have left the mode on, and its hooks would put Normal state
+      ;; into the temp buffer and answer with DONKEY's own bindings.
+      (unwind-protect
+          (progn (when was-on (donkey-mode -1))
+                 (walk donkey-normal-mode-map []))
+        (when was-on (donkey-mode 1))))
     ;; `key-binding' does not apply `function-key-map' translation, so the
     ;; two function keys above never show up here -- they are checked by
     ;; name in the test above instead.  This catches the ordinary ones.
