@@ -6775,16 +6775,95 @@ user turned off by hand."
   (when (bound-and-true-p donkey-insert-mode)
     (setq donkey--saved-input-method nil)))
 
-(defun donkey-disable-input-method ()
+(defun donkey-disable-input-method (&optional say)
   "Turn off the input method for good, clearing DONKEY's saved state too.
 
 Use this rather than `deactivate-input-method' in Normal state, where
 the live input method is already off and only the saved one remains.
-Both are cleared, whatever the state."
-  (interactive)
+Both are cleared, whatever the state.  Interactively, or with SAY
+non-nil, says so.  On SPC i - in Normal state."
+  (interactive (list t))
   (setq donkey--saved-input-method nil)
   (when current-input-method
-    (deactivate-input-method)))
+    (deactivate-input-method))
+  (when say
+    (message "Input method off")))
+
+(defcustom donkey-input-methods nil
+  "Input methods of your own under SPC i, one (KEY LABEL METHOD) each.
+
+KEY is a key as `keymap-set' takes it, LABEL what the key is called in
+the bindings chart and the echo area, and METHOD an input method name
+`set-input-method' knows.  Each entry becomes a command named
+donkey-input-method-LABEL, lowercased, on its key.  The keys `&', `.'
+and `-' are DONKEY's own, and an entry on one of them is left out, as
+is an entry that is not three strings.  Takes effect as soon as it is
+set, however it is set."
+  :type '(repeat (list (string :tag "Key") (string :tag "Label")
+                       (string :tag "Input method")))
+  :group 'donkey)
+
+(defvar donkey-input-method-map (make-sparse-keymap)
+  "Keymap under SPC i: DONKEY's input method keys and `donkey-input-methods'.")
+
+(defconst donkey--input-method-own-keys '("&" "." "-")
+  "The keys of `donkey-input-method-map' that are DONKEY's own.")
+
+(defun donkey--input-method-on (method label)
+  "Make METHOD the default input method and turn it on, calling it LABEL.
+
+In NORMAL state the method waits, and comes on with INSERT state, as
+any input method does under DONKEY; the echo says which happened."
+  (unless (assoc method input-method-alist)
+    (user-error "DONKEY: no input method named %s" method))
+  (set-input-method method)
+  (message "%s (%s) %s" label method
+           (if (bound-and-true-p donkey-normal-mode)
+               "on when you enter INSERT state"
+             "on")))
+
+(defun donkey-input-method-digraphs ()
+  "Turn on the rfc1345 input method, the digraphs `donkey-digraph' lists."
+  (interactive)
+  (donkey--input-method-on "rfc1345" "Digraphs"))
+
+(defun donkey--input-method-command (label method)
+  "Return a command, named after LABEL, to turn METHOD on."
+  (let ((name (intern (concat "donkey-input-method-"
+                              (replace-regexp-in-string
+                               "[^[:alnum:]]+" "-" (downcase label))))))
+    (defalias name (lambda () (interactive) (donkey--input-method-on method label))
+      (format "Turn on the %s input method, %s.\n\nFrom `donkey-input-methods'."
+              label method))
+    name))
+
+(defun donkey--input-method-map-refresh (entries)
+  "Rebuild `donkey-input-method-map': DONKEY's keys, then ENTRIES.
+
+ENTRIES is a value of `donkey-input-methods'; the entries that are not
+three strings, whose key is not one, or whose key is DONKEY's own are
+left out."
+  (setcdr donkey-input-method-map nil)
+  (let ((map donkey-input-method-map))
+    (keymap-set map "." '("Digraphs" . donkey-input-method-digraphs))
+    (keymap-set map "-" '("Off" . donkey-disable-input-method))
+    (dolist (entry entries)
+      (when (and (proper-list-p entry) (= (length entry) 3)
+                 (cl-every #'stringp entry)
+                 (key-valid-p (nth 0 entry))
+                 (not (member (nth 0 entry) donkey--input-method-own-keys)))
+        (keymap-set map (nth 0 entry)
+                    (cons (nth 1 entry)
+                          (donkey--input-method-command (nth 1 entry)
+                                                        (nth 2 entry))))))))
+
+(defun donkey--input-methods-changed (_symbol value operation _where)
+  "Rebuild the SPC i keymap as `donkey-input-methods' becomes VALUE by OPERATION."
+  (donkey--input-method-map-refresh (and (memq operation '(set let unlet)) value)))
+
+(add-variable-watcher 'donkey-input-methods #'donkey--input-methods-changed)
+(donkey--input-method-map-refresh donkey-input-methods)
+(keymap-set donkey-leader-map "i" (cons "Input method" donkey-input-method-map))
 
 (add-hook 'donkey-normal-mode-hook #'donkey--on-normal-entry)
 (add-hook 'donkey-insert-mode-hook #'donkey--on-insert-entry)

@@ -5,6 +5,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
+(require 'donkey-test-keys)
 
 ;; Declare donkey-specific variables so let-bindings are dynamic
 (defvar donkey-normal-mode)
@@ -773,6 +774,92 @@ real raw-key check firing."
    (let ((this-command 'sp-cancel))
      (donkey--intercept-quit-in-insert)
      (should (eq this-command 'ignore)))))
+
+;;; ---------------------------------------------------------------------------
+;;; The SPC i keys and donkey-input-methods
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-input-method-keys-hang-under-SPC-i ()
+  "SPC i is the input method prefix with Digraphs on . and Off on -."
+  (should (eq (lookup-key donkey-normal-mode-map (kbd "SPC i")) donkey-input-method-map))
+  (should (eq (lookup-key donkey-normal-mode-map (kbd "SPC i .")) #'donkey-input-method-digraphs))
+  (should (eq (lookup-key donkey-normal-mode-map (kbd "SPC i -")) #'donkey-disable-input-method)))
+
+(ert-deftest donkey-SPC-i-dot-in-normal-state-holds-digraphs-for-insert-state ()
+  "SPC i . in Normal state makes rfc1345 the default, says it waits, and i turns it on."
+  (donkey-test-keys--harness "*donkey-im-test*" #'text-mode
+      ((default-input-method nil) (donkey--saved-input-method nil))
+      "text" "SPC i ."
+    (should (null current-input-method))
+    (should (equal donkey--saved-input-method "rfc1345"))
+    (should (equal default-input-method "rfc1345"))
+    (should (equal donkey-test-keys--said "Digraphs (rfc1345) on when you enter INSERT state"))
+    (execute-kbd-macro (kbd "i"))
+    (should (equal current-input-method "rfc1345"))
+    (deactivate-input-method)))
+
+(ert-deftest donkey-input-method-digraphs-in-insert-state-turns-on-and-says-so ()
+  "In Insert state the Digraphs command turns rfc1345 on at once and says on."
+  (donkey--with-test-buffer
+    (let ((default-input-method nil) said)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq said (and fmt (apply #'format fmt args))))))
+        (donkey-input-method-digraphs))
+      (should (equal current-input-method "rfc1345"))
+      (should (equal said "Digraphs (rfc1345) on"))
+      (deactivate-input-method))))
+
+(ert-deftest donkey-SPC-i-minus-turns-the-input-method-off-for-good ()
+  "SPC i - forgets the held method too, so Insert state restores nothing, and says off."
+  (donkey-test-keys--harness "*donkey-im-test*" #'text-mode
+      ((default-input-method nil) (donkey--saved-input-method "rfc1345"))
+      "text" "SPC i -"
+    (should (null donkey--saved-input-method))
+    (should (equal donkey-test-keys--said "Input method off"))
+    (execute-kbd-macro (kbd "i"))
+    (should (null current-input-method))))
+
+(ert-deftest donkey-input-methods-entries-become-keys-and-commands ()
+  "An entry of `donkey-input-methods' is a named command on its key, in force as soon as it is set."
+  (let ((donkey-input-methods '(("s" "Swedish" "swedish-postfix"))))
+    (should (eq (lookup-key donkey-normal-mode-map (kbd "SPC i s")) #'donkey-input-method-swedish))
+    (should (commandp #'donkey-input-method-swedish))
+    (donkey-test-keys--harness "*donkey-im-test*" #'text-mode
+        ((default-input-method nil) (donkey--saved-input-method nil))
+        "text" "SPC i s"
+      (should (equal donkey--saved-input-method "swedish-postfix"))
+      (should (equal donkey-test-keys--said "Swedish (swedish-postfix) on when you enter INSERT state"))))
+  ;; The binding left with the value.
+  (should (null (lookup-key donkey-normal-mode-map (kbd "SPC i s")))))
+
+(ert-deftest donkey-input-methods-set-with-setq-take-effect-at-once ()
+  "A plain setq of `donkey-input-methods' rebuilds the SPC i keys."
+  (let ((old donkey-input-methods))
+    (unwind-protect
+        (progn
+          (setq donkey-input-methods '(("n" "Norwegian" "norwegian-postfix")))
+          (should (eq (lookup-key donkey-normal-mode-map (kbd "SPC i n")) #'donkey-input-method-norwegian))
+          (setq donkey-input-methods nil)
+          (should (null (lookup-key donkey-normal-mode-map (kbd "SPC i n")))))
+      (setq donkey-input-methods old))))
+
+(ert-deftest donkey-input-methods-leaves-out-bad-entries-and-its-own-keys ()
+  "An entry that is not three strings, or that sits on &, . or -, is left out."
+  (let ((donkey-input-methods '(("." "Mine" "rfc1345") ("-" "Also" "rfc1345")
+                                ("x" "Bad") ("y" 1 2) "junk" ("" "Blank" "rfc1345"))))
+    (should (eq (lookup-key donkey-normal-mode-map (kbd "SPC i .")) #'donkey-input-method-digraphs))
+    (should (eq (lookup-key donkey-normal-mode-map (kbd "SPC i -")) #'donkey-disable-input-method))
+    (should (null (lookup-key donkey-normal-mode-map (kbd "SPC i x"))))
+    (should (null (lookup-key donkey-normal-mode-map (kbd "SPC i y"))))))
+
+(ert-deftest donkey-input-method-command-names-an-unknown-method ()
+  "A method Emacs does not know is refused by name, and nothing is turned on."
+  (let ((donkey-input-methods '(("z" "Nope" "no-such-method"))))
+    (donkey--with-test-buffer
+      (let ((default-input-method nil))
+        (should-error (donkey-input-method-nope) :type 'user-error)
+        (should (null current-input-method))
+        (should (null default-input-method))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--on-normal-entry / donkey--on-insert-entry / donkey--on-input-method-activate

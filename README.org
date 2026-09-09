@@ -1140,7 +1140,6 @@ Settings:
 
 | Command                        | What it does                                              |
 |--------------------------------+-----------------------------------------------------------|
-| =donkey-disable-input-method=  | Turn the input method off for good                        |
 | =donkey-add-denylist-entry=    | Stop driving the terminal cursor shape on a terminal type |
 | =donkey-remove-denylist-entry= | Drive it again on that terminal type                      |
 | =donkey-setup-smartparens=     | Set up the Smartparens integration, called from a config  |
@@ -1271,9 +1270,46 @@ nothing needs which-key to be installed.
 
 #+end_src
 
-DONKEY's own entries under =SPC= sit on prefixes of their own, such as
-=SPC i= for input methods (see Input Method Management), so a single
-letter of yours never collides with them.
+DONKEY reserves one key under =SPC= today: =SPC i=, the input method
+prefix (see Input Method Management). Everything else is yours. To
+move a reserved prefix, bind its map elsewhere and free the key:
+
+#+begin_src emacs-lisp
+
+  (keymap-set donkey-leader-map "m" (cons "Input method" donkey-input-method-map))
+  (keymap-unset donkey-leader-map "i" t)
+
+#+end_src
+
+Or just unset it if you never want it. The same works inside a
+reserved prefix: =(keymap-unset donkey-input-method-map "-" t)= frees
+=SPC i -=. =keymap-unset= with a non-nil third argument removes the
+key; with nil it leaves a hole that shadows nothing.
+
+** Everything in one =use-package= block:
+
+All of DONKEY's settings can sit in one =use-package= form. With a
+manual clone, =:ensure nil= keeps the package manager out of it and
+=:load-path= says where the file is; =:custom= sets options, and
+=:config= runs after the file is loaded, which is where key bindings
+go:
+
+#+begin_src emacs-lisp
+
+  (use-package donkey
+    :ensure nil
+    :load-path "donkey"
+    :custom
+    (donkey-input-methods '(("s" "Swedish" "swedish-postfix")
+                            ("p" "Polish"  "polish-slash")))
+    (donkey-digraph-line-spacing 0.2)
+    :config
+    (donkey-mode 1)
+    (keymap-set donkey-leader-map "SPC" '("Other window" . other-window))
+    (keymap-set donkey-leader-map ","   '("Switch buffer" . consult-buffer))
+    (keymap-set donkey-normal-mode-map "n" #'forward-paragraph))
+
+#+end_src
 
 * Enter Key Rules (DWIM)
 :PROPERTIES:
@@ -1558,6 +1594,41 @@ non-English keyboard layouts (e.g. Swedish Postfix).
 
 This prevents input method key sequences from interfering with Normal
 mode keybindings.
+
+** Choosing a method: =SPC i=
+
+=SPC i= in Normal state is DONKEY's input method prefix. Its own keys
+are symbols, so every letter is free for a language of yours:
+
+| Key       | What it does                                                    |
+|-----------+-----------------------------------------------------------------|
+| =SPC i .= | Digraphs: the =rfc1345= method the digraph chart lists          |
+| =SPC i -= | Off, for good: the held method is forgotten too                 |
+
+A method chosen in Normal state waits and comes on when you enter
+Insert state; the echo area says so. It also becomes the default, so
+=C-\= switches that method off and on afterwards.
+
+Your own languages go in =donkey-input-methods=, one =(KEY LABEL
+METHOD)= each. Every entry becomes a command named
+=donkey-input-method-LABEL= on its key, so =M-x= reaches it too, and
+the chart and which-key show the label. The list takes effect as soon
+as it is set, however it is set:
+
+#+begin_src emacs-lisp
+
+  (setq donkey-input-methods
+        '(("s" "Swedish"   "swedish-postfix")
+          ("n" "Norwegian" "norwegian-postfix")
+          ("d" "Danish"    "danish-postfix")
+          ("p" "Polish"    "polish-slash")))
+
+#+end_src
+
+METHOD is a name =M-x set-input-method= accepts; =C-h I= describes
+one. An entry on =.= or =-=, or that is not three strings, is left
+out; a method Emacs does not know is refused by name when its key is
+pressed.
 
 * Smartparens Integration
 :PROPERTIES:
