@@ -916,6 +916,7 @@ method itself, so a row cannot say something the method does not do."
 The padding is the one `display' spec `donkey--digraph-row-spec'
 computes for the chart's window; when the frame's fonts are all one
 height and no air is asked for there is none."
+  :tags '(graphical)
   (skip-unless (display-graphic-p))
   (unwind-protect
       (let ((donkey-digraph-line-spacing 0))
@@ -932,6 +933,7 @@ height and no air is asked for there is none."
 
 (ert-deftest donkey-digraph-repads-its-rows-when-the-text-is-scaled ()
   "Scaling the chart's text recomputes the padding from the scaled fonts."
+  :tags '(graphical)
   (skip-unless (display-graphic-p))
   (unwind-protect
       (let ((donkey-digraph-line-spacing 0))
@@ -956,6 +958,7 @@ height and no air is asked for there is none."
 
 (ert-deftest donkey-digraph-air-goes-under-the-table-rows-only ()
   "Pixels of `donkey-digraph-line-spacing' go into each table row's stretch, not the buffer's `line-spacing'."
+  :tags '(graphical)
   (skip-unless (display-graphic-p))
   (unwind-protect
       (let (bare)
@@ -976,6 +979,7 @@ height and no air is asked for there is none."
 
 (ert-deftest donkey-digraph-chart-takes-a-fraction-of-the-padded-row ()
   "A fractional `donkey-digraph-line-spacing' is that part of the full table's padded row."
+  :tags '(graphical)
   (skip-unless (display-graphic-p))
   (unwind-protect
       (let (bare)
@@ -993,6 +997,7 @@ height and no air is asked for there is none."
 
 Measured through the display engine, so a font it chooses that the
 plain lookup did not is caught."
+  :tags '(graphical)
   (skip-unless (display-graphic-p))
   (unwind-protect
       (let ((donkey-digraph-line-spacing 0))

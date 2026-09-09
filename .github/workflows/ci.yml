@@ -179,6 +179,13 @@ jobs:
       # Smartparens 1.11.0, so it could never run in the very job built
       # to run it and the branch it covered went untested.  A budget with
       # room in it hides exactly this, so there is no room now.
+      #
+      # Tests tagged `graphical' measure rows on a screen and skip in a
+      # batch Emacs, which has no graphical frame; every job here runs
+      # in one.  They are left out of this run by selector rather than
+      # budgeted for, so the count keeps its one and no room.  The
+      # other jobs run them and report them as skipped; they run for
+      # real only in a graphical frame, outside CI.
       - name: Run the suite with Smartparens loaded
         run: |
           set -uo pipefail
@@ -189,7 +196,8 @@ jobs:
           # shellcheck disable=SC2086
           emacs -Q --batch -L . -L donkey-testing -L /tmp/dash -L /tmp/smartparens \
             --eval "(require 'smartparens)" $test_args \
-            -f ert-run-tests-batch-and-exit 2>&1 | tee /tmp/sp-run.log
+            --eval "(ert-run-tests-batch-and-exit '(not (tag graphical)))" \
+            2>&1 | tee /tmp/sp-run.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             echo "::error::suite failed with Smartparens loaded"
