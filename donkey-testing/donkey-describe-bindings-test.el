@@ -966,14 +966,32 @@ the same command with DONKEY on as off."
                (lambda (&rest _) (error "Asked anyway"))))
       (should-error (donkey-insert-digraph) :type 'buffer-read-only))))
 
-(ert-deftest donkey-digraph-chart-names-the-one-shot-key ()
-  "The chart's steps name the key that inserts a single digraph."
+(ert-deftest donkey-digraph-chart-names-donkeys-keys-first ()
+  "The chart's steps lead with SPC i ., keep Emacs's own way, and name the one-shot key."
   (unwind-protect
       (progn
         (donkey-digraph)
         (with-current-buffer "*DONKEY Digraphs*"
-          (should (string-match-p "For just one character, SPC i & in NORMAL state" (buffer-string)))))
+          (let ((text (buffer-string)))
+            (should (string-match-p "1\\. Press SPC i \\. in NORMAL state" text))
+            (should (string-match-p "C-x RET C-\\\\ or M-x set-input-method RET, and choose" text))
+            (should (string-match-p "For just one character, SPC i & in NORMAL state" text))
+            (should (< (string-match "SPC i \\." text) (string-match "C-x RET C-" text))))))
     (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
+(ert-deftest donkey-digraph-chart-follows-a-rebinding-of-its-keys ()
+  "A key moved in the Normal map shows under its new name in the chart, an unbound one by command."
+  (let ((donkey-normal-mode-map
+         (let ((map (make-sparse-keymap)))
+           (keymap-set map "C-c d" #'donkey-insert-digraph)
+           map)))
+    (unwind-protect
+        (progn
+          (donkey-digraph)
+          (with-current-buffer "*DONKEY Digraphs*"
+            (should (string-match-p "For just one character, C-c d in NORMAL state" (buffer-string)))
+            (should (string-match-p "1\\. Press M-x donkey-input-method-digraphs in NORMAL" (buffer-string)))))
+      (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*")))))
 
 (ert-deftest donkey-digraph-common-table-is-what-rfc1345-types ()
   "Each digraph in `donkey--digraph-common' types its listed result under rfc1345.

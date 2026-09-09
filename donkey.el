@@ -5122,6 +5122,17 @@ is pasted in.  DELETE, when non-nil, deletes the text as well, as
   (prog1 (buffer-substring-no-properties beg end)
     (when delete (delete-region beg end))))
 
+(defun donkey--digraph-key (command)
+  "Return COMMAND's key in NORMAL state as a key escape, else a command escape.
+
+For `substitute-command-keys', which cannot see DONKEY's maps from
+the chart's buffer; read from `donkey-normal-mode-map' so that a
+rebinding shows."
+  (let ((key (where-is-internal command (list donkey-normal-mode-map) t)))
+    (if key
+        (concat "\\`" (key-description key) "'")
+      (format "\\[%s]" command))))
+
 (defun donkey--digraph-code-points (string)
   "Return STRING's code points as \"U+XXXX\", space-separated."
   (mapconcat (lambda (c) (format "U+%04X" c)) string " "))
@@ -5166,38 +5177,33 @@ ampersand in front of it.\n\n"))
         (insert (cdr row) "\n"))
       (insert "\n" (funcall head "  How to type one") "\n" rule "\n")
       (insert (substitute-command-keys
-               "  1. Enter INSERT state.
-  2. Press \\[set-input-method] or \\`M-x' "))
+               (format "  1. Press %s in NORMAL state: the digraphs are on as soon as
+     you enter INSERT state.  Emacs's own way works too:
+     \\[set-input-method] or \\`M-x' " (donkey--digraph-key #'donkey-input-method-digraphs))))
       ;; The command as the bindings chart shows one: a button to its help.
       (insert-text-button "set-input-method"
                           'action (lambda (_) (describe-function 'set-input-method))
                           'follow-link t
                           'help-echo "Describe set-input-method")
       (insert (substitute-command-keys
-               " \\`RET', and choose
-     rfc1345.  Once is enough: after that \\[toggle-input-method] switches it off
-     and on.
-  3. Type an ampersand and the digraph: &e\\=' gives é.
+               (format " \\`RET', and choose
+     rfc1345.  Either way once is enough: after that \\[toggle-input-method]
+     switches it off and on.
+  2. In INSERT state type an ampersand and the digraph: &e\\=' gives é.
 
   Nothing is said when the method switches; the mode line shows m
   while it is on.  \\[toggle-input-method] brings back the method this buffer used
   last, so after typing with another method choose rfc1345 again
-  with step 2.
+  with step 1.
 
   DONKEY turns the input method off in NORMAL state, so the letters
   stay commands, and back on when you return to INSERT.
 
-"))
-      (let ((key (where-is-internal #'donkey-insert-digraph
-                                    (list donkey-normal-mode-map) t)))
-        (insert (substitute-command-keys
-                 (format "  For just one character, %s in NORMAL state asks for the
+  For just one character, %s in NORMAL state asks for the
   two keys and types it: no input method needed.
 
   Or copy the character straight out of the table below.\n\n"
-                         (if key
-                             (concat "\\`" (key-description key) "'")
-                           "\\[donkey-insert-digraph]")))))
+                       (donkey--digraph-key #'donkey-insert-digraph))))
       (insert (funcall head "  Any character, by code point or name") "\n" rule "\n")
       (insert (substitute-command-keys
                "  \\[insert-char], then a character name or its hex code, works in
