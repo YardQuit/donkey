@@ -1929,6 +1929,31 @@ recovery is; together they collapse the frequency to rare.
 :CUSTOM_ID: development
 :END:
 
+** Keys act strangely in another frame while a mark run is open
+
+The symptom: with one Emacs serving two graphical frames, as
+=emacsclient -c= does, you start a mark run with =M= in one frame,
+switch to the other, and the keys there are not themselves. =w=
+selects a word instead of moving over it, =u= steps the run instead
+of undoing, =J= and =K= grow a selection line by line, and the
+first key the run does not know ends it and then does its ordinary
+job. =M= or =C-g= in either frame puts everything back.
+
+This is not a DONKEY binding leaking, and no package can scope it
+narrower: Emacs keeps a transient keymap, which is what a mark run
+is, in =overriding-terminal-local-map=, and that map is per
+terminal, not per frame or per buffer. Two graphical frames on one
+display are one terminal to Emacs, so a run armed in one is armed
+for both until a key outside the run lapses it. A terminal frame
+opened with =emacsclient -t= is its own terminal and is not
+affected, and neither is a second Emacs process.
+
+What to do: end the run before you switch frames, with =M=, =C-g=
+or any key that uses the selection. Nothing is lost either way: the
+selection in the first frame is still there when the run lapses
+from the other, and DONKEY disarms the map itself when the mode is
+switched off.
+
 ** Running the checks locally
 
 CI runs on every push to =master= and on every pull request (see
