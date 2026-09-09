@@ -4833,6 +4833,9 @@ cannot show them: they live in a transient map."
 (defvar quail-package-alist)
 (defvar quail-current-package)
 (declare-function quail-lookup-key "quail" (key &optional len not-reset-indices))
+;; `font-info' exists only in an Emacs built with a window system; its
+;; one caller, `donkey--digraph-row-spec', runs only in a graphical frame.
+(declare-function font-info "font.c" (name &optional frame))
 
 (defcustom donkey-digraph-line-spacing 0
   "Air under each row of the `donkey-digraph' chart's tables.
