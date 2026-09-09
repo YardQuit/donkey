@@ -9,6 +9,34 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.9.2 — 2026-09-09
+
+=C-\= says what it did.  Emacs switches an input method without a
+word, and its one sign is a mode-line field that a custom mode line
+need not carry, so the key can look dead; DONKEY now names the
+method in the echo area.
+
+*Changed — you will notice these*
+
+- Switching an input method says so.  =C-\= turning =rfc1345= on in
+  Insert state says "rfc1345 on", turning it off says "rfc1345 off",
+  and pressing it in Normal state, where DONKEY puts the method away
+  until you return to Insert, says "rfc1345 on when you enter INSERT
+  state".  The name is the method's own, as =C-h I= spells it; the
+  =SPC i= keys go on using the label you gave them in
+  =donkey-input-methods=.
+- What DONKEY does itself still says nothing.  It puts the method
+  away on the way into Normal state and brings it back on the way
+  out, on every transition, and an echo there would fire on every
+  =ESC= and every =i=.
+
+*Upgrading*
+
+Nothing to do.  If you would rather have the silence back, DONKEY
+has no option for it, but the messages come from the two hooks named
+in the Input Method Management section of the README and can be
+removed there.
+
 * 1.9.1 — 2026-09-09
 
 Nothing you press behaves differently.  DONKEY now does about a
