@@ -852,6 +852,21 @@ real raw-key check firing."
     (should (null (lookup-key donkey-normal-mode-map (kbd "SPC i x"))))
     (should (null (lookup-key donkey-normal-mode-map (kbd "SPC i y"))))))
 
+(ert-deftest donkey-input-methods-change-leaves-a-freed-key-free ()
+  "A built-in SPC i key unset by hand stays unset when the option changes, and the old entries go."
+  (let ((minus (lookup-key donkey-input-method-map "-")) (old donkey-input-methods))
+    (unwind-protect
+        (progn
+          (keymap-unset donkey-input-method-map "-" t)
+          (setq donkey-input-methods '(("s" "Swedish" "swedish-postfix")))
+          (should (null (lookup-key donkey-input-method-map "-")))
+          (should (eq (lookup-key donkey-input-method-map "s") #'donkey-input-method-swedish))
+          (setq donkey-input-methods '(("n" "Norwegian" "norwegian-postfix")))
+          (should (null (lookup-key donkey-input-method-map "s")))
+          (should (eq (lookup-key donkey-input-method-map "n") #'donkey-input-method-norwegian)))
+      (setq donkey-input-methods old)
+      (keymap-set donkey-input-method-map "-" (cons "Off" minus)))))
+
 (ert-deftest donkey-input-methods-cannot-redefine-a-donkey-command ()
   "An entry whose label names an existing DONKEY command is left out, and the command is untouched."
   (let ((donkey-input-methods '(("q" "Digraphs" "swedish-postfix"))))

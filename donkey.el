@@ -6879,17 +6879,21 @@ such as `donkey-input-method-digraphs': an entry cannot redefine it."
       (put name 'donkey--input-method-entry t)
       name)))
 
-(defun donkey--input-method-map-refresh (entries)
-  "Rebuild `donkey-input-method-map': DONKEY's keys, then ENTRIES.
+(defvar donkey--input-method-entry-keys nil
+  "The keys `donkey-input-methods' put in `donkey-input-method-map'.")
 
-ENTRIES is a value of `donkey-input-methods'; the entries that are not
-three strings, whose key is not one, or whose key is DONKEY's own are
-left out."
-  (setcdr donkey-input-method-map nil)
+(defun donkey--input-method-map-refresh (entries)
+  "Put ENTRIES in `donkey-input-method-map' in place of the last ones.
+
+ENTRIES is a value of `donkey-input-methods'.  Only the keys the
+previous value bound are taken out first, so DONKEY's own keys, and
+any change made to the map by hand, are left as they are.  The
+entries that are not three strings, whose key is not one, or whose
+key is DONKEY's own are left out."
   (let ((map donkey-input-method-map))
-    (keymap-set map "&" '("Insert digraph" . donkey-insert-digraph))
-    (keymap-set map "." '("Digraphs" . donkey-input-method-digraphs))
-    (keymap-set map "-" '("Off" . donkey-disable-input-method))
+    (dolist (key donkey--input-method-entry-keys)
+      (keymap-unset map key t))
+    (setq donkey--input-method-entry-keys nil)
     (dolist (entry entries)
       (when (and (proper-list-p entry) (= (length entry) 3)
                  (cl-every #'stringp entry)
@@ -6897,13 +6901,17 @@ left out."
                  (not (member (nth 0 entry) donkey--input-method-own-keys)))
         (let ((command (donkey--input-method-command (nth 1 entry) (nth 2 entry))))
           (when command
-            (keymap-set map (nth 0 entry) (cons (nth 1 entry) command))))))))
+            (keymap-set map (nth 0 entry) (cons (nth 1 entry) command))
+            (push (nth 0 entry) donkey--input-method-entry-keys)))))))
 
 (defun donkey--input-methods-changed (_symbol value operation _where)
   "Rebuild the SPC i keymap as `donkey-input-methods' becomes VALUE by OPERATION."
   (donkey--input-method-map-refresh (and (memq operation '(set let unlet)) value)))
 
 (add-variable-watcher 'donkey-input-methods #'donkey--input-methods-changed)
+(keymap-set donkey-input-method-map "&" '("Insert digraph" . donkey-insert-digraph))
+(keymap-set donkey-input-method-map "." '("Digraphs" . donkey-input-method-digraphs))
+(keymap-set donkey-input-method-map "-" '("Off" . donkey-disable-input-method))
 (donkey--input-method-map-refresh donkey-input-methods)
 (keymap-set donkey-leader-map "i" (cons "Input method" donkey-input-method-map))
 
