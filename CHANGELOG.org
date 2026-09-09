@@ -9,6 +9,49 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.9.1 — 2026-09-09
+
+Nothing you press behaves differently.  DONKEY now does about a
+third of the work between your keystrokes that it did in 1.9.0, and
+the README says how to byte-compile a copy you cloned yourself,
+which is worth another ninefold.
+
+*Under the hood*
+
+- The cursor update after every command asks first whether anything
+  it reads has moved -- the buffer, the selected window, the state's
+  cursor setting, and the =cursor-type= another package may have set
+  -- and returns when nothing has.  It cost two microseconds a
+  command in a graphical frame and now costs one.
+- The position ring reuses the marker it drops instead of making a
+  new one and copying the list.  Recording a move cost 5.8
+  microseconds at the default ring size and 21.6 at a hundred; it now
+  costs 3.6 and 3.9, and no longer grows with
+  =donkey-position-ring-max=.
+- The =C-g= interception in Insert state asks whether the key was
+  =C-g= before asking what the buffer's mode is, which is the same
+  question in a cheaper order: 1.7 microseconds a keystroke down to
+  0.3.
+- Together: everything DONKEY does between two keystrokes fell from
+  8.7 microseconds to 6.5 read from source, and from 3.1 to 1.0
+  byte-compiled.  A test now recounts the five functions DONKEY puts
+  on the command hooks, so a sixth is a deliberate decision about
+  what a keystroke costs.
+- The README's Installation section gains "Byte-compiling a manual
+  install": the plain load and the =use-package= clone both run the
+  interpreted source, where every DONKEY function costs about nine
+  times what the compiled one does.  =straight.el=, =quelpa= and any
+  package archive compile it for you; a clone does not.  The section
+  gives a form that rebuilds when the source is newer and never loads
+  a stale compiled file, and says to keep a symlink rather than a
+  hard link when tracking the repository.
+
+*Upgrading*
+
+Nothing to do.  Every key does exactly what it did in 1.9.0, in a
+terminal and in a graphical frame, which is what the tests and the
+live runs in both were checking.
+
 * 1.9.0 — 2026-09-09
 
 A leader key, and the input methods under it. =SPC= in Normal state

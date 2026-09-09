@@ -9,7 +9,7 @@
 ;; Assisted-by: Claude:claude-fable-5
 ;; Assisted-by: Claude:claude-fable-5-1
 ;; URL: https://github.com/yardquit/donkey
-;; Version: 1.9.0
+;; Version: 1.9.1
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/donkey
