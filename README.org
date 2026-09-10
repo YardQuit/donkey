@@ -1,5 +1,5 @@
 #+TITLE: README
-#+AUTHOR: Michael Jones (YardQuit)
+#+AUTHOR: Michael A Jones (YardQuit)
 
 * Table of Contents
 

@@ -1,5 +1,5 @@
 #+TITLE: DONKEY changelog
-#+AUTHOR: Michael Jones (YardQuit)
+#+AUTHOR: Michael A Jones (YardQuit)
 
 Newest first. Each heading is a release tag and the date it carries.
 

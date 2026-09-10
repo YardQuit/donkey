@@ -2197,6 +2197,25 @@ a reload, or a capture that broke, shows up as a mismatch."
     (should source)
     (should (equal donkey-version (lm-version source)))))
 
+(ert-deftest donkey-package-header-names-a-maintainer-who-can-be-written-to ()
+  "The Maintainer header carries an address, so Emacs can find one.
+
+What a package archive and `M-x report-emacs-bug' show is computed
+from this file's headers, and a Maintainer line without an address
+reads as no maintainer at all: `lm-maintainers' returned nil for
+this package until the address was added.  Recounted here rather
+than trusted, the way the version is."
+  (require 'lisp-mnt)
+  (let* ((source (locate-library "donkey.el"))
+         (maintainers (with-temp-buffer
+                        (insert-file-contents source)
+                        (emacs-lisp-mode)
+                        (lm-maintainers))))
+    (should source)
+    (should maintainers)
+    (should (cdr (car maintainers)))
+    (should (string-match-p "@" (cdr (car maintainers))))))
+
 (ert-deftest donkey-version-looks-like-a-version ()
   "The captured version has the MAJOR.MINOR.PATCH shape releases use."
   (should (stringp donkey-version))
