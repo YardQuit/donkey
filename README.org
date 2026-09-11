@@ -2034,12 +2034,49 @@ decides what happens:
 | ="=                           | ="alpha"=            | ="alpha"=   | ="alpha=          |
 | ='=                           | ='alpha=             | ='alpha'=   | ='alpha=          |
 
+That last row is the stock answer in =text-mode=, and it is the one
+row that moves. What a pairing package does with a selection depends
+on the major mode and on your own configuration: Smartparens wraps
+='alpha'= in =text-mode= and declines in =emacs-lisp-mode=, where ='=
+is a quote character rather than a delimiter, and =(sp-pair "'" nil
+:actions nil)= switches it off everywhere. =electric-pair-mode= never
+wraps ='= in any mode: there is no ='= pair in =electric-pair-pairs=
+at all — it appears only as the closer of a backquote.
+
 Nothing is ever taken off under that setting, and a delimiter the
 package does not pair leaves a single character at the selection's
 start. The rectangle path and the =SPC i &= wrap are DONKEY's own
 under either setting. The variable is read at each press, so a change
 takes effect on the next one, and any value but =pairing-package=
 reads as =donkey=.
+
+*** Escaping, and what DONKEY does instead
+
+Press a delimiter on a selection that already sits inside that
+delimiter and the three engines part company:
+
+| Selection                    | DONKEY          | =electric-pair-mode= | Smartparens         |
+|------------------------------+-----------------+----------------------+---------------------|
+| =word= in =say "word" now=   | =say word now=  | =say ""word"" now=   | =say ""word"" now=  |
+| =word= in =(setq x "word")=  | =(setq x word)= | =(setq x ""word"")=  | =(setq x "\"word\"")= |
+
+DONKEY takes the pair off — the press that put a pair on is the press
+that removes it, and nothing is escaped in any mode. Smartparens
+escapes, but only inside a string, which is where the syntax needs it.
+=electric-pair-mode= does neither: it nests, unescaped, and leaves you
+with source that will not read.
+
+So the engines are not two ways of doing one thing. DONKEY's own wrap
+also keeps two behaviors apart that a pairing package ties together:
+whether ='= pairs while you TYPE is your package's business, and
+whether ='= wraps a SELECTION is DONKEY's. Turn off the first — many
+people do, in Lisp and Org, where ='= and =`= are quote characters —
+and the second goes on working, in every mode.
+
+And when you do want the package's answer, including its escaping,
+=M-x donkey-toggle-wrap-engine= is the short way to it: flip, press
+the delimiter, flip back, without leaving Normal state or calling the
+package's own rewrap command by name.
 
 ** Under the hood
 
