@@ -3128,14 +3128,18 @@ through them: a motion member with no active region is just the
 cursor having moved.")
 
 (defconst donkey--mark-run-inert-commands
-  '(undefined ignore donkey-mark-run-refuse
+  '(undefined ignore donkey-mark-run-refuse donkey--quit-the-sequence
     handle-switch-frame handle-focus-in handle-focus-out)
   "The commands that change nothing, so a mark run survives them.
 
 Every printable key the normal state leaves unbound resolves to
 `undefined', and \`DEL' to `ignore'.  Listed here, they keep the mode
 and count as companions in `donkey--mark-extending-p', so a mistyped
-key costs a beep and nothing else.  `donkey-mark-run-refuse' exists to
+key costs a beep and nothing else.  `donkey--quit-the-sequence' is the
+same case by another name: it is what a mistyped PREFIX backed out
+with the quit key runs, in place of the `undefined' a mistyped single
+key runs, and backing out of a prefix is no more a reason to end the
+run than the beep is.  `donkey-mark-run-refuse' exists to
 leave a run standing, so it is here too, and so are the commands
 Emacs runs for a frame switch and a focus change: switching frames
 is not a keystroke, and the object key after it grows the run.")
@@ -5388,6 +5392,8 @@ takes them after an ampersand, and that is what is looked up."
       (setq donkey--digraph-prefixes set)))
   (gethash string donkey--digraph-prefixes))
 
+(define-error 'donkey-prompt-quit "Quit" 'quit)
+
 (defun donkey--digraph-read ()
   "Ask for an rfc1345 mnemonic key by key and return (KEYS . RESULT).
 
@@ -5397,11 +5403,20 @@ reading ends when they make one that no longer one starts with.
 RET accepts a shorter one that is complete, and so does any key
 that continues none; RESULT is nil when the keys make no mnemonic.
 
-\\`C-g' cancels, signaling `quit' rather than returning: it is not a
-mnemonic key, and the method this reads like hands it on to be the
-command it is.  Without that it would be spent as a stray key, which
-for a complete mnemonic means accepting it -- so the key that cancels
-everywhere else would have typed a character."
+\\`C-g' cancels, signaling rather than returning: it is not a mnemonic
+key, and the method this reads like hands it on to be the command it
+is.  Without that it would be spent as a stray key, which for a
+complete mnemonic means accepting it -- so the key that cancels
+everywhere else would have typed a character.
+
+What it signals is `donkey-prompt-quit', a `quit' of DONKEY's own, and
+the difference matters in INSERT state.  A bare `quit' unwinding there
+is how a stray quit key eaten while Lisp ran reaches
+`donkey--recover-quit-in-insert', which answers it by leaving INSERT
+-- so cancelling this prompt would have ended the state as well as the
+prompt, two levels for one press.  Emacs draws the same distinction
+with `minibuffer-quit'.  Every `condition-case' that names `quit'
+still catches this one, and the command loop still says \"Quit\"."
   (let ((keys "") result)
     (catch 'done
       (while t
@@ -5412,7 +5427,7 @@ everywhere else would have typed a character."
                (next (and (characterp key) (concat keys (string key)))))
           (cond
            ((eq key ?\C-g)
-            (signal 'quit nil))
+            (signal 'donkey-prompt-quit nil))
            ((memq key '(return ?\r ?\n))
             (setq result complete)
             (throw 'done nil))

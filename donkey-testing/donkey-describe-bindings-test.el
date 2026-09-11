@@ -1054,9 +1054,14 @@ buffer alone."
   (dolist (keys (list (string ?! ?* ?\C-g)     ; complete, and a longer one exists
                       (string ?e ?\C-g)        ; a prefix of longer ones, complete of none
                       (string ?\C-g)))         ; nothing typed yet
-    (should (eq 'quit (condition-case nil
-                          (donkey--digraph-read-test--with keys)
-                        (quit 'quit)))))
+    ;; The CONDITION is pinned, not merely that something quit:
+    ;; `donkey-prompt-quit' is what keeps a cancel in INSERT state from
+    ;; ending the state as well -- see
+    ;; `donkey-a-cancelled-donkey-prompt-does-not-end-insert-state'.
+    (should (eq 'donkey-prompt-quit
+                (condition-case e
+                    (donkey--digraph-read-test--with keys)
+                  (quit (car e))))))
   (with-temp-buffer
     (insert "ab")
     (let ((left (append (string ?! ?* ?\C-g) nil)))
@@ -2836,7 +2841,12 @@ docstring for two commits looking exactly like a working one.
 
 Faces and overlay properties are legitimate references that are neither
 `fboundp' nor `boundp', so they are allowed explicitly rather than by
-loosening the check -- an unknown symbol should still fail."
+loosening the check -- an unknown symbol should still fail.
+
+An error symbol is a fourth kind, and is asked about rather than
+listed: `error-conditions' is as definite a test of existence as
+`fboundp' is, and a name with a typo in it has none, so the check
+stays as tight as it was."
   (let ((allowed '(donkey-banked                    ; overlay property
                    donkey-digraph-row donkey-digraph-group)) ; text properties
         unresolved)
@@ -2845,7 +2855,8 @@ loosening the check -- an unknown symbol should still fail."
       (goto-char (point-min))
       (while (re-search-forward "`\\(donkey-[a-zA-Z0-9---]+\\)'" nil t)
         (let ((sym (intern (match-string 1))))
-          (unless (or (fboundp sym) (boundp sym) (facep sym) (memq sym allowed))
+          (unless (or (fboundp sym) (boundp sym) (facep sym)
+                      (get sym 'error-conditions) (memq sym allowed))
             (push (format "line %d: %s" (line-number-at-pos) sym) unresolved)))))
     (should (equal unresolved nil))))
 

@@ -2417,13 +2417,30 @@ bare quit key does, with nothing in progress -- see
     (should (= 1 (length donkey--banked-overlays)))
     (condition-case nil (execute-kbd-macro (kbd "m C-g")) (quit nil))
     (should (= 1 (length donkey--banked-overlays))))
-  ;; an armed mark run, whose map is terminal-wide
+  ;; An armed mark run, whose map is terminal-wide.  The assertion that
+  ;; matters is the one AFTER the next key: a quit raised inside
+  ;; `execute-kbd-macro' unwinds past that command's own
+  ;; `post-command-hook', so a run torn down by the quit still looks
+  ;; armed the instant afterwards and only goes on the following
+  ;; command.  Checking the instant after the quit is what let a real
+  ;; teardown through.
   (donkey-prefix-quit-test--in-normal
     (execute-kbd-macro (kbd "M w"))
     (should donkey--mark-run-exit-function)
     (condition-case nil (execute-kbd-macro (kbd "g C-g")) (quit nil))
     (should donkey--mark-run-exit-function)
-    (should mark-active))
+    (should mark-active)
+    ;; ... and the run is still the run: the next object key grows it
+    ;; rather than moving point.
+    (let* ((before (buffer-substring-no-properties (region-beginning)
+                                                   (region-end)))
+           (after (progn (execute-kbd-macro (kbd "w"))
+                         (buffer-substring-no-properties (region-beginning)
+                                                         (region-end)))))
+      (should donkey--mark-run-exit-function)
+      (should (eq last-command 'donkey-mark-word))
+      (should (string-prefix-p before after))
+      (should (> (length after) (length before)))))
   ;; a rectangle
   (donkey-prefix-quit-test--in-normal
     (execute-kbd-macro (kbd "m v j l"))
@@ -2506,6 +2523,51 @@ nil or `undefined' is taken."
                  (lambda () (vector ?m ?\C-g))))
         (donkey--intercept-quit-after-prefix)
         (should (null this-command))))))
+
+(ert-deftest donkey-a-cancelled-donkey-prompt-does-not-end-insert-state ()
+  "Cancelling one of DONKEY's own prompts cancels the prompt, and no more.
+
+Found by a review of the unreleased range, with real keys: the digraph
+reader signals on the quit key, and a bare `quit' unwinding in INSERT
+state is exactly how a stray press eaten while Lisp ran reaches
+`donkey--recover-quit-in-insert', which answers it by leaving INSERT.
+So cancelling the prompt from INSERT ended the state too -- two levels
+for one press -- and the next character typed was refused.
+`donkey-insert-digraph' says in its own docstring that the state does
+not change.
+
+`donkey-prompt-quit' is what the reader signals instead: a `quit' of
+DONKEY's own, which the INSERT arm does not take because it tests for
+`quit' itself.  Emacs draws the same distinction with
+`minibuffer-quit'.
+
+Pinned from both ends, so neither half can drift: the condition is a
+`quit' for everything that catches quits, and the INSERT recovery
+leaves the state alone when handed one."
+  (should (memq 'quit (get 'donkey-prompt-quit 'error-conditions)))
+  (should-not (eq 'donkey-prompt-quit 'quit))
+  ;; a condition-case naming `quit' still catches it
+  (should (eq 'caught (condition-case nil
+                          (signal 'donkey-prompt-quit nil)
+                        (quit 'caught))))
+  ;; and INSERT state survives it where a bare `quit' would end it
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (switch-to-buffer (get-buffer-create "*donkey-prompt-quit-test*"))
+        (text-mode)
+        (donkey-enter-insert)
+        (donkey--recover-quit-in-insert #'ignore '(donkey-prompt-quit) "" nil)
+        (should (bound-and-true-p donkey-insert-mode))
+        (should-not (bound-and-true-p donkey-normal-mode))
+        ;; the control: a bare quit still ends INSERT, so the test above
+        ;; is about the condition and not about the setup
+        (donkey--recover-quit-in-insert #'ignore '(quit) "" nil)
+        (should-not (bound-and-true-p donkey-insert-mode))
+        (should (bound-and-true-p donkey-normal-mode)))
+    (when (get-buffer "*donkey-prompt-quit-test*")
+      (kill-buffer "*donkey-prompt-quit-test*"))
+    (donkey-mode -1)))
 
 (ert-deftest donkey-recover-non-quit-passes-through ()
   "Real errors are not this handler's business, whatever the state."
