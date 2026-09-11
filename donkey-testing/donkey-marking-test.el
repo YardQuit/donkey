@@ -5332,6 +5332,43 @@ called as the command loop would; a live press also leaves it in
     (condition-case nil (keyboard-quit) (quit nil))
     (should-not (region-active-p))))
 
+(ert-deftest donkey-mark-run-post-command-survives-a-signal ()
+  "The post-command hook stays on its hook when its overlay work signals.
+
+A function that errors on `post-command-hook' is removed by Emacs for
+the rest of the session, silently.  This one reaches overlay work
+through `donkey--repaint-hint' and `donkey--mark-run-exit', which can
+be handed a buffer that died underneath them, so its docstring's
+promise has to be kept by a guard rather than by luck.
+
+Both branches that do that work are driven: the repaint branch, with a
+family command, and the exit branch, with a command that is not one.
+The signal is injected rather than waited for -- the hook must survive
+a callee that fails, whatever made it fail.
+
+Its sibling on `pre-command-hook' is not tested this way on purpose:
+nothing in it can signal, and a guard there would be one no test could
+honestly kill."
+  (dolist (callee '(donkey--repaint-hint donkey--mark-run-exit))
+    (dolist (this-cmd (list 'donkey-mark-word 'ignore))
+      (cl-letf (((symbol-function callee)
+                 (lambda (&rest _) (error "Injected: %s failed" callee))))
+        (let ((this-command this-cmd))
+          ;; The call itself must not signal ...
+          (should (eq 'survived
+                      (condition-case nil
+                          (progn (donkey--mark-run-mode-post-command) 'survived)
+                        (error 'signalled))))))))
+  ;; ... and the real thing still works afterwards, so the guard has not
+  ;; turned the hook into a no-op.
+  (let (msgs)
+    (cl-letf (((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (when fmt (push (apply #'format fmt args) msgs))
+                 nil)))
+      (donkey-mark-test--keys "alpha beta gamma" "M w" nil))
+    (should (member donkey--mark-run-mode-hint msgs))))
+
 (ert-deftest donkey-mark-run-mode-keeps-its-hint-visible ()
   "The mode reminder is re-shown after every letter of the run.
 

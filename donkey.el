@@ -3646,8 +3646,14 @@ A \`.' is recorded as the command it repeats, which
 It also names the nameless press -- see the comment below -- which is
 the one thing here that is not about the history.
 
-Guarded, not signaling: a function that errors on `pre-command-hook'
-is silently removed for the session."
+Nothing here signals, which is what a `pre-command-hook' function has
+to be able to say: one that errors is removed for the session and
+takes the run's history with it.  Nothing here needs a guard to say
+it, either -- `donkey--mark-run-press-command' reads variables, the
+membership tests are over constants, `push' allocates, and `mark' is
+called with the argument that makes it answer nil where it would
+otherwise refuse.  Its sibling on `post-command-hook' does its work
+through overlays and is guarded instead."
   ;; Name the nameless press: a sequence that resolved to nothing
   ;; arrives with `this-command' nil, and `undefined' -- a family
   ;; member -- is what its other spelling, a single unbound key, runs.
@@ -3737,19 +3743,26 @@ as noted at entry in `donkey--mark-run-armed-in-macro', ends with the
 first command to finish outside one.
 
 Guarded, not signaling: a function that errors on `post-command-hook'
-is silently removed for the session."
-  (cond
-   ((and donkey--mark-run-armed-in-macro (not executing-kbd-macro))
-    (donkey--mark-run-exit))
-   ((memq this-command donkey--mark-run-commands)
-    ;; A count's keys arrive under the family member's name.
-    (unless prefix-arg
-      (donkey--repaint-hint donkey--mark-run-mode-hint)))
-   ((or (donkey--mark-run-mode-keep-p)
-        (eq this-command 'donkey-mark-run-toggle))
-    nil)
-   (t
-    (donkey--mark-run-exit))))
+is silently removed for the session, and this one reaches overlay work
+through `donkey--repaint-hint' and `donkey--mark-run-exit' -- work
+that can be handed a buffer that died underneath it.  Silent, as the
+rest of the family is: a report here would be a report after every
+command.  Its sibling on `pre-command-hook' needs no guard, and says
+why."
+  (condition-case nil
+      (cond
+       ((and donkey--mark-run-armed-in-macro (not executing-kbd-macro))
+        (donkey--mark-run-exit))
+       ((memq this-command donkey--mark-run-commands)
+        ;; A count's keys arrive under the family member's name.
+        (unless prefix-arg
+          (donkey--repaint-hint donkey--mark-run-mode-hint)))
+       ((or (donkey--mark-run-mode-keep-p)
+            (eq this-command 'donkey-mark-run-toggle))
+        nil)
+       (t
+        (donkey--mark-run-exit)))
+    (error nil)))
 
 (defun donkey--mark-run-mode-keep-p ()
   "Return non-nil while mark run mode should stay active.
