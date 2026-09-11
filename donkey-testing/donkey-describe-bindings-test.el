@@ -636,8 +636,9 @@ buffer's active keymaps, so running it before `donkey-mode' was enabled
 rendered every binding as an \\=`M-x\\=' invocation -- silently, and worst for
 exactly the commands a new reader most needs named.
 
-The tutor itself has no key, like vimtutor and its kin, so `donkey-tutor'
-is the one command the text shows as \\=`M-x\\='; any other means either a
+The tutor itself has no key, like vimtutor and its kin, and neither has
+the digraph chart -- both were unbound deliberately -- so those two are
+the commands the text may show as \\=`M-x\\='; any other means either a
 command lost its binding or the substitution moved back ahead of
 `donkey-mode'."
   (unwind-protect
@@ -648,7 +649,9 @@ command lost its binding or the substitution moved back ahead of
           (let ((unresolved '()))
             (while (re-search-forward "M-x \\(donkey-[a-z-]+\\)" nil t)
               (push (match-string 1) unresolved))
-            (should (equal (delete "donkey-tutor" unresolved) '())))))
+            (should (equal (seq-difference unresolved
+                                           '("donkey-tutor" "donkey-digraph"))
+                           '())))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 (ert-deftest donkey-tutor-returns-to-an-existing-buffer ()
@@ -1509,6 +1512,95 @@ suite was run shuffled."
 (defun donkey-tutor-test--line ()
   "Return the current line as a string."
   (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
+
+(ert-deftest donkey-tutor-names-its-key-tables-as-keys ()
+  "Every key in a key table renders as a key, none as plain text.
+
+The tutor lays a lesson's keys out as a table: four spaces, the key,
+then what it does.  One such table had its first row substituted and
+the other three written literally, so the same table showed one faced
+chip and three bare words -- reported by a reader, which is the only
+way a difference in FACE is ever found.  Asked of the rendered buffer
+rather than the source, since the source cannot tell you what a face
+came out as."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-min))
+          (let (bare (rows 0))
+            (while (re-search-forward
+                    "^    \\([^ \n>-][^ \n]\\{0,5\\}\\(?: [^ \n]\\{1,3\\}\\)?\\)  +[^ \n]"
+                    nil t)
+              (setq rows (1+ rows))
+              (unless (eq (get-text-property (match-beginning 1) 'face)
+                          'help-key-binding)
+                (push (match-string 1) bare)))
+            ;; The tables really were found; an empty sweep would pass
+            ;; on nothing at all.
+            (should (> rows 4))
+            (should (equal bare nil)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-lesson-12-wraps-and-unwraps-for-real ()
+  "The wrap lesson's first exercise does what the lesson says.
+
+Run in the real tutor buffer, with real keys: one press wraps the
+selected word, the same press again takes the pair off.  The lesson
+promises one key in both directions, and the promise is the exercise."
+  (donkey-tutor-test--live
+   ;; Again the keys the lesson PRINTS, so the two cannot drift.
+   (goto-char (point-min))
+   (should (search-forward "press m w to select\n   it, then press (." nil t))
+   (should (search-forward "Now press m w ( again and the parentheses" nil t))
+   (donkey-tutor-test--goline "---> one middle three")
+   (search-forward "middle")
+   (backward-char 3)
+   (donkey-tutor-test--keys "m w (")
+   (should (equal (donkey-tutor-test--line) "   ---> one (middle) three"))
+   ;; The wrap drops the selection, so the pair comes off by selecting
+   ;; again -- which is what the lesson now says, having said otherwise
+   ;; until this test was run.
+   (donkey-tutor-test--keys "m w (")
+   (should (equal (donkey-tutor-test--line) "   ---> one middle three"))))
+
+(ert-deftest donkey-tutor-lesson-12-takes-a-pair-off-from-inside ()
+  "`m i \" then \" removes the quotes the lesson says it removes."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> she said")
+   (search-forward "probably")
+   (backward-char 3)
+   (donkey-tutor-test--keys "m i \" \"")
+   (should (equal (donkey-tutor-test--line)
+                  "   ---> she said probably and left"))))
+
+(ert-deftest donkey-tutor-lesson-13-wraps-in-a-character-no-key-types ()
+  "The digraph lesson's wrap exercise really wraps in guillemets.
+
+The lesson calls this the only way to wrap in a character no key can
+type, which is a claim about two features at once -- the digraph read
+and the wrap -- so the exercise is run rather than read."
+  (donkey-tutor-test--live
+   ;; The keys pressed are the keys the lesson PRINTS: a test that
+   ;; presses its own would pass over a lesson that told the reader
+   ;; something else.
+   (goto-char (point-min))
+   (should (search-forward "press m w, then SPC i & and\n   < <." nil t))
+   (donkey-tutor-test--goline "---> make this quoted please")
+   (search-forward "quoted")
+   (backward-char 3)
+   (donkey-tutor-test--keys "m w SPC i & < <")
+   (should (equal (donkey-tutor-test--line)
+                  "   ---> make this «quoted» please"))))
+
+(ert-deftest donkey-tutor-lesson-13-inserts-one-character-with-nothing-on ()
+  "`SPC i &' types the character it names without turning a method on."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> the price is")
+   ;; `g l' is the end-of-line key; `$' is a wrap key here.
+   (donkey-tutor-test--keys "g l SPC i & E u")
+   (should (equal (donkey-tutor-test--line) "   ---> the price is€"))
+   (should-not current-input-method)))
 
 (ert-deftest donkey-tutor-banking-paste-over-a-selection-works ()
   "The banking exercise replaces the marker line rather than pushing it down.

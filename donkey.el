@@ -5853,8 +5853,9 @@ and Emacs behaves exactly as it always does.
 Both open keys take a count: \\`C-u 3' \\[donkey-open-below] opens three lines below and
 leaves you on the first of them, with two empty lines under it.
 
-A character that is not on your keyboard has a code of its own: the
-command donkey-digraph lists them all and how to type them.
+A character that is not on your keyboard has a code of its own, and
+\\[donkey-digraph] lists them all; Lesson 13 is the short way to type
+one.
 
 >> Put the cursor on the full stop below, press \\[donkey-insert-here], type the missing
    word -- it is \"dog\" -- then press \\`C-g' to return to NORMAL.
@@ -6320,9 +6321,9 @@ selection you already had is the whole of what there is to know.
 
     \\[donkey-mark-run-toggle]     ADOPTS it.  It becomes the run's starting selection,
           and the object keys grow it from there.
-    m v   REINTERPRETS it.  The region's corners become the block.
-    V     starts FRESH, anchored on the line the cursor is on.
-    v     RE-ANCHORS.  What you had is dropped and a new selection
+    \\`m' \\`v'   REINTERPRETS it.  The region's corners become the block.
+    \\`V'     starts FRESH, anchored on the line the cursor is on.
+    \\`v'     RE-ANCHORS.  What you had is dropped and a new selection
           starts, empty, where the cursor stands.
 
 >> Put the cursor on \"beta\" in the ---> line and press \\`v', then \\`l' three
@@ -6421,6 +6422,94 @@ the one key that clears banks WITHOUT using them, and
 \\[donkey-unbank-line] drops a single line.
 
 
+Lesson 12 -- wrapping a selection
+---------------------------------
+
+Select something and press a delimiter: it goes around the selection.
+The selection is then dropped, so there is nothing left to cancel --
+and that is the one thing to know about taking a pair off again.
+Select the same text once more and press the same key: this time it
+comes off.  One key, both directions, and what you have selected says
+which of the two you get.
+
+>> Put the cursor on \"middle\" in the ---> line, press \\`m' \\`w' to select
+   it, then press \\`('.  Now press \\`m' \\`w' \\`(' again and the parentheses
+   come off.
+
+   ---> one middle three
+
+Either half of a pair does the same thing, so \\`)' wraps as \\`(' does and
+you can reach for whichever is nearer.  The delimiters are the pairs
+\\[donkey-mark-inner] and \\[donkey-mark-outer] already know -- the brackets, the quotes, the curved
+quotes, the guillemets, and \\`=' \\`*' \\`~' \\`|' \\`\\' \\`/' \\`+' \\`_' \\`$' -- so whatever those
+two can select, a key can wrap.
+
+Two of them are not wrap keys: \\`:' goes to a line and \\`>' indents, and
+they go on doing that.  \\`<' still wraps, and gives you the pair.
+
+Nothing between the two characters is touched.  No backslashes are
+added, in any mode: \\[donkey-mark-outer] \\`\"' then \\`\"' gives a plain pair around the pair,
+and selecting what is inside takes one off again.
+
+>> Put the cursor inside the quotes below and press \\[donkey-mark-inner] \\`\"' -- the
+   word is selected without the quotes.  Press \\`\"' and they come off.
+
+   ---> she said \"probably\" and left
+
+After \\[donkey-mark-inner] or \\[donkey-mark-outer] the selection is still live, so the delimiter you
+type next acts at once, with no second press and nothing to select
+again: \\[donkey-mark-inner] \\`\"' picks what the quotes hold, and the \\`\"' after it takes them
+off.  Standing ON a delimiter, \\[donkey-mark-inner] alone is enough -- the character
+under the cursor is the answer.
+
+With NOTHING selected these keys do nothing at all, which is the state
+they spend most of their time in.  In a buffer you cannot edit they
+are handed back to the mode instead, so dired keeps \\`+' and Info keeps
+\\`['.
+
+Under \\[donkey-rectangle-mark-mode] each line of the block is wrapped at its own columns, and a
+rectangle is never unwrapped: the pair goes on, row by row.
+
+>> Put the cursor on the \"a\" of \"alpha\", press \\[donkey-rectangle-mark-mode], then \\`j' and
+   \\`l' \\`l', and press \\`['.  Each row is wrapped where the block stood.
+
+   ---> alpha one
+   ---> bravo two
+
+
+Lesson 13 -- characters your keyboard does not have
+---------------------------------------------------
+
+\\[donkey-insert-digraph] asks for two keys and inserts one character, with no input
+method turned on and nothing to turn off afterwards.  It works from
+NORMAL state, and a count repeats the character.
+
+>> Put the cursor at the end of the ---> line and press \\[donkey-insert-digraph], then
+   \\`E' \\`u'.  A euro sign appears.  Press \\`C-u' \\`3' \\[donkey-insert-digraph] \\`-' \\`M' for three
+   em dashes.
+
+   ---> the price is
+
+The two keys are the rfc1345 mnemonic, the same ones Emacs' own method
+takes after an ampersand.  \\[donkey-digraph] lists every one of them
+with what it types, the common ones at the top of the chart.
+
+Now the part worth remembering.  With a SELECTION live, \\[donkey-insert-digraph] WRAPS
+in the character it names instead of inserting it -- which is the only
+way to wrap in a character no key can type.  The closing half is
+looked up the way a wrap key looks it up, so a pair stays a pair.
+
+>> Put the cursor on \"quoted\" below, press \\`m' \\`w', then \\[donkey-insert-digraph] and
+   \\`<' \\`<'.  The word is wrapped in guillemets.  Press \\`m' \\`w' and
+   \\[donkey-insert-digraph] \\`\"' \\`6' for curved double quotes instead.
+
+   ---> make this quoted please
+
+That is the whole of it: \\`&' and two keys for one character, a selection
+first if you want it wrapped.  To type MANY of them, turn the method
+on with \\[donkey-input-method-digraphs] and type \\`&' and the two keys as you go; \\[donkey-disable-input-method] turns
+it off again.
+
 Your Emacs still works
 ----------------------
 
@@ -6455,7 +6544,8 @@ In NORMAL state, four things differ:
 Searching is Emacs' own and DONKEY leaves it alone: \\`C-s' forward,
 \\`C-r' back.  Replacing is DONKEY's, on \\[query-replace] and \\[replace-regexp].
 
-Worth knowing if you come from vi: \\`/' does nothing here and
+Worth knowing if you come from vi: \\`/' is not search here -- it
+wraps a selection, and does nothing without one -- and
 \\[donkey-describe-bindings] lists bindings, so the search key is \\`C-s' rather than
 either of them.
 
