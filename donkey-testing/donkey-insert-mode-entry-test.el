@@ -1655,6 +1655,61 @@ unchanged as well, the refusal being the whole of what the press does."
       (should (string= (buffer-string) "hello"))
       (should (bound-and-true-p donkey-normal-mode)))))
 
+(ert-deftest donkey-a-borrowed-wrap-key-is-never-a-keyboard-macro ()
+  "A wrap key whose buffer binds it to a keyboard macro is not borrowed.
+
+Found by audit, reproduced end to end: in a read-only buffer a wrap
+key with no selection goes back to the mode underneath, and a keyboard
+macro there satisfies `commandp' and then signals `wrong-type-argument'
+inside `call-interactively' -- an error raised by a keypress.  What
+the macro would type cannot be read beforehand either, so there is no
+way to tell whether borrowing it would type, which NORMAL state does
+not do.
+
+The control below is the point of the test: an ordinary command in the
+same position IS borrowed, so the refusal is about the macro and not
+about the setup."
+  (let ((ran nil))
+    (cl-letf (((symbol-function 'donkey-wrap-macro-test--probe)
+               (lambda () (interactive) (setq ran t))))
+      ;; Control: a real command underneath is handed the key.
+      (with-temp-buffer
+        (donkey-normal-mode 1)
+        (let ((map (make-sparse-keymap))
+              (donkey-mode t))
+          (define-key map (kbd "(") #'donkey-wrap-macro-test--probe)
+          (use-local-map map)
+          (insert "hello")
+          (setq buffer-read-only t)
+          (let ((last-command-event ?\())
+            (cl-letf (((symbol-function 'this-command-keys-vector)
+                       (lambda () (vector ?\())))
+              (donkey--wrap-pass-the-key-on))
+            (should ran))))
+      ;; A keyboard macro is refused, and refusing it does not signal.
+      (with-temp-buffer
+        (donkey-normal-mode 1)
+        (let ((map (make-sparse-keymap))
+              (donkey-mode t))
+          (define-key map (kbd "(") "abc")
+          (use-local-map map)
+          (insert "hello")
+          (setq buffer-read-only t)
+          (let ((last-command-event ?\())
+            (cl-letf (((symbol-function 'this-command-keys-vector)
+                       (lambda () (vector ?\()))
+                      ((symbol-function 'ding) #'ignore))
+              (should (eq 'refused
+                          (condition-case nil
+                              (progn (donkey--wrap-pass-the-key-on) 'refused)
+                            (error 'signalled))))))
+          (should (string= (buffer-string) "hello")))))))
+
+(defun donkey-wrap-macro-test--probe ()
+  "Stand in for a command a mode puts on a wrap key."
+  (interactive)
+  nil)
+
 (ert-deftest donkey-wrap-region-over-read-only-text-keeps-the-selection ()
   "A wrap key over text with the `read-only' property refuses and keeps the region.
 

@@ -2026,13 +2026,23 @@ suppressed key does.  So does anything that is not the press of a
 single delimiter: a call by name, or a sequence a reader has bound
 this command to.  What is handed back is the delimiter that was
 pressed, and nothing else -- the rest of a sequence is nobody else's
-to run."
+to run.
+
+A keyboard macro underneath is answered the same way.  It satisfies
+`commandp' and then signals in `call-interactively', so borrowing it
+would turn a keypress into an error; and what a macro would type
+cannot be read beforehand, which is the other reason to leave it.
+`donkey--non-editing-enter-handler' refuses one for both reasons."
   (let* ((keys (this-command-keys-vector))
          (command (and buffer-read-only
                        (characterp last-command-event)
                        (equal keys (vector last-command-event))
                        (donkey--wrap-key-would-run keys))))
     (if (and (commandp command)
+             ;; A keyboard macro answers `commandp' and then signals in
+             ;; `call-interactively'.  A keymap, prefix symbol included,
+             ;; never answers `commandp' at all.
+             (not (arrayp command))
              (not (eq command 'donkey-wrap-region))
              (not (eq command 'self-insert-command))
              (not (memq command donkey-self-insert-commands)))
