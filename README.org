@@ -128,8 +128,10 @@ others are worth knowing:
 - *=RET= does nothing* in a buffer you are editing, on purpose:
   inserting a newline in Normal state is rarely what was meant. In
   =dired=, =magit=, =org-agenda= and other non-editing modes it is
-  *not* inert — it hands the key back to whatever that mode had bound,
+  *not* inert — it hands the key back to whatever that mode has bound,
   so =RET= still opens the file, visits the entry, follows the link.
+  What it never does, in any mode, is type: a binding that would
+  insert a line break is refused rather than run.
 - *Backspace and Delete do nothing*, so a stray press cannot damage the
   buffer from Normal state. Use =d= or =x=.
 
@@ -1531,7 +1533,10 @@ remap names a symbol, it does not call it.
 
 DONKEY's =donkey-enter-dwim= command dispatches the Enter (RET) key based
 on context. In editing modes, Enter is blocked to prevent accidental
-line breaks. In non-editing modes, the native RET binding is invoked.
+line breaks. In non-editing modes the mode's own RET binding is
+invoked -- unless that binding would itself type or break a line, which
+is refused everywhere. Normal state does not type, and Enter never
+puts a newline in a buffer.
 
 For =org-mode=, DONKEY uses a rule-based dispatch system to execute
 context-aware actions when Enter is pressed. In =markdown-mode= and
@@ -1548,9 +1553,18 @@ default. Derived modes are caught automatically via =derived-mode-p=,
 so =prog-mode= alone covers =python-mode=, =emacs-lisp-mode=, and every
 other language mode derived from it.
 
-Any major mode NOT in this list falls through to whatever RET was
-originally bound to before Normal state's keymap took over -- e.g.
-=dired-find-file= in =dired-mode=, or =magit-status='s own RET binding.
+Any major mode NOT in this list falls through to whatever the key
+means underneath Normal state's own keymap -- e.g. =dired-find-file= in
+=dired-mode=, or =magit-status='s own RET binding. The question is
+asked at the press, not remembered from when Normal state was entered,
+so a binding a minor mode adds later is found too.
+
+Two answers are refused, and Enter does nothing at all instead: a
+command that types or breaks a line, and the global =newline= a mode
+that binds nothing at all would otherwise fall through to. Normal
+state does not type, whatever the mode asks for. =donkey-self-insert-commands=
+is where a mode's own typing command goes if DONKEY does not already
+know it; it can only add to what is refused.
 
 To also block Enter in an additional mode, or remove one so it falls
 through to its native binding, from your =config.el=:

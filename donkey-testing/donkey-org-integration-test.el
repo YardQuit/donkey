@@ -199,8 +199,7 @@ inserting a newline via the mode's own RET command — precisely the
 \"accidental line break\" `donkey-editing-modes' exists to prevent."
   (with-temp-buffer
     (emacs-lisp-mode)
-    (let ((donkey--saved-ret-binding 'newline)
-          (called nil))
+    (let ((called nil))
       (cl-letf (((symbol-function 'newline)
                  (lambda (&rest _) (interactive) (setq called t))))
         (should-not (donkey--non-editing-enter-handler)))
@@ -214,12 +213,14 @@ RET binding in a genuinely non-editing mode (e.g. `dired-mode'-like
 buffers), confirming the `derived-mode-p' fix didn't overreach."
   (with-temp-buffer
     (fundamental-mode)
-    (let ((major-mode 'dired-mode)
-          (donkey--saved-ret-binding 'newline)
+    (let ((map (make-sparse-keymap))
           (called nil))
-      (cl-letf (((symbol-function 'newline)
+      (cl-letf (((symbol-function 'donkey-enter-test--probe)
                  (lambda (&rest _) (interactive) (setq called t))))
-        (should (donkey--non-editing-enter-handler)))
+        (keymap-set map "RET" #'donkey-enter-test--probe)
+        (use-local-map map)
+        (let ((major-mode 'dired-mode))
+          (should (donkey--non-editing-enter-handler))))
       (should called))))
 
 ;;; ---------------------------------------------------------------------------
@@ -691,8 +692,7 @@ gates the handler."
               ((symbol-function 'call-interactively)
                (lambda (cmd) (setq called-cmd cmd))))
       (let ((org-agenda-mode-map (make-sparse-keymap))
-            (major-mode 'fundamental-mode)
-            (donkey--saved-ret-binding nil))
+            (major-mode 'fundamental-mode))
         (donkey-enter-dwim)))
     (should (null called-cmd))))
 
@@ -742,8 +742,7 @@ the non-editing fallback is not reached either."
                (lambda (&optional _arg) (interactive "P") nil))
               ((symbol-function 'call-interactively)
                (lambda (cmd) (setq called-cmd cmd))))
-      (let ((major-mode 'markdown-mode)
-            (donkey--saved-ret-binding nil))
+      (let ((major-mode 'markdown-mode))
         (donkey-enter-dwim)))
     (should (null called-cmd))
     (should-not parser-asked)))
@@ -774,8 +773,7 @@ With `markdown-mode' loaded its predicates exist in every buffer, and
                (lambda (&optional _arg) (interactive "P") nil))
               ((symbol-function 'call-interactively)
                (lambda (cmd) (setq called-cmd cmd))))
-      (let ((major-mode 'text-mode)
-            (donkey--saved-ret-binding nil))
+      (let ((major-mode 'text-mode))
         (donkey-enter-dwim)))
     (should (null called-cmd))))
 
@@ -799,46 +797,184 @@ once per call."
 ;;; donkey-enter-dwim dispatcher - Non-editing modes
 ;;; ---------------------------------------------------------------------------
 
-(ert-deftest donkey-enter-dwim-non-editing-calls-native-ret ()
-  "In a non-editing mode with a saved RET binding, calls it."
-  (let (called-cmd)
-    (setq donkey--saved-ret-binding #'dired-find-file)
-    (cl-letf (((symbol-function 'dired-find-file)
-               (lambda () (interactive) nil))
-              ((symbol-function 'call-interactively)
-               (lambda (cmd) (setq called-cmd cmd))))
-      (let ((major-mode 'dired-mode))
-        (donkey-enter-dwim)))
-    (setq donkey--saved-ret-binding nil)
-    (should (eq called-cmd #'dired-find-file))))
+;; A writable major mode in no `donkey-editing-modes' family, for the
+;; Enter tests below.  Each test sets the map before entering the mode:
+;; `define-derived-mode' reads the variable at mode entry.
+(defvar donkey-enter-test-mode-map (make-sparse-keymap)
+  "The local map `donkey-enter-test-mode' installs.")
 
-(ert-deftest donkey-enter-dwim-non-editing-no-ret-does-nothing ()
-  "In a non-editing mode with no saved RET binding, no command is called."
-  (let (called-cmd)
-    (let ((donkey--saved-ret-binding nil))
-      (cl-letf (((symbol-function 'call-interactively)
-                 (lambda (cmd) (setq called-cmd cmd))))
-        (donkey-enter-dwim)))
-    (should (null called-cmd))))
+(define-derived-mode donkey-enter-test-mode nil "EnterTest"
+  "A writable major mode outside every `donkey-editing-modes' family.")
 
-(ert-deftest donkey-enter-dwim-non-editing-undefined-ret-does-nothing ()
-  "In a non-editing mode where saved RET is 'undefined, nothing happens."
-  (let (called-cmd)
-    (let ((donkey--saved-ret-binding 'undefined))
-      (cl-letf (((symbol-function 'call-interactively)
-                 (lambda (cmd) (setq called-cmd cmd))))
-        (donkey-enter-dwim)))
-    (should (null called-cmd))))
+(defvar donkey-enter-test--fired nil
+  "Set when `donkey-enter-test--probe' runs.")
 
-(ert-deftest donkey-enter-dwim-non-editing-keymap-ret-does-nothing ()
-  "In a non-editing mode where saved RET is a keymap, nothing happens."
-  (let (called-cmd)
-    (let ((km (make-sparse-keymap)))
-      (let ((donkey--saved-ret-binding km))
-        (cl-letf (((symbol-function 'call-interactively)
-                   (lambda (cmd) (setq called-cmd cmd))))
-          (donkey-enter-dwim))))
-    (should (null called-cmd))))
+(defvar donkey-enter-test--minor-on nil
+  "Turns on the minor-mode map one Enter test appends to the alist.")
+
+(defun donkey-enter-test--probe ()
+  "Stand in for the Enter command a non-editing mode puts on the key."
+  (interactive)
+  (setq donkey-enter-test--fired t))
+
+(defun donkey-enter-test--press (ret-binding text)
+  "Press Enter in a buffer of TEXT whose local RET is RET-BINDING.
+Return a cons of whether `donkey-enter-test--probe' ran and the text left."
+  (setq donkey-enter-test--fired nil)
+  (let ((map (make-sparse-keymap)))
+    ;; `define-key', not `keymap-set': one of these bindings is a
+    ;; keyboard macro, which `keymap-set' refuses as a definition.
+    (when ret-binding (define-key map (kbd "RET") ret-binding))
+    (setq donkey-enter-test-mode-map map))
+  (donkey-test-keys--harness "*donkey-enter-test*" #'donkey-enter-test-mode ()
+      text "RET"
+    (cons donkey-enter-test--fired (buffer-string))))
+
+(ert-deftest donkey-enter-runs-the-command-the-mode-puts-on-the-key ()
+  "Outside the editing modes, Enter runs what the mode binds it to."
+  (should (equal (donkey-enter-test--press #'donkey-enter-test--probe "alpha")
+                 (cons t "alpha"))))
+
+(ert-deftest donkey-enter-does-nothing-when-the-mode-binds-nothing ()
+  "A mode that leaves Enter alone gets no Enter: the global `newline' is refused.
+
+The key falls through to the global map, where RET is `newline'.
+Normal state does not type, so nothing runs and nothing is inserted."
+  (should (equal (donkey-enter-test--press nil "alpha")
+                 (cons nil "alpha"))))
+
+(defun donkey-enter-test--borrowed (ret-binding text)
+  "Return the command Enter would hand the key back to, without running it.
+RET-BINDING is what the mode puts on the key, TEXT the buffer's content."
+  (let (borrowed)
+    (let ((map (make-sparse-keymap)))
+      (when ret-binding (define-key map (kbd "RET") ret-binding))
+      (setq donkey-enter-test-mode-map map))
+    ;; The command loop reaches `donkey-enter-dwim' through
+    ;; `call-interactively' as well, so that one is passed through and
+    ;; only what IT hands the key to is recorded -- and not run.
+    (cl-letf* ((orig (symbol-function 'call-interactively))
+               ((symbol-function 'call-interactively)
+                (lambda (cmd &rest args)
+                  (if (eq cmd 'donkey-enter-dwim)
+                      (apply orig cmd args)
+                    (setq borrowed cmd)))))
+      (donkey-test-keys--harness "*donkey-enter-test*" #'donkey-enter-test-mode ()
+          text "RET"
+        nil))
+    borrowed))
+
+(ert-deftest donkey-enter-refuses-what-it-cannot-hand-the-key-to ()
+  "Enter hands the key to a real command only.
+
+`undefined' answers `commandp', so without the test for it Enter would
+call it and ding; a keyboard macro answers `commandp' too and then
+signals inside `call-interactively'; a prefix keymap, symbol or
+object, never answers `commandp' at all and needs no test of its own.
+
+The first assertion is the control: it proves the recorder sees a
+borrow when one happens, so the nils below mean refused rather than
+unobserved."
+  (should (eq (donkey-enter-test--borrowed #'donkey-enter-test--probe "alpha")
+              #'donkey-enter-test--probe))
+  (should (null (donkey-enter-test--borrowed #'undefined "alpha")))
+  (should (null (donkey-enter-test--borrowed "abc" "alpha")))
+  (should (null (donkey-enter-test--borrowed (make-sparse-keymap) "alpha")))
+  ;; and nothing it refuses leaves a mark on the buffer
+  (dolist (binding (list #'undefined "abc" (make-sparse-keymap)))
+    (should (equal (donkey-enter-test--press binding "alpha")
+                   (cons nil "alpha")))))
+
+(ert-deftest donkey-enter-never-types-whatever-the-mode-asks-for ()
+  "Enter puts no text in the buffer, whatever command the mode puts on it.
+
+Found by audit, in a writable buffer outside `donkey-editing-modes':
+Enter ran whatever the mode bound, and four of these six commands
+duly typed.  Normal state does not type, so every command that types
+or breaks a line is refused -- `donkey-line-break-commands' and
+`donkey-self-insert-commands' name them -- and Enter does nothing at
+all instead, exactly as it does in an editing mode.
+
+The buffer is writable here on purpose: a read-only buffer would
+refuse the insertion by itself and prove nothing."
+  (dolist (binding (list #'newline
+                         #'newline-and-indent
+                         #'electric-newline-and-maybe-indent
+                         #'open-line
+                         #'split-line
+                         #'self-insert-command
+                         #'org-self-insert-command))
+    (should (equal (donkey-enter-test--press binding "alpha")
+                   (cons nil "alpha")))))
+
+(ert-deftest donkey-enter-has-a-floor-no-setting-can-take-away ()
+  "Enter still refuses to type when `donkey-self-insert-commands' is junk.
+
+The option adds a mode's own typing command to what Enter refuses; it
+cannot subtract.  Emptied, or set to something that is not a list of
+symbols, the line-break commands are refused all the same and the
+option is not allowed to signal from the press either."
+  (dolist (option (list nil t 42 "abc" '(newline . tail) '(42 "x")))
+    (let ((donkey-self-insert-commands option))
+      (should (equal (donkey-enter-test--press #'newline "alpha")
+                     (cons nil "alpha")))
+      (should (equal (donkey-enter-test--press #'open-line "alpha")
+                     (cons nil "alpha")))))
+  ;; A binding the floor does NOT name reaches the option read, so a
+  ;; junk value has to be coerced there rather than signal from a press.
+  (dolist (option (list t 42 "abc" '(newline . tail) '(42 "x")))
+    (let ((donkey-self-insert-commands option))
+      (should (equal (donkey-enter-test--press #'donkey-enter-test--probe "alpha")
+                     (cons t "alpha")))))
+  ;; and the option still ADDS, when it is a list of symbols
+  (let ((donkey-self-insert-commands '(donkey-enter-test--probe)))
+    (should (equal (donkey-enter-test--press #'donkey-enter-test--probe "alpha")
+                   (cons nil "alpha")))))
+
+(ert-deftest donkey-enter-does-not-hand-the-key-to-itself ()
+  "Enter bound to `donkey-enter-dwim' underneath Normal state runs once.
+
+Normal state's own map is hidden for the length of the lookup, so a
+binding of this command in a map underneath would otherwise be found
+and called, and would look itself up again."
+  (should (null (donkey-enter-test--borrowed #'donkey-enter-dwim "alpha")))
+  (should (equal (donkey-enter-test--press #'donkey-enter-dwim "alpha")
+                 (cons nil "alpha"))))
+
+(ert-deftest donkey-enter-reads-the-binding-in-force-at-the-press ()
+  "Enter asks what the key means now, not what it meant at Normal entry.
+
+Two bindings the old snapshot could not see, both found by audit: one
+in a minor mode's map, and one in a local map installed after the
+major mode's body returned -- which is the shape of DONKEY's own
+bindings buffer, where `special-mode' runs before `use-local-map'."
+  ;; A minor-mode map sitting BELOW Normal state's own in
+  ;; `minor-mode-map-alist', so DONKEY wins the key and has to hand it
+  ;; back.  Appended, not pushed: a pushed entry would outrank DONKEY
+  ;; and the key would never reach `donkey-enter-dwim' at all, which
+  ;; would pass without testing anything.
+  (setq donkey-enter-test--fired nil)
+  (setq donkey-enter-test-mode-map (make-sparse-keymap))
+  (let ((minor-map (make-sparse-keymap)))
+    (keymap-set minor-map "RET" #'donkey-enter-test--probe)
+    (donkey-test-keys--harness "*donkey-enter-test*" #'donkey-enter-test-mode
+        ((donkey-enter-test--minor-on t)
+         (minor-mode-map-alist
+          (append minor-mode-map-alist
+                  (list (cons 'donkey-enter-test--minor-on minor-map)))))
+        "alpha" "RET"
+      (should (eq (key-binding (kbd "RET")) #'donkey-enter-dwim))
+      (should donkey-enter-test--fired)))
+  ;; A local map installed after the mode body ran.
+  (setq donkey-enter-test--fired nil)
+  (setq donkey-enter-test-mode-map (make-sparse-keymap))
+  (donkey-test-keys--harness "*donkey-enter-test2*" #'donkey-enter-test-mode ()
+      "alpha" ""
+    (let ((late (make-sparse-keymap)))
+      (keymap-set late "RET" #'donkey-enter-test--probe)
+      (use-local-map late))
+    (execute-kbd-macro (kbd "RET"))
+    (should donkey-enter-test--fired)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-enter-dwim dispatcher - Editing modes / priority / edge cases
@@ -847,11 +983,10 @@ once per call."
 (ert-deftest donkey-enter-dwim-editing-mode-no-context-does-nothing ()
   "In an editing mode with no org/markdown context, nothing happens."
   (let (called-cmd)
-    (let ((donkey--saved-ret-binding nil))
-      (cl-letf (((symbol-function 'call-interactively)
-                 (lambda (cmd) (setq called-cmd cmd))))
-        (let ((major-mode 'prog-mode))
-          (donkey-enter-dwim))))
+    (cl-letf (((symbol-function 'call-interactively)
+               (lambda (cmd) (setq called-cmd cmd))))
+      (let ((major-mode 'prog-mode))
+        (donkey-enter-dwim)))
     (should (null called-cmd))))
 
 (ert-deftest donkey-enter-dwim-checkbox-priority-over-generic-item ()

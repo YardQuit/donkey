@@ -576,13 +576,32 @@ zero changes none while still entering INSERT state, the same reading
 (defvar donkey--enter-rules nil
   "List of (ELEMENT-TYPE PROPERTY COMMAND1 COMMAND2 ...) for ENTER DWIM dispatch.")
 
-(defvar-local donkey--saved-ret-binding nil
-  "Saved RET binding from the buffer's local map when entering Normal state.
+(defvar donkey-self-insert-commands) ;(donkey--enter-would-type-p, donkey--wrap-pass-the-key-on); defined below, in "Donkey Normal Mode Keymap Definition"
 
-Captured, by a `donkey-normal-mode-hook' function in this section,
-for a buffer whose major mode is not in `donkey-editing-modes', and
-read back by `donkey--non-editing-enter-handler', so RET still does
-what that mode expects.")
+(defconst donkey--line-break-commands
+  '(newline
+    newline-and-indent
+    electric-newline-and-maybe-indent
+    reindent-then-newline-and-indent
+    comment-indent-new-line
+    default-indent-new-line
+    open-line
+    split-line)
+  "Commands Normal state refuses on Enter, because they break a line.
+
+Enter in a mode outside `donkey-editing-modes' runs what that mode
+itself puts on the key -- `dired-find-file' in Dired,
+`Info-follow-nearest-node' in Info.  A mode that puts nothing there
+leaves the key to the global map, where RET is `newline', and a mode
+that asks for a line break outright arrives at the same place by
+another route.  Both are refused and Enter does nothing, as it does in
+a mode that IS in `donkey-editing-modes'.
+
+Normal state does not type, and Enter is the last key that should put
+a newline in a buffer being read rather than written.  A constant
+rather than a user option, so that no setting can take the floor away:
+`donkey-self-insert-commands' is where a mode's own typing command
+goes, and it can only add to what is refused here.")
 
 (defcustom donkey-editing-modes
   '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
@@ -748,15 +767,63 @@ are for the tests, which stand in for it."
     (call-interactively #'markdown-follow-thing-at-point)
     t))
 
+(defun donkey--enter-key-pressed ()
+  "Return the key to ask the buffer about for `donkey-enter-dwim'.
+
+The key actually pressed when that was a single Enter press, so
+<enter> is asked about as itself.  Reached any other way -- called by
+name, or through a sequence a reader has bound this command to -- RET
+is asked about instead: this command is what Enter means, whatever
+route reaches it."
+  (let ((keys (this-command-keys-vector)))
+    (if (and (= (length keys) 1)
+             (memq (aref keys 0) '(?\r return enter kp-enter)))
+        keys
+      (kbd "RET"))))
+
+(defun donkey--enter-would-type-p (command)
+  "Return non-nil when COMMAND types or breaks a line rather than acting.
+
+`donkey--line-break-commands' is the floor and is always refused.
+`donkey-self-insert-commands' adds a mode's own typing command to it,
+read at the press and coerced rather than trusted: a value that is not
+a list of symbols adds nothing instead of signaling, and cannot take
+the floor away."
+  (or (eq command 'self-insert-command)
+      (memq command donkey--line-break-commands)
+      (memq command (and (proper-list-p donkey-self-insert-commands)
+                         (seq-filter #'symbolp donkey-self-insert-commands)))))
+
 (defun donkey--non-editing-enter-handler ()
-  "Handle Enter in non-editing modes.  Return t if handled."
+  "Run what Enter means here, outside `donkey-editing-modes'.
+
+Returns t if it handled the key.  The key is asked for AT THE PRESS,
+through `donkey--wrap-key-would-run': Normal state's own map is
+hidden for the length of the lookup and the maps underneath are asked
+-- the major mode's, another minor mode's, the global one.  That is
+the borrowing rule the wrap keys follow, and it answers for the
+bindings in force now rather than for the ones a buffer had when
+Normal state was last entered.
+
+Refused, so that Enter does nothing at all instead: a command that
+would type or break a line, which `donkey--enter-would-type-p'
+decides; `donkey-enter-dwim' itself; `undefined'; and a keyboard
+macro, which is `commandp' but is not something `call-interactively'
+takes.  A mode that leaves Enter alone falls through to the global
+`newline', and Normal state does not type."
   (unless (donkey--editing-mode-p)
-    (when (and donkey--saved-ret-binding
-               (not (eq donkey--saved-ret-binding 'undefined))
-               (not (keymapp donkey--saved-ret-binding))
-               (commandp donkey--saved-ret-binding))
-      (call-interactively donkey--saved-ret-binding)
-      t)))
+    (let* ((keys (donkey--enter-key-pressed))
+           (command (and keys (donkey--wrap-key-would-run keys))))
+      (when (and (commandp command)
+                 ;; A keyboard macro answers `commandp' and then
+                 ;; signals in `call-interactively'.  A keymap, prefix
+                 ;; symbol included, never answers `commandp' at all.
+                 (not (arrayp command))
+                 (not (eq command 'undefined))
+                 (not (eq command 'donkey-enter-dwim))
+                 (not (donkey--enter-would-type-p command)))
+        (call-interactively command)
+        t))))
 
 (defun donkey-org-todo ()
   "Toggle headline TODO state between TODO and DONE.
@@ -804,8 +871,9 @@ order, stopping at the first one that reports it handled the key:
    `markdown-follow-thing-at-point', Markdown's own key for it.
 4. `donkey--non-editing-enter-handler' -- outside `donkey-editing-modes'
    (`dired-mode', `magit-status-mode', etc.), falls through to
-   whatever RET was ORIGINALLY bound to before Normal state's keymap
-   took over, via `donkey--saved-ret-binding'.
+   whatever the key means underneath Normal state's own keymap, asked
+   at the press.  A command that would type or break a line is
+   refused: see `donkey--line-break-commands'.
 
 If none of these handle it -- ordinary `prog-mode'/`text-mode' buffers
 being edited as code or plain text -- RET does nothing at all, on
@@ -816,16 +884,6 @@ purpose."
    ((donkey--org-mode-enter-handler))
    ((donkey--markdown-enter-handler))
    ((donkey--non-editing-enter-handler))))
-
-(add-hook 'donkey-normal-mode-hook
-          (lambda ()
-            (unless (donkey--editing-mode-p)
-              ;; `current-local-map' is nil for a mode without one, and
-              ;; `lookup-key' signals on nil.
-              (setq donkey--saved-ret-binding
-                    (let ((map (current-local-map)))
-                      (and map (lookup-key map (kbd "RET")))))))
-          t)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Comment DWIM
@@ -1934,7 +1992,6 @@ standing."
           (donkey--wrap-put-on beg end open close))))))
 
 (defvar donkey-normal-mode) ;(donkey--wrap-key-would-run); defined below, in "Donkey Mode Definitions"
-(defvar donkey-self-insert-commands) ;(donkey--wrap-pass-the-key-on); defined below, in "Donkey Normal Mode Keymap Definition"
 
 (defun donkey--wrap-key-would-run (keys)
   "Return the command KEYS would run if Normal state were not holding them.
