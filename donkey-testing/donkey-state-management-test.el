@@ -2448,6 +2448,44 @@ bare quit key does, with nothing in progress -- see
     (condition-case nil (execute-kbd-macro (kbd "m C-g")) (quit nil))
     (should (bound-and-true-p rectangle-mark-mode))))
 
+(ert-deftest donkey-the-prefix-catch-keeps-to-donkeys-own-prefixes ()
+  "The catch answers after a DONKEY prefix and after no other.
+
+Found by a review of the unreleased range: the guard tested only that
+the sequence was longer than one key and ended in the quit key, so it
+fired after any prefix at all.  Emacs's own prefix keys, followed by
+the quit key, answered \"Quit\" where Emacs answers with its own
+diagnostic naming the sequence -- more use than a bare quit for a
+prefix DONKEY has nothing to do with.  Both docstrings claimed the
+narrow scope the code did not keep.
+
+Pinned from both sides: every prefix DONKEY holds is taken, and
+Emacs's own are left alone.  The mark run's map counts as DONKEY's,
+and so does a prefix a reader adds to `donkey-normal-mode-map'."
+  (donkey-prefix-quit-test--in-normal
+    ;; DONKEY's own, including the leader and a reader's addition
+    (let ((donkey-normal-mode-map (copy-keymap donkey-normal-mode-map)))
+      (keymap-set donkey-normal-mode-map "s d" #'ignore)
+      (dolist (prefix '("m" "g" "r" "z" "SPC" "s"))
+        (let ((this-command nil))
+          (cl-letf (((symbol-function 'this-single-command-keys)
+                     (lambda () (vconcat (kbd prefix) (vector ?\C-g)))))
+            (donkey--intercept-quit-after-prefix)
+            (should (eq this-command 'donkey--quit-the-sequence))))))
+    ;; and Emacs's own, which keep their diagnostic
+    (dolist (prefix '("C-x" "C-c" "C-h"))
+      (let ((this-command nil))
+        (cl-letf (((symbol-function 'this-single-command-keys)
+                   (lambda () (vconcat (kbd prefix) (vector ?\C-g)))))
+          (donkey--intercept-quit-after-prefix)
+          (should (null this-command)))))
+    ;; the predicate itself, asked directly
+    (should (donkey--own-prefix-p (kbd "m")))
+    (should (donkey--own-prefix-p (kbd "SPC")))
+    (should (donkey--own-prefix-p (kbd "SPC i")))
+    (should-not (donkey--own-prefix-p (kbd "C-x")))
+    (should-not (donkey--own-prefix-p (kbd "w")))))
+
 (ert-deftest donkey-a-bare-quit-key-is-left-to-emacs ()
   "One press of the quit key is stock `keyboard-quit', not the prefix catch.
 

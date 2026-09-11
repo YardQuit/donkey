@@ -7998,6 +7998,20 @@ names it as the command to run."
   (interactive)
   (signal 'quit nil))
 
+(defun donkey--own-prefix-p (keys)
+  "Return non-nil when KEYS is a prefix of DONKEY's own.
+
+The SPC leader and its own sub-prefixes, `m', `g', `r' and `z', and
+any prefix a reader has added to `donkey-normal-mode-map' -- all of
+which answer `keymapp' here.  A prefix of Emacs's own, `C-x' or
+`C-c', is not bound there and answers nil, which is what keeps
+DONKEY's hands off it.
+
+`donkey-mark-run-mode-map' is not consulted: the one prefix it has is
+`g', which is a prefix of the normal map as well, so asking it a
+second time could not change an answer."
+  (keymapp (lookup-key donkey-normal-mode-map keys)))
+
 (defun donkey--intercept-quit-after-prefix ()
   "Make the quit key mean quit after a key sequence DONKEY owns.
 
@@ -8006,16 +8020,21 @@ leader, `m', `g', `r', `z', the mark run's own map, and whatever a
 reader adds -- and the quit key pressed after one of them is the
 SECOND key of a sequence rather than a quit.  It resolves to nothing,
 and `undefined' answers it by naming the sequence and ringing the
-bell -- the echo area says the sequence is undefined.  A bell is an
-error inside a keyboard macro, so a macro carrying the sequence stops
-there.
+bell -- the echo area says the sequence is undefined, which is not
+what the reader did.
 
 `donkey--quit-the-sequence' runs in its place, which abandons the
-sequence and leaves everything else alone.
+sequence and leaves everything else alone.  A keyboard macro carrying
+the sequence stops either way, measured in a live frame: what changes
+is that it stops on a quit rather than on a bell, which is an error
+there.  The press reads as the quit it was; the macro is not rescued.
 
 Caught here rather than bound in each prefix map, so a prefix a reader
 adds is covered without DONKEY knowing about it, and no keymap that
-might be shared is written to.
+might be shared is written to.  `donkey--own-prefix-p' is what keeps
+the catch to DONKEY's own prefixes: after `C-x' or `C-c' the key is
+Emacs's business, and its own diagnostic names the sequence, which is
+more use than a bare quit for a prefix DONKEY has nothing to do with.
 
 Only a sequence LONGER than one key is taken: a bare press of the quit
 key is the real `keyboard-quit' and is left alone, as are the
@@ -8026,7 +8045,8 @@ minibuffer and an excluded mode."
              (not (donkey--excluded-mode-p)))
     (let ((keys (this-single-command-keys)))
       (when (and (> (length keys) 1)
-                 (eq (aref keys (1- (length keys))) ?\C-g))
+                 (eq (aref keys (1- (length keys))) ?\C-g)
+                 (donkey--own-prefix-p (substring keys 0 (1- (length keys)))))
         (setq this-command 'donkey--quit-the-sequence)))))
 
 (defun donkey--intercept-quit-in-insert ()
