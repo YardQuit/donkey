@@ -7466,11 +7466,27 @@ the terminal's own default."
     (`(hbar . ,_) "\e[4 q")    ; Steady underline, ignore height
     (_ "\e[0 q")))             ; Fallback to default
 
+(defun donkey--decscusr-denied-prefixes ()
+  "Return `donkey-decscusr-denied-terminals' as a list of strings.
+
+A bare string is read as the one prefix it looks like, and anything
+in the list that is not a string is dropped; any other value denies
+nothing.  Read down a `post-command-hook' path, where a signal costs
+the cursor its resync for the rest of the session: Emacs removes a
+hook function that errors and says so once, and the state DONKEY is
+in stops showing after that."
+  (cond ((stringp donkey-decscusr-denied-terminals)
+         (list donkey-decscusr-denied-terminals))
+        ((listp donkey-decscusr-denied-terminals)
+         (seq-filter #'stringp donkey-decscusr-denied-terminals))))
+
 (defun donkey--terminal-supports-decscusr-p ()
   "Return non-nil if the current terminal likely supports DECSCUSR.
 
 Returns nil for graphical frames and for terminals whose type
-matches a prefix in `donkey-decscusr-denied-terminals'.
+matches a prefix in `donkey-decscusr-denied-terminals', read through
+`donkey--decscusr-denied-prefixes' so a malformed value denies
+rather than signals.
 Falls back to the `TERM' environment variable when `tty-type'
 returns nil, and performs a conservative guess based on known
 capable terminal names.
@@ -7484,7 +7500,7 @@ capable terminal binds `noninteractive' to nil."
            (and (not (cl-some
                       (lambda (prefix)
                         (string-prefix-p prefix tty))
-                      donkey-decscusr-denied-terminals))
+                      (donkey--decscusr-denied-prefixes)))
                 (not (member tty '("dumb" "unknown" "cons25"))))))))
 
 (defun donkey--send-cursor-sequence (type)
@@ -7963,27 +7979,58 @@ DONKEY switches the method off on the way into NORMAL state and on
 again on the way back, so an echo on every visit would be noise; the
 echo is for a switch the user asked for.")
 
+(defun donkey--input-method-suspend (method)
+  "Switch METHOD off quietly, naming it rather than signaling if it will not.
+
+Every place DONKEY takes an input method off runs from a hook -- the
+two state hooks and `input-method-activate-hook' -- where a signal
+would surface on every visit to NORMAL state and end a keyboard
+macro.  A method that will not go off is named instead and left live,
+which is worth reading: a live input method in NORMAL state
+translates the command keys.  METHOD is the name to say."
+  (condition-case err
+      (let ((donkey--input-method-quiet t))
+        (deactivate-input-method))
+    (error (message "Input method %s will not switch off: %s"
+                    method (error-message-string err)))))
+
+(defun donkey--input-method-restore (method)
+  "Switch METHOD on quietly, forgetting it rather than signaling if it will not.
+
+The counterpart of `donkey--input-method-suspend', and on a hook for the
+same reason.  A method that will not come back -- its library gone,
+its own activation signaling -- is dropped from
+`donkey--saved-input-method' as well, so the failure is reported once
+instead of on every entry into INSERT state."
+  (condition-case err
+      (let ((donkey--input-method-quiet t))
+        (activate-input-method method))
+    (error
+     (setq donkey--saved-input-method nil)
+     (message "Input method %s will not come back on: %s"
+              method (error-message-string err)))))
+
 (defun donkey--on-normal-entry ()
   "Deactivate any active input method when entering Normal state.
 
 The method is saved in `donkey--saved-input-method' for
-`donkey--on-insert-entry' to restore."
+`donkey--on-insert-entry' to restore, and switched off through
+`donkey--input-method-suspend', which never signals."
   (when donkey-normal-mode
     (when current-input-method
       (setq donkey--saved-input-method current-input-method)
-      (let ((donkey--input-method-quiet t))
-        (deactivate-input-method)))))
+      (donkey--input-method-suspend donkey--saved-input-method))))
 
 (defun donkey--on-insert-entry ()
   "Reactivate on Insert entry the input method `donkey--on-normal-entry' saved.
 
 Only when no input method is already active, so one turned on by
-hand in the meantime is kept."
+hand in the meantime is kept.  Switched on through
+`donkey--input-method-restore', which never signals."
   (when donkey-insert-mode
     (when (and donkey--saved-input-method
                (not current-input-method))
-      (let ((donkey--input-method-quiet t))
-        (activate-input-method donkey--saved-input-method)))))
+      (donkey--input-method-restore donkey--saved-input-method))))
 
 (defun donkey--on-input-method-activate ()
   "Immediately undo an input method activated while in Normal state, and say so.
@@ -8000,9 +8047,8 @@ switch DONKEY made itself says nothing."
     (when (bound-and-true-p donkey-normal-mode)
       (when current-input-method
         (setq donkey--saved-input-method current-input-method)
-        (let ((input-method-activate-hook nil)
-              (donkey--input-method-quiet t))
-          (deactivate-input-method))))
+        (let ((input-method-activate-hook nil))
+          (donkey--input-method-suspend donkey--saved-input-method))))
     (when (and method (not donkey--input-method-quiet))
       (message "%s on%s" method
                (if (bound-and-true-p donkey-normal-mode)

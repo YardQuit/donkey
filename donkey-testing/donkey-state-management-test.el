@@ -847,6 +847,48 @@ are not counted: they are on only while a run is armed or pending."
       (should (equal (donkey-state-test--said (donkey--on-input-method-deactivate))
                      "test-method off")))))
 
+(ert-deftest donkey-a-method-that-will-not-come-back-is-said-once ()
+  "A saved method that will not activate is reported once and forgotten.
+
+Found by audit: `donkey--on-insert-entry' runs from
+`donkey-insert-mode-hook', so a method whose library had gone since it
+was saved signaled on every entry into INSERT state -- the state was
+reached all the same, and the error came back the next time too,
+because the name stayed saved.  It also ends a keyboard macro.
+
+Pinned here: the entry does not signal, the name is dropped, and the
+message says which method it was."
+  (donkey--with-test-buffer
+    (donkey-enter-normal)
+    (setq-local donkey--saved-input-method "no-such-method")
+    (let ((current-input-method nil))
+      (cl-letf (((symbol-function 'activate-input-method)
+                 (lambda (&rest _) (error "No such input method"))))
+        (let ((said (donkey-state-test--said (donkey-enter-insert))))
+          (should (string-match-p "no-such-method" said))
+          (should (string-match-p "will not come back on" said))))
+      (should (bound-and-true-p donkey-insert-mode))
+      (should (null donkey--saved-input-method)))))
+
+(ert-deftest donkey-a-method-that-will-not-switch-off-is-said-not-signaled ()
+  "A method that refuses to deactivate is named, and Normal state is reached.
+
+`donkey--on-normal-entry' runs from `donkey-normal-mode-hook', where a
+signal would surface on every ESC and end a keyboard macro.  The
+method is left live, which the message says, because a live input
+method in NORMAL state translates the command keys.  The name is kept
+saved: it is still the method this buffer was using."
+  (donkey--with-test-buffer
+    (donkey-enter-insert)
+    (setq-local current-input-method "test-method")
+    (cl-letf (((symbol-function 'deactivate-input-method)
+               (lambda (&rest _) (error "This method will not let go"))))
+      (let ((said (donkey-state-test--said (donkey-enter-normal))))
+        (should (string-match-p "test-method" said))
+        (should (string-match-p "will not switch off" said))))
+    (should (bound-and-true-p donkey-normal-mode))
+    (should (equal donkey--saved-input-method "test-method"))))
+
 (ert-deftest donkey-says-nothing-when-it-switches-the-method-itself ()
   "The state hooks switch the method without a word, both ways.
 

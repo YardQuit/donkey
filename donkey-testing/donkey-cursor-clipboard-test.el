@@ -81,6 +81,33 @@ now says otherwise, and this is what makes that true."
                                (and (donkey--terminal-supports-decscusr-p) t))
                          case)))))))
 
+(ert-deftest donkey-a-malformed-denylist-denies-rather-than-signals ()
+  "A `donkey-decscusr-denied-terminals' that is not a list of strings.
+
+Found by audit, in a real terminal frame: the option is read down a
+`post-command-hook' path, and a value Emacs cannot take a string
+prefix of signaled there.  A function that errors on
+`post-command-hook' is removed for the session, so the cursor stopped
+resyncing and the state DONKEY was in stopped showing -- with nothing
+on screen to say why.
+
+A bare string is read as the one prefix it looks like, since that is
+what the reader who wrote it meant; a list keeps its strings and drops
+the rest; anything else denies nothing.  None of the five signals."
+  (cl-letf ((noninteractive nil)
+            ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+            ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color")))
+    (dolist (case '((("dumb" "linux") . t)      ; the shipped shape
+                    ("xterm"          . nil)    ; a bare string, and it denies
+                    ("dumb"           . t)      ; a bare string that does not
+                    ((dumb linux)     . t)      ; symbols, dropped
+                    ((42 "xterm")     . nil)    ; the string in it still counts
+                    (t                . t)))    ; nonsense denies nothing
+      (let ((donkey-decscusr-denied-terminals (car case)))
+        (should (equal (cons (car case)
+                             (and (donkey--terminal-supports-decscusr-p) t))
+                       case))))))
+
 (ert-deftest donkey-cursor-type-to-decscusr-unknown-type-fallback ()
   "Unknown cursor type maps to DECSCUSR default sequence."
   (should (string= (donkey--cursor-type-to-decscusr 'unknown-shape) "\e[0 q")))
