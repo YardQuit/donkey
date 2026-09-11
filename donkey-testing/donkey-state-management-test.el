@@ -847,6 +847,25 @@ are not counted: they are on only while a run is armed or pending."
       (should (equal (donkey-state-test--said (donkey--on-input-method-deactivate))
                      "test-method off")))))
 
+(ert-deftest donkey-input-methods-that-is-not-a-list-binds-nothing ()
+  "A `donkey-input-methods' that is not a list of entries is left out whole.
+
+The option is watched, so the refresh runs inside the `setq' that sets
+it.  Found by audit: a value that is not a list signaled there, which
+makes the `setq' itself fail -- in a config file that takes the rest
+of the file with it.  Malformed ENTRIES are already dropped one by
+one, and a malformed value is now dropped the same way.
+
+The entries a good value binds are restored at the end, so the map is
+left as the suite found it."
+  (let ((before (copy-sequence donkey-input-methods)))
+    (unwind-protect
+        (dolist (junk (list t 42 "abc" [1 2] 'sym))
+          (setq donkey-input-methods junk)
+          (should (null donkey--input-method-entry-keys)))
+      (setq donkey-input-methods before))
+    (should (equal donkey-input-methods before))))
+
 (ert-deftest donkey-a-method-that-will-not-come-back-is-said-once ()
   "A saved method that will not activate is reported once and forgotten.
 

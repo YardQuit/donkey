@@ -8159,12 +8159,15 @@ ENTRIES is a value of `donkey-input-methods'.  Only the keys the
 previous value bound are taken out first, so DONKEY's own keys, and
 any change made to the map by hand, are left as they are.  The
 entries that are not three strings, whose key is not one, or whose
-key is DONKEY's own are left out."
+key is DONKEY's own are left out, and a value that is not a list of
+entries at all leaves the map with none: this runs from a variable
+watcher, so signaling here would make the `setq' that set the option
+fail and take the rest of a config file with it."
   (let ((map donkey-input-method-map))
     (dolist (key donkey--input-method-entry-keys)
       (keymap-unset map key t))
     (setq donkey--input-method-entry-keys nil)
-    (dolist (entry entries)
+    (dolist (entry (and (proper-list-p entries) entries))
       (when (and (proper-list-p entry) (= (length entry) 3)
                  (cl-every #'stringp entry)
                  (key-valid-p (nth 0 entry))
