@@ -2258,8 +2258,8 @@ vimtutor do; like vimtutor, it has no key of its own: the text holding the instr
 on, and changing it is the point. Lines beginning with =>>= are things to
 do; everything else is explanation.
 
-Eight lessons, ending with the two things that are DONKEY's own —
-banking, and counts that mean the same thing everywhere:
+Thirteen lessons, ending with the two the keyboard itself cannot give
+you — wrapping a selection, and the characters that are not on it:
 
 1. Moving around (including =S= for undoing a mis-keyed jump)
 2. Counts
@@ -2267,8 +2267,13 @@ banking, and counts that mean the same thing everywhere:
 4. Deleting and changing
 5. Selecting things (words, sentences, delimiters, levels)
 6. Whole lines
-7. Banking
-8. Copy and paste
+7. Copy and paste
+8. Banking, which is DONKEY's own idea
+9. Columns (rectangles)
+10. Changing your mind (undo, and the exchange key)
+11. When two selections disagree
+12. Wrapping a selection
+13. Characters your keyboard does not have (digraphs)
 
 The keys it names are *your* keys: the lessons are written with
 =substitute-command-keys= escapes, so anyone who has rebound something is

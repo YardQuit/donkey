@@ -3858,4 +3858,49 @@ frame."
       (should (equal (buffer-string) "row"))
       (should-not donkey-test-keys--said))))
 
+(ert-deftest donkey-readme-lists-every-tutor-lesson-in-order ()
+  "The README's tutor list names every lesson the tutor has, in order.
+
+The tutor's own headings are the source: each \"Lesson N -- TITLE\" line
+in `donkey--tutor-content' must have item N of the README's numbered
+list saying the same TITLE, and the list must be no longer than the
+lessons are.  A parenthetical after the title is the README's to add.
+
+Found by audit: the README said \"Eight lessons\" and listed eight while
+the tutor had thirteen, and had copy-and-paste and banking the wrong
+way round.  The list had not been touched since the tutor was added."
+  (let ((lessons
+         (let ((case-fold-search nil) (found nil) (start 0))
+           (while (string-match "^Lesson \\([0-9]+\\) -- \\(.*\\)$"
+                                donkey--tutor-content start)
+             (push (cons (string-to-number (match-string 1 donkey--tutor-content))
+                         (match-string 2 donkey--tutor-content))
+                   found)
+             (setq start (match-end 0)))
+           (nreverse found)))
+        (listed
+         (with-temp-buffer
+           (insert-file-contents
+            (expand-file-name "README.org" donkey-test--source-dir))
+           (goto-char (point-min))
+           (let (items)
+             (when (and (re-search-forward "^[A-Z][a-z]+ lessons, ending with"
+                                           nil t)
+                        (re-search-forward "^1\\. " nil t))
+               (forward-line 0)
+               (while (looking-at "^\\([0-9]+\\)\\. \\(.*\\)$")
+                 (push (cons (string-to-number (match-string 1))
+                             (match-string 2))
+                       items)
+                 (forward-line 1)))
+             (nreverse items)))))
+    (should lessons)
+    (should (equal (mapcar #'car lessons) (mapcar #'car listed)))
+    (dolist (lesson lessons)
+      (let ((item (cdr (assq (car lesson) listed))))
+        (should item)
+        ;; The README may append a parenthetical; the title must lead.
+        (should (string-prefix-p (downcase (cdr lesson))
+                                 (downcase item)))))))
+
 ;;; donkey-describe-bindings-test.el ends here
