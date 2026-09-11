@@ -3,6 +3,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'benchmark)
 (require 'cl-lib)
 (require 'donkey)
 (require 'donkey-test-keys)
@@ -2149,7 +2150,16 @@ Together those give 12.9 to 13.6 over five trials -- a spread of 0.7,
 against 8 for linear and 64 for quadratic.  The threshold of 25 is
 roughly twice the observed figure and less than half the quadratic one,
 so both a false failure and a false pass need something to change by a
-factor of two."
+factor of two.
+
+And the collections are subtracted, which is the fourth change and the
+one the first three needed.  Garbage collecting BEFORE each run does
+not stop one landing inside it, and the bigger the session the more
+likely that is: after a single `org-mode' buffer in a live frame this
+ratio went 10.2 to 34.9, and the whole of the difference was GC.  A
+test of an algorithm that fails because another test loaded a library
+is measuring the wrong thing; `benchmark-run' reports the collections
+separately, so they can be taken out."
   (let ((transient-mark-mode t))
     (cl-flet* ((bank-n (n)
                  (with-temp-buffer
@@ -2159,10 +2169,16 @@ factor of two."
                    (goto-char (point-max))
                    (garbage-collect)
                    (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
-                     (let ((start (float-time)))
-                       (donkey-bank-selection)
+                     ;; `benchmark-run' answers (TOTAL GCS GC-TIME), and
+                     ;; the collections are subtracted: what is being
+                     ;; asserted is the shape of the WORK, and a
+                     ;; collection that lands in the timed section is a
+                     ;; measurement of the heap somebody else filled.
+                     (let* ((figures (benchmark-run 1 (donkey-bank-selection)))
+                            (total (nth 0 figures))
+                            (gc-time (nth 2 figures)))
                        (should (= n (donkey--banked-line-count)))
-                       (- (float-time) start)))))
+                       (- total gc-time)))))
                (best-of-3 (n) (min (bank-n n) (bank-n n) (bank-n n))))
       ;; Warm up, so first-call overheads do not land in the ratio.
       (bank-n 200)

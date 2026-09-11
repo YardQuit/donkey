@@ -9,11 +9,14 @@
 - [[#default-keybindings][Default Keybindings]]
 - [[#excluded-modes][Excluded Modes]]
 - [[#customizing-keybindings][Customizing Keybindings]]
+- [[#binding-report][When a Key Is Not DONKEY's Any More]]
+- [[#mode-insert-commands][Keys a Major Mode Types With]]
 - [[#enter-key-rules-dwim][Enter Key Rules (DWIM)]]
 - [[#cursor-management][Cursor Management]]
 - [[#clipboard-integration][Clipboard Integration]]
 - [[#input-method-management][Input Method Management]]
 - [[#smartparens-integration][Smartparens Integration]]
+- [[#wrapping-a-selection][Wrapping a Selection]]
 - [[#position-tracking][Position Tracking]]
 - [[#org-scratch-buffer][Org-Scratch Buffer]]
 - [[#tutor][Tutor]]
@@ -329,7 +332,7 @@ process interaction.
 | =V= | =donkey-visual-line-toggle=   | Toggle visual line selection; a count selects that many rows |
 | =v= | =donkey-set-mark=           | Drop a mark and start selecting; =C-g= lets go |
 | =M= | =donkey-mark-run-toggle=    | Toggle mark run mode: bare =w W b B s S= mark and grow |
-| =(= =[= ={= ="= ='= =`= | =donkey-wrap-region= | Wrap active region with delimiter, see below |
+| =(= =[= ={= ="= ='= =`= =)= =]= =}= | =donkey-wrap-region= | Wrap the selection in that delimiter, or take it off again, see below |
 
 =V=, =M= and =m v= toggle: pressing any of them a second time cancels
 the selection it started (=M='s cancel press is the one *inside* its
@@ -627,7 +630,7 @@ an empty buffer, or one holding only blank lines and whitespace. A blank
 line *between* paragraphs is not such a case: =m p= marks the paragraph
 below it and =m P= the one above, each with its one blank line.
 
-=donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ‘ ’ “ ” = * ~ | \ / : + _ $=
+=donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ‘ ’ “ ” « » ‹ › = * ~ | \ / : + _ $=
 by default -- an alist of (OPEN . CLOSE) pairs in =donkey-mark-pair-delimiters=
 (a Customization Group variable). For symmetric delimiters (e.g. straight
 or curly single quotes, where the same character both opens and closes a
@@ -651,12 +654,27 @@ key up for something else):
 Either half names the pair: =m i )= means what =m i (= means, and
 =m a ]= what =m a [= does. With the cursor already sitting on a
 delimiter — either end of one — the character is taken from the buffer
-and nothing is asked, so =m i= alone is enough there; typing the
-delimiter anyway is harmless, and pressing it a second time wraps the
-selection you just made.
+and nothing is asked, so =m i= alone is enough there.
+
+A delimiter typed after the selection is a key of its own and acts at
+once: =m i= then =(= takes that pair off, since =m i= selected what
+the pair holds; =m a= then =(= wraps, since =m a= selected the pair as
+well. See [[#wrapping-a-selection][Wrapping a Selection]].
+
+A delimiter that is not on your keyboard is named with a digraph, by
+the keys that ask for one everywhere else: =SPC i &= at the prompt,
+then the mnemonic. =m i SPC i & < <= selects inside =«…»=, and
+=m a SPC i & " 6= takes a curly-quoted run with its quotes. Keys the
+method does not know are refused by name, and no single character at
+the prompt is spent on an escape — =&= there is the =&= delimiter, if
+you have made one.
+
+Adding a pair here does not give the character a key: see
+[[#wrapping-a-selection][Wrapping a Selection]] for the second line
+that does.
 
 The prompt names =donkey-mark-pair-delimiters= rather than reciting it.
-The list above is nineteen characters and grows with whatever you add,
+The list above is twenty-one pairs and grows with whatever you add,
 so =C-h v donkey-mark-pair-delimiters= is where to see the pairs in
 force — your own additions marked as customized — and =C-h f
 donkey-mark-inner= describes the command.
@@ -1188,7 +1206,8 @@ Help and reports:
 | =donkey-tutor=          | Open the learn-by-doing tutor              |
 | =donkey-digraph=        | Show the digraph and Unicode chart         |
 | =donkey-version=        | Show the version of DONKEY that is loaded  |
-| =donkey-debug-platform= | Show a platform report for troubleshooting |
+| =donkey-debug-platform= | Show a DONKEY and platform report for troubleshooting |
+| =donkey-toggle-wrap-engine= | Switch who wraps a selection, DONKEY or your pairing package |
 
 Settings:
 
@@ -1302,11 +1321,19 @@ by modifying =donkey-normal-mode-map=.
 
 #+begin_src emacs-lisp
 
-  ;; Make ',' fall through to the major mode instead of being ignored
+  ;; Make ',' fall through to the major mode instead of being refused
   (when (boundp 'donkey-normal-mode-map)
     (keymap-unset donkey-normal-mode-map ","))
 
 #+end_src
+
+Unbinding is the only thing that lets a key through. A key DONKEY
+binds is blocked whether the binding is =undefined= (which beeps and
+says "=,= is undefined") or =ignore= (which is silent): the major
+mode's own binding is out of reach either way. Normal state uses
+=undefined= for the keys it refuses, so a press is answered, and
+=ignore= for the four delete-key names, where a beep on every stray
+backspace would be noise you cannot act on.
 
 ** Put your own keys under the leader, =SPC=:
 
@@ -1384,6 +1411,118 @@ go:
     (keymap-set donkey-normal-mode-map "n" #'forward-paragraph))
 
 #+end_src
+
+* When a Key Is Not DONKEY's Any More
+:PROPERTIES:
+:CUSTOM_ID: binding-report
+:END:
+
+DONKEY remembers the keys it bound when it loaded, and once at first
+idle after =donkey-mode= comes on it says in the message log what has
+taken any of them since:
+
+#+begin_example
+
+  DONKEY: ; is consult-outline now, was donkey-goto-line
+  DONKEY: the wrap delimiter : is donkey-goto-line, so it does not wrap
+
+#+end_example
+
+The first line is a key of DONKEY's that something else runs now —
+your own binding, usually, and nothing to do about it except know. The
+second is the one that used to be silent: a character you named in
+=donkey-wrap-delimiters= whose key another DONKEY command already
+answers never wraps, and now says so instead of doing nothing. Only
+characters you named: under the default the list comes from the pair
+table, and =:= and =>= are quietly passed over.
+
+Nothing is said when nothing differs. Set
+=donkey-report-binding-changes= to nil to turn the pass off.
+
+=M-x donkey-check-bindings= asks the same question whenever you like,
+and asked by hand it tells the whole truth — including the two
+delimiters the automatic pass keeps quiet about. Run in a buffer where
+Normal state is on, it also reports the keys another map answers
+*here*, which differs from buffer to buffer and is why the automatic
+pass leaves it out.
+
+*** A key your buffer remaps is not a key you lost
+
+In an Org buffer you will see lines like these:
+
+#+begin_example
+
+  DONKEY: D runs org-kill-line in this org-mode buffer, which remaps
+  kill-line
+  DONKEY: g Q runs org-fill-paragraph in this org-mode buffer, which
+  remaps fill-paragraph
+
+#+end_example
+
+Nothing was taken. =org-mode= does not bind =C-k= at all; it *remaps*
+=kill-line= to =org-kill-line=, and a remap catches the command
+whichever key reached it — =C-k=, DONKEY's =D=, or a key you bind
+yourself. You get Org's structure-aware version everywhere, which is
+what you want, and it is the same mechanism DONKEY suppresses typing
+with. Those lines are counted apart from keys that really did change
+hands:
+
+#+begin_example
+
+  DONKEY: every key is as DONKEY left it; 2 wrap delimiters cannot take
+  their key; 3 keys this buffer remaps -- see the message log
+
+#+end_example
+
+A key another map genuinely took reads differently — "=DONKEY's own
+key is …=" — and is counted with the keys that differ.
+
+** Which map wins
+
+Bind in =donkey-normal-mode-map= and your binding wins: it is the same
+map, and your config runs after the package loads. The two routes that
+lose are the ones people reach for first — a global binding and a
+major-mode binding both sit below a minor-mode map. A minor mode of
+your own wins if its entry in =minor-mode-map-alist= comes before
+DONKEY's, which it does when it is defined after DONKEY.
+
+* Keys a Major Mode Types With
+:PROPERTIES:
+:CUSTOM_ID: mode-insert-commands
+:END:
+
+Normal state suppresses typing by remapping =self-insert-command=, and
+DONKEY's remap outranks a major mode's — which is how =org-mode=, that
+types nearly every key through a remap of its own, is answered.
+
+A mode that binds a key *directly* to an insert command of its own is
+another matter. =org-mode= puts =org-force-self-insert= on =|=,
+=cc-mode= puts electric commands on =#=, =*= and =/=, and AUCTeX puts
+its own on =$=, =\= and =^=; DONKEY had nothing bound on those keys,
+so the major mode's command ran and the character appeared. Those
+commands are refused now, by name:
+
+#+begin_src emacs-lisp
+
+  ;; the default
+  (setq donkey-self-insert-commands
+        '(org-self-insert-command org-force-self-insert
+          c-electric-pound c-electric-star c-electric-paren
+          c-electric-brace c-electric-slash c-electric-semi&comma
+          c-electric-colon c-electric-lt-gt
+          TeX-insert-quote TeX-insert-dollar TeX-insert-backslash
+          TeX-insert-sub-or-superscript LaTeX-insert-left-brace
+          LaTeX-babel-insert-hyphen))
+
+#+end_src
+
+Only the typing is refused. A mode's other commands are untouched,
+which is what lets Dired's =n=, =q= and =^= work in Normal state.
+
+If a mode of yours types through a command not on the list, add it and
+=M-x donkey-refresh-suppressed-commands= (=setopt= and Customize need
+no refresh). A command that is not installed costs nothing to name — a
+remap names a symbol, it does not call it.
 
 * Enter Key Rules (DWIM)
 :PROPERTIES:
@@ -1578,12 +1717,39 @@ Default denied terminals: =dumb=, =linux= (framebuffer console).
 
 ** Platform Diagnostics
 
-Run =M-x donkey-debug-platform= for a detailed report of:
+Run =M-x donkey-debug-platform= for a detailed report. It opens with
+DONKEY itself, gathered from the buffer you ran it in:
+
+#+begin_example
+
+  --- DONKEY ---
+  Version:        1.9.2
+  donkey-mode:    on
+  State here:     Normal
+  Buffer:         notes.org (org-mode)
+  Wrap engine:    donkey
+  Wrap keys:      27 of 29 claimed (all of donkey-mark-pair-delimiters)
+  Pair table:     21 pairs
+
+  Bindings:
+    the wrap delimiter : is donkey-goto-line, so it does not wrap
+    the wrap delimiter > is donkey-indent-region-or-line, so it does not
+    wrap; press < instead
+    D runs org-kill-line in this org-mode buffer, which remaps kill-line
+
+#+end_example
+
+The =Bindings:= lines are the same ones =M-x donkey-check-bindings=
+says in the message log — one place they are computed, two places to
+read them. Then the machine:
+
 - System type and Emacs version
 - Display backend (GUI vs terminal)
 - TTY type and TERM environment variable
 - Clipboard tool availability
 - Native compilation status
+
+Paste the whole buffer into a bug report.
 
 * Clipboard Integration
 :PROPERTIES:
@@ -1684,7 +1850,7 @@ are symbols, so every letter is free for a language of yours:
 
 | Key       | What it does                                                    |
 |-----------+-----------------------------------------------------------------|
-| =SPC i &= | Insert one digraph: asks for its keys, no method needed         |
+| =SPC i &= | One digraph: asks for its keys, no method needed; wraps a selection |
 | =SPC i .= | Digraphs: the =rfc1345= method the digraph chart lists          |
 | =SPC i -= | Off, for good: the held method is forgotten too                 |
 
@@ -1753,75 +1919,65 @@ at the same point as =with-eval-after-load=:
 
 #+end_src
 
-** Wrapping a Selection with a Delimiter
+* Wrapping a Selection with a Delimiter
+:PROPERTIES:
+:CUSTOM_ID: wrapping-a-selection
+:END:
 
-Select a region (=v=/=V=), then press one of =(=, =[=, ={=, ="=, ='=,
-=`= while still in Normal state to wrap it — e.g. selecting =word=
-and pressing =(= yields =(word)=. This works without leaving Normal
-state stuck in Insert afterward.
+Select a region (=v=, =V=, =m w=, =m i= …), then press a delimiter
+while still in Normal state to wrap it — selecting =word= and pressing
+=(= gives =(word)=. The closing half of a pair does what its opener
+does, so =)=, =]= and =}= are wrap keys too. DONKEY wraps by itself,
+the same way in every buffer and whether or not you have a pairing
+package installed.
 
-The actual wrapping is done by whichever pairing package you use, not
-by DONKEY itself. Emacs's built-in =electric-pair-mode= needs no
-third-party package:
+Every pair =m i= and =m a= know is a wrap key: what you can select,
+you can wrap. That is =(=, =[=, ={=, =<=, ="=, ='=, =`=, the curved
+quotes, =«=, =‹=, ===, =*=, =~=, =|=, =\=, =/=, =+=, =_= and =$=,
+their closers included. The two exceptions are =:= and =>=, which run
+DONKEY commands of their own and go on running them.
 
-#+begin_src emacs-lisp
+** The selection decides whether the pair goes on or comes off
 
-  (electric-pair-mode 1)
+A press whose pair already stands *immediately outside* the selection
+takes that pair off. A press whose pair does not wraps. So the mark
+command you used says which of the two you get, and nothing has to be
+guessed:
 
-#+end_src
+| Text                | Selection made with | Press | Result             |
+|---------------------+---------------------+-------+--------------------|
+| =say word now=      | =m w=               | ="=   | =say "word" now=   |
+| =say "word" now=    | =m i "= (inside)    | ="=   | =say word now=     |
+| =say "word" now=    | =m a "= (with them) | ="=   | =say ""word"" now= |
 
-It does not cover all six, though. It wraps what its own rules call a
-pair — =(=, =[=, ={= and ="= — and leaves ='= and =`= alone, inserting
-the character at the selection's start with the selection unwrapped:
+The pair goes on and comes off, and nothing between the two characters
+is touched: no escaping, in any mode. So a layer at a time comes off
+in the order it went on — from =""word""=, selecting =word= gives
+="word"=, and selecting =word= again gives =word=. Whether the text
+that results is valid source in the buffer's language is yours to
+judge, as it is when you type the delimiter yourself.
 
-| Pressed on a selected =alpha= | With =electric-pair-mode= |
-|-------------------------------+---------------------------|
-| =(=                           | =(alpha)=                 |
-| =[=                           | =[alpha]=                 |
-| ={=                           | ={alpha}=                 |
-| ="=                           | ="alpha"=                 |
-| ='=                           | ='alpha= — not wrapped    |
-| =`=                           | =`alpha= — not wrapped    |
+Only an unescaped pair counts as already standing there: a selection
+between escaped quotes, =\"word\"= in a string, gets a pair of its own
+rather than losing the escaped ones — the backslashes would have
+nowhere to go.
 
-This is not the major mode's syntax table deciding: =fundamental-mode=,
-=text-mode= and =emacs-lisp-mode= behave alike, though ='= has word,
-punctuation and expression-prefix syntax across the three. Adding the
-pair to =electric-pair-pairs= is what changes it.
+** A character that is not on the keyboard
 
-Smartparens wraps all six out of the box, ='= and =`= included — it
-covers more than =electric-pair-mode= here. The pair definition is what
-decides, so excluding one stops that delimiter wrapping:
+=SPC i &= wraps as well as inserts: with a selection live it asks for
+an rfc1345 digraph and wraps in the character it names, closing from
+=donkey-mark-pair-delimiters=. =SPC i & < <= gives =«word»=, and
+=SPC i & " 6= gives =“word”=. It does not ask which command made the
+selection, so =m w=, =v=, =V=, =m i=, =m a=, a mark run and a
+rectangle are all wrapped the same way. See
+[[#digraphs-and-unicode][Digraphs and Unicode]].
 
-#+begin_src emacs-lisp
+** Rectangles
 
-  ;; Now ' inserts rather than wraps, the same as under electric-pair-mode
-  (sp-local-pair 'text-mode "'" nil :actions nil)
-
-#+end_src
-
-Same outcome from opposite directions: =electric-pair-mode= never knew
-about the pair, Smartparens was told to leave it alone. Neither is
-DONKEY doing anything different — it self-inserts with the selection
-live and the pairing package decides the rest.
-
-With *no* pairing package enabled, every delimiter is simply inserted
-at point rather than wrapping the selection.
-
-Under the hood, =donkey-normal-mode-map= normally suppresses every
-printable key so it can't accidentally self-insert. These delimiters
-are the one exception, and only while a region is active:
-`donkey-wrap-region` momentarily enters Insert state *without*
-clearing the selection first (unlike =i=/=a= and the other Insert
-Mode Entry commands), runs the ordinary character insertion so that
-region-wrap logic can see the still-active region, then returns to
-Normal state automatically. With no region active, the key does
-nothing, same as any other suppressed key in Normal state.
-
-Under =rectangle-mark-mode= (=m v=) the behavior is different, and needs
-no pairing package at all: each line of the rectangle is wrapped at
-its own start and end column, with the matching close character
-inserted automatically. Selecting a 3-column rectangle across three
-lines of =alpha=/=bravo=/=charlie= and pressing =[= gives:
+Under =rectangle-mark-mode= (=m v=) each line of the rectangle is
+wrapped at its own start and end column, with the matching close
+character inserted automatically. Selecting a 3-column rectangle
+across three lines of =alpha=/=bravo=/=charlie= and pressing =[= gives:
 
 #+begin_example
 
@@ -1831,15 +1987,180 @@ lines of =alpha=/=bravo=/=charlie= and pressing =[= gives:
 
 #+end_example
 
-Bracket-type delimiters close with their real counterpart (=(= with
-=)=, =[= with =]=, looked up in =donkey-mark-pair-delimiters=);
-symmetric ones like ="= close with themselves. Lines shorter than the
-rectangle are padded with spaces first, the same way =string-rectangle=
-and other built-in rectangle commands handle them.
+Lines shorter than the rectangle are padded with spaces first, the
+same way =string-rectangle= and other built-in rectangle commands
+handle them. A rectangle is never unwrapped: the pair goes on, row by
+row.
 
-The delimiter set is =donkey-wrap-delimiters= (a Customization Group
-variable); change it before =donkey.el= loads to add or remove
-characters.
+** Letting your pairing package wrap instead
+
+If you would rather these keys behaved as they did before DONKEY
+wrapped for itself — handing the press to Smartparens or
+=electric-pair-mode= — set the engine:
+
+#+begin_src emacs-lisp
+
+  (setq donkey-wrap-region-engine 'pairing-package)
+
+#+end_src
+
+=M-x donkey-toggle-wrap-engine= flips between the two and says which
+is in force — and, handing the press over, whether anything is pairing
+in the buffer you are in:
+
+#+begin_example
+
+  DONKEY: the pairing package wraps now -- smartparens-mode is on in this buffer
+  DONKEY: the pairing package wraps now -- but nothing this package knows of is
+  pairing in this buffer, so a press will insert one character
+  DONKEY: DONKEY wraps and unwraps now
+
+#+end_example
+
+While the pairing package wraps, =all= means the six characters such a
+package pairs — =(=, =[=, ={=, ="=, ='= and =`= — rather than every
+pair in the table, because a package handed one it does not pair
+inserts a single character and no pair at all. Name the characters
+yourself and the list is taken as it stands under either engine, which
+is how you use a pair you have taught Smartparens.
+
+The press is then handed to the ordinary character insertion with the
+selection still live, and whatever is on =post-self-insert-hook=
+decides what happens:
+
+| Pressed on a selected =alpha= | =electric-pair-mode= | Smartparens | Nothing installed |
+|-------------------------------+----------------------+-------------+-------------------|
+| =(=                           | =(alpha)=            | =(alpha)=   | =(alpha=          |
+| ="=                           | ="alpha"=            | ="alpha"=   | ="alpha=          |
+| ='=                           | ='alpha=             | ='alpha'=   | ='alpha=          |
+
+Nothing is ever taken off under that setting, and a delimiter the
+package does not pair leaves a single character at the selection's
+start. The rectangle path and the =SPC i &= wrap are DONKEY's own
+under either setting. The variable is read at each press, so a change
+takes effect on the next one, and any value but =pairing-package=
+reads as =donkey=.
+
+** Under the hood
+
+=donkey-normal-mode-map= normally suppresses every printable key so it
+cannot accidentally self-insert. These delimiters are the one
+exception, and only while a region is active. With no region:
+
+- in a buffer you can edit, the key does nothing, same as any other
+  suppressed key;
+- in a buffer you *cannot* edit, the press goes back to the major
+  mode, so Dired keeps =+=, =(= and =<=, Info keeps =[= and =]=, and a
+  help buffer keeps =<=.
+
+A wrap key is borrowed for as long as a selection lasts, and a
+read-only buffer is where nothing can be typed anyway, so the two
+questions have the same answer. A mode command that types is refused
+even there — see [[#mode-insert-commands][Keys a Major Mode Types With]]. DONKEY's own wrap
+never leaves Normal state; the =pairing-package= engine enters Insert
+state *without* clearing the selection first (unlike =i=/=a= and the
+other Insert Mode Entry commands), runs the ordinary character
+insertion so that region-wrap logic can see the still-active region,
+then returns to Normal state automatically.
+
+A read-only buffer, or read-only text where the change would land, is
+refused before anything is changed and the selection is left standing.
+A count is ignored: one delimiter press, one wrap.
+
+** Adding a delimiter of your own
+
+Two variables, and they are not the same one:
+
+- =donkey-mark-pair-delimiters= says *what closes what*. It is the
+  table =m i= and =m a= read, and where the wrap keys look up a
+  closer.
+- =donkey-wrap-delimiters= says *which characters are keys* that wrap
+  in Normal state.
+
+=donkey-wrap-delimiters= is =all= by default, which means *every pair
+the first one knows*. So a pair added to the table is a wrap key too,
+and one line in your init file is the whole of it:
+
+#+begin_src emacs-lisp
+
+  (add-to-list 'donkey-mark-pair-delimiters '(?# . ?#))
+
+#+end_src
+
+The keys are claimed once when =donkey.el= loads and once more at the
+first idle moment after =donkey-mode= comes on — which is after your
+init file has finished, so a pair added there needs no call of its
+own. =setopt= and Customize claim immediately.
+
+Adding a pair LATER in a running session — from =M-x eval-expression=,
+or a =setq= in a file you just loaded — is the one case that needs
+=M-x donkey-refresh-wrap-keys=, and DONKEY says so if you press the
+key first:
+
+#+begin_example
+
+  DONKEY: the wrap delimiter @ has no key yet; M-x donkey-refresh-wrap-keys
+
+#+end_example
+
+To wrap with some characters and not others, name them instead of
+=all=:
+
+#+begin_src emacs-lisp
+
+  (setopt donkey-wrap-delimiters '(?\( ?\[ ?{ ?\" ?' ?`))
+
+#+end_src
+
+Dropping a character, or a pair, gives its key back the same way.
+
+*** A key that already runs something is never taken
+
+=x= deletes, =c= changes, =i= and =a= start typing, =:= goes to a
+line, =>= indents. Naming any of them in =donkey-wrap-delimiters= does
+not turn them into wrap keys — the command stays, and DONKEY says
+which ones it left alone:
+
+#+begin_example
+
+  DONKEY: the wrap delimiter x is donkey-delete, so it does not wrap
+
+#+end_example
+
+So a character can be a delimiter for =m i= and =m a= without being a
+wrap key, which is the useful half of adding =x= to the pair table,
+and the dangerous half never happens.
+
+=:= and =>= are in the pair table and cannot wrap for exactly this
+reason: =:= goes to a line and =>= indents. So =m w <= gives
+=<word>= and =m w >= indents the line — the closing half of that one
+pair is the exception to "either half wraps".
+
+The once-a-session report passes those two over, being the same in
+every installation. Ask by hand and you are told:
+
+#+begin_example
+
+  M-x donkey-check-bindings
+  DONKEY: the wrap delimiter : is donkey-goto-line, so it does not wrap
+  DONKEY: the wrap delimiter > is donkey-indent-region-or-line, so it does not wrap
+  DONKEY: every key is as DONKEY left it; 2 wrap delimiters cannot take
+  their key -- see the message log
+
+#+end_example
+
+=M-x donkey-refresh-wrap-keys= answers the same question. A pair *you*
+added whose key is taken is always reported, by hand or not.
+
+Free means the key *does nothing*: unbound, suppressed, or bound to
+=ignore= to make it harmless. And it is your keymap that is asked, not
+a list of names DONKEY carries — rebind =x= to =ignore= and it becomes
+available to wrap; give =/= a command of its own and it stops being
+available, whichever of them DONKEY bound where to begin with.
+
+Both halves of a pair are judged on their own. =<= is free and becomes
+a wrap key; its closer =>= belongs to =donkey-indent-region-or-line=
+and keeps it — so =m w <= gives =<word>=, and =>= goes on indenting.
 
 * Position Tracking
 :PROPERTIES:
@@ -1986,7 +2307,8 @@ same; a change shows the next time =M-x donkey-digraph= runs.
 
 The common ones are the twelve characters English web text uses
 most that a keyboard lacks, the most frequent first, quotation
-marks in pairs:
+marks in pairs — and the guillemets, which =m i=, =m a= and a wrap
+all know as a pair:
 
 | Digraph | Type   | Result |
 |---------+--------+--------|
@@ -1994,6 +2316,8 @@ marks in pairs:
 | ='9=    | =&'9=  | ’      |
 | ="6=    | =&"6=  | “      |
 | ="9=    | =&"9=  | ”      |
+| =<<=    | =&<<=  | «      |
+| =>>=    | =&>>=  | »      |
 | =-N=    | =&-N=  | –      |
 | =-M=    | =&-M=  | —      |
 | =sb=    | =&sb=  | •      |
@@ -2023,6 +2347,16 @@ after its ampersand, so a three-key mnemonic such as =!!>= works, and
 =RET= accepts a shorter one that is also the start of a longer one,
 as =12= is. A count repeats it, and keys the method does not know
 insert nothing.
+
+With a selection live the character wraps it instead of being
+inserted, closing with whatever =donkey-mark-pair-delimiters= pairs it
+with: =SPC i & < <= on a selected =word= gives =«word»=, and
+=SPC i & " 6= gives =“word”=. A selection those already stand around
+loses them, the same rule the delimiter keys follow. The count is
+ignored there — one press, one wrap — and so is
+=donkey-wrap-region-engine=: no pairing package has an opinion about a
+digraph. This is also the way to reach a pair that has no key of its
+own, the guillemets among them.
 
 For any character by code point or name, =C-x 8 RET= works in either
 state: =C-x 8 RET 20ac RET= gives =€=. On a Linux desktop,
@@ -2078,7 +2412,10 @@ All DONKEY variables are under the =donkey= Customize group:
 | =donkey-default-enter-rules-enabled= | boolean | =t=                | Install default Enter DWIM rules       |
 | =donkey-position-ring-max=           | integer | =10=               | Number of positions in jump-back ring  |
 | =donkey-decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
-| =donkey-wrap-delimiters=             | list    | =( [ { " ' `=      | Delimiters that wrap an active region  |
+| =donkey-wrap-delimiters=             | =all= or list | =all=        | Which delimiters wrap an active region |
+| =donkey-wrap-region-engine=          | symbol  | =donkey=           | Who wraps: DONKEY, or your pairing package |
+| =donkey-report-binding-changes=      | boolean | =t=                | Say in the message log what has taken DONKEY's keys |
+| =donkey-self-insert-commands=        | list    | =(see below)=      | Commands Normal state refuses because they type |
 | =donkey-mark-pair-delimiters=        | alist   | =(see above)=      | Delimiter pairs for mark-inner/outer   |
 
 * Troubleshooting

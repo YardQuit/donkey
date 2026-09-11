@@ -961,18 +961,78 @@ availability.  Useful for debugging platform-specific issues."
         :native-comp (native-comp-available-p)
         :emacs-version emacs-version))
 
+(defvar donkey-version) ;(donkey-debug-platform); defined below, in "Version"
+(defvar donkey-wrap-region-engine) ;(donkey-debug-platform); defined below, in "Wrap Region Commands"
+(defvar donkey-wrap-delimiters) ;(donkey-debug-platform); defined below, in "Wrap Region Commands"
+(defvar donkey-mark-pair-delimiters) ;(donkey-debug-platform); defined below, in "Mark and Text Object Selection Commands"
+(defvar donkey-mode) ;(donkey-debug-platform); defined below, in "Donkey Mode Definitions"
+(defvar donkey-insert-mode) ;(donkey-debug-platform); defined below, in "Donkey Mode Definitions"
+
+(defun donkey--debug-donkey-lines ()
+  "Return what to say about DONKEY itself in the platform report.
+
+A list of strings, gathered in the buffer the reader ran the command
+FROM: which state is on, what the major mode is, and the bindings
+findings, all of which differ from buffer to buffer.  Gathered before
+the report buffer is made rather than inside it, so no reader of this
+code has to know whether `with-output-to-temp-buffer' changes the
+current buffer.
+
+The findings are `donkey--binding-report-lines's, the same ones
+\\[donkey-check-bindings] says in the message log -- one body of logic,
+two places to read it."
+  (let* ((halves (delete-dups
+                  (apply #'append
+                         (mapcar (lambda (ch)
+                                   (list ch (donkey--wrap-close-char ch)))
+                                 (donkey--wrap-delimiter-characters)))))
+         (claimed (seq-count (lambda (ch)
+                               (eq (donkey--binding-value
+                                    (lookup-key donkey-normal-mode-map (vector ch)))
+                                   'donkey-wrap-region))
+                             halves))
+         (findings (donkey--binding-report-lines t t)))
+    (append
+     (list (format "Version:        %s" (or (bound-and-true-p donkey-version)
+                                            "(unknown)"))
+           (format "donkey-mode:    %s" (if (bound-and-true-p donkey-mode) "on" "off"))
+           (format "State here:     %s"
+                   (cond ((bound-and-true-p donkey-normal-mode) "Normal")
+                         ((bound-and-true-p donkey-insert-mode) "Insert")
+                         (t "neither")))
+           (format "Buffer:         %s (%s)%s"
+                   (buffer-name) major-mode
+                   (if buffer-read-only ", read-only" ""))
+           (format "Wrap engine:    %s" donkey-wrap-region-engine)
+           (format "Wrap keys:      %d of %d claimed (%s)"
+                   claimed (length halves)
+                   (if (listp donkey-wrap-delimiters)
+                       "a list of characters"
+                     "all of donkey-mark-pair-delimiters"))
+           (format "Pair table:     %d pairs" (length donkey-mark-pair-delimiters))
+           "")
+     (if findings
+         (cons "Bindings:" (mapcar (lambda (l) (concat "  " l)) findings))
+       (list "Bindings:" "  every key is as DONKEY left it")))))
+
 (defun donkey-debug-platform ()
   "Display detailed platform information for troubleshooting.
 
-Shows system type, display backend, terminal configuration,
-and clipboard tool availability.  Useful when reporting bugs
-or debugging platform-specific issues.
+Shows what DONKEY itself is doing in the buffer you ran this from,
+then system type, display backend, terminal configuration, and
+clipboard tool availability.  Useful when reporting bugs or debugging
+platform-specific issues.
 
 Output goes to a temporary buffer named '*DONKEY Platform Debug*'."
   (interactive)
-  (let ((info (donkey--platform-info)))
+  (let ((info (donkey--platform-info))
+        (donkey-lines (donkey--debug-donkey-lines)))
     (with-output-to-temp-buffer "*DONKEY Platform Debug*"
       (princ "=== DONKEY Modal Platform Diagnostics ===\n\n")
+
+      (princ "--- DONKEY ---\n")
+      (dolist (line donkey-lines) (princ line) (princ "\n"))
+      (princ "\n")
 
       (princ "--- System Information ---\n")
       (princ (format "Emacs Version: %s\n" (plist-get info :emacs-version)))
@@ -1544,16 +1604,125 @@ blank line away still works."
 ;;; Wrap Region Commands
 ;;; ---------------------------------------------------------------------------
 
-(defcustom donkey-wrap-delimiters '(?\( ?\[ ?\{ ?\" ?\' ?\`)
-  "Characters that trigger `donkey-wrap-region' in Normal state.
+(defcustom donkey-wrap-delimiters 'all
+  "Characters that wrap an active region in Normal state.
 
-Bound in `donkey-normal-mode-map'; only takes effect while a
-region is active (see `donkey-wrap-region').  Changing this after
-`donkey.el' has loaded has no effect on already-bound keys -- set
-it before loading, or re-run the `dolist' near
-`donkey-normal-mode-map's definition."
-  :type '(repeat character)
+`all', the default, means every pair `donkey-mark-pair-delimiters'
+knows: what `m i' can select, a key can wrap.  A list of characters
+means those and no others.
+
+Each is bound in `donkey-normal-mode-map' to `donkey-wrap-region',
+and so is the closing half of every pair that closes with a
+different character, looked up in `donkey-mark-pair-delimiters'.
+Without an active region the key does nothing where text can be
+typed, and goes back to the major mode where it cannot; see
+`donkey--wrap-pass-the-key-on'.
+
+A character whose key already runs something is not taken: `x'
+deletes and `:' goes to a line whatever this variable says, and
+`donkey-check-bindings' names the ones that were left alone -- the
+ones a reader named, `all' being quiet about the two the table
+carries.  A character can still be a delimiter for `m i' and `m a'
+without being a wrap key; that is `donkey-mark-pair-delimiters'.
+
+Set with \[customize-variable] or `setopt' and the keys follow at
+once; after a plain `setq' or `add-to-list', run
+\[donkey-refresh-wrap-keys]."
+  :type '(choice (const :tag "Every pair donkey-mark-pair-delimiters knows" all)
+                 (repeat character))
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (when (fboundp 'donkey--claim-wrap-keys)
+           (donkey--claim-wrap-keys)))
   :group 'donkey)
+
+(defcustom donkey-wrap-region-engine 'donkey
+  "Who puts a pair around the selection for `donkey-wrap-region'.
+
+`donkey' inserts the pair itself: the same delimiters wrap in every
+buffer whatever else is installed, either half of a pair may be
+pressed, and a press whose pair already stands around the selection
+takes it off again.
+
+`pairing-package' hands the press to `self-insert-command' with the
+mark still active and lets whatever is on `post-self-insert-hook'
+decide -- `electric-pair-mode' wraps `(', `[', `{' and `\"',
+Smartparens wraps the pairs it has for the mode, and with neither
+enabled the character is merely inserted at point.  Nothing is taken
+off again under this setting.
+
+Read at each press, so a change takes effect on the next one, and any
+value but `pairing-package' reads as `donkey'.  A rectangle selection
+and the wrap `donkey-insert-digraph' does are DONKEY's own under
+both."
+  :type '(choice (const :tag "DONKEY wraps, and unwraps" donkey)
+                 (const :tag "The pairing package wraps" pairing-package))
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (when (fboundp 'donkey--claim-wrap-keys)
+           (donkey--claim-wrap-keys)))
+  :group 'donkey)
+
+(defconst donkey--wrap-delegated-delimiters '(?\( ?\[ ?\{ ?\" ?\' ?\`)
+  "The characters `all' means while a pairing package does the wrapping.
+
+Both `electric-pair-mode' and Smartparens pair these out of the box,
+and decline most of the rest: handed one they do not pair, the press
+inserts a single character and no pair at all -- the setting doing
+what it says, and not what the reader wanted.  These six were DONKEY's
+whole default before the pair table became the source of the wrap
+keys.
+
+A list, and it says where it stops: a reader who has taught their
+package another pair NAMES the characters in `donkey-wrap-delimiters'
+instead, and a named list is always taken as it stands.  This narrows
+only what `all' DERIVES.")
+
+(defun donkey--wrap-pairing-package-here ()
+  "Return the name of the pairing package live in this buffer, or nil.
+
+`smartparens-mode' and `electric-pair-mode' are asked for by name --
+a list, and it says where it stops: another package on
+`post-self-insert-hook' pairs just as well and is not named here.  Used
+only to tell a reader what to expect from the `pairing-package'
+engine, never to decide anything."
+  (cond ((bound-and-true-p smartparens-mode) "smartparens-mode")
+        ((or (bound-and-true-p electric-pair-local-mode)
+             (bound-and-true-p electric-pair-mode))
+         "electric-pair-mode")))
+
+(defun donkey-toggle-wrap-engine ()
+  "Switch who wraps a selection: DONKEY itself, or your pairing package.
+
+Flips `donkey-wrap-region-engine' between its two values and says
+which is in force.  Under `pairing-package' it also says whether
+anything is pairing in THIS buffer, since with nothing on
+`post-self-insert-hook' a press inserts one character and no pair --
+which is the setting doing exactly what it says, and not what a reader
+who forgot to turn Smartparens on is expecting.
+
+The value is global, and is read at each press, so the next key obeys
+it.  Reached by name: a setting changed to compare two behaviors is
+not something fingers repeat."
+  (interactive)
+  (set-default 'donkey-wrap-region-engine
+               (if (eq donkey-wrap-region-engine 'pairing-package)
+                   'donkey
+                 'pairing-package))
+  ;; `all' resolves differently under the two engines, so the keys are
+  ;; claimed again; `set-default' does not run the `:set' that would.
+  (donkey--claim-wrap-keys)
+  (message
+   "DONKEY: %s"
+   (if (eq donkey-wrap-region-engine 'donkey)
+       "DONKEY wraps and unwraps now"
+     (let ((package (donkey--wrap-pairing-package-here)))
+       (if package
+           (format "the pairing package wraps now -- %s is on in this buffer"
+                   package)
+         (concat "the pairing package wraps now -- but nothing this package"
+                 " knows of is pairing in this buffer, so a press will"
+                 " insert one character"))))))
 
 (defvar donkey-mark-pair-delimiters) ;(donkey--wrap-close-char); defined below, in "Mark and Text Object Selection Commands"
 
@@ -1563,8 +1732,50 @@ it before loading, or re-run the `dolist' near
 Looked up in `donkey-mark-pair-delimiters' when OPEN-CHAR is a
 recognized pair there, so bracket-type wrap delimiters (e.g. `(') close
 with their real counterpart (`)') instead of themselves; otherwise
-OPEN-CHAR is symmetric (e.g. `\"') and closes with itself."
-  (or (cdr (assq open-char donkey-mark-pair-delimiters)) open-char))
+OPEN-CHAR is symmetric (e.g. `\"') and closes with itself.
+
+A pair whose CLOSE is not a character closes with itself too.  The
+table is a defcustom and holds whatever it was given: left unchecked,
+a close of \"}\" signals from `string' at the moment of the press, and
+a close outside the character range inserts whatever that number
+happens to name."
+  (let ((close (cdr (assq open-char donkey-mark-pair-delimiters))))
+    (if (characterp close) close open-char)))
+
+(defun donkey--wrap-open-close (char)
+  "Return the (OPEN . CLOSE) pair CHAR names, whichever half of it CHAR is.
+
+Resolved through `donkey-mark-pair-delimiters', so `)' names the same
+pair as `(' and the wrap keys read the table `m i' reads.  A symmetric
+delimiter answers itself on both sides, and so does a character the
+table does not know."
+  (let ((open (donkey--mark-pair-open-for char)))
+    (cons open (donkey--wrap-close-char open))))
+
+(defun donkey--wrap-escaped-p (pos)
+  "Return non-nil when the character at POS is backslash-escaped.
+
+An odd number of backslashes before POS escapes it; an even number
+does not, each of those escaping the one before it."
+  (let ((count 0)
+        (scan pos))
+    (while (and (> scan (point-min)) (eq (char-before scan) ?\\))
+      (setq count (1+ count)
+            scan (1- scan)))
+    (= (mod count 2) 1)))
+
+(defun donkey--wrap-already-wrapped-p (beg end open close)
+  "Return non-nil when OPEN and CLOSE already stand around BEG and END.
+
+The two characters immediately outside the selection, and only those:
+nothing is searched for.  An escaped delimiter does not count, so a
+selection whose neighbors are escaped quotes gets a pair of its own
+rather than losing the one it stands in."
+  (and (> beg (point-min))
+       (< end (point-max))
+       (eq (char-before beg) open)
+       (eq (char-after end) close)
+       (not (donkey--wrap-escaped-p (1- beg)))))
 
 (defun donkey--insertion-read-only-p (pos)
   "Return non-nil when inserting text at POS would be refused as read-only.
@@ -1630,47 +1841,194 @@ instead of bunching both characters together at end of line."
        (insert (string open-char)))
      (region-beginning) (region-end))))
 
-(defun donkey-wrap-region ()
-  "Insert the pressed delimiter into the active region without deselecting.
+(defun donkey--wrap-put-on (beg end open close)
+  "Wrap the text between BEG and END in OPEN and CLOSE.
 
-Bound to each of `donkey-wrap-delimiters' in Normal state.  With no
-active region, falls through to `undefined', same as any other
-suppressed key.
+The two characters, and nothing else: what they hold is not deleted,
+re-inserted or escaped, so its text properties, markers and overlays
+come through the wrap and a delimiter already inside stays as it is.
+Point is left on the first character of what was wrapped."
+  (save-excursion
+    (goto-char end)
+    (insert (string close))
+    (goto-char beg)
+    (insert (string open)))
+  (goto-char (1+ beg)))
+
+(defun donkey--wrap-take-off (beg end)
+  "Delete the delimiters standing immediately outside BEG and END.
+
+The closing one goes first, so the opening one is still where it was
+when its turn comes.  Nothing else is touched, which makes this the
+exact inverse of `donkey--wrap-put-on': a press and the press that
+undoes it leave the text as it was.  Point is left on the first
+character of what they held."
+  (save-excursion
+    (goto-char end)
+    (delete-char 1)
+    (goto-char (1- beg))
+    (delete-char 1))
+  (goto-char (1- beg)))
+
+(defun donkey--wrap-refused-by-read-only-delimiters-p (beg end)
+  "Return non-nil when the delimiters outside BEG and END cannot be deleted.
+
+A non-nil `read-only' text property refuses a deletion wherever it
+stands, stickiness having no part in it -- that is `insert's rule and
+not the one a deletion is judged by.  Asked of the two characters a
+take-off deletes, so a refusal comes before either of them goes."
+  (or (get-text-property (1- beg) 'read-only)
+      (get-text-property end 'read-only)))
+
+(defun donkey--wrap-delegate (open-char)
+  "Hand OPEN-CHAR to `self-insert-command' with the mark still active.
+
+Insert state is entered without deactivating the mark, so whatever is
+on `post-self-insert-hook' sees the live region, and is left again
+however the insertion ends.  OPEN-CHAR is bound as the event, so a
+closing delimiter is delegated as the one that opens its pair.  A
+refusal is held until Insert state has been left with the mark kept,
+then signaled again; `buffer-read-only' is the parent of
+`text-read-only'.  The count is DONKEY's, not the pairing package's."
+  (donkey-insert-mode 1)
+  (let (refusal)
+    (unwind-protect
+        (condition-case err
+            (let ((current-prefix-arg nil)
+                  (last-command-event open-char))
+              (self-insert-command 1))
+          (buffer-read-only (setq refusal err)))
+      ;; The state change alone, not the `C-g' key's errands.
+      (donkey--leave-insert (and refusal t)))
+    (when refusal
+      (signal (car refusal) (cdr refusal)))))
+
+(defun donkey--wrap-selection (char)
+  "Wrap the active selection in the pair CHAR names, or take that pair off.
+
+DONKEY's own wrap, whatever `donkey-wrap-region-engine' says: shared
+by `donkey-wrap-region' and `donkey-insert-digraph', each of which has
+established that a selection is live before calling.  A rectangle
+selection is wrapped line by line; a linear one is wrapped, or
+unwrapped when that pair already stands around it.  Read-only refusals
+come before anything is changed, and a refusal leaves the selection
+standing."
+  (let* ((pair (donkey--wrap-open-close char))
+         (open (car pair))
+         (close (cdr pair)))
+    (barf-if-buffer-read-only)
+    (if (bound-and-true-p rectangle-mark-mode)
+        (progn
+          (when (donkey--wrap-refused-by-read-only-text-p)
+            (signal 'text-read-only nil))
+          (donkey--wrap-rectangle-region open))
+      (let ((beg (region-beginning))
+            (end (region-end)))
+        (if (donkey--wrap-already-wrapped-p beg end open close)
+            (progn
+              (when (donkey--wrap-refused-by-read-only-delimiters-p beg end)
+                (signal 'text-read-only nil))
+              (donkey--wrap-take-off beg end))
+          (when (donkey--wrap-refused-by-read-only-text-p)
+            (signal 'text-read-only nil))
+          (donkey--wrap-put-on beg end open close))))))
+
+(defvar donkey-normal-mode) ;(donkey--wrap-key-would-run); defined below, in "Donkey Mode Definitions"
+(defvar donkey-self-insert-commands) ;(donkey--wrap-pass-the-key-on); defined below, in "Donkey Normal Mode Keymap Definition"
+
+(defun donkey--wrap-key-would-run (keys)
+  "Return the command KEYS would run if Normal state were not holding them.
+
+Normal state is a minor-mode keymap, so hiding it for the length of
+the lookup asks the maps underneath -- the major mode's, another
+minor mode's, the global one -- what the key means where it is
+pressed.  Returns nil when nothing underneath wants it."
+  (let ((donkey-normal-mode nil))
+    (key-binding keys t)))
+
+(defun donkey--wrap-pass-the-key-on ()
+  "Run what the pressed wrap key means where there is nothing to wrap.
+
+A wrap key is a key DONKEY borrows for as long as a selection lasts,
+and most of the punctuation is one.  With no selection the press goes
+back to the buffer IN A BUFFER THAT CANNOT BE EDITED: Dired gets `+'
+and `(' back, Info its `[' and `]', a help buffer its `<'.  That is
+where the borrowed keys were worth something and where nothing can be
+typed, so the two questions have the same answer.
+
+In a buffer that CAN be edited the key stays DONKEY's and answers
+`undefined', as it did before there were wrap keys.  A mode that types
+with a key of its own -- `sgml-slash' on `/', `org-force-self-insert'
+on `|' -- is the reason: Normal state does not type, and a rule that
+cannot be got round is worth more here than a list that has to be kept
+up.  Typing is refused a second time all the same, for the read-only
+buffer whose mode has such a key.
+
+A key with nothing underneath it answers `undefined' too, as any other
+suppressed key does.  So does anything that is not the press of a
+single delimiter: a call by name, or a sequence a reader has bound
+this command to.  What is handed back is the delimiter that was
+pressed, and nothing else -- the rest of a sequence is nobody else's
+to run."
+  (let* ((keys (this-command-keys-vector))
+         (command (and buffer-read-only
+                       (characterp last-command-event)
+                       (equal keys (vector last-command-event))
+                       (donkey--wrap-key-would-run keys))))
+    (if (and (commandp command)
+             (not (eq command 'donkey-wrap-region))
+             (not (eq command 'self-insert-command))
+             (not (memq command donkey-self-insert-commands)))
+        (progn
+          (setq this-command command)
+          (setq real-this-command command)
+          (call-interactively command))
+      (call-interactively #'undefined))))
+
+(defun donkey-wrap-region ()
+  "Wrap the active selection in the pressed delimiter, or take it off again.
+
+Bound in Normal state to each of `donkey-wrap-delimiters' and to the
+closing half of every one of those that has a distinct closer, so `)'
+does what `(' does.  With no active region the key answers
+`undefined', except in a buffer that cannot be edited, where the press
+goes back to the mode -- Dired keeps `+', Info its `['; see
+`donkey--wrap-pass-the-key-on'.
+
+The selection decides which of the two things a press does.  When the
+pair already stands immediately outside the selection it is taken off,
+so `m i \"' then `\"' unquotes what the quotes held; when it does not,
+the selection is wrapped.  Nothing is escaped either way: `m a \"' then
+`\"' gives a plain pair around the pair, and selecting what is inside
+takes the same one off again.  An escaped delimiter outside the
+selection is not a wrap and is not taken off, its backslash having
+nowhere to go.
 
 With `rectangle-mark-mode' active, wraps each line of the rectangle at
 its own start/end column instead; see `donkey--wrap-rectangle-region'.
 
-With an ordinary active region, enters Insert state without
-deactivating the mark and inserts the pressed character via
-`self-insert-command', letting whatever pairing package is active see
-the still-active region and wrap it.  With none enabled the character
-is simply inserted at point, since nothing is listening.  Then returns
-to Normal state, even if the insertion signals.
+`donkey-wrap-region-engine' set to `pairing-package' hands the press
+to the pairing package instead, and nothing is taken off then; the
+rectangle is DONKEY's own under either setting.
 
-A read-only buffer is refused before any of that, with the selection
-left standing, and read-only text the same way and at the same
-moment, through `donkey--wrap-refused-by-read-only-text-p'.  A
-refusal that still comes from inside the insertion is signaled again
-from Normal state, with the mark kept.
-
-Which delimiters wrap is the pairing package's decision, not this
-command's.  `electric-pair-mode' wraps `(', `[', `{' and `\"' and
-inserts `\\='' and `\\=`' at point with the region unwrapped, unless they
-are added to `electric-pair-pairs'; Smartparens wraps all six unless a
-pair is excluded.  The rectangle path does its own insertion and wraps
-every line whatever the package.
+A read-only buffer is refused before anything is changed, and
+read-only text the same way and at the same moment, through
+`donkey--wrap-refused-by-read-only-text-p' or, for a take-off,
+`donkey--wrap-refused-by-read-only-delimiters-p'.
 
 A count is ignored: one delimiter press, one wrap.  A wrap does not
-stop a keyboard macro that is being recorded."
+stop a keyboard macro that is being recorded.  See
+`donkey-insert-digraph' for wrapping in a character that is not on the
+keyboard."
   (interactive)
   (cond
    ((not (use-region-p))
-    (call-interactively #'undefined))
+    (donkey--wrap-pass-the-key-on))
    ;; Only a character event names a delimiter; \\[execute-extended-command]
    ;; or a function key does not.
    ((not (characterp last-command-event))
     (call-interactively #'undefined))
-   (t
+   ((eq donkey-wrap-region-engine 'pairing-package)
     ;; Refused here, before any state changes, so the selection
     ;; outlives the refusal.
     (barf-if-buffer-read-only)
@@ -1678,23 +2036,12 @@ stop a keyboard macro that is being recorded."
     ;; and for the same reason; signaled as Emacs itself signals it.
     (when (donkey--wrap-refused-by-read-only-text-p)
       (signal 'text-read-only nil))
-    (if (bound-and-true-p rectangle-mark-mode)
-        (donkey--wrap-rectangle-region last-command-event)
-      (donkey-insert-mode 1)
-      ;; A refusal from the insertion is held until Insert state has
-      ;; been left with the mark kept, then signaled again;
-      ;; `buffer-read-only' is the parent of `text-read-only'.
-      (let (refusal)
-        (unwind-protect
-            (condition-case err
-                ;; The count is DONKEY's, not the pairing package's.
-                (let ((current-prefix-arg nil))
-                  (self-insert-command 1))
-              (buffer-read-only (setq refusal err)))
-          ;; The state change alone, not the `C-g' key's errands.
-          (donkey--leave-insert (and refusal t)))
-        (when refusal
-          (signal (car refusal) (cdr refusal))))))))
+    (let ((open (car (donkey--wrap-open-close last-command-event))))
+      (if (bound-and-true-p rectangle-mark-mode)
+          (donkey--wrap-rectangle-region open)
+        (donkey--wrap-delegate open))))
+   (t
+    (donkey--wrap-selection last-command-event))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mark and Text Object Selection Commands
@@ -2024,6 +2371,7 @@ by one column, and not at the end of a line or of the buffer."
 (defcustom donkey-mark-pair-delimiters
   '((?\{ . ?\}) (?\[ . ?\]) (?\( . ?\)) (?\< . ?>)
     (?\" . ?\") (?\' . ?\') (?\` . ?\`) (?‘ . ?’) (?“ . ?”)
+    (?« . ?») (?‹ . ?›)
     (?= . ?=) (?* . ?*) (?~ . ?~) (?\| . ?\|) (?\\ . ?\\)
     (?/ . ?/) (?: . ?:) (?+ . ?+) (?_ . ?_) (?$ . ?$))
   "Delimiter pairs (OPEN . CLOSE) for `donkey-mark-inner'/`donkey-mark-outer'.
@@ -2035,17 +2383,43 @@ Customize this to add or remove supported delimiters -- e.g. add
 `(?# . ?#)' for a language that uses # as an inline marker, or remove
 pairs you never use.  Order does not matter: the prompt names this
 variable rather than listing it, and either half of a pair answers
-it."
+it.
+
+The wrap keys are read from here too, `donkey-wrap-delimiters' being
+`all' by default, so a pair added here is a key you can press.  Set
+with \[customize-variable] or `setopt' and the keys follow at once;
+after a plain `setq' or `add-to-list' they follow at the first idle
+moment after `donkey-mode' comes on, which is after your init file has
+finished.  \[donkey-refresh-wrap-keys] asks for them there and then."
   :type '(alist :key-type (character :tag "Open")
                 :value-type (character :tag "Close"))
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (when (fboundp 'donkey--claim-wrap-keys)
+           (donkey--claim-wrap-keys)))
   :group 'donkey)
+
+(defun donkey--mark-pair-digraph-keys ()
+  "Return the keys that reach `donkey-insert-digraph', or nil.
+
+Looked up rather than written down, so the answer follows a reader who
+has moved the leader or the key under it, and is nil for one who has
+unbound it -- there is no digraph at the prompt then, and the prompt
+does not offer one."
+  (car (where-is-internal 'donkey-insert-digraph donkey-normal-mode-map)))
 
 (defun donkey--mark-pair-prompt ()
   "Return the `read-char' prompt for `m i' and `m a'.
 
 It names the delimiters rather than listing them; \\[describe-variable]
-on the variable shows the pairs in force."
-  "Delimiter (see donkey-mark-pair-delimiters): ")
+on the variable shows the pairs in force.  The digraph keys are named
+because a delimiter that is not on the keyboard has no other way in;
+see `donkey--mark-pair-read-delimiter-char'."
+  (let ((keys (donkey--mark-pair-digraph-keys)))
+    (if keys
+        (format "Delimiter, %s for a digraph (see donkey-mark-pair-delimiters): "
+                (key-description keys))
+      "Delimiter (see donkey-mark-pair-delimiters): ")))
 
 (defun donkey--mark-pair-unsupported-error (char)
   "Signal a `user-error' for CHAR not in `donkey-mark-pair-delimiters'.
@@ -2067,35 +2441,6 @@ reject by name."
         ((rassq char donkey-mark-pair-delimiters)
          (car (rassq char donkey-mark-pair-delimiters)))
         (t char)))
-
-(defun donkey--pair-delimiter-already-taken ()
-  "Do nothing, silently, and keep the mark command's repeat alive.
-
-What a delimiter key runs for one press after `m i' or `m a' resolved
-its delimiter from the buffer.  Silent, and `this-command' is set to
-`last-command', so a following `m i' still reads as a repeat."
-  (interactive)
-  (setq this-command last-command))
-
-(defun donkey--suppress-one-pair-delimiter ()
-  "Make the NEXT key harmless if it names a delimiter.
-
-`m i' and `m a' read their delimiter from the character at point when
-point is on one, so the delimiter a reader types from habit as the
-third key would otherwise run as a command of its own -- every
-delimiter is bound to `donkey-wrap-region'.  The press is swallowed
-for one key, once a pair has been found: \\=`m i\\=' alone selects,
-\\=`m i (\\=' selects and the paren does nothing, and a second paren
-wraps.  A repeat arms it too.  Nothing is armed for a call from Lisp:
-only when `this-command' is one of the two commands."
-  (when (memq this-command '(donkey-mark-inner donkey-mark-outer))
-    (let ((map (make-sparse-keymap)))
-      (dolist (pair donkey-mark-pair-delimiters)
-        (define-key map (vector (car pair))
-                    #'donkey--pair-delimiter-already-taken)
-        (define-key map (vector (cdr pair))
-                    #'donkey--pair-delimiter-already-taken))
-      (set-transient-map map))))
 
 (defun donkey--mark-pair-read-delimiter ()
   "Return (OPEN-CHAR CLOSE-CHAR ON-OPENER AUTO) for the char pair to mark.
@@ -2119,10 +2464,49 @@ than from a key."
                      (on-opener default-char)
                      (on-closer (car on-closer))
                      (t (donkey--mark-pair-open-for
-                         (read-char (donkey--mark-pair-prompt))))))
+                         (donkey--mark-pair-read-delimiter-char)))))
          (close-char (or (cdr (assq open-char donkey-mark-pair-delimiters))
                          (donkey--mark-pair-unsupported-error open-char))))
     (list open-char close-char on-opener (and (or on-opener on-closer) t))))
+
+(defun donkey--mark-pair-read-delimiter-char ()
+  "Read the delimiter for `m i' and `m a', a digraph included.
+
+One character, as the prompt says -- or the keys that reach
+`donkey-insert-digraph', which is `SPC i &' until a reader moves it,
+and then the rfc1345 mnemonic.  That is the way a digraph is asked for
+everywhere else in the package, so it is the way it is asked for here:
+`m i SPC i & < <' selects what a pair of guillemets holds.  No
+character at this prompt means anything but itself, so a delimiter of
+your own is still just typed.
+
+Keys that start the digraph sequence and then leave it are a
+`user-error' naming what was typed, and so is a mnemonic the method
+does not know."
+  (let* ((digraph-keys (donkey--mark-pair-digraph-keys))
+         (prompt (donkey--mark-pair-prompt))
+         (char (read-char prompt)))
+    (if (not (and digraph-keys
+                  (> (length digraph-keys) 0)
+                  (eq char (aref digraph-keys 0))))
+        char
+      ;; The rest of the sequence, key by key: a reader who started it
+      ;; by accident is told what they typed rather than left in it.
+      (let ((typed (vector char))
+            (index 1))
+        (while (< index (length digraph-keys))
+          (let ((next (read-char (concat prompt (key-description typed) " "))))
+            (setq typed (vconcat typed (vector next)))
+            (unless (eq next (aref digraph-keys index))
+              (user-error "Unsupported delimiter `%s'; see donkey-mark-pair-delimiters"
+                          (key-description typed)))
+            (setq index (1+ index))))
+        (let* ((read (donkey--digraph-read))
+               (keys (car read))
+               (result (cdr read)))
+          (unless result
+            (user-error "No digraph %s" keys))
+          (aref result 0))))))
 
 (defun donkey--mark-pair-scan-forward (open-char close-char)
   "Scan forward for the CLOSE-CHAR balancing one already-open OPEN-CHAR.
@@ -2324,10 +2708,6 @@ has been FOUND -- see the comment at the marking below."
          (open-char (nth 0 spec))
          (close-char (nth 1 spec))
          (on-opener (nth 2 spec))
-         ;; Whether the delimiter typed next is loose: always on a
-         ;; repeat, which reads none, and on a fresh press that read it
-         ;; from the buffer.  Acted on only once the pair is found.
-         (auto (if state t (nth 3 spec)))
          (level (+ (if state (nth 3 spec) 0) (max 1 (or count 1)))))
     (pcase-let* ((`(,start-pos . ,end-pos)
                   (save-excursion
@@ -2350,9 +2730,6 @@ has been FOUND -- see the comment at the marking below."
       (activate-mark)
       (setq donkey--mark-pair-state
             (list anchor open-char close-char on-opener level))
-      ;; Only a press that marked has a next key to protect.
-      (when auto
-        (donkey--suppress-one-pair-delimiter))
       (message (if inner-p
                    "Selected content for '%c'"
                  "Selected OUTER content including '%c'")
@@ -4885,13 +5262,21 @@ is cut to ten.  Only a graphical frame shows any of it."
 
 (defconst donkey--digraph-common
   '(("'6" . "‘") ("'9" . "’") ("\"6" . "“") ("\"9" . "”")
+    ("<<" . "«") (">>" . "»")
     ("-N" . "–") ("-M" . "—") ("sb" . "•") ("e'" . "é")
     ("Pd" . "£") ("Rg" . "®") ("1'" . "′") ("Eu" . "€"))
   "Digraphs `donkey-digraph' lists first, each with what it types.
 
-They are the twelve characters English web text uses most that a
+Twelve of them are the characters English web text uses most that a
 keyboard lacks, the most frequent first, except that an opening
-quotation mark comes right before its closing one.")
+quotation mark comes right before its closing one.
+
+The guillemets are the fourteenth and fifteenth entries and are here
+for a different reason: they are a pair `donkey-mark-pair-delimiters'
+knows, so `m i' and `m a' select what they hold and
+`donkey-insert-digraph' wraps a selection in them -- and neither is on
+any keyboard this package can assume.  A reader sent looking for them
+by the wrap prompt should find them in the chart the prompt names.")
 
 (defun donkey--digraph-result (digraph)
   "Return the string DIGRAPH types under the `rfc1345' input method, or nil.
@@ -4969,17 +5354,34 @@ a shorter one that is complete.  No input method is turned on and
 the state does not change, so one character can be typed from
 NORMAL state as well.  Keys the method does not know insert nothing
 and are named.  A COUNT below one inserts once.  On SPC i & in
-NORMAL state."
+NORMAL state.
+
+With an active selection the character wraps it instead, closing with
+whatever `donkey-mark-pair-delimiters' pairs it with: &<< wraps in the
+two guillemets, &\"6 in curly double quotes, and a character the table
+does not know wraps with itself on both sides.  A selection that pair
+already stands around loses it, the way `donkey-wrap-region' takes one
+off, and a rectangle selection is wrapped line by line.  COUNT is
+ignored there -- one press, one wrap -- and so is
+`donkey-wrap-region-engine': no pairing package has an opinion about a
+digraph."
   (interactive "p")
   (barf-if-buffer-read-only)
   (let* ((read (donkey--digraph-read))
          (keys (car read))
          (result (cdr read)))
-    (if (not result)
-        (message "No digraph %s" keys)
+    (cond
+     ((not result)
+      (message "No digraph %s" keys))
+     ((use-region-p)
+      ;; Every rfc1345 mnemonic this reader knows stands for exactly one
+      ;; character, so the first one is the whole of it.
+      (donkey--wrap-selection (aref result 0))
+      (message "%s: %s" keys result))
+     (t
       (dotimes (_ (max 1 (or count 1)))
         (insert result))
-      (message "%s: %s" keys result))))
+      (message "%s: %s" keys result)))))
 
 (defvar donkey--digraph-table nil
   "Every digraph of the `rfc1345' input method as (CODE . STRING).
@@ -5242,7 +5644,8 @@ Emacs holds them as the rfc1345 input method, each typed with an
 ampersand in front of it.\n\n"))
       (insert (funcall head "  Common digraphs") "\n" rule "\n")
       (insert "  The twelve characters English web text uses most that a keyboard
-  lacks, the most frequent first, quotation marks in pairs.\n\n")
+  lacks, the most frequent first, quotation marks in pairs -- and the
+  guillemets, which `m i', `m a' and a wrap all know as a pair.\n\n")
       (insert "  ")
       (donkey--digraph-cell "DIGRAPH" 12 'font-lock-keyword-face)
       (donkey--digraph-cell "TYPE" 22 'font-lock-keyword-face)
@@ -5643,10 +6046,14 @@ what is INSIDE the nearest pair; \\[donkey-mark-outer] includes the delimiters t
 
 Standing ON a delimiter, either end of the pair, nothing is asked: the
 character under the cursor is the answer, so \\[donkey-mark-inner] alone is enough
-there, and the \\`(' you type from habit does no harm.
+there.  A delimiter typed after it is a key of its own and acts at
+once: it wraps what is selected, or takes that pair off again.
 
 >> Put the cursor on the \"(\" of the ---> line above and press \\[donkey-mark-inner] by
    itself.  The same text is selected, with no question asked.
+
+>> Press \\`(' now.  The parentheses come off, since they are the pair
+   around what you selected.  Press \\`(' once more to put them back.
 
 A count means levels out, so \\`C-u 2' \\[donkey-mark-inner] \\`(' from the inner pair selects the
 outer one.
@@ -6213,10 +6620,9 @@ are prefixes on a key of their own.")
 (keymap-set donkey-normal-mode-map "v" #'donkey-set-mark)
 (keymap-set donkey-normal-mode-map "M" #'donkey-mark-run-toggle)
 
-;; Wrap region with delimiter (region-active only; see donkey-wrap-region)
-(dolist (ch donkey-wrap-delimiters)
-  (keymap-set donkey-normal-mode-map (char-to-string ch) #'donkey-wrap-region))
-
+;; Wrap region with delimiter (region-active only; see donkey-wrap-region).
+;; The closing half of a pair is bound as well, and resolves to its
+;; opener at the press, so `)' wraps in `(' and `)' as `(' does.
 ;; Mark objects
 (keymap-set donkey-normal-mode-map "m A" #'donkey-mark-sexp-outer)
 (keymap-set donkey-normal-mode-map "m a" #'donkey-mark-outer)
@@ -6288,15 +6694,578 @@ are prefixes on a key of their own.")
 ;; carry the same explanation; it simply was not carried up here.
 ;; Binding DEL at top level does not disturb them: `m' is a prefix, so
 ;; `m DEL' is a different key sequence entirely.
+;;
+;; The delete keys are silenced with `ignore', the punctuation refused
+;; with `undefined'.  Both block the key -- an explicit binding of
+;; either kind stops a major mode's own binding being reached, and only
+;; an UNBOUND key falls through -- and the difference is what the
+;; reader is told.  A delete key is pressed from habit and would beep
+;; on every stray press, which is noise nobody can act on; a
+;; punctuation key pressed in Normal state is a question, and every
+;; other key in this map answers it with "X is undefined".
 (keymap-set donkey-normal-mode-map "<backspace>" #'ignore)
 (keymap-set donkey-normal-mode-map "<delete>" #'ignore)
 (keymap-set donkey-normal-mode-map "DEL" #'ignore)
 (keymap-set donkey-normal-mode-map "<deletechar>" #'ignore)
-(keymap-set donkey-normal-mode-map "," #'ignore)
-(keymap-set donkey-normal-mode-map "-" #'ignore)
-(keymap-set donkey-normal-mode-map "/" #'ignore)
-(keymap-set donkey-normal-mode-map ";" #'ignore)
-(keymap-set donkey-normal-mode-map "_" #'ignore)
+(keymap-set donkey-normal-mode-map "," #'undefined)
+(keymap-set donkey-normal-mode-map "-" #'undefined)
+(keymap-set donkey-normal-mode-map "/" #'undefined)
+(keymap-set donkey-normal-mode-map ";" #'undefined)
+(keymap-set donkey-normal-mode-map "_" #'undefined)
+
+(defcustom donkey-self-insert-commands
+  '(org-self-insert-command
+    org-force-self-insert
+    c-electric-pound
+    c-electric-star
+    c-electric-paren
+    c-electric-brace
+    c-electric-slash
+    c-electric-semi&comma
+    c-electric-colon
+    c-electric-lt-gt
+    TeX-insert-quote
+    TeX-insert-dollar
+    TeX-insert-backslash
+    TeX-insert-sub-or-superscript
+    LaTeX-insert-left-brace
+    LaTeX-babel-insert-hyphen)
+  "Commands Normal state refuses, because they type a character.
+
+`suppress-keymap' installs one entry, a remap of
+`self-insert-command', and DONKEY's copy of it outranks a major
+mode's: a mode that types through a remap of its own -- which is how
+`org-mode' types most keys -- is answered by it.  A mode that binds a
+key DIRECTLY to an insert command of its own is not: `org-mode' puts
+`org-force-self-insert' on `|', `cc-mode' puts electric commands on
+`#' and `*', AUCTeX puts `TeX-insert-dollar' on `$', and those keys
+typed in Normal state inserted.
+
+Each command here is remapped to `undefined' as well, so the key
+reaches nothing whatever the mode wanted.  Setting this through
+Customize re-installs the remaps; `donkey-refresh-suppressed-commands'
+is the way to ask by hand.
+
+A command that does not exist costs nothing -- a remap names a symbol,
+it does not call it -- so a mode need not be installed for its entry
+to sit here.  What is NOT here still types: this is a list, not a
+rule, and a mode with an insert command of its own that nobody has met
+yet goes on the list when somebody meets it."
+  :type '(repeat symbol)
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (when (fboundp 'donkey--suppress-insert-commands)
+           (donkey--suppress-insert-commands)))
+  :group 'donkey)
+
+(defvar donkey--suppressed-insert-commands nil
+  "The commands `donkey--suppress-insert-commands' last remapped.")
+
+(defun donkey--suppress-insert-commands ()
+  "Remap every command in `donkey-self-insert-commands' to `undefined'.
+
+Remaps installed before and no longer asked for are taken out again,
+so a reader who removes an entry gets the key back.  Anything in the
+list that is not a symbol is skipped: a defcustom holds whatever it
+was given."
+  (dolist (command donkey--suppressed-insert-commands)
+    (when (and (symbolp command)
+               (eq (lookup-key donkey-normal-mode-map (vector 'remap command))
+                   'undefined))
+      (define-key donkey-normal-mode-map (vector 'remap command) nil t)))
+  (setq donkey--suppressed-insert-commands nil)
+  (dolist (command donkey-self-insert-commands)
+    (when (symbolp command)
+      (push command donkey--suppressed-insert-commands)
+      (define-key donkey-normal-mode-map (vector 'remap command) #'undefined))))
+
+(defun donkey-refresh-suppressed-commands ()
+  "Re-install the remaps `donkey-self-insert-commands' asks for.
+
+For a reader who changed the list with `setq' or `add-to-list', which
+Customize never hears about."
+  (interactive)
+  (donkey--suppress-insert-commands)
+  (message "DONKEY: %d insert command%s refused in Normal state"
+           (length donkey--suppressed-insert-commands)
+           (if (= (length donkey--suppressed-insert-commands) 1) "" "s")))
+
+;;; ---------------------------------------------------------------------------
+;;; Which Keys Wrap
+;;; ---------------------------------------------------------------------------
+
+(defun donkey--wrap-key-free-p (char)
+  "Return non-nil when CHAR is a key DONKEY may take for wrapping.
+
+Free means the key does nothing: no binding in
+`donkey-normal-mode-map', the `undefined' every suppressed printable
+key falls to, an `ignore' put there to make a key harmless, or
+`donkey-wrap-region' already.  A key bound to a command that does
+something belongs to that command -- `x' deletes, `:' goes to a line,
+`>' indents -- and goes on running it whatever
+`donkey-wrap-delimiters' says.
+
+The live keymap is what is asked, not a list of names, so it answers
+for a reader who has moved the commands about: `x' rebound to `ignore'
+is free, and `/' given a command of its own is not, whichever of them
+DONKEY bound where to begin with."
+  (let ((binding (donkey--binding-value
+                  (lookup-key donkey-normal-mode-map (vector char)))))
+    (memq binding (list nil 'undefined 'ignore 'donkey-wrap-region))))
+
+(defun donkey--wrap-delimiter-characters ()
+  "Return the characters `donkey-wrap-delimiters' asks to have as keys.
+
+`all' is every OPEN character in `donkey-mark-pair-delimiters', so a
+pair added there needs no second line to become a key -- except while
+`donkey-wrap-region-engine' hands the press to a pairing package,
+where it means `donkey--wrap-delegated-delimiters', the six such a
+package pairs.  A list is taken as it stands whatever the engine, and
+a value that is neither `all' nor a list reads as `all'.
+
+Whatever the source, anything that is not a character is dropped here
+and nowhere else: both variables are defcustoms, and hold whatever
+they were given.  The table is read for its OPEN characters through
+`consp' rather than `car', an entry that is not a pair at all being
+exactly the shape a reader gets by typing one bracket too few."
+  (seq-filter #'characterp
+              (cond ((listp donkey-wrap-delimiters) donkey-wrap-delimiters)
+                    ((eq donkey-wrap-region-engine 'pairing-package)
+                     donkey--wrap-delegated-delimiters)
+                    (t (mapcar #'car
+                               (seq-filter #'consp donkey-mark-pair-delimiters))))))
+
+(defvar donkey--wrap-keys-taken nil
+  "What each wrap key held before `donkey--claim-wrap-keys' took it.
+
+An alist of (CHAR . BINDING), BINDING nil where the key was unbound.
+Read when a key is let go of again, so it goes back to what it was
+rather than to nothing.")
+
+(defun donkey--claim-wrap-keys ()
+  "Bind the keys `donkey-wrap-delimiters' asks for, and let go of the rest.
+
+Each character it names, and the closing half of every pair that
+closes with a different one, is bound to `donkey-wrap-region' when its
+key is free -- see `donkey--wrap-key-free-p'.  A key no longer asked
+for is let go of, and only while it still runs the wrap DONKEY put
+there: whoever took it since keeps it.
+
+A key let go of gets back what it held when the wrap took it -- the
+`undefined' that answers a blocked key, the `ignore' that silences a
+delete key -- and is unbound only if it was unbound then.  Unbinding
+it flatly would be a different thing entirely: an unbound key is the
+one kind that falls through to the major mode, so a reader who added a
+pair and thought better of it would have opened a key rather than
+closed one.
+
+Called at load and again whenever `donkey-wrap-delimiters' or
+`donkey-mark-pair-delimiters' is set through Customize, and once more
+at the first idle moment after `donkey-mode' comes on;
+`donkey-refresh-wrap-keys' is the way to ask for it by hand."
+  (let (wanted)
+    (dolist (ch (donkey--wrap-delimiter-characters))
+      (push ch wanted)
+      (let ((close (donkey--wrap-close-char ch)))
+        (unless (eq close ch) (push close wanted))))
+    ;; Let go first, so a character moved out of the list frees its key
+    ;; before another one in the list can be judged against it.
+    (map-keymap
+     (lambda (event binding)
+       (when (and (characterp event)
+                  (eq (donkey--binding-value binding) 'donkey-wrap-region)
+                  (not (memq event wanted)))
+         (let ((was (cdr (assq event donkey--wrap-keys-taken)))
+               (key (key-description (vector event))))
+           (setq donkey--wrap-keys-taken
+                 (assq-delete-all event donkey--wrap-keys-taken))
+           (if was
+               (keymap-set donkey-normal-mode-map key was)
+             (keymap-unset donkey-normal-mode-map key)))))
+     donkey-normal-mode-map)
+    (dolist (ch (nreverse wanted))
+      (when (donkey--wrap-key-free-p ch)
+        (let ((was (donkey--binding-value
+                    (lookup-key donkey-normal-mode-map (vector ch)))))
+          (unless (eq was 'donkey-wrap-region)
+            (setf (alist-get ch donkey--wrap-keys-taken) was)))
+        (keymap-set donkey-normal-mode-map (key-description (vector ch))
+                    #'donkey-wrap-region)))))
+
+(defun donkey-refresh-wrap-keys ()
+  "Bind the keys `donkey-wrap-delimiters' names, and say what was left alone.
+
+For a reader who changed the variable with `setq' or `add-to-list',
+which Customize never hears about.  A character whose key already runs
+something is not taken; those are named in the message log, as
+`donkey-check-bindings' names them."
+  (interactive)
+  (donkey--claim-wrap-keys)
+  (let ((left (donkey--delimiters-that-cannot-wrap t)))
+    (if (null left)
+        (message "DONKEY: every wrap delimiter has its key")
+      (donkey--say-binding-changes nil t)
+      (message "DONKEY: %d wrap delimiter%s could not take a key; see the message log"
+               (length left) (if (= (length left) 1) "" "s")))))
+
+;;; ---------------------------------------------------------------------------
+;;; What Has Taken DONKEY's Keys
+;;; ---------------------------------------------------------------------------
+
+(defcustom donkey-report-binding-changes t
+  "Whether DONKEY says in the message log what has taken its keys.
+
+Once at first idle after `donkey-mode' comes on, DONKEY compares the
+keys it bound when it loaded with the keys as they stand and says what
+differs: a binding of its own that something else runs now, and a
+`donkey-wrap-delimiters' character whose key belongs to somebody else,
+which is a delimiter that cannot wrap.  Nothing is said when nothing
+differs.
+
+\\[donkey-check-bindings] asks the same question whenever you like, and
+answers for the current buffer as well."
+  :type 'boolean
+  :group 'donkey)
+
+(defvar donkey--default-normal-bindings nil
+  "What `donkey-normal-mode-map' held when `donkey.el' finished loading.
+
+An alist of (KEYS . BINDING), KEYS a vector as `lookup-key' takes one.
+Captured at load because that is the only moment the map is DONKEY's
+alone: a reader's own bindings arrive afterwards, which is the whole
+point of comparing.  Ranges are left out -- the suppressed keys are a
+char-table entry rather than a binding anybody replaces.")
+
+(defun donkey--binding-value (binding)
+  "Return BINDING without the name a keymap entry may carry.
+
+A key written as (NAME . COMMAND) so every reader of the keymap shows
+the name answers as the command it names, which is what a comparison
+against `lookup-key' has to be made of."
+  (if (and (consp binding) (stringp (car binding)))
+      (cdr binding)
+    binding))
+
+(defun donkey--map-bindings (map &optional prefix)
+  "Return an alist of (KEYS . BINDING) for every binding in MAP.
+
+KEYS is a vector, PREFIX prepended to it, so a binding under a prefix
+map comes back as the whole sequence that reaches it.  Walk a nested
+keymap rather than record it, and skip a char-table range.
+
+`donkey-leader-map' is the exception, recorded whole: the letters
+under the leader belong to the reader, and the keys DONKEY does keep
+there are rebuilt from `donkey-input-methods' whenever that changes,
+so nothing under it is a default to defend."
+  (let (found)
+    (map-keymap
+     (lambda (event binding)
+       (let ((binding (donkey--binding-value binding)))
+         (cond
+          ((consp event) nil)
+          ((and (keymapp binding) (not (eq binding donkey-leader-map)))
+           (setq found (append (donkey--map-bindings binding (vconcat prefix (vector event)))
+                               found)))
+          (t (push (cons (vconcat prefix (vector event)) binding) found)))))
+     map)
+    found))
+
+(defun donkey--capture-default-normal-bindings ()
+  "Record `donkey-normal-mode-map' as it stands at the end of the load."
+  (setq donkey--default-normal-bindings
+        (donkey--map-bindings donkey-normal-mode-map)))
+
+(defun donkey--binding-changes ()
+  "Return the DONKEY keys whose binding has changed, as (KEYS DEFAULT NOW).
+
+Asked of `donkey-normal-mode-map' itself, so the answer is the same in
+every buffer.  A key another map shadows without touching this one is
+`donkey--shadowed-normal-bindings's question.
+
+A key that has become `donkey-wrap-region' since the snapshot, having
+held nothing or `undefined' in it, is DONKEY claiming a wrap key for a
+pair the reader added -- see `donkey--claim-wrap-keys'.  That is this
+package doing what it was asked, not somebody taking a key, and is not
+a change to report."
+  (let (changed)
+    (pcase-dolist (`(,keys . ,default) donkey--default-normal-bindings)
+      (let ((now (donkey--binding-value (lookup-key donkey-normal-mode-map keys))))
+        (unless (or (eq now default)
+                    ;; The same three `donkey--wrap-key-free-p' calls
+                    ;; free, so the two answers cannot drift apart.
+                    (and (eq now 'donkey-wrap-region)
+                         (memq default '(nil undefined ignore))))
+          (push (list keys default now) changed))))
+    (sort changed (lambda (a b) (string< (key-description (car a))
+                                         (key-description (car b)))))))
+
+(defun donkey--wrap-delimiter-shipped-p (char)
+  "Return non-nil when CHAR is a delimiter this package shipped.
+
+The standard value of `donkey-mark-pair-delimiters' rather than its
+current one, so a pair the reader added is never mistaken for one of
+DONKEY's own."
+  (let ((shipped (eval (car (get 'donkey-mark-pair-delimiters 'standard-value)) t)))
+    (assq char shipped)))
+
+(defun donkey--wrap-key-is-donkeys-own-p (char binding)
+  "Return non-nil when BINDING is what DONKEY itself put on CHAR.
+
+Asked of `donkey--default-normal-bindings', the snapshot taken when
+the file finished loading, so it answers for the keys as this package
+shipped them and not for anything a reader has done since."
+  (let ((default (assoc (vector char) donkey--default-normal-bindings #'equal)))
+    (and default binding (eq binding (cdr default)))))
+
+(defun donkey--delimiters-that-cannot-wrap (&optional everything)
+  "Return the wrap delimiters whose key is not `donkey-wrap-region'.
+
+Both halves of each pair, since both are keys DONKEY binds.  Answers
+as (CHAR BINDING), BINDING nil where the key is not bound at all.  The
+characters are read through `donkey--wrap-delimiter-characters', which
+understands `all' and drops whatever is not a character.
+
+EVERYTHING non-nil answers with all of them, which is what a reader
+who asks by hand wants.  Left out, the two SHIPPED in
+`donkey-mark-pair-delimiters' whose keys DONKEY itself answers -- `:'
+goes to a line, `>' indents -- are passed over, because a line said in
+every session that ever started about a fact identical in every
+installation is one a reader learns to skip.  Just those two: a pair
+the reader added is always answered, whatever its key holds, and so is
+everything when `donkey-wrap-delimiters' names its characters
+outright."
+  (let ((asked (or everything (listp donkey-wrap-delimiters)))
+        taken)
+    (dolist (ch (donkey--wrap-delimiter-characters))
+      (dolist (half (list ch (donkey--wrap-close-char ch)))
+        (let ((now (donkey--binding-value
+                    (lookup-key donkey-normal-mode-map (vector half)))))
+          (unless (or (eq now #'donkey-wrap-region)
+                      (assq half taken)
+                      (and (not asked)
+                           (donkey--wrap-delimiter-shipped-p ch)
+                           (donkey--wrap-key-is-donkeys-own-p half now)))
+            (push (list half now) taken)))))
+    (sort taken (lambda (a b) (< (car a) (car b))))))
+
+(defun donkey--shadowed-normal-bindings ()
+  "Return the DONKEY keys another map answers in THIS buffer.
+
+As (KEYS OWN EFFECTIVE REMAP): `donkey-normal-mode-map' still holds
+OWN, and a map that outranks it -- another minor mode, a
+terminal-local map -- answers with EFFECTIVE instead.  A buffer where
+Normal state is not on has nothing to say, since DONKEY's map is not
+consulted there at all.
+
+REMAP is non-nil where EFFECTIVE is this buffer REMAPPING the very
+command DONKEY bound -- named by its mode when reported, the answer
+being true of every buffer in that mode: `org-mode' remaps `kill-line'
+to
+`org-kill-line', so DONKEY's `D' runs org's version and every other
+route to `kill-line' does too.  Nothing has been taken there -- a
+remap catches a command whichever key reached it, which is the same
+mechanism this package suppresses typing with -- and a report that
+called it a loss would cry wolf in every Org buffer."
+  (let (shadowed)
+    (when (bound-and-true-p donkey-normal-mode)
+      (pcase-dolist (`(,keys . ,_default) donkey--default-normal-bindings)
+        (let ((own (donkey--binding-value (lookup-key donkey-normal-mode-map keys)))
+              (effective (donkey--binding-value (key-binding keys))))
+          (when (and own (not (eq own effective)))
+            (push (list keys own effective
+                        ;; EFFECTIVE nil is a key that reaches nothing
+                        ;; here, and `command-remapping' answers nil
+                        ;; too -- which would read as a remap.
+                        (and effective
+                             (commandp own)
+                             (eq (command-remapping own) effective)))
+                  shadowed)))))
+    (sort shadowed (lambda (a b) (string< (key-description (car a))
+                                          (key-description (car b)))))))
+
+(defun donkey--wrap-delimiter-other-half (char)
+  "Return the other half of CHAR's pair when that half has a key.
+
+For the line that says a delimiter cannot wrap: `>' cannot, because
+`donkey-indent-region-or-line' holds the key, and `<' can -- which is
+the thing the reader wants told.  Answers nil when the pair is
+symmetric or the other half has no key either."
+  (let* ((open (donkey--mark-pair-open-for char))
+         (other (if (eq char open) (donkey--wrap-close-char open) open)))
+    (and (characterp other)
+         (not (eq other char))
+         (eq (donkey--binding-value
+              (lookup-key donkey-normal-mode-map (vector other)))
+             'donkey-wrap-region)
+         other)))
+
+(defun donkey--binding-report-lines (&optional here everything)
+  "Return what has taken DONKEY's keys, as a list of strings.
+
+One string per finding, ready to be said in the message log or printed
+in a buffer -- `donkey--say-binding-changes' does the first and
+`donkey-debug-platform' the second, from this one body.
+
+HERE non-nil adds what only the current buffer can answer -- see
+`donkey--shadowed-normal-bindings'.  EVERYTHING non-nil asks for every
+delimiter that cannot wrap rather than the surprising ones only, which
+is what a reader asking by hand wants."
+  (let ((changes (donkey--binding-changes))
+        (delimiters (donkey--delimiters-that-cannot-wrap everything))
+        (shadowed (and here (donkey--shadowed-normal-bindings)))
+        lines)
+    (pcase-dolist (`(,keys ,default ,now) changes)
+      (push (format "%s is %s now, was %s"
+                    (key-description keys)
+                    (if now (donkey--binding-name now) "unbound")
+                    (donkey--binding-name default))
+            lines))
+    (pcase-dolist (`(,char ,now) delimiters)
+      (push
+       (if now
+           (let ((other (donkey--wrap-delimiter-other-half char)))
+             (format "the wrap delimiter %s is %s, so it does not wrap%s"
+                     (single-key-description char)
+                     (donkey--binding-name now)
+                     (if other
+                         (format "; press %s instead"
+                                 (single-key-description other))
+                       "")))
+         ;; Its KEY is unbound, which under `all' means one thing: the
+         ;; pair was added after the keys were claimed.  Say the thing
+         ;; that fixes it rather than the thing that is true.
+         ;; Substituted BEFORE the character is put in, not after: a
+         ;; delimiter is a reader's to choose, and a description
+         ;; landing next to a `\\=\\[' would otherwise be read as a
+         ;; command name to look up.
+         (format (substitute-command-keys
+                  "the wrap delimiter %s has no key yet; \\[donkey-refresh-wrap-keys]")
+                 (single-key-description char)))
+       lines))
+    (pcase-dolist (`(,keys ,own ,effective ,remap) shadowed)
+      ;; Named by its MODE rather than called "this buffer": the line
+      ;; is true of every buffer in that mode and of no other, and a
+      ;; reader reading it later has no way to know which buffer it
+      ;; was.
+      (push (if remap
+                (format "%s runs %s in this %s buffer, which remaps %s"
+                        (key-description keys)
+                        (donkey--binding-name effective)
+                        major-mode
+                        (donkey--binding-name own))
+              (format "%s runs %s in this %s buffer; DONKEY's own key is %s"
+                      (key-description keys)
+                      (donkey--binding-name effective)
+                      major-mode
+                      (donkey--binding-name own)))
+            lines))
+    (nreverse lines)))
+
+(defun donkey--say-binding-changes (&optional here everything)
+  "Say in the message log what has taken DONKEY's keys, and how many.
+
+One line per finding, so the message log keeps them all; the lines
+themselves are `donkey--binding-report-lines's, and HERE and
+EVERYTHING are its.  Answer with the number of lines said."
+  (let ((lines (donkey--binding-report-lines here everything)))
+    (dolist (line lines)
+      (message "DONKEY: %s" line))
+    (length lines)))
+
+(defun donkey--binding-name (binding)
+  "Return a name for BINDING a reader will recognize.
+
+A symbol is itself; a keymap is named as one, since a prefix map has
+no name of its own; anything else is printed."
+  (cond ((symbolp binding) (symbol-name binding))
+        ((keymapp binding) "a keymap")
+        (t (format "%S" binding))))
+
+(defun donkey-check-bindings ()
+  "Say what has taken DONKEY's keys, in the message log.
+
+Compares the keys DONKEY bound when it loaded with the keys as they
+stand: a binding of its own that something else runs now, and a
+`donkey-wrap-delimiters' character whose key belongs to somebody else,
+which is a delimiter that cannot wrap.  In a buffer where Normal state
+is on it also reports the keys another map answers HERE, which is a
+question only a buffer can answer -- another buffer may differ.
+
+Asked by hand, so it names EVERY delimiter that cannot wrap, `:' and
+`>' included: those two run DONKEY commands of their own and are the
+same in every installation, which is reason enough for the once-a-
+session report to pass them over and no reason at all to hide them
+from a reader who asked.  They are counted apart from the keys that
+differ, being nothing that went wrong.
+
+DONKEY asks the quieter half of this itself once after `donkey-mode'
+comes on; see `donkey-report-binding-changes'."
+  (interactive)
+  (let* ((delimiters (length (donkey--delimiters-that-cannot-wrap t)))
+         (remapped (seq-count (lambda (row) (nth 3 row))
+                              (donkey--shadowed-normal-bindings)))
+         (said (donkey--say-binding-changes t t))
+         (taken (- said delimiters remapped))
+         (extra (delq nil
+                      (list (when (> delimiters 0)
+                              (format "%d wrap delimiter%s" delimiters
+                                      (if (= delimiters 1) " cannot take its key"
+                                        "s cannot take their key")))
+                            (when (> remapped 0)
+                              (format "%d key%s this buffer remaps" remapped
+                                      (if (= remapped 1) "" "s")))))))
+    (message
+     "DONKEY: %s%s%s"
+     (if (zerop taken)
+         "every key is as DONKEY left it"
+       (format "%d key%s from the defaults" taken
+               (if (= taken 1) " differs" "s differ")))
+     (if extra (concat "; " (string-join extra "; ")) "")
+     (if (or extra (> taken 0)) " -- see the message log" ""))))
+
+(defvar donkey--binding-report-timer nil
+  "The one-shot timer that reports what has taken DONKEY's keys, or nil.")
+
+(defun donkey--settle-bindings-once ()
+  "Claim the wrap keys once more, then say what has taken DONKEY's keys.
+
+The one-shot the mode arms at first idle.  The claim comes first, and
+comes at all, because `donkey-mark-pair-delimiters' is read for the
+wrap keys and a reader who adds a pair with `add-to-list' changes it
+without telling anyone -- and does so AFTER this file loaded and
+claimed what the table held then.  First idle is the earliest moment
+an init file is certainly finished, so a pair added there needs no
+call of its own.
+
+Then the report, which would otherwise name the keys this claim is
+about to bind.
+
+The claim is wrapped for the same reason the report is: this runs from
+a timer, and a reader whose table cannot be read should lose neither
+the keys that ARE readable nor the report that would tell them so."
+  (condition-case err
+      (donkey--claim-wrap-keys)
+    (error (message "DONKEY: could not claim the wrap keys: %s"
+                    (error-message-string err))))
+  (donkey--report-binding-changes-once))
+
+(defun donkey--report-binding-changes-once ()
+  "Say what has taken DONKEY's keys, once, from an idle timer.
+
+Quiet when nothing differs, and quiet as a whole when
+`donkey-report-binding-changes' is nil -- read here rather than at the
+scheduling, so a reader who sets it after `donkey-mode' came on is
+still obeyed.  The buffer-specific half is left out: a message that is
+true only in whichever buffer happened to be current is worse than no
+message.  Wrapped, because a report is cosmetic and must not be what
+breaks a session."
+  (setq donkey--binding-report-timer nil)
+  (condition-case err
+      (when donkey-report-binding-changes
+        (donkey--say-binding-changes))
+    (error (message "DONKEY: could not check its bindings: %s"
+                    (error-message-string err)))))
+
 
 ;;; ---------------------------------------------------------------------------
 ;;; Donkey Insert Mode Keymap Definition
@@ -7066,7 +8035,7 @@ key is DONKEY's own are left out."
   (donkey--input-method-map-refresh (and (memq operation '(set let unlet)) value)))
 
 (add-variable-watcher 'donkey-input-methods #'donkey--input-methods-changed)
-(keymap-set donkey-input-method-map "&" '("insert digraph" . donkey-insert-digraph))
+(keymap-set donkey-input-method-map "&" '("digraph" . donkey-insert-digraph))
 (keymap-set donkey-input-method-map "." '("digraphs" . donkey-input-method-digraphs))
 (keymap-set donkey-input-method-map "-" '("off" . donkey-disable-input-method))
 (donkey--input-method-map-refresh donkey-input-methods)
@@ -7282,6 +8251,12 @@ donkey-mode' to toggle."
         (unless donkey--startup-resweep-timer
           (setq donkey--startup-resweep-timer
                 (run-with-idle-timer 0.1 nil #'donkey--startup-resweep)))
+        ;; And once more at first idle, to claim the wrap keys a pair
+        ;; added by an init file asks for and to say what has taken
+        ;; DONKEY's keys; see `donkey--settle-bindings-once'.
+        (unless donkey--binding-report-timer
+          (setq donkey--binding-report-timer
+                (run-with-idle-timer 0.5 nil #'donkey--settle-bindings-once)))
         ;; A quit that unwinds during Insert state was a C-g eaten while
         ;; Lisp was running; recover its meaning.  See
         ;; `donkey--recover-quit-in-insert'.
@@ -7305,6 +8280,9 @@ donkey-mode' to toggle."
     (when donkey--startup-resweep-timer
       (cancel-timer donkey--startup-resweep-timer)
       (setq donkey--startup-resweep-timer nil))
+    (when donkey--binding-report-timer
+      (cancel-timer donkey--binding-report-timer)
+      (setq donkey--binding-report-timer nil))
     ;; An entry pushed by a still-open minibuffer has lost the pop
     ;; that balanced it.
     (setq donkey--minibuffer-pre-state-stack nil)
@@ -7337,6 +8315,13 @@ load time."
 ;;; ---------------------------------------------------------------------------
 ;;; Provide
 ;;; ---------------------------------------------------------------------------
+
+;; Last, because every binding in the file has to be in place first:
+;; the map is DONKEY's alone at exactly this point, and a reader's own
+;; bindings arrive after it.
+(donkey--suppress-insert-commands)
+(donkey--claim-wrap-keys)
+(donkey--capture-default-normal-bindings)
 
 (provide 'donkey)
 

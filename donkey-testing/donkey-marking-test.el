@@ -1409,38 +1409,30 @@ is no delimiter -- and the harness lets one end the test."
                         (region-beginning) (region-end)))
                   (buffer-substring-no-properties (point-min) (point-max))
                   (point) origin))))
-    ;; `donkey--suppress-one-pair-delimiter' arms a transient map, and a
-    ;; transient map comes down on the next COMMAND -- which, for a test
-    ;; that stops here, is the next TEST'S first key.  The same
-    ;; terminal-wide hazard the mark run map has, answered the same way.
+    ;; A mark run arms a terminal-wide map, and a test that stops
+    ;; inside one would hand it to the next test's first key.
     (setq overriding-terminal-local-map nil)
     (when (get-buffer "*donkey-pair-test*") (kill-buffer "*donkey-pair-test*"))))
 
-(ert-deftest donkey-a-pair-key-never-edits-the-buffer ()
-  "\\=`m i (' selects; it does not insert a paren.
+(ert-deftest donkey-a-pair-mark-alone-never-edits-the-buffer ()
+  "\=`m i' selects and does nothing else; the key after it is the reader's.
 
 `m i' and `m a' read their delimiter from the character at point when
-point is on one, and are then finished -- so the delimiter typed as the
-third key of \\=`m i (' never reached `read-char' and ran as a command of
-its own.  Every delimiter is bound to `donkey-wrap-region', which
-INSERTS: with point on the paren, \\=`m i (' turned \"call(alpha) end\"
-into \"call((alpha) end\".  A selection key had edited the buffer,
-silently, from the very sequence a reader would type to select with.
+point is on one, and are then finished.  What they must not do is edit
+-- that is the sentence a fuzzer drove over 7,840 sequences, of which
+52 broke it, every one of them a delimiter typed as the third key of
+\=`m i ('.
 
-Found by fuzzing one rule over 7840 sequences -- a selection key may not
-modify the buffer -- of which 52 did, every one of them this.
-
-Both spellings work and neither edits: the press is swallowed for one
-key rather than the auto-detect being taken away."
-  (dolist (case '(("call(alpha) end" 5  "m i (" "alpha")
-                  ("call(alpha) end" 5  "m i"   "alpha")
-                  ("call(alpha) end" 11 "m i (" "alpha")
-                  ("call(alpha) end" 5  "m a (" "(alpha)")
-                  ("call[alpha] end" 5  "m i [" "alpha")
-                  ("call{alpha} end" 5  "m i {" "alpha")
-                  ("say \"hi\" now"  5  "m i \"" "hi")
-                  ;; The prompting path was always safe; it is here so the
-                  ;; two spellings are pinned to the same answer.
+That press is no longer swallowed: with the wrap keys DONKEY's own it
+puts a pair on or takes one off, which is a defined thing a reader can
+undo, rather than the stray paren it used to insert.  The mark
+commands themselves are what this pins."
+  (dolist (case '(("call(alpha) end" 5  "m i"   "alpha")
+                  ("call(alpha) end" 11 "m i"   "alpha")
+                  ("call(alpha) end" 5  "m a"   "(alpha)")
+                  ("call[alpha] end" 5  "m i"   "alpha")
+                  ("call{alpha} end" 5  "m i"   "alpha")
+                  ("say \"hi\" now"  5  "m i"   "hi")
                   ("call(alpha) end" 7  "m i (" "alpha")
                   ("call(alpha) end" 7  "m a (" "(alpha)")))
     (cl-destructuring-bind (text pos keys expected) case
@@ -1450,68 +1442,46 @@ key rather than the auto-detect being taken away."
         (should (equal (list text keys selection)
                        (list text keys expected)))))))
 
-(ert-deftest donkey-a-second-delimiter-still-wraps ()
-  "The swallow is one press, so a deliberate wrap is still reachable.
+(ert-deftest donkey-the-delimiter-after-a-pair-mark-acts-at-once ()
+  "The delimiter typed after \=`m i' or \=`m a' wraps or unwraps straight away.
 
-Somebody who means to wrap what \\=`m i' just selected presses the
-delimiter twice.  Taking the key away for good would have cost that."
-  (cl-destructuring-bind (_selection buffer _point _origin)
-      (donkey-test--pair-keys "call(alpha) end" 5 "m i ( (")
-    (should-not (equal buffer "call(alpha) end"))))
+Four spellings, and each does what the selection says: \=`m i' selects
+what a pair holds, so the press takes that pair off; \=`m a' selects the
+pair as well, so the press puts another round it.  Where the delimiter
+had to be typed at the prompt, the press after it is the one that
+acts."
+  (dolist (case '((1 "m i ("   "alpha")
+                  (1 "m a ("   "((alpha))")
+                  (3 "m i ( (" "alpha")
+                  (3 "m a ( (" "((alpha))")))
+    (cl-destructuring-bind (pos keys expected) case
+      (donkey-test-keys--harness "*donkey-pair-acts*" #'text-mode () "(alpha)" ""
+        (goto-char pos)
+        (execute-kbd-macro (kbd keys))
+        (should (equal (list pos keys (buffer-string))
+                       (list pos keys expected)))))))
 
-(ert-deftest donkey-a-repeated-pair-mark-swallows-its-delimiter-too ()
-  "\\=`m i ( m i (' grows the selection a level; nothing is inserted.
+(ert-deftest donkey-a-pair-mark-repeats-with-a-delimiter-in-between ()
+  "\=`m i m i' grows a level, and a delimiter pressed between still acts.
 
-A second `m i' or `m a' never reads a delimiter -- the repeat reuses the
-one it resolved -- so the paren typed after it by habit was as loose as
-after an auto-detected first press, and nothing protected it.  From
-inside \"((a (b c) d) e)\", `m i ( m i (' selected \"a (b c) d\" and then
-ran the paren as `donkey-wrap-region': \"(((a (b c) d) e)\" with nothing
-pairing, a wrap under `electric-pair-mode', and a `d' pressed next
-deleted one character, the insertion having ended the selection.
-Confirmed live in `emacs -nw'.
-
-Pinned for both commands, from inside the pair and from on its opener,
-and the deliberate double press still wraps after a repeat: the
-protection is one press per `m i', not the key taken away."
-  (dolist (case '(("((a (b c) d) e)" 8 "m i ("           "b c")
-                  ("((a (b c) d) e)" 8 "m i ( m i ("     "a (b c) d")
-                  ("((a (b c) d) e)" 8 "m a ( m a ("     "(a (b c) d)")
-                  ;; On the opener of (b c): the first press auto-detects,
-                  ;; the second repeats, and both parens are swallowed.
-                  ("((a (b c) d) e)" 5 "m i ( m i ("     "a (b c) d")))
-    (cl-destructuring-bind (text pos keys expected) case
+The repeat reads no delimiter of its own -- it reuses the one it
+resolved -- and a press between two of them is the reader's, so it
+acts on what is selected at that moment."
+  (dolist (case '(("m i m i"       "a (b c) d"         "((a (b c) d) e)")
+                  ("m i m i m i"   "(a (b c) d) e"     "((a (b c) d) e)")
+                  ("m a m a"       "(a (b c) d)"       "((a (b c) d) e)")))
+    (cl-destructuring-bind (keys expected buffer-after) case
       (cl-destructuring-bind (selection buffer _point _origin)
-          (donkey-test--pair-keys text pos keys)
-        (should (equal (list keys buffer) (list keys text)))
+          (donkey-test--pair-keys "((a (b c) d) e)" 5 keys)
+        (should (equal (list keys buffer) (list keys buffer-after)))
         (should (equal (list keys selection) (list keys expected))))))
-  ;; A second paren after the repeat is the deliberate wrap.
-  (cl-destructuring-bind (_selection buffer _point _origin)
-      (donkey-test--pair-keys "((a (b c) d) e)" 8 "m i ( m i ( (")
-    (should-not (equal buffer "((a (b c) d) e)")))
-  ;; And a `d' after the repeat deletes what was selected.
-  (cl-destructuring-bind (_selection buffer _point _origin)
-      (donkey-test--pair-keys "((a (b c) d) e)" 8 "m i ( m i ( d")
-    (should (equal buffer "(() e)"))))
-
-(ert-deftest donkey-a-swallowed-delimiter-does-not-end-the-repeat ()
-  "\\=`m i ( m i ( m i (' keeps growing; the swallowed paren is no key.
-
-`donkey--pair-delimiter-already-taken' runs as a command, so it became
-`last-command', and the `m i' after it was a fresh search rather than a
-repeat.  A fresh search from where the selection left point finds the
-pair it is already inside, so the chain stalled: three presses selected
-what two did.  It now hands `this-command' back to the mark command, and
-the chain reads as one run whether or not a paren was typed between the
-presses."
-  (dolist (case '(("m i ( m i ( m i ("   "(a (b c) d) e")
-                  ("m i ( m i m i"       "(a (b c) d) e")
-                  ("m a ( m a ( m a ("   "((a (b c) d) e)")))
-    (cl-destructuring-bind (keys expected) case
-      (cl-destructuring-bind (selection buffer _point _origin)
-          (donkey-test--pair-keys "((a (b c) d) e)" 8 keys)
-        (should (equal (list keys buffer) (list keys "((a (b c) d) e)")))
-        (should (equal (list keys selection) (list keys expected)))))))
+  ;; and one with a delimiter in the middle, which acts on the level
+  ;; the repeat had reached
+  (donkey-test-keys--harness "*donkey-pair-repeat*" #'text-mode ()
+      "((a (b c) d) e)" ""
+    (goto-char 8)
+    (execute-kbd-macro (kbd "m i ( m i ("))
+    (should (equal (buffer-string) "(a (b c) d e)"))))
 
 (ert-deftest donkey-the-pair-prompt-takes-a-closing-delimiter ()
   "\\=`m i )' means what \\=`m i (' means.
@@ -1551,94 +1521,19 @@ same rule the four object keys answer for.
 content."
   ;; Positions are spelled out: the innermost pair is the empty one, and
   ;; a computed "first open paren" lands on the OUTER pair of "((()))",
-  ;; whose inner content is not empty at all.
+  ;; whose inner content is not empty at all.  The mark commands are
+  ;; driven alone: a delimiter typed after one acts on what it selected
+  ;; rather than acting on it, which is a different test.
   (dolist (case '(("empty() here" 6) ("((()))" 3) ("a () b" 3)))
     (cl-destructuring-bind (text pos) case
       (cl-destructuring-bind (selection buffer point origin)
-          (donkey-test--pair-keys text pos "m i (")
+          (donkey-test--pair-keys text pos "m i")
         (should-not selection)
         (should (equal (list text buffer) (list text text)))
         (should (equal (list text point) (list text origin))))))
   (cl-destructuring-bind (selection _buffer _point _origin)
-      (donkey-test--pair-keys "empty() here" 6 "m a (")
+      (donkey-test--pair-keys "empty() here" 6 "m a")
     (should (equal selection "()"))))
-
-(ert-deftest donkey-a-refused-pair-mark-arms-no-delimiter-suppression ()
-  "An auto-detected `m i' that finds no pair leaves the next delimiter key alone.
-
-Regression: the swallow was armed where the delimiter was read from
-the buffer, before the search, so with the cursor on the paren of an
-unbalanced \"(abc\" the refusal left it standing and the `(' typed
-next -- to wrap the selection the refusal had kept -- was eaten.  The
-binding of the key is what is asserted: the transient map, when armed,
-resolves the delimiter to the swallowing command."
-  (donkey-test-keys--harness "*donkey-pair-refused*" #'text-mode ()
-      "(abc def\nnext\n" "V g h"
-    (should-error (execute-kbd-macro (kbd "m i")) :type 'user-error)
-    (should (eq (key-binding "(") #'donkey-wrap-region))
-    (should (donkey--visual-line-session-active-p))))
-
-(ert-deftest donkey-a-found-pair-still-arms-the-suppression ()
-  "The control for the test above: a press that marks does protect one key."
-  (unwind-protect
-      (donkey-test-keys--harness "*donkey-pair-found*" #'text-mode ()
-          "(abc) def\n" "m i"
-        (should (eq (key-binding "(") #'donkey--pair-delimiter-already-taken)))
-    ;; The transient map is terminal-wide and comes down on the next
-    ;; command, which would be the next test's first key.
-    (setq overriding-terminal-local-map nil)))
-
-(ert-deftest donkey-a-lisp-call-arms-no-delimiter-suppression ()
-  "Calling the command from Lisp leaves no transient map behind.
-
-The suppression exists for the reader\='s NEXT KEYSTROKE, and a caller
-outside the command loop has none -- so arming there only leaves a map
-standing.  `set-transient-map\=' puts it in
-`overriding-terminal-local-map\=', which is terminal-wide and comes down
-on the next COMMAND, so the next thing to run is whatever comes along:
-in the suite that was the next TEST, and
-`donkey-tutor-claim-no-fifth-shadowed-emacs-command\=' resolved \\=`(\='
-through the leftover map and reported a shadowed Emacs command.
-
-Three of the six pinned shuffle seeds caught it and the fixed order did
-not, which is exactly the kind of thing that should not need a lucky
-order to find.  Hence this, which asks the question directly.
-
-The second case is the one a guard on `this-command\=' being SET let
-through: nothing resets that variable between commands, so outside the
-command loop it holds whatever ran last -- `kill-region\=', left over
-from an earlier test in the one seed that still failed.  A Lisp call
-with point on a brace found it non-nil and armed the map.  The guard
-names the two commands now, and this case keeps it that way.
-
-The third case is the other side: reached as its own command, the
-suppression IS armed, and a delimiter resolves to the swallowing
-binding.  Without it, a guard that armed nothing at all would pass the
-first two."
-  (dolist (stale '(nil kill-region))
-    (setq overriding-terminal-local-map nil)
-    (with-temp-buffer
-      (insert "{hello}")
-      (goto-char 1)
-      (let ((transient-mark-mode t) (this-command stale) (last-command nil))
-        (donkey-mark-inner))
-      (should (equal (buffer-substring-no-properties
-                      (region-beginning) (region-end))
-                     "hello"))
-      (should (equal (list stale overriding-terminal-local-map)
-                     (list stale nil)))))
-  (unwind-protect
-      (with-temp-buffer
-        (insert "{hello}")
-        (goto-char 1)
-        (let ((transient-mark-mode t) (this-command 'donkey-mark-inner)
-              (last-command nil))
-          (donkey-mark-inner))
-        (should (eq (key-binding (kbd "{"))
-                    #'donkey--pair-delimiter-already-taken))
-        (should (eq (key-binding (kbd "}"))
-                    #'donkey--pair-delimiter-already-taken)))
-    (setq overriding-terminal-local-map nil)))
 
 (ert-deftest donkey-mark-inner-braces ()
   "Marks content inside braces, excluding delimiters."
@@ -2200,7 +2095,7 @@ It falls through to the `read-char' prompt instead."
 (ert-deftest donkey-mark-pair-delimiters-prompt-names-the-variable ()
   "The prompt names `donkey-mark-pair-delimiters' instead of reciting it.
 
-It used to list every open character, which is nineteen of them by
+It used to list every open character, which is twenty-one of them by
 default and more once a reader adds a pair -- most of a line of echo
 area spent on something nobody reads twice, and a list that could only
 grow.  Naming the variable covers the built-in pairs and the customized
@@ -2209,16 +2104,100 @@ ones together, and \\[describe-variable] on it shows the reader their own.
 Pinned so the prompt cannot quietly go back to reciting: it says the
 same thing whatever the variable holds."
   (should (equal (donkey--mark-pair-prompt)
-                 "Delimiter (see donkey-mark-pair-delimiters): "))
+                 "Delimiter, SPC i & for a digraph (see donkey-mark-pair-delimiters): "))
   (let ((donkey-mark-pair-delimiters '((?# . ?#))))
     (should (equal (donkey--mark-pair-prompt)
-                   "Delimiter (see donkey-mark-pair-delimiters): ")))
+                   "Delimiter, SPC i & for a digraph (see donkey-mark-pair-delimiters): ")))
   ;; A customized delimiter is not spelled into it either.  Checked with
   ;; a character that cannot appear in the prompt for another reason --
   ;; the parentheses around "see ..." are punctuation, and are also
   ;; delimiters, so the default list cannot be asked this question.
   (let ((donkey-mark-pair-delimiters '((?# . ?#))))
     (should-not (string-search "#" (donkey--mark-pair-prompt)))))
+
+(ert-deftest donkey-a-pair-mark-takes-a-digraph-for-its-delimiter ()
+  "`m i' and `m a' take the digraph keys and a mnemonic as the delimiter.
+
+A pair that is not on the keyboard could be marked no other way: the
+prompt reads one character, and the guillemets and the curly quotes
+are not one character anybody can type.  The keys are the ones that
+reach `donkey-insert-digraph' anywhere else -- `SPC i &' until a
+reader moves them -- so a digraph is asked for the one way it is asked
+for everywhere, and no character at this prompt means anything but
+itself.  Keys the method does not know are a `user-error' naming them
+rather than a delimiter nobody meant."
+  (dolist (case '(("say «word» now" 7 "m i SPC i & < <" "word")
+                  ("say «word» now" 7 "m a SPC i & < <" "«word»")
+                  ("say “word” now" 7 "m i SPC i & \" 6" "word")
+                  ("say ‘word’ now" 7 "m i SPC i & ' 6" "word")))
+    (cl-destructuring-bind (text pos keys expected) case
+      (donkey-test-keys--harness "*donkey-pair-digraph*" #'text-mode () text ""
+        (goto-char pos)
+        (execute-kbd-macro (kbd keys))
+        (should (equal (list keys (buffer-substring-no-properties
+                                   (region-beginning) (region-end)))
+                       (list keys expected)))
+        (should (equal (buffer-string) text)))))
+  ;; Keys the method does not know: the refusal names the keys typed,
+  ;; which is what tells it apart from a delimiter that was found and
+  ;; then failed to match anything in the buffer.
+  (donkey-test-keys--harness "*donkey-pair-digraph*" #'text-mode ()
+      "say «word» now" ""
+    (goto-char 7)
+    (should (equal (cdr (should-error (execute-kbd-macro (kbd "m i SPC i & z z"))
+                                      :type 'user-error))
+                   '("No digraph zz")))
+    (should (equal (buffer-string) "say «word» now"))
+    (should-not (region-active-p))))
+
+(ert-deftest donkey-the-digraph-keys-at-the-prompt-follow-the-binding ()
+  "The prompt asks for the keys that reach the digraph, wherever they are.
+
+Looked up rather than written down: a reader who puts
+`donkey-insert-digraph' somewhere else has moved the way to name a
+digraph here too, and the prompt says the keys that work rather than
+the keys that used to."
+  (let ((leader-entry (keymap-lookup donkey-input-method-map "&")))
+    (unwind-protect
+        (progn
+          (keymap-unset donkey-input-method-map "&")
+          (keymap-set donkey-normal-mode-map "&" #'donkey-insert-digraph)
+          (should (equal (key-description (donkey--mark-pair-digraph-keys)) "&"))
+          (should (equal (donkey--mark-pair-prompt)
+                         "Delimiter, & for a digraph (see donkey-mark-pair-delimiters): "))
+          (donkey-test-keys--harness "*donkey-pair-moved*" #'text-mode ()
+              "say «word» now" ""
+            (goto-char 7)
+            (execute-kbd-macro (kbd "m i & < <"))
+            (should (equal (buffer-substring-no-properties
+                            (region-beginning) (region-end))
+                           "word"))))
+      (keymap-unset donkey-normal-mode-map "&")
+      (keymap-set donkey-input-method-map "&"
+                  (cons "digraph" (or leader-entry #'donkey-insert-digraph))))
+    (should (equal (key-description (donkey--mark-pair-digraph-keys)) "SPC i &"))))
+
+(ert-deftest donkey-no-character-at-the-delimiter-prompt-is-magic ()
+  "Every character at the prompt is the delimiter it looks like.
+
+A digraph is asked for with the keys that ask for one everywhere else,
+so nothing single had to be spent on an escape: a reader who makes
+`&' a pair of their own types `&' for it.  A reader who starts the
+digraph keys and then leaves them is told what they typed rather than
+left inside a sequence they did not mean."
+  (let ((donkey-mark-pair-delimiters (cons '(?& . ?&) donkey-mark-pair-delimiters)))
+    (donkey-test-keys--harness "*donkey-pair-amp*" #'text-mode ()
+        "say &word& now" ""
+      (goto-char 7)
+      (execute-kbd-macro (kbd "m i &"))
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     "word"))))
+  (donkey-test-keys--harness "*donkey-pair-amp*" #'text-mode () "say «word» now" ""
+    (goto-char 7)
+    (should (string-prefix-p "Unsupported delimiter"
+                             (cadr (should-error (execute-kbd-macro (kbd "m i SPC x"))
+                                                 :type 'user-error))))
+    (should-not (region-active-p))))
 
 (ert-deftest donkey-mark-pair-delimiters-unsupported-error-names-the-variable ()
   "The unsupported-delimiter error points at the list rather than being it.
@@ -4078,7 +4057,7 @@ malfunction.  A bare `error' popped the debugger under `debug-on-error'."
 (ert-deftest donkey-mark-inner-unsupported-delimiter-is-a-user-error ()
   "Answering the prompt with a non-delimiter reports, and lists the set.
 
-An ordinary typo on a prompt that accepts nineteen characters -- a bare
+An ordinary typo on a prompt that accepts twenty-one characters -- a bare
 `error' popped the debugger under `debug-on-error'."
   (with-temp-buffer
     (insert "a (b) c")
@@ -6923,9 +6902,15 @@ test."
 
 The promise for a mistype is a beep rather than the selection, and it
 held for a single unbound key only.  Emacs runs `undefined' for that
-one -- which is why \\`~' was already inert -- but a SEQUENCE that dies
-in a prefix map reaches no command at all: `this-command' is nil, and
-nil is not in any list.
+one -- which is why \\`Q\=' is inert -- but a SEQUENCE that dies in a
+prefix map reaches no command at all: `this-command' is nil, and nil
+is not in any list.
+
+The single key used to be \\`~\=', which every pair in
+`donkey-mark-pair-delimiters' now has a wrap key for: pressed in a run
+it wraps what the run has marked, which is a command and not a
+mistype.  A key that is still nothing had to be found for the
+sentence, and \\`Q\=' is one.
 
 It cost the run twice over.  `donkey--mark-run-mode-keep-p' saw a
 command that was not a family member and let the mode lapse, and the
@@ -6942,11 +6927,11 @@ sequences of its own.
 the key pressed AFTER the mistype is the whole point."
   (cl-letf (((symbol-function 'ding) #'ignore))
     (dolist (keys '("w w l M g x w"      ; the mode's own prefix
-                    "w w l M g ~ w"
+                    "w w l M g ! w"
                     "w w l M m x w"      ; the companion prefix
                     "w w l M z x w"      ; a normal-state prefix
                     "w w l M C-x C-\\ w" ; and a native one
-                    "w w l M ~ w"))      ; the single key, as before
+                    "w w l M Q w"))      ; the single key, as before
       (donkey-mark-test--keys "for text that is not saved" keys
         (should (equal (list keys (donkey-mark-test--selection))
                        (list keys "that is")))

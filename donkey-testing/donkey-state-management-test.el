@@ -1556,11 +1556,22 @@ be registered on the global `pre-command-hook', so if a different
 buffer became current before the originating buffer's next real
 command, the guard reset there instead, then self-removed — leaving
 the originating buffer's guard stuck non-nil forever and silently
-disabling the `C-g' interception fallback for it."
+disabling the `C-g' interception fallback for it.
+
+The keys of the SIMULATED next command are stubbed away for the whole
+test.  `run-hooks' here stands in for the command loop, which would
+have read a new key by then; left alone, `this-single-command-keys'
+still answers with whatever key really ran last, and if that was
+\\`C-g' -- as it is after any earlier test that drove one -- the
+interception fires again from inside the very hook run that was
+supposed to clear the guard, sets it afresh, and puts its own reset
+back.  Found by the shuffle seeds when an unrelated round reordered
+them; the stub makes the test say what it means whatever ran before
+it."
   (let ((buf-a (generate-new-buffer "donkey-guard-buf-a"))
         (buf-b (generate-new-buffer "donkey-guard-buf-b")))
     (unwind-protect
-        (progn
+        (cl-letf (((symbol-function 'this-single-command-keys) (lambda () [])))
           ;; Trigger the REAL interception path (not a hand-rolled
           ;; add-hook call) so this exercises whatever LOCAL-ness the
           ;; actual code uses.

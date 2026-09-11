@@ -1042,6 +1042,30 @@ method itself, so a row cannot say something the method does not do."
     (should (equal (list (car row) (donkey--digraph-result (car row)))
                    (list (car row) (cdr row))))))
 
+(ert-deftest donkey-the-common-digraphs-hold-the-pair-a-wrap-can-use ()
+  "The guillemets are in the common list, beside the other quotation marks.
+
+`donkey-mark-pair-delimiters' knows them as a pair, so `m i' and `m a'
+select what they hold and `donkey-insert-digraph' wraps a selection in
+them -- and no keyboard this package can assume has either.  A reader
+sent looking for them by the wrap prompt finds them in the chart the
+prompt names, next to the quotation marks they belong with rather than
+at the end."
+  (should (equal (assoc "<<" donkey--digraph-common) (cons "<<" "«")))
+  (should (equal (assoc ">>" donkey--digraph-common) (cons ">>" "»")))
+  (should (assq ?\« donkey-mark-pair-delimiters))
+  (should (eq (donkey--wrap-close-char ?\«) ?\»))
+  ;; beside the quotation marks: the four quotes, then these two
+  (should (equal (mapcar #'car (seq-take donkey--digraph-common 6))
+                 '("'6" "'9" "\"6" "\"9" "<<" ">>")))
+  (unwind-protect
+      (progn
+        (donkey-digraph)
+        (with-current-buffer "*DONKEY Digraphs*"
+          (should (string-match-p "&<<" (buffer-string)))
+          (should (string-match-p "&>>" (buffer-string)))))
+    (when (get-buffer "*DONKEY Digraphs*") (kill-buffer "*DONKEY Digraphs*"))))
+
 (ert-deftest donkey-digraph-table-comes-from-rfc1345-and-is-large ()
   "The table read from the input method holds every common digraph and many more."
   (let ((table (donkey--digraph-table)))
@@ -1251,21 +1275,37 @@ plain lookup did not is caught."
                                        donkey-mark-run-mode-map))))
 
 (ert-deftest donkey-tutor-claim-dired-keys-survive ()
-  "The Dired keys the tutor names by hand are really still Dired's."
+  "The Dired keys the tutor names by hand really do run Dired commands.
+
+Four of them are keys DONKEY never bound.  The fifth, `+', is a wrap
+key, which DONKEY holds only while a selection lasts: pressed with
+none in a buffer that cannot be edited it is Dired's again.  So each
+key is PRESSED and the command that ran is what is asserted, the
+lookup no longer telling the whole story, and the buffer is read-only
+as a real Dired buffer is."
   (skip-unless (require 'dired nil t))
-  (unwind-protect
-      (with-temp-buffer
-        (setq major-mode 'dired-mode)
-        (use-local-map dired-mode-map)
-        (donkey-mode 1)
-        (donkey-normal-mode 1)
-        (dolist (pair '(("n" dired-next-line)
-                        ("t" dired-toggle-marks)
-                        ("q" quit-window)
-                        ("^" dired-up-directory)
-                        ("+" dired-create-directory)))
-          (should (eq (key-binding (kbd (car pair))) (cadr pair)))))
-    (donkey-mode -1)))
+  (let ((buffer (get-buffer-create "*donkey-tutor-dired*")) ran)
+    (unwind-protect
+        (progn
+          (switch-to-buffer buffer)
+          (setq major-mode 'dired-mode)
+          (use-local-map dired-mode-map)
+          (setq buffer-read-only t)
+          (donkey-mode 1)
+          (donkey-normal-mode 1)
+          (dolist (pair '(("n" dired-next-line)
+                          ("t" dired-toggle-marks)
+                          ("q" quit-window)
+                          ("^" dired-up-directory)
+                          ("+" dired-create-directory)))
+            (setq ran nil)
+            (cl-letf (((symbol-function (cadr pair))
+                       (lambda (&rest _) (interactive) (setq ran (cadr pair)))))
+              (execute-kbd-macro (kbd (car pair))))
+            (should (equal (list (car pair) ran)
+                           (list (car pair) (cadr pair))))))
+      (donkey-mode -1)
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; The tutor names BOTH delete keys
@@ -2033,12 +2073,13 @@ the syntax table is what these two commands read, so verifying in
   "From ON a paren, `m i' and `m a' select the exercise text with no prompt.
 
 The lesson promises that standing on either end of a pair skips the
-question and that a delimiter typed anyway does no harm.  `read-char'
-is replaced by a function that fails the test, so a prompt is not
-merely noticed but impossible to answer -- as it is for a reader in the
-tutor, whose next key was never meant as an answer.  Both ends are
-checked, since the prose says either end works, and the exercise line
-is compared afterwards so a typed paren that INSERTED would show."
+question.  `read-char' is replaced by a function that fails the test,
+so a prompt is not merely noticed but impossible to answer -- as it is
+for a reader in the tutor, whose next key was never meant as an
+answer.  Both ends are checked, since the prose says either end works,
+and the exercise line is compared afterwards, unchanged because no
+delimiter is typed: the lesson now tells the reader what one does, and
+the exercise after it is where that is tried."
   (donkey-tutor-test--live
    (cl-letf (((symbol-function 'read-char)
               (lambda (&rest _)
@@ -2061,13 +2102,6 @@ is compared afterwards so a typed paren that INSERTED would show."
                        (region-beginning) (region-end))
                       "(this argument here)"))
        (donkey-tutor-test--keys "C-g")
-       (donkey-tutor-test--goline "---> call(this argument here)")
-       (search-forward "(")
-       (backward-char)
-       (donkey-tutor-test--keys "m i (")
-       (should (equal (buffer-substring-no-properties
-                       (region-beginning) (region-end))
-                      "this argument here"))
        (should (equal (donkey-tutor-test--line) line))))))
 
 (ert-deftest donkey-tutor-lesson-5-angle-bracket-exercise-really-works ()
@@ -3121,5 +3155,578 @@ has never touched."
           (should (eq major-mode 'special-mode))
           (should (= (point) (point-min)))))
     (when (get-buffer "*DONKEY Bindings*") (kill-buffer "*DONKEY Bindings*"))))
+
+;;; ---------------------------------------------------------------------------
+;;; What has taken DONKEY's keys
+;;; ---------------------------------------------------------------------------
+
+(defmacro donkey-report-test--collect (&rest body)
+  "Run BODY with `message' collected rather than printed, newest last."
+  `(let (donkey-report-test--said)
+     (cl-letf (((symbol-function 'message)
+                (lambda (fmt &rest args)
+                  (when fmt
+                    (push (apply #'format fmt args) donkey-report-test--said)))))
+       ,@body)
+     (nreverse donkey-report-test--said)))
+
+(ert-deftest donkey-says-nothing-when-every-key-is-as-it-left-it ()
+  "A load nobody has touched reports nothing at all.
+
+The report is a diagnostic, and a diagnostic that speaks when there is
+nothing wrong is noise the reader learns to skip."
+  (should (equal (donkey--binding-changes) nil))
+  (should (equal (donkey--delimiters-that-cannot-wrap) nil))
+  (let (count said)
+    (setq said (donkey-report-test--collect
+                (setq count (donkey--say-binding-changes))))
+    (should (= count 0))
+    (should (equal said nil))))
+
+(ert-deftest donkey-says-which-of-its-keys-something-else-runs-now ()
+  "A DONKEY key rebound in its own map is named, with what it was.
+
+The snapshot is taken when the file finishes loading, which is the one
+moment the map is DONKEY's alone; everything a reader binds arrives
+after it."
+  (let ((was (keymap-lookup donkey-normal-mode-map ";")))
+    (unwind-protect
+        (progn
+          (keymap-set donkey-normal-mode-map ";" #'ignore-preserving-kill-region)
+          (let ((said (donkey-report-test--collect (donkey--say-binding-changes))))
+            (should (equal said
+                           '("DONKEY: ; is ignore-preserving-kill-region now, was undefined")))))
+      (if was
+          (keymap-set donkey-normal-mode-map ";" was)
+        (keymap-unset donkey-normal-mode-map ";")))))
+
+(ert-deftest donkey-says-which-wrap-delimiter-cannot-wrap ()
+  "A wrap delimiter whose key belongs to something else is named.
+
+Adding a character to `donkey-wrap-delimiters' that another DONKEY key
+already answers used to do nothing and say nothing; the reader had a
+delimiter that would not wrap and no way to find out why.  A character
+that is bound nowhere is named the same way -- and named differently,
+because an unbound key means the claim has not run since the pair was
+added, and the line that says so is worth more than the line that is
+merely true.
+
+The variable names its characters here, which is a reader asking for
+them; the default asks for a table instead, and is quieter."
+  (let ((donkey-wrap-delimiters (list ?\( ?: ?#)))
+    (should (equal (donkey-report-test--collect (donkey--say-binding-changes))
+                   (list (substitute-command-keys
+                          "DONKEY: the wrap delimiter # has no key yet; \\[donkey-refresh-wrap-keys]")
+                         "DONKEY: the wrap delimiter : is donkey-goto-line, so it does not wrap")))))
+
+(ert-deftest donkey-the-first-idle-claims-the-keys-an-init-file-asked-for ()
+  "A pair added with `add-to-list' has its key by the first idle moment.
+
+`donkey.el' claims the wrap keys as it loads, and an init file adds
+its pairs after that -- `add-to-list' changes the variable and tells
+nobody.  The one-shot the mode arms is the first moment an init file
+is certainly finished, so it claims once more before it reports."
+  (let ((was donkey-mark-pair-delimiters))
+    (unwind-protect
+        (progn
+          (setq donkey-mark-pair-delimiters (cons (cons ?# ?#) was))
+          (should-not (keymap-lookup donkey-normal-mode-map "#"))
+          (donkey-report-test--collect (donkey--settle-bindings-once))
+          (should (eq (keymap-lookup donkey-normal-mode-map "#")
+                      #'donkey-wrap-region)))
+      (setq donkey-mark-pair-delimiters was)
+      (donkey--claim-wrap-keys)
+      (should-not (keymap-lookup donkey-normal-mode-map "#")))))
+
+(ert-deftest donkey-the-pair-table-claims-its-keys-when-it-is-set ()
+  "Setting the pair table through Customize binds the keys at once.
+
+The sibling variable has done this since the wrap keys existed; the
+table earns it by being what the wrap keys are read from."
+  (let ((was donkey-mark-pair-delimiters))
+    (unwind-protect
+        (progn
+          (customize-set-variable 'donkey-mark-pair-delimiters
+                                  (cons (cons ?# ?#) was))
+          (should (eq (keymap-lookup donkey-normal-mode-map "#")
+                      #'donkey-wrap-region)))
+      (customize-set-variable 'donkey-mark-pair-delimiters was)
+      (should-not (keymap-lookup donkey-normal-mode-map "#")))))
+
+(ert-deftest donkey-does-not-report-its-own-claim-as-a-key-taken ()
+  "A key DONKEY claims for a wrap is not a key something else took.
+
+The snapshot is of the map as the file left it, and a pair added
+afterwards moves one of its keys from `undefined' to the wrap.  That
+is this package doing what it was asked, and a report that named it
+would tell every reader who adds a pair that something is wrong."
+  (let ((was donkey-mark-pair-delimiters))
+    (unwind-protect
+        (progn
+          (setq donkey-mark-pair-delimiters (cons (cons ?, ?,) was))
+          (donkey--claim-wrap-keys)
+          (should (eq (keymap-lookup donkey-normal-mode-map ",")
+                      #'donkey-wrap-region))
+          (should (equal (donkey--binding-changes) nil))
+          (should (equal (donkey-report-test--collect
+                          (donkey--say-binding-changes))
+                         nil)))
+      (setq donkey-mark-pair-delimiters was)
+      (donkey--claim-wrap-keys)
+      (should (eq (keymap-lookup donkey-normal-mode-map ",") #'undefined)))))
+
+(ert-deftest donkey-a-pair-the-reader-added-is-named-when-it-cannot-wrap ()
+  "Silence is for the two delimiters DONKEY shipped, not for yours.
+
+`:' and `>' cannot wrap in every installation alike, so the report
+passes them over.  A pair the reader added whose key is spoken for is
+the reader own doing and the reason the report exists -- it is named
+even under the quiet default."
+  (let ((was donkey-mark-pair-delimiters))
+    (unwind-protect
+        (progn
+          (setq donkey-mark-pair-delimiters (cons (cons ?x ?x) was))
+          (should (equal (mapcar #'car (donkey--delimiters-that-cannot-wrap))
+                         '(?x)))
+          (should (equal (donkey-report-test--collect
+                          (donkey--say-binding-changes))
+                         '("DONKEY: the wrap delimiter x is donkey-delete, so it does not wrap"))))
+      (setq donkey-mark-pair-delimiters was))))
+
+(ert-deftest donkey-asked-by-hand-the-report-names-every-delimiter ()
+  "Asked by hand it tells the whole truth, `:' and `>' included.
+
+The once-a-session report is quiet about those two because they are
+the same everywhere; a reader who asks is asking about exactly the
+thing being passed over."
+  (should (equal (donkey--delimiters-that-cannot-wrap) nil))
+  (should (equal (mapcar #'car (donkey--delimiters-that-cannot-wrap t))
+                 '(?: ?>))))
+
+(ert-deftest donkey-a-major-modes-remap-is-not-a-key-taken ()
+  "A key the buffer REMAPS is said to be remapped, not to be lost.
+
+`org-mode' remaps `kill-line' to `org-kill-line', so DONKEY's `D'
+runs org's version -- and so does `C-k', and so does any key anybody
+binds to `kill-line'.  A remap catches a command whichever key reached
+it, which is the mechanism this package suppresses typing with.
+Reported as a loss it would cry wolf in every Org buffer, three times."
+  (skip-unless (require 'org nil t))
+  (let ((buffer (get-buffer-create "*donkey-remap*")))
+    (unwind-protect
+        (progn
+          (switch-to-buffer buffer)
+          (org-mode)
+          (donkey-mode 1)
+          (donkey-normal-mode 1)
+          ;; The snapshot holds a vector, as `lookup-key' takes one.
+          (let ((row (assoc (vector ?D) (donkey--shadowed-normal-bindings) #'equal)))
+            (should (equal row (list (vector ?D) 'kill-line 'org-kill-line t))))
+          (should (member (concat "DONKEY: D runs org-kill-line in this org-mode"
+                                  " buffer, which remaps kill-line")
+                          (donkey-report-test--collect
+                           (donkey--say-binding-changes t))))
+          ;; and it is counted apart, so the summary is not an alarm
+          (should (string-match-p
+                   "every key is as DONKEY left it;.*keys this buffer remaps"
+                   (car (last (donkey-report-test--collect
+                               (donkey-check-bindings)))))))
+      (donkey-mode -1)
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest donkey-a-key-that-reaches-nothing-here-is-not-a-remap ()
+  "A key with no binding in this buffer is not reported as remapped.
+
+`command-remapping' answers nil for a command nothing remaps, and a
+key that reaches nothing answers nil as well; comparing the two
+without asking whether there IS an effective command calls every dead
+key a remap."
+  (let ((buffer (get-buffer-create "*donkey-remap*"))
+        (was (keymap-lookup donkey-normal-mode-map "<f9>")))
+    (unwind-protect
+        (progn
+          (keymap-set donkey-normal-mode-map "<f9>" #'kill-line)
+          (switch-to-buffer buffer)
+          (text-mode)
+          (donkey-mode 1)
+          (donkey-normal-mode 1)
+          ;; an overriding map with nothing in it: `<f9>' reaches
+          ;; neither DONKEY nor the global map.
+          (setq-local minor-mode-overriding-map-alist
+                      (list (cons 'donkey-normal-mode (make-sparse-keymap))))
+          (let ((donkey--default-normal-bindings
+                 (list (cons (kbd "<f9>") 'kill-line))))
+            (should (equal (donkey--shadowed-normal-bindings)
+                           (list (list (kbd "<f9>") 'kill-line nil nil))))))
+      (donkey-mode -1)
+      (if was
+          (keymap-set donkey-normal-mode-map "<f9>" was)
+        (keymap-unset donkey-normal-mode-map "<f9>"))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest donkey-a-delimiter-that-cannot-wrap-names-the-half-that-can ()
+  "Told which key does not wrap, you are told which one does.
+
+`>' cannot take its key, `donkey-indent-region-or-line' having it, and
+`<' can -- so the pair still wraps and the line says how.  A symmetric
+delimiter has no other half to offer and says nothing extra: `:' is
+the whole pair."
+  (let ((lines (donkey--binding-report-lines nil t)))
+    (should (member (concat "the wrap delimiter > is donkey-indent-region-or-line,"
+                            " so it does not wrap; press < instead")
+                    lines))
+    (should (member "the wrap delimiter : is donkey-goto-line, so it does not wrap"
+                    lines))))
+
+(ert-deftest donkey-the-report-lines-are-what-is-said-and-what-is-printed ()
+  "One body of logic: the log and the platform report say the same words.
+
+`donkey-check-bindings' says these in the message log and
+`donkey-debug-platform' prints them in a buffer, and neither builds a
+sentence of its own."
+  (let ((lines (donkey--binding-report-lines t t))
+        (said (donkey-report-test--collect (donkey--say-binding-changes t t))))
+    ;; the summary line the command adds is not one of them
+    (should (equal (mapcar (lambda (l) (concat "DONKEY: " l)) lines)
+                   said))))
+
+(ert-deftest donkey-a-pair-table-that-is-not-pairs-is-read-anyway ()
+  "An entry in the pair table that is not a pair is skipped, not fatal.
+
+The table is a defcustom, and one bracket too few leaves an element
+that is not a cons at all.  Read with `car', that signals -- and the
+signal reached the claim, the idle settle that calls it, the platform
+report, and `setopt' on the variable itself, which is the reader
+finding out by having their own configuration break.  The entries that
+ARE pairs still work."
+  (let ((was donkey-mark-pair-delimiters))
+    (unwind-protect
+        (progn
+          (setq donkey-mark-pair-delimiters (list "junk" 42 nil (cons ?# ?#)))
+          (should (equal (donkey--wrap-delimiter-characters) (list ?#)))
+          (donkey--claim-wrap-keys)
+          (should (eq (keymap-lookup donkey-normal-mode-map "#")
+                      #'donkey-wrap-region))
+          ;; The one readable pair took its key, so nothing is left
+          ;; that cannot wrap -- and asking does not signal.
+          (should (equal (donkey--delimiters-that-cannot-wrap t) nil))
+          (should (donkey--debug-donkey-lines))
+          (donkey-report-test--collect (donkey--settle-bindings-once))
+          (customize-set-variable 'donkey-mark-pair-delimiters (list "junk")))
+      (customize-set-variable 'donkey-mark-pair-delimiters was)
+      (donkey--claim-wrap-keys)
+      (should-not (keymap-lookup donkey-normal-mode-map "#")))))
+
+(ert-deftest donkey-a-pair-that-closes-with-nothing-closes-with-itself ()
+  "A CLOSE that is not a character is read as a symmetric pair.
+
+`(?# . \"}\")' took the key and then signalled from `string' at the
+moment of the press -- the reader learns of the typo by pressing the
+key, which is the worst moment there is.  It closes with `#' now, the
+same answer a pair with no CLOSE at all gets."
+  (let ((was donkey-mark-pair-delimiters))
+    (unwind-protect
+        (progn
+          (setq donkey-mark-pair-delimiters (list (cons ?# "}")))
+          (should (eq (donkey--wrap-close-char ?#) ?#))
+          (setq donkey-mark-pair-delimiters (list (cons ?# nil)))
+          (should (eq (donkey--wrap-close-char ?#) ?#)))
+      (setq donkey-mark-pair-delimiters was))))
+
+(ert-deftest donkey-the-settle-reports-even-when-the-claim-cannot-run ()
+  "A claim that signals does not take the report down with it.
+
+Both run from one timer.  A reader whose table cannot be read should
+lose neither the keys that are readable nor the line that would tell
+them what happened."
+  (let (said)
+    (cl-letf (((symbol-function 'donkey--claim-wrap-keys)
+               (lambda () (error "Table is nonsense")))
+              ((symbol-function 'donkey--report-binding-changes-once)
+               (lambda () (push "the report ran" said))))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args) (when fmt (push (apply #'format fmt args) said)))))
+        (donkey--settle-bindings-once)))
+    (should (member "the report ran" said))
+    (should (seq-find (lambda (l) (string-match-p "could not claim the wrap keys" l))
+                      said))))
+
+(ert-deftest donkey-a-delimiter-description-is-not-read-as-a-command-name ()
+  "The report substitutes its key names before the delimiter goes in.
+
+`substitute-command-keys' reads `\\=\\[' as a command to look up, and
+the delimiter is a reader's to choose.  Put in first, a description
+landing next to one would be read rather than printed."
+  (cl-letf (((symbol-function 'single-key-description)
+             (lambda (&rest _) "\\[donkey-tutor]"))
+            ((symbol-function 'donkey--delimiters-that-cannot-wrap)
+             (lambda (&optional _) (list (list ?# nil)))))
+    (let ((line (car (donkey--binding-report-lines nil t))))
+      (should (string-match-p (regexp-quote "\\[donkey-tutor]") line))
+      (should-not (string-match-p "donkey-tutor\\b[^]]" line)))))
+
+(ert-deftest donkey-a-key-that-was-ignore-is-not-reported-when-claimed ()
+  "The exemption covers every binding the claim calls free.
+
+`donkey--wrap-key-free-p' frees a key that is unbound, `undefined' or
+`ignore'; the report exempts its own claim on the same three, so the
+two answers cannot drift apart."
+  (let ((was (keymap-lookup donkey-normal-mode-map "#")))
+    (unwind-protect
+        (progn
+          (keymap-set donkey-normal-mode-map "#" #'donkey-wrap-region)
+          (dolist (default '(nil undefined ignore))
+            (let ((donkey--default-normal-bindings
+                   (list (cons (vector ?#) default))))
+              (should (equal (list default (donkey--binding-changes))
+                             (list default nil))))))
+      (if was
+          (keymap-set donkey-normal-mode-map "#" was)
+        (keymap-unset donkey-normal-mode-map "#")))))
+
+(ert-deftest donkey-does-not-trust-what-is-in-the-wrap-delimiters ()
+  "Anything in `donkey-wrap-delimiters' that is not a character is skipped.
+
+A defcustom holds whatever a reader put in it, and a report that
+signals is worse than the misconfiguration it was meant to explain."
+  (let ((donkey-wrap-delimiters (list ?\( "not a character" nil 'x)))
+    (should (equal (donkey--delimiters-that-cannot-wrap) nil))
+    (should (equal (donkey-report-test--collect (donkey--say-binding-changes)) nil))))
+
+(ert-deftest donkey-keeps-the-leader-whole-in-what-it-remembers ()
+  "The leader is one entry, so its own rebuilds are not reported as losses.
+
+The letters under `SPC' are the reader's, and the keys DONKEY keeps
+there are rebuilt from `donkey-input-methods' whenever that changes --
+neither is a default to defend, and walking into the map would report
+both as taken."
+  (should (assoc [32] donkey--default-normal-bindings #'equal))
+  (should-not (seq-find (lambda (entry) (string-prefix-p "SPC " (key-description (car entry))))
+                        donkey--default-normal-bindings))
+  (let ((donkey-input-methods '(("n" "Norwegian" "norwegian-postfix"))))
+    (donkey--input-method-map-refresh donkey-input-methods)
+    (unwind-protect
+        (should (equal (donkey--binding-changes) nil))
+      (donkey--input-method-map-refresh
+       (eval (car (get 'donkey-input-methods 'standard-value)) t)))))
+
+(ert-deftest donkey-check-bindings-answers-even-when-all-is-well ()
+  "The command always says something, since a reader asked it a question.
+
+Asked by hand it names the two delimiters the once-a-session report
+passes over, and counts them apart from the keys that differ: `:' and
+`>' hold DONKEY commands of their own and cannot wrap, which is the
+design working rather than a key gone missing."
+  (let ((said (donkey-report-test--collect (donkey-check-bindings))))
+    (should (equal (car (last said))
+                   (concat "DONKEY: every key is as DONKEY left it; "
+                           "2 wrap delimiters cannot take their key"
+                           " -- see the message log")))
+    (should (member (concat "DONKEY: the wrap delimiter > is"
+                            " donkey-indent-region-or-line, so it does not wrap;"
+                            " press < instead")
+                    said))))
+
+(ert-deftest donkey-the-binding-report-obeys-its-switch ()
+  "`donkey-report-binding-changes' nil silences the pass DONKEY runs itself.
+
+Read at the report rather than at the scheduling, so a reader who sets
+it after `donkey-mode' came on is still obeyed."
+  (let ((was (keymap-lookup donkey-normal-mode-map ";")))
+    (unwind-protect
+        (progn
+          (keymap-set donkey-normal-mode-map ";" #'ignore-preserving-kill-region)
+          (let ((donkey-report-binding-changes nil))
+            (should (equal (donkey-report-test--collect
+                            (donkey--report-binding-changes-once))
+                           nil)))
+          (let ((donkey-report-binding-changes t))
+            (should (donkey-report-test--collect
+                     (donkey--report-binding-changes-once)))))
+      (if was
+          (keymap-set donkey-normal-mode-map ";" was)
+        (keymap-unset donkey-normal-mode-map ";")))))
+
+(ert-deftest donkey-the-binding-report-timer-is-taken-down-with-the-mode ()
+  "Enabling arms the one-shot report; disabling takes it down.
+
+A timer left ticking for a switched-off mode is still state, and a
+test that leaves one behind is a test that fails somebody else."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (should donkey--binding-report-timer)
+        (should (memq donkey--binding-report-timer timer-idle-list))
+        (donkey-mode -1)
+        (should-not donkey--binding-report-timer))
+    (when donkey--binding-report-timer
+      (cancel-timer donkey--binding-report-timer)
+      (setq donkey--binding-report-timer nil))
+    (donkey-mode -1)))
+
+
+;;; ---------------------------------------------------------------------------
+;;; Keys a major mode types with
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-a-modes-own-insert-command-does-not-type-in-normal-state ()
+  "A key a major mode binds directly to an insert command inserts nothing.
+
+`suppress-keymap' remaps `self-insert-command', and DONKEY's copy of
+that remap outranks a major mode's -- which is how `org-mode', that
+types nearly every key through a remap of its own, is answered.  A key
+bound DIRECTLY is another matter: `org-mode' puts `org-force-self-insert'
+on `|' and `cc-mode' puts electric commands on `#' and `*', and in
+Normal state those keys typed.  Reported from a real buffer, and older
+than the wrap keys by years.
+
+Driven as real keys, and the buffer is what is asserted: what a reader
+sees is a character appearing where none should.
+
+`ding' is stubbed because the key now reaches `undefined', which rings
+it -- and a bell ends a keyboard macro in a live frame, though not in
+`--batch'.  Without the stub this passes where CI runs it and fails in
+a terminal, which is how it was found."
+  (cl-letf (((symbol-function 'ding) #'ignore))
+    (dolist (case '((org-mode "|") (c-mode "#") (c-mode "*") (c-mode "/")))
+      (cl-destructuring-bind (mode key) case
+        (donkey-test-keys--harness "*donkey-mode-insert*" mode () "row" key
+          (should (equal (list mode key (buffer-string))
+                         (list mode key "row"))))))))
+
+(define-derived-mode donkey-auctex-test-mode text-mode "TeX-ish"
+  "A stand-in for AUCTeX, binding the keys AUCTeX binds directly.
+
+AUCTeX is not a test dependency, so the shape it installs is built
+here instead: an insert command of its own bound DIRECTLY to a
+printable key, which is what Normal state has to answer.")
+
+(keymap-set donkey-auctex-test-mode-map "$" 'TeX-insert-dollar)
+(keymap-set donkey-auctex-test-mode-map "\\" 'TeX-insert-backslash)
+(keymap-set donkey-auctex-test-mode-map "^" 'TeX-insert-sub-or-superscript)
+(keymap-set donkey-auctex-test-mode-map "\"" 'TeX-insert-quote)
+(keymap-set donkey-auctex-test-mode-map "{" 'LaTeX-insert-left-brace)
+
+(ert-deftest donkey-the-keys-auctex-types-with-do-not-type-in-normal-state ()
+  "The keys AUCTeX binds to insert commands of its own type nothing.
+
+AUCTeX puts `TeX-insert-dollar' on the dollar key, `TeX-insert-backslash'
+on the backslash and `TeX-insert-sub-or-superscript' on the caret, the
+way `org-mode' puts `org-force-self-insert' on the vertical bar.  Two
+of those keys are wrap keys of DONKEY's own and do nothing without a
+selection; the caret belongs to nobody, and reaches the mode.  Both
+answers are asserted the same way, from the buffer: no character
+appears.
+
+The commands are stubbed to insert, so a remap that failed would show
+as the character it types rather than as an error about a command that
+is not installed.
+
+`ding' is stubbed because a key that reaches `undefined' rings it, and
+a bell ends a keyboard macro in a live frame."
+  (cl-letf (((symbol-function 'ding) #'ignore)
+            ((symbol-function 'TeX-insert-dollar)
+             (lambda () (interactive) (insert "$")))
+            ((symbol-function 'TeX-insert-backslash)
+             (lambda () (interactive) (insert "\\")))
+            ((symbol-function 'TeX-insert-sub-or-superscript)
+             (lambda () (interactive) (insert "^"))))
+    (dolist (key '("$" "\\" "^"))
+      (donkey-test-keys--harness "*donkey-auctex*" 'donkey-auctex-test-mode
+                                 () "row" key
+        (should (equal (list key (buffer-string))
+                       (list key "row")))))))
+
+(ert-deftest donkey-a-modes-own-keys-that-do-not-type-still-run ()
+  "Only the typing is refused; the rest of a major mode is left alone.
+
+The remaps name commands, not keys, so a mode's command that does not
+insert is untouched -- which is what lets Dired's `n' and `q' work in
+Normal state, as the tutor promises."
+  (skip-unless (require 'dired nil t))
+  (unwind-protect
+      (with-temp-buffer
+        (setq major-mode 'dired-mode)
+        (use-local-map dired-mode-map)
+        (donkey-mode 1)
+        (donkey-normal-mode 1)
+        (dolist (pair '(("n" dired-next-line) ("q" quit-window)
+                        ("^" dired-up-directory)))
+          (should (eq (key-binding (kbd (car pair))) (cadr pair)))))
+    (donkey-mode -1)))
+
+(ert-deftest donkey-the-refused-insert-commands-follow-their-list ()
+  "A command added to the list is refused; one removed gets its key back.
+
+The list is the only thing that decides, so a mode nobody has met yet
+is a line of configuration rather than a patch."
+  (let ((was donkey-self-insert-commands))
+    (unwind-protect
+        (progn
+          (customize-set-variable 'donkey-self-insert-commands
+                                  (cons 'ignore-preserving-kill-region was))
+          (should (eq (lookup-key donkey-normal-mode-map
+                                  (vector 'remap 'ignore-preserving-kill-region))
+                      'undefined))
+          (customize-set-variable 'donkey-self-insert-commands was)
+          (should-not (lookup-key donkey-normal-mode-map
+                                  (vector 'remap 'ignore-preserving-kill-region)))
+          ;; and the ones it still asks for are still there
+          (should (eq (lookup-key donkey-normal-mode-map
+                                  (vector 'remap 'org-force-self-insert))
+                      'undefined)))
+      (customize-set-variable 'donkey-self-insert-commands was))))
+
+(ert-deftest donkey-the-refused-insert-commands-are-not-trusted ()
+  "Anything in the list that is not a symbol is skipped rather than trusted.
+
+Skipped, and not merely survived: a remap is a key sequence, and
+`define-key' takes a string in one without complaining, so the junk
+would go quietly into the keymap and stay there."
+  (let ((was donkey-self-insert-commands))
+    (unwind-protect
+        (progn
+          (customize-set-variable 'donkey-self-insert-commands
+                                  (list 'org-force-self-insert "not a symbol" 42))
+          (should (eq (lookup-key donkey-normal-mode-map
+                                  (vector 'remap 'org-force-self-insert))
+                      'undefined))
+          (should-not (lookup-key donkey-normal-mode-map
+                                  (vector 'remap "not a symbol")))
+          (should-not (lookup-key donkey-normal-mode-map (vector 'remap 42))))
+      (customize-set-variable 'donkey-self-insert-commands was))))
+
+(ert-deftest donkey-a-blocked-key-says-so-unless-it-is-a-delete-key ()
+  "The keys Normal state blocks answer; the delete keys stay silent.
+
+Both are blocked, and blocked the same way -- an explicit binding of
+either kind keeps a major mode's own binding out of reach, and only an
+UNBOUND key falls through.  What differs is what the reader is told.
+A punctuation key pressed in Normal state is a question, and this map
+answers every other one with \"X is undefined\"; a delete key is
+pressed from habit, and a beep on every stray press is noise nobody
+can act on.
+
+`/' is a wrap key rather than a blocked one, `donkey-mark-pair-delimiters'
+having a pair for it, and is pressed here all the same: with no
+selection in a buffer that can be edited it answers exactly as a
+blocked key does, which is what keeps `sgml-slash' out of reach.
+
+`ding' is stubbed: the bell it now rings would end the macro in a live
+frame."
+  (dolist (key '("," "-" ";"))
+    (should (eq (keymap-lookup donkey-normal-mode-map key) #'undefined)))
+  (dolist (key '("<backspace>" "<delete>" "DEL" "<deletechar>"))
+    (should (eq (keymap-lookup donkey-normal-mode-map key) #'ignore)))
+  (should (eq (keymap-lookup donkey-normal-mode-map "/") #'donkey-wrap-region))
+  ;; and none of the three lets the major mode's own binding through:
+  ;; `/' is `sgml-slash' in `html-mode', which types.
+  (cl-letf (((symbol-function 'ding) #'ignore))
+    (donkey-test-keys--harness "*donkey-blocked*" #'html-mode () "row" "/"
+      (should (equal (buffer-string) "row"))
+      (should (equal donkey-test-keys--said "/ is undefined")))
+    (donkey-test-keys--harness "*donkey-blocked*" #'text-mode () "row" "DEL"
+      (should (equal (buffer-string) "row"))
+      (should-not donkey-test-keys--said))))
 
 ;;; donkey-describe-bindings-test.el ends here

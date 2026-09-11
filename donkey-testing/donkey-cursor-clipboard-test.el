@@ -900,6 +900,59 @@ frame (`emacsclient -t') can have different clipboard capabilities."
     (when (get-buffer "*DONKEY Platform Debug*")
       (kill-buffer "*DONKEY Platform Debug*"))))
 
+(ert-deftest donkey-debug-platform-says-what-donkey-is-doing ()
+  "The report opens with DONKEY itself, not with the machine.
+
+A report for a bug about DONKEY that says nothing about DONKEY costs a
+round trip: which version, which state was on, which engine, and what
+the bindings look like are the first questions anybody asks."
+  (when (get-buffer "*DONKEY Platform Debug*")
+    (kill-buffer "*DONKEY Platform Debug*"))
+  (unwind-protect
+      (progn
+        (donkey-debug-platform)
+        (with-current-buffer "*DONKEY Platform Debug*"
+          (let ((text (buffer-string)))
+            (should (string-match-p "^--- DONKEY ---$" text))
+            (dolist (label '("Version:" "donkey-mode:" "State here:" "Buffer:"
+                            "Wrap engine:" "Wrap keys:" "Pair table:" "Bindings:"))
+              (should (equal (list label (and (string-match-p
+                                               (regexp-quote label) text)
+                                              t))
+                             (list label t))))
+            ;; and DONKEY comes before the machine
+            (should (< (string-match "--- DONKEY ---" text)
+                       (string-match "--- System Information ---" text))))))
+    (when (get-buffer "*DONKEY Platform Debug*")
+      (kill-buffer "*DONKEY Platform Debug*"))))
+
+(ert-deftest donkey-debug-platform-answers-for-the-buffer-you-ran-it-from ()
+  "The buffer-specific half is about YOUR buffer, not the report buffer.
+
+`with-output-to-temp-buffer' rebinds `standard-output' and leaves the
+current buffer alone, but a reader of this code should not have to
+know that -- the facts are gathered before the report buffer exists.
+Asserted from a buffer whose name and mode could not be mistaken for
+the report's own."
+  (let ((buffer (get-buffer-create "*donkey-debug-source*")))
+    (when (get-buffer "*DONKEY Platform Debug*")
+      (kill-buffer "*DONKEY Platform Debug*"))
+    (unwind-protect
+        (progn
+          (switch-to-buffer buffer)
+          (text-mode)
+          (donkey-mode 1)
+          (donkey-normal-mode 1)
+          (donkey-debug-platform)
+          (with-current-buffer "*DONKEY Platform Debug*"
+            (should (string-match-p "Buffer: *\\*donkey-debug-source\\* (text-mode)"
+                                    (buffer-string)))
+            (should (string-match-p "State here: *Normal" (buffer-string)))))
+      (donkey-mode -1)
+      (when (get-buffer "*DONKEY Platform Debug*")
+        (kill-buffer "*DONKEY Platform Debug*"))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (ert-deftest donkey-debug-platform-buffer-is-read-only-special-mode ()
   "The debug buffer is read-only and uses `special-mode' with a 'q' binding."
   (when (get-buffer "*DONKEY Platform Debug*")
