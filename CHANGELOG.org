@@ -9,6 +9,104 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.10.0 — 2026-09-11
+
+Select something in Normal state and press a delimiter: it wraps.
+Press it again with the same text selected and it comes off. DONKEY
+inserts the pair itself, so the same keys do the same thing in every
+buffer whatever else is installed — and it found an old leak on the
+way, in which a key a major mode bound to its own insert command
+typed in Normal state.
+
+*Added*
+
+- Wrapping a selection. The delimiters are the pairs
+  =donkey-mark-pair-delimiters= already knew, so what =m i= can
+  select, a key can wrap: =(=, =[=, ={=, =<=, ="=, ='=, =`=, the
+  curved quotes, =«=, =‹=, ===, =*=, =~=, =|=, =\=, =/=, =+=, =_=
+  and =$=, either half of a pair doing the same thing. Nothing
+  between the two characters is touched — no escaping, in any mode —
+  and a press whose pair already stands around the selection takes
+  it off.
+- =donkey-wrap-delimiters=, =all= by default, which means every pair
+  the table knows. A pair added to the table is a wrap key too, with
+  no second variable to keep in step. Name characters instead and
+  only those wrap.
+- =donkey-wrap-region-engine= hands the press to Smartparens or
+  =electric-pair-mode= instead, and =M-x donkey-toggle-wrap-engine=
+  switches between the two, saying which is in force and whether
+  anything is pairing in this buffer.
+- =SPC i &= wraps as well as inserts: with a selection live it asks
+  for an rfc1345 digraph and wraps in the character it names. The
+  digraph chart lists the guillemets now, =&<<= and =&>>=.
+- =donkey-self-insert-commands=, the commands Normal state refuses
+  because they type, with =M-x donkey-refresh-suppressed-commands=.
+- DONKEY says what has taken its keys: once at first idle, and from
+  =M-x donkey-check-bindings= whenever you like — a key of its own
+  that something else runs now, a delimiter that cannot wrap, and,
+  asked by hand, the keys another map answers in this buffer.
+  =donkey-report-binding-changes= turns the automatic pass off.
+- =M-x donkey-debug-platform= opens with a DONKEY section: the
+  version, which state is on, the engine, the delimiter counts and
+  the same findings.
+
+*Changed — you will notice these*
+
+- Most punctuation is a wrap key now. With no selection those keys do
+  nothing in a buffer you can edit, and in a buffer you cannot the
+  press goes back to the major mode — so Dired keeps =+=, =(= and
+  =<=, Info keeps =[= and =]=, a help buffer keeps =<=.
+- =:= and =>= are the two exceptions: they run DONKEY commands of
+  their own and go on running them. Asked by hand, DONKEY says so and
+  names the half that does wrap.
+- =,= =-= =;= answered nothing at all, silently, where every other
+  key in the map says "X is undefined". They answer now. The delete
+  keys stay silent on purpose.
+- The delimiter typed after =m i= or =m a= acts at once. It used to
+  be swallowed, with a message saying to press it again.
+- While a pairing package wraps, =all= means the six characters such
+  a package pairs rather than every pair in the table, because a
+  package handed one it does not pair inserts a single character and
+  no pair at all.
+
+*Fixed — you will notice these*
+
+- =|= A key a major mode binds DIRECTLY to a command that types —
+  =org-force-self-insert= on =|=, cc-mode's electrics on =#=, =*= and
+  =/=, AUCTeX's on =$=, =\= and =^= — typed in Normal state.
+  Suppression works by remapping =self-insert-command=, which such a
+  command never reaches. They are refused by name now.
+- =#= A pair added to =donkey-mark-pair-delimiters= in an init file
+  never got its key: the keys were claimed when the file loaded and
+  an init file adds its pairs afterwards. They are claimed once more
+  at the first idle moment, so one line of configuration is the whole
+  of it.
+- =D= A key your buffer REMAPS was reported as a key you had lost.
+  Org remaps =kill-line= to =org-kill-line=, so DONKEY's =D= runs
+  org's version — nothing was taken, and the line says so.
+
+*Under the hood*
+
+- The pair table is read as a defcustom rather than trusted: a
+  mistyped entry is skipped instead of signalling from a timer, from
+  =setopt=, or at the moment of a press.
+- A wrap key let go of gets back what it held rather than being
+  unbound, an unbound key being the one kind that falls through to
+  the major mode.
+- The README says what each pairing engine does to a selection that
+  already sits inside that delimiter, measured in two modes with
+  =electric-pair-mode= and with Smartparens.
+- 1,380 tests, from 1,319, driven through the command loop in four
+  frame shapes.
+
+*Upgrading*
+
+Nothing to do. Keys that used to do nothing in Normal state now wrap
+when something is selected, and answer with "X is undefined" when
+nothing is. A key you had bound yourself is never taken: the claim
+takes only keys that run nothing, and =M-x donkey-check-bindings=
+names anything it left alone.
+
 * 1.9.2 — 2026-09-09
 
 =C-\= says what it did.  Emacs switches an input method without a
