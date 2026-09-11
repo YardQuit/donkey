@@ -1763,11 +1763,14 @@ clipboard could carry, so it round-trips inside Emacs only.
 
 ** Detection
 
-DONKEY checks for clipboard tool availability fresh each time it's
-needed (not cached), since the answer can differ per frame — a single
-=emacs --daemon= process can have both a GUI frame (=emacsclient -c=)
-and a terminal frame (=emacsclient -t=) at once, each with different
-capabilities. Detection covers:
+DONKEY asks which frame it is in every time the answer is needed, since
+that differs per frame — a single =emacs --daemon= process can have
+both a GUI frame (=emacsclient -c=) and a terminal frame
+(=emacsclient -t=) at once, each with different capabilities. The walk
+of =PATH= for the command-line tools is done once and kept for the
+session, because that answer does not change per frame: install
+=wl-clipboard= while Emacs is running and DONKEY notices it the next
+time you start. Detection covers:
 - =wl-copy= / =wl-paste= (Wayland)
 - =xclip= / =xsel= (X11)
 - =pbcopy= / =pbpaste= (macOS)

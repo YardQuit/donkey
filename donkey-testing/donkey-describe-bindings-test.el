@@ -614,6 +614,43 @@ buffer would fail on a repetition that is the point."
 ;;; donkey-tutor
 ;;; ---------------------------------------------------------------------------
 
+(ert-deftest donkey-every-declare-function-names-the-right-library ()
+  "Each `declare-function' names the library that really defines it.
+
+The file argument is what `check-declare' verifies against; name the
+wrong one and the declaration it exists to check can never be checked.
+Two named `org' for functions that live in `org-element' and
+`org-src', and `check-declare-file' had been reporting both as \"not
+found\" for as long as they had been there.
+
+A library that will not load is skipped rather than failed: markdown
+is an optional dependency and `font-info' is a C primitive, and
+neither says anything about this package."
+  (let ((source (expand-file-name "donkey.el" donkey-test--source-dir))
+        wrong)
+    (with-temp-buffer
+      (insert-file-contents source)
+      (goto-char (point-min))
+      (while (re-search-forward
+              "(declare-function \\([^ ]+\\) \"\\([^\"]+\\)\"" nil t)
+        (let ((fn (intern (match-string 1)))
+              (lib (match-string 2)))
+          (when (and (not (string-suffix-p ".c" lib))
+                     (ignore-errors (require (intern lib) nil t)))
+            ;; The library loaded, so it must be the one that defines
+            ;; the function.  `symbol-file' answers with the file the
+            ;; definition really came from.
+            (let ((file (and (fboundp fn) (symbol-file fn 'defun))))
+              (cond ((not (fboundp fn))
+                     (push (format "%s says %s, which defines no such function"
+                                   fn lib)
+                           wrong))
+                    ((and file (not (equal (file-name-base file) lib)))
+                     (push (format "%s says %s, lives in %s"
+                                   fn lib (file-name-base file))
+                           wrong))))))))
+    (should (equal wrong nil))))
+
 (ert-deftest donkey-tutor-opens-in-normal-state ()
   "The tutor buffer must be in NORMAL state to be usable.
 

@@ -66,8 +66,8 @@
 (require 'seq)       ; seq-find
 (eval-and-compile
   (declare-function org-open-at-point "org")     ;(donkey-enter-dwim)
-  (declare-function org-element-at-point "org")  ;(donkey-enter-dwim)
-  (declare-function org-edit-src-exit "org")     ;(donkey-comment-dwim)
+  (declare-function org-element-at-point "org-element") ;(donkey-enter-dwim)
+  (declare-function org-edit-src-exit "org-src")        ;(donkey-comment-dwim)
   (declare-function org-edit-special "org")      ;(donkey-comment-dwim)
   (declare-function markdown-link-p "markdown-mode")              ;(donkey--markdown-enter-handler)
   (declare-function markdown-wiki-link-p "markdown-mode")         ;(donkey--markdown-enter-handler)
