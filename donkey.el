@@ -7944,6 +7944,53 @@ is caught and reported."
        (message "DONKEY: could not stop the keyboard macro: %s"
                 (error-message-string err))))))
 
+(defun donkey--quit-the-sequence ()
+  "Abandon a key sequence DONKEY owns the front of.
+
+Signals `quit', and nothing else.  What is being abandoned is the
+SEQUENCE -- a prefix pressed and thought better of -- not what NORMAL
+state is holding: a selection, a rectangle, an armed mark run and the
+banked lines are all things the next key acts on, and a mis-typed
+prefix is no reason to drop them.  One press of the quit key with
+nothing in progress is what lets go of a selection, and that is
+`keyboard-quit', reached the ordinary way.
+
+Reached only through `donkey--intercept-quit-after-prefix', which
+names it as the command to run."
+  (interactive)
+  (signal 'quit nil))
+
+(defun donkey--intercept-quit-after-prefix ()
+  "Make the quit key mean quit after a key sequence DONKEY owns.
+
+On `pre-command-hook'.  DONKEY owns several prefixes -- the SPC
+leader, `m', `g', `r', `z', the mark run's own map, and whatever a
+reader adds -- and the quit key pressed after one of them is the
+SECOND key of a sequence rather than a quit.  It resolves to nothing,
+and `undefined' answers it by naming the sequence and ringing the
+bell -- the echo area says the sequence is undefined.  A bell is an
+error inside a keyboard macro, so a macro carrying the sequence stops
+there.
+
+`donkey--quit-the-sequence' runs in its place, which abandons the
+sequence and leaves everything else alone.
+
+Caught here rather than bound in each prefix map, so a prefix a reader
+adds is covered without DONKEY knowing about it, and no keymap that
+might be shared is written to.
+
+Only a sequence LONGER than one key is taken: a bare press of the quit
+key is the real `keyboard-quit' and is left alone, as are the
+minibuffer and an excluded mode."
+  (when (and (bound-and-true-p donkey-normal-mode)
+             (memq this-command '(nil undefined))
+             (not (minibufferp))
+             (not (donkey--excluded-mode-p)))
+    (let ((keys (this-single-command-keys)))
+      (when (and (> (length keys) 1)
+                 (eq (aref keys (1- (length keys))) ?\C-g))
+        (setq this-command 'donkey--quit-the-sequence)))))
+
 (defun donkey--intercept-quit-in-insert ()
   "Intercept the quit key in insert mode by raw key event or `sp-cancel' command.
 
@@ -8378,12 +8425,14 @@ so one buffer's erroring hook cannot strand the rest."
 
 (defconst donkey--state-hooks
   '((pre-command-hook . donkey--intercept-quit-in-insert)
+    (pre-command-hook . donkey--intercept-quit-after-prefix)
     (input-method-activate-hook . donkey--on-input-method-activate)
     (input-method-deactivate-hook . donkey--on-input-method-deactivate))
   "The (HOOK . FUNCTION) entries the STATE modes need, `donkey-mode' or not.
 
-A subset of `donkey--global-hooks': the `C-g' backup for packages
-that shadow the key, and the input-method fences around Normal state.
+A subset of `donkey--global-hooks': the two quit-key backups -- for
+packages that shadow the key, and for the key pressed after one of
+DONKEY's own prefixes -- and the input-method fences.
 `donkey--install-state-hooks' adds them when a state is turned on
 without `donkey-mode'.")
 

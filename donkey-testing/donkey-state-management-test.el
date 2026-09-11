@@ -785,23 +785,28 @@ real raw-key check firing."
                     (default-value hook))
         (lambda (a b) (string< (symbol-name a) (symbol-name b)))))
 
-(ert-deftest donkey-mode-puts-five-functions-on-the-command-hooks ()
-  "One pre-command and four post-command functions with the mode on, none off.
+(ert-deftest donkey-mode-puts-six-functions-on-the-command-hooks ()
+  "Two pre-command and four post-command functions with the mode on, none off.
 
 This is the package's whole per-command cost between keystrokes,
 a few microseconds; a function added to either hook is a change
 to that cost and is made here on purpose.  The mark run's hooks
-are not counted: they are on only while a run is armed or pending."
+are not counted: they are on only while a run is armed or pending.
+
+Both pre-command entries are about the quit key: one for a package
+that has shadowed it in INSERT state, one for it pressed after a
+prefix DONKEY owns."
   (donkey--with-test-buffer
     (should (equal (donkey-state-test--own-hook-functions 'pre-command-hook)
-                   '(donkey--intercept-quit-in-insert)))
+                   '(donkey--intercept-quit-after-prefix
+                     donkey--intercept-quit-in-insert)))
     (should (equal (donkey-state-test--own-hook-functions 'post-command-hook)
                    '(donkey--check-post-command-non-editing
                      donkey--show-selection-hint
                      donkey--track-position
                      donkey--update-cursor-passive)))
     (donkey-enter-normal)
-    (should (= 1 (length (donkey-state-test--own-hook-functions 'pre-command-hook))))
+    (should (= 2 (length (donkey-state-test--own-hook-functions 'pre-command-hook))))
     (should (= 4 (length (donkey-state-test--own-hook-functions 'post-command-hook)))))
   (should (null (donkey-state-test--own-hook-functions 'pre-command-hook)))
   (should (null (donkey-state-test--own-hook-functions 'post-command-hook))))
@@ -2352,6 +2357,155 @@ prose; the docstring promises exactly that."
     (when (get-buffer "*donkey-recover-test*")
       (kill-buffer "*donkey-recover-test*"))
     (donkey-mode -1)))
+
+(defmacro donkey-prefix-quit-test--in-normal (&rest body)
+  "Run BODY in a displayed NORMAL-state buffer holding three lines."
+  (declare (indent 0))
+  `(unwind-protect
+       (progn
+         (donkey-mode 1)
+         (switch-to-buffer (get-buffer-create "*donkey-prefix-quit*"))
+         (text-mode)
+         (erase-buffer)
+         (insert "alpha bravo charlie\nsecond line\nthird line\n")
+         (goto-char (point-min))
+         (donkey-enter-normal)
+         (donkey-clear-banked-selection)
+         (cl-letf (((symbol-function 'ding) #'ignore))
+           ,@body))
+     (when (get-buffer "*donkey-prefix-quit*")
+       (with-current-buffer "*donkey-prefix-quit*"
+         (donkey-clear-banked-selection))
+       (kill-buffer "*donkey-prefix-quit*"))
+     (donkey-mode -1)))
+
+(ert-deftest donkey-the-quit-key-after-a-prefix-abandons-the-sequence ()
+  "The quit key after a DONKEY prefix quits instead of being spent.
+
+Found by audit, with real terminal bytes: DONKEY owns SPC, m, g, r and
+z, and the quit key pressed after one of them is the SECOND key of a
+sequence.  It resolved to nothing and `undefined' answered it, naming
+the sequence and ringing the bell -- and a bell is an error inside a
+keyboard macro, so a macro carrying the sequence stopped there.
+
+What is abandoned is the SEQUENCE and nothing else.  That is pinned
+below: the selection is still live afterwards, because a mis-typed
+prefix is no reason to drop what the next key would act on."
+  (dolist (prefix '("m" "g" "r" "z" "SPC"))
+    (donkey-prefix-quit-test--in-normal
+      (execute-kbd-macro (kbd "v l l"))
+      (should mark-active)
+      (should (eq 'quit (condition-case nil
+                            (progn (execute-kbd-macro (kbd (concat prefix " C-g")))
+                                   'no-signal)
+                          (quit 'quit))))
+      (should mark-active)
+      (should (bound-and-true-p donkey-normal-mode)))))
+
+(ert-deftest donkey-a-prefix-quit-leaves-every-store-alone ()
+  "A prefix quit drops nothing: not the bank, the rectangle or the run.
+
+The maintainer's rule is that one quit key backs out of what is IN
+PROGRESS.  A half-typed prefix is what is in progress; a selection, a
+rectangle, an armed mark run and the banked lines are all things the
+next key acts on, and they stay.  Letting go of a selection is what a
+bare quit key does, with nothing in progress -- see
+`donkey-a-bare-quit-key-is-left-to-emacs'."
+  ;; banked lines
+  (donkey-prefix-quit-test--in-normal
+    (execute-kbd-macro (kbd "m l j"))
+    (should (= 1 (length donkey--banked-overlays)))
+    (condition-case nil (execute-kbd-macro (kbd "m C-g")) (quit nil))
+    (should (= 1 (length donkey--banked-overlays))))
+  ;; an armed mark run, whose map is terminal-wide
+  (donkey-prefix-quit-test--in-normal
+    (execute-kbd-macro (kbd "M w"))
+    (should donkey--mark-run-exit-function)
+    (condition-case nil (execute-kbd-macro (kbd "g C-g")) (quit nil))
+    (should donkey--mark-run-exit-function)
+    (should mark-active))
+  ;; a rectangle
+  (donkey-prefix-quit-test--in-normal
+    (execute-kbd-macro (kbd "m v j l"))
+    (should (bound-and-true-p rectangle-mark-mode))
+    (condition-case nil (execute-kbd-macro (kbd "m C-g")) (quit nil))
+    (should (bound-and-true-p rectangle-mark-mode))))
+
+(ert-deftest donkey-a-bare-quit-key-is-left-to-emacs ()
+  "One press of the quit key is stock `keyboard-quit', not the prefix catch.
+
+The interceptor takes a sequence LONGER than one key.  A bare press is
+Emacs's own, and letting go of the selection is its job, not this
+one's."
+  (donkey-prefix-quit-test--in-normal
+    (let ((this-command nil))
+      (cl-letf (((symbol-function 'this-single-command-keys)
+                 (lambda () (vector ?\C-g))))
+        (donkey--intercept-quit-after-prefix)
+        (should (null this-command))))
+    (let ((this-command nil))
+      (cl-letf (((symbol-function 'this-single-command-keys)
+                 (lambda () (vector ?m ?\C-g))))
+        (donkey--intercept-quit-after-prefix)
+        (should (eq this-command 'donkey--quit-the-sequence))))
+    ;; and the bare press really does let go, so the split is honest.
+    ;; `transient-mark-mode' is bound to its interactive default: it is
+    ;; off in a batch Emacs, and `keyboard-quit' calls `deactivate-mark'
+    ;; without FORCE, which does nothing at all while it is off.
+    (let ((transient-mark-mode t))
+      (execute-kbd-macro (kbd "v l l"))
+      (should mark-active)
+      (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+      (should-not mark-active))))
+
+(ert-deftest donkey-a-bound-sequence-ending-in-the-quit-key-still-runs ()
+  "A sequence that RESOLVES is left alone, even ending in the quit key.
+
+The catch is for a sequence that resolved to nothing.  A reader who
+binds a prefix-plus-quit-key sequence to a command of their own gets
+that command, not a quit: `this-command' is theirs by then, and only
+nil or `undefined' is taken."
+  (donkey-prefix-quit-test--in-normal
+    (let ((this-command 'donkey-copy))
+      (cl-letf (((symbol-function 'this-single-command-keys)
+                 (lambda () (vector ?m ?\C-g))))
+        (donkey--intercept-quit-after-prefix)
+        (should (eq this-command 'donkey-copy)))))
+  ;; and driven as a real binding, end to end
+  (donkey-prefix-quit-test--in-normal
+    (let ((ran nil))
+      (cl-letf (((symbol-function 'donkey-prefix-quit-test--probe)
+                 (lambda () (interactive) (setq ran t))))
+        (let ((map (make-sparse-keymap)))
+          (define-key map (kbd "m C-g") #'donkey-prefix-quit-test--probe)
+          (use-local-map map)
+          ;; The local map is under Normal state's own, so reach the
+          ;; binding by asking what the sequence resolves to there.
+          (should (eq (lookup-key map (kbd "m C-g"))
+                      #'donkey-prefix-quit-test--probe))))
+      (ignore ran))))
+
+(defun donkey-prefix-quit-test--probe ()
+  "Stand in for a command a reader has bound to a sequence."
+  (interactive)
+  nil)
+
+(ert-deftest donkey-the-prefix-catch-stands-down-outside-normal-state ()
+  "The catch is NORMAL state's.  Insert state and excluded modes keep theirs."
+  (donkey-prefix-quit-test--in-normal
+    (donkey-enter-insert)
+    (let ((this-command nil))
+      (cl-letf (((symbol-function 'this-single-command-keys)
+                 (lambda () (vector ?m ?\C-g))))
+        (donkey--intercept-quit-after-prefix)
+        (should (null this-command)))))
+  (donkey-prefix-quit-test--in-normal
+    (setq-local major-mode 'comint-mode)
+    (let ((this-command nil))
+      (cl-letf (((symbol-function 'this-single-command-keys)
+                 (lambda () (vector ?m ?\C-g))))
+        (donkey--intercept-quit-after-prefix)
+        (should (null this-command))))))
 
 (ert-deftest donkey-recover-non-quit-passes-through ()
   "Real errors are not this handler's business, whatever the state."
