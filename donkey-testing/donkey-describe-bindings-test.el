@@ -1038,6 +1038,34 @@ the same command with DONKEY on as off."
     (cl-letf (((symbol-function 'read-key) (lambda (&rest _) (pop left))))
       (donkey--digraph-read))))
 
+(ert-deftest donkey-C-g-cancels-the-digraph-prompt ()
+  "\\`C-g' at the digraph prompt quits instead of being spent as a key.
+
+Found by audit, driven as a real key through a terminal frame: the
+key arrives as an ordinary character, so it was spent as a stray one
+-- and a stray key ends a complete mnemonic by accepting it.  \\=`!*\\='
+is complete and \\=`!*2\\=' is longer, so \"SPC i & ! *\" then a quit
+typed a backtick rather than cancelling; with nothing complete it
+reported \"No digraph\" instead.  The method these keys are read like
+hands the key on, which is how it cancels there.
+
+Pinned at both levels: the reader signals, and the command leaves the
+buffer alone."
+  (dolist (keys (list (string ?! ?* ?\C-g)     ; complete, and a longer one exists
+                      (string ?e ?\C-g)        ; a prefix of longer ones, complete of none
+                      (string ?\C-g)))         ; nothing typed yet
+    (should (eq 'quit (condition-case nil
+                          (donkey--digraph-read-test--with keys)
+                        (quit 'quit)))))
+  (with-temp-buffer
+    (insert "ab")
+    (let ((left (append (string ?! ?* ?\C-g) nil)))
+      (cl-letf (((symbol-function 'read-key) (lambda (&rest _) (pop left))))
+        (should (eq 'quit (condition-case nil
+                              (progn (donkey-insert-digraph 1) 'inserted)
+                            (quit 'quit))))))
+    (should (equal (buffer-string) "ab"))))
+
 (ert-deftest donkey-insert-digraph-asks-nothing-in-a-read-only-buffer ()
   "In a read-only buffer the command refuses before asking for keys."
   (with-temp-buffer

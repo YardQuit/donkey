@@ -5315,7 +5315,13 @@ Read the way the input method reads after its ampersand: another
 key is asked for while the keys so far start a longer mnemonic, and
 reading ends when they make one that no longer one starts with.
 RET accepts a shorter one that is complete, and so does any key
-that continues none; RESULT is nil when the keys make no mnemonic."
+that continues none; RESULT is nil when the keys make no mnemonic.
+
+\\`C-g' cancels, signaling `quit' rather than returning: it is not a
+mnemonic key, and the method this reads like hands it on to be the
+command it is.  Without that it would be spent as a stray key, which
+for a complete mnemonic means accepting it -- so the key that cancels
+everywhere else would have typed a character."
   (let ((keys "") result)
     (catch 'done
       (while t
@@ -5325,6 +5331,8 @@ that continues none; RESULT is nil when the keys make no mnemonic."
                                 (format "Digraph: %s" keys))))
                (next (and (characterp key) (concat keys (string key)))))
           (cond
+           ((eq key ?\C-g)
+            (signal 'quit nil))
            ((memq key '(return ?\r ?\n))
             (setq result complete)
             (throw 'done nil))
@@ -5350,11 +5358,11 @@ Asks for the digraph's keys, typed without the ampersand, and
 inserts what `donkey-digraph' lists for them: e\\=' gives é, and
 !!> gives an arrow, read the way the method reads them: key by key
 until they make a digraph no longer one starts with, RET accepting
-a shorter one that is complete.  No input method is turned on and
-the state does not change, so one character can be typed from
-NORMAL state as well.  Keys the method does not know insert nothing
-and are named.  A COUNT below one inserts once.  On SPC i & in
-NORMAL state.
+a shorter one that is complete and \\`C-g' cancelling.  No input
+method is turned on and the state does not change, so one character
+can be typed from NORMAL state as well.  Keys the method does not
+know insert nothing and are named.  A COUNT below one inserts once.
+On SPC i & in NORMAL state.
 
 With an active selection the character wraps it instead, closing with
 whatever `donkey-mark-pair-delimiters' pairs it with: &<< wraps in the

@@ -2391,7 +2391,7 @@ digraph's keys and inserts it, with no input method turned on:
 after its ampersand, so a three-key mnemonic such as =!!>= works, and
 =RET= accepts a shorter one that is also the start of a longer one,
 as =12= is. A count repeats it, and keys the method does not know
-insert nothing.
+insert nothing. =C-g= cancels, as it does at any other prompt.
 
 With a selection live the character wraps it instead of being
 inserted, closing with whatever =donkey-mark-pair-delimiters= pairs it
