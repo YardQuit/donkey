@@ -555,6 +555,105 @@ answer, which must not read as though every key were available."
                         (string-match-p "shell-mode derives from comint-mode" l))
                       said))))
 
+(ert-deftest donkey-p-goes-to-a-mode-that-binds-it ()
+  "A mode with a `p' of its own gets the key; NORMAL state keeps the rest.
+
+`compilation-mode' binds it to `previous-error-no-select'.  The child
+map carries only the handed-back key, so `j' and `d' are reached
+through its parent exactly as before."
+  (require 'compile)
+  (with-temp-buffer
+    (compilation-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (donkey--ensure-default-state)
+          (should (eq (key-binding "p") 'previous-error-no-select))
+          (should (eq (key-binding "j") 'next-line))
+          (should (eq (key-binding "d") 'donkey-delete)))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-p-stays-donkeys-where-the-mode-does-not-bind-it ()
+  "An ordinary editing buffer is untouched.
+
+`text-mode' and the rest of the editing modes bind no plain letters,
+which is what makes the rule safe to apply everywhere rather than only
+in a read-only buffer."
+  (with-temp-buffer
+    (text-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (donkey--ensure-default-state)
+          (should (eq (key-binding "p") 'donkey-yank))
+          (should-not (local-variable-p 'donkey--emulation-mode-map-alist)))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-a-handed-back-key-does-not-leak-to-another-buffer ()
+  "The override is buffer-local; the buffer beside it is unaffected."
+  (require 'compile)
+  (let ((a (generate-new-buffer " *hb-a*"))
+        (b (generate-new-buffer " *hb-b*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer a (compilation-mode) (donkey-mode 1)
+                               (donkey--ensure-default-state)
+                               (should (eq (key-binding "p") 'previous-error-no-select)))
+          (with-current-buffer b (text-mode) (donkey--ensure-default-state)
+                               (should (eq (key-binding "p") 'donkey-yank))))
+      (donkey-mode -1)
+      (kill-buffer a) (kill-buffer b))))
+
+(ert-deftest donkey-a-key-that-would-type-is-never-handed-back ()
+  "NORMAL state does not type, whatever the mode binds the key to.
+
+Org binds every letter to `org-self-insert-command', which is on
+`donkey-self-insert-commands'.  Rule 74 is the floor and this rule does
+not lower it."
+  (with-temp-buffer
+    (text-mode)
+    ;; a mode that binds the key to a typing command
+    (use-local-map (let ((m (make-sparse-keymap)))
+                     (define-key m "p" 'org-self-insert-command)
+                     (define-key m "w" 'ignore)
+                     m))
+    (should (memq 'org-self-insert-command
+                  (donkey--mode-list donkey-self-insert-commands)))
+    (should-not (donkey--command-the-mode-binds ?p))
+    ;; and `ignore' is one of the stubs that are never taken
+    (should-not (donkey--command-the-mode-binds ?w))))
+
+(ert-deftest donkey-describe-mode-never-takes-a-key ()
+  "`special-mode' puts `describe-mode' on a key in most of its children.
+
+It is reachable as a help key, and taking a DONKEY key for it is what
+puts help under a motion key."
+  (with-temp-buffer
+    (text-mode)
+    (use-local-map (let ((m (make-sparse-keymap)))
+                     (define-key m "p" 'describe-mode) m))
+    (should-not (donkey--command-the-mode-binds ?p))))
+
+(ert-deftest donkey-the-handed-back-keys-default-is-just-p ()
+  "One key ships, and the documentation says which.
+
+An enumerable fact stated in the README and the docstring, recounted
+here."
+  (should (equal (eval (car (get 'donkey-handed-back-keys 'standard-value)) t)
+                 '(?p))))
+
+(ert-deftest donkey-an-empty-handed-back-list-changes-nothing ()
+  "Setting the option to nil puts every key back where it was."
+  (require 'compile)
+  (with-temp-buffer
+    (compilation-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (let ((donkey-handed-back-keys nil))
+          (donkey--ensure-default-state)
+          (should (eq (key-binding "p") 'donkey-yank)))
+      (donkey-mode -1))))
+
 (ert-deftest donkey-the-help-like-modes-are-left-on ()
   "Normal state stays on where the mode binds few letters.
 

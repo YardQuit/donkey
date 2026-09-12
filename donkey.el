@@ -7721,7 +7721,7 @@ versa."
     (when (bound-and-true-p donkey-insert-mode)
       (donkey-insert-mode -1))))
 
-(defconst donkey--emulation-mode-map-alist
+(defvar donkey--emulation-mode-map-alist
   (list (cons 'donkey-normal-mode donkey-normal-mode-map))
   "Normal state\\='s keymap, in the shape `emulation-mode-map-alists' takes.
 
@@ -7747,7 +7747,104 @@ The map is active twice as a result, here and as this mode\\='s own
 keymap, and Emacs composes the prefix maps of every active map rather
 than letting the first win.  Nothing is reached differently;
 `donkey--shadowed-normal-bindings' is where that shows, and it passes
-over it.")
+over it.
+
+Set buffer-locally by `donkey--install-handed-back-keys' where a major
+mode wants one of `donkey-handed-back-keys', to a child of the same map
+with that key rebound.  A variable rather than a constant for that
+reason: what Emacs reads here is per buffer.")
+
+(defcustom donkey-handed-back-keys '(?p)
+  "Keys NORMAL state gives back to a major mode that binds one itself.
+
+A key here answers the major mode\\='s own command in a buffer whose
+mode binds it, and DONKEY\\='s everywhere else.  \\=`p\\=' is the one key
+this ships with, and the reason is that it is the one key the rest of
+Emacs agrees about: 93 of the major modes Emacs ships bind it, and 90
+of those mean the previous line, the previous page, the previous error
+or the previous item.  DONKEY answers all of them with `donkey-yank',
+which in a buffer nothing can be typed into could only ever have
+failed.
+
+Not a general escape hatch.  A key is given away only where the mode
+has a command of its own for it; where the mode has none the key stays
+DONKEY\\='s, so nothing changes in an ordinary editing buffer -- which
+is most of them, `prog-mode', `text-mode' and their derivatives binding
+no plain letters at all.
+
+Three kinds of binding are passed over rather than taken: anything on
+`donkey-self-insert-commands', because NORMAL state does not type;
+`describe-mode', which is \\=`C-h m\\=' and which `special-mode' puts on a
+key in most of its children; and the stubs a mode uses to say that its
+buffer cannot be edited.
+
+Characters rather than strings: (?p ?n), not the strings."
+  :type '(repeat character)
+  :group 'donkey)
+
+(defconst donkey--never-handed-back
+  '(describe-mode Custom-no-edit undefined ignore)
+  "Commands not worth taking a key from NORMAL state for.
+
+`describe-mode' is \\=`C-h m\\=', and `special-mode' puts it on a key in
+most of its children; the rest exist only to say that the buffer cannot
+be edited.  A list rather than a rule, and it stops where the reading
+stopped.")
+
+(defvar-local donkey--handed-back-cache nil
+  "What `donkey--install-handed-back-keys' last built here.
+
+The cons (MAJOR-MODE . KEYS) the buffer-local map was made for, so that
+the map is rebuilt when either changes rather than on every pass.")
+
+(defun donkey--command-the-mode-binds (char)
+  "Return the major mode\\='s own command for CHAR, or nil.
+
+NORMAL state\\='s maps are hidden for the question, so the answer is what
+the key would mean with DONKEY out of the way.  Nil for a command that
+would type, for the stubs in `donkey--never-handed-back', and for
+anything that is not a command."
+  (let* ((key (vector char))
+         (own (let ((emulation-mode-map-alists nil)
+                    (minor-mode-map-alist nil)
+                    (minor-mode-overriding-map-alist nil))
+                (key-binding key))))
+    (and own
+         (symbolp own)
+         (commandp own)
+         (not (memq own donkey--never-handed-back))
+         (not (eq own 'self-insert-command))
+         (not (memq own (donkey--mode-list donkey-self-insert-commands)))
+         own)))
+
+(defun donkey--install-handed-back-keys ()
+  "Give this buffer\\='s mode the keys of `donkey-handed-back-keys' it binds.
+
+Installs a buffer-local `donkey--emulation-mode-map-alist' holding a
+child of `donkey-normal-mode-map' with those keys rebound, so the rest
+of NORMAL state is reached through the parent exactly as before and
+\\=`C-h k\\=' reports what the key really runs.
+
+Does nothing where the mode binds none of them, which is most buffers:
+the local variable is killed rather than set, so an ordinary buffer
+reads the same global value it always did."
+  (let ((wanted (cons major-mode donkey-handed-back-keys)))
+    (unless (equal wanted donkey--handed-back-cache)
+      (setq donkey--handed-back-cache wanted)
+      (let (pairs)
+        (dolist (char (seq-filter #'characterp
+                                  (and (listp donkey-handed-back-keys)
+                                       donkey-handed-back-keys)))
+          (let ((own (donkey--command-the-mode-binds char)))
+            (when own (push (cons char own) pairs))))
+        (if (null pairs)
+            (kill-local-variable 'donkey--emulation-mode-map-alist)
+          (let ((map (make-sparse-keymap)))
+            (set-keymap-parent map donkey-normal-mode-map)
+            (pcase-dolist (`(,char . ,command) pairs)
+              (define-key map (vector char) command))
+            (setq-local donkey--emulation-mode-map-alist
+                        (list (cons 'donkey-normal-mode map)))))))))
 
 (defun donkey--install-emulation-map ()
   "Put `donkey--emulation-mode-map-alist' on `emulation-mode-map-alists'.
@@ -8686,12 +8783,16 @@ excluded -- Dired turned into wdired, or the option itself edited.  A
 minibuffer gets no state at all.  Returns non-nil if a state was
 enabled.
 
+`donkey--install-handed-back-keys' runs from here as well, this being
+the one address every major mode change already reaches.
+
 Every sweep that enables DONKEY in a buffer goes through this
 function: the sweep over `buffer-list' at enable time, the startup
 resweep, and `after-change-major-mode-hook'."
   (cond
    ((minibufferp) nil)
    (t
+    (donkey--install-handed-back-keys)
     (let ((is-excluded-p (donkey--excluded-mode-p)))
       (cond
        (is-excluded-p
