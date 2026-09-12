@@ -9,6 +9,108 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.11.0 — 2026-09-12
+
+NORMAL state was on in Magit, Dired, Info and the package menu, and
+its letters won: =c= was not commit, =d= was not diff, =m= did not
+mark. It steps aside in those now, the way it always did in a
+terminal. The release came out of driving real keys through 477
+packages from ELPA and MELPA and reading what happened.
+
+*Changed — you will notice these*
+
+- Six more modes ship on =donkey-excluded-modes=: =magit-mode= (every
+  magit and forge buffer), =dired-mode=, =ibuffer-mode=,
+  =git-rebase-mode=, =tabulated-list-mode= (the package menu, the
+  buffer menu, and the tabulated UIs other packages build on it) and
+  =Info-mode=. In them every key is the mode's, =C-g= means what it
+  means in stock Emacs, and the modeline says =DONKEY[E]=. Nothing was
+  ever at risk in those buffers — they are read-only, so every editing
+  key was refused — but the mode had stopped being usable for the job
+  it exists to do. The help-like read-only modes are deliberately left
+  alone: =help-mode=, =occur-mode=, =compilation-mode=, =grep-mode=,
+  =Man-mode=, =org-agenda-mode=.
+- =j= and =k= in Magit and Dired are the mode's own keys again, which
+  means =magit-delete-thing= and =dired-do-kill-lines=. Both modes
+  remap =next-line=, so while NORMAL state was on those keys moved by
+  lines. Two lines per mode take the motion back; the README says
+  which.
+- The terminals and REPLs =comint-mode= does not cover are on the list
+  too: =eat-mode=, =mistty-mode=, =slime-repl-mode=,
+  =cider-repl-mode=, =racket-repl-mode=, =haskell-interactive-mode=.
+- =C-g= in INSERT state now finishes what a package had open before it
+  leaves. With a completion list showing it was the package's own quit
+  key, and replacing that with the exit left the list on the screen
+  with its keymap live — so =j= walked the candidates in NORMAL state
+  and a further key completed a word into the buffer. One press closes
+  the list and returns you to NORMAL state.
+- NORMAL state's keys answer first whatever loaded last. A minor mode
+  defined after DONKEY used to outrank it, so =paredit= typed =; " (
+  [=, =haskell-indentation= typed =) , ; ] }=, and =slime= made =SPC=,
+  the leader, type a space.
+- =U= redoes where =undo-tree= keeps the history. It was =undo-redo=,
+  which does nothing once undo-tree owns the undo list, while =u=
+  worked — undo-tree remaps =undo= and not =undo-redo=.
+- =RET= outside =donkey-editing-modes= asks the buffer what the key
+  means at the press rather than at every entry into NORMAL state, so
+  a mode that binds it later is answered correctly.
+- Five more commands that type a character are refused in NORMAL
+  state: =py-electric-comment=, =tagedit-insert-exclamation-mark=,
+  =fortran-electric-line-number=, =electric-pascal-hash=,
+  =tcl-electric-hash=. Twenty-one in all.
+- =wdired= opens in NORMAL state. =C-x C-q= out of an excluded Dired
+  used to leave the buffer in INSERT, because that was the state Dired
+  had.
+
+*Added*
+
+- =donkey-excluded-mode-exceptions=, empty by default. Read before
+  =donkey-excluded-modes= and winning over it, so a mode can stay in
+  NORMAL state under an excluded parent. Nothing else could do that:
+  =magit-log-mode= is never on the exclusions list — =magit-mode= is,
+  and covers it — so removing it there does nothing.
+- =M-x donkey-check-bindings= names the entry that decided the state
+  in this buffer, and the ancestor where an ancestor is what matched:
+  "Normal state is off here: magit-log-mode derives from magit-mode,
+  on donkey-excluded-modes". A reader looking for their own mode on
+  the list would not have found it.
+
+*Fixed — you will notice these*
+
+- =C-g= after one of DONKEY's prefixes is a quit. =SPC= or =m= or =g=
+  and then =C-g= resolved to nothing, which Emacs answers with a bell
+  — and a bell is an error inside a keyboard macro, so a macro
+  carrying the sequence stopped there.
+- =C-g= after =C-x= is Emacs' own diagnostic again. The catch above
+  fired after any prefix in its first form.
+- A mistyped prefix keeps the selection. =M w w= then =g= and =C-g=
+  backed out two levels instead of one, dropping the mark run.
+- =C-g= cancels the digraph prompt. It arrived as an ordinary
+  character and was spent as a stray key, which ends a complete
+  mnemonic by accepting it: =SPC i & ! *= then =C-g= typed a backtick.
+- A wrap key handed back to a mode that bound a keyboard macro to it
+  is refused instead of signaling.
+- A =donkey-input-methods= that is not a list is dropped rather than
+  signaling. It signaled inside the =setq= that set it, which in an
+  init file takes the rest of the file with it.
+
+*Under the hood*
+
+- Three hooks report rather than signal, and both mark run hooks now
+  keep the promise their docstrings made. A hook function that signals
+  is dropped for the session.
+- Two =declare-function= forms name the library the function actually
+  lives in, so =check-declare-file= is clean.
+- The README is rewritten around what a reader wants rather than how
+  Emacs looks a key up, with a chapter on why those six modes ship
+  excluded, one on naming a prefix of your own, a complete
+  configuration showing every option with its default, and a note that
+  a clone runs from source unless you compile it.
+- The tutor teaches wrapping and the digraphs, and the README lists
+  all thirteen lessons.
+- Neither test harness can leave a transient map armed for whatever
+  runs next.
+
 * 1.10.0 — 2026-09-11
 
 Select something in Normal state and press a delimiter: it wraps.
