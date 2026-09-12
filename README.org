@@ -1509,46 +1509,128 @@ spacing keeps its proportion if you scale the text.
 :CUSTOM_ID: complete-config
 :END:
 
-Everything above, in one block, as a starting point to cut down:
+Every option DONKEY has, in one =use-package= block, with the shipped
+value shown for each. A line marked =; default= sets what you already
+have — it is there so you can see the option exists and what shape its
+value takes, not because you need it. Read this as a menu and delete
+what you do not want.
+
+=setopt= rather than =setq= throughout. Five of these options rebuild
+something when they change — the wrap keys, the suppressed commands,
+the =SPC i= keymap — and =setopt= runs the setter that does it, the way
+Customize would. =setq= on those needs the refresh call by hand.
 
 #+begin_src emacs-lisp
 
   (use-package donkey
+    ;; From a clone.  From a package archive instead: drop this line
+    ;; and use :ensure t.
     :load-path "~/src/donkey"
+
     :config
-    ;; more modes that are really applications (16 ship on the list)
+
+    ;;; Where DONKEY steps aside
+
+    ;; Sixteen modes ship on the list: the terminals and REPLs, where
+    ;; NORMAL state would break the program on the other end, and the
+    ;; applications whose single letters are their commands.  Add yours.
     (dolist (mode '(pdf-view-mode eww-mode elfeed-search-mode))
       (add-to-list 'donkey-excluded-modes mode))
 
-    ;; cursor
-    (setq donkey-cursor-normal 'box
-          donkey-cursor-insert '(bar . 2))
+    ;; An exception is read first and wins, which is how a child comes
+    ;; out from under a listed parent: magit-log-mode is not on the
+    ;; list, magit-mode is, so removing it there would do nothing.
+    (setopt donkey-excluded-mode-exceptions nil)                 ; default
 
-    ;; a longer jump-back ring
-    (setq donkey-position-ring-max 20)
+    ;;; The Enter key
 
-    ;; a pair of my own, claimed now rather than at first idle
+    ;; Where RET does nothing in NORMAL state.  Everywhere else it is
+    ;; handed back to the mode.
+    (setopt donkey-editing-modes
+            '(prog-mode text-mode org-mode fundamental-mode
+              conf-mode markdown-mode gfm-mode))                 ; default
+
+    ;; The three built-in Org rules: checkbox, TODO, link.
+    (setopt donkey-default-enter-rules-enabled t)                ; default
+    ;; Your own, one element type at a time:
+    ;; (donkey-add-enter-rule link nil org-open-at-point)
+
+    ;;; The cursor
+
+    (setopt donkey-cursor-normal 'box)                           ; default
+    (setopt donkey-cursor-insert '(bar . 2))                     ; default
+    (setopt donkey-decscusr-denied-terminals
+            '("dumb" "linux"))                                   ; default
+
+    ;;; Selecting and wrapping
+
+    ;; Twenty-one pairs ship.  What m i and m a select, the keys wrap,
+    ;; so a pair added here is a wrap key too.
     (setopt donkey-mark-pair-delimiters
             (cons '(?# . ?#) donkey-mark-pair-delimiters))
 
-    ;; input methods under SPC i
-    (setq donkey-input-methods
-          '(("s" "swedish" "swedish-postfix")
-            ("p" "polish"  "polish-slash")))
+    ;; Which of those pairs get a key: all of them, or name characters.
+    (setopt donkey-wrap-delimiters 'all)                         ; default
 
-    ;; keys of my own
+    ;; Who puts the pair on: DONKEY itself, or smartparens, or
+    ;; electric-pair-mode.
+    (setopt donkey-wrap-region-engine 'donkey)                   ; default
+
+    ;; How far S remembers.
+    (setopt donkey-position-ring-max 10)                         ; default
+
+    ;;; Keys a major mode types with
+
+    ;; Twenty-one commands are refused by name.  To add one you have
+    ;; met, press the key and C-h l names it:
+    ;; (setopt donkey-self-insert-commands
+    ;;         (cons 'mymode-electric-quote donkey-self-insert-commands))
+
+    ;;; Other languages
+
+    ;; Each entry is (KEY LABEL INPUT-METHOD), reached under SPC i.
+    (setopt donkey-input-methods nil)                            ; default
+    ;; '(("s" "swedish" "swedish-postfix")
+    ;;   ("p" "polish"  "polish-slash"))
+
+    ;;; The digraph chart
+
+    (setopt donkey-digraph-line-spacing 0)                       ; default
+
+    ;;; What DONKEY says for itself
+
+    ;; The one line at first idle when something has taken its keys.
+    ;; M-x donkey-check-bindings asks for the whole answer any time.
+    (setopt donkey-report-binding-changes t)                     ; default
+
+    ;;; Keys of your own
+
+    ;; A single letter, yours in every NORMAL-state buffer.
     (keymap-set donkey-normal-mode-map "F" #'delete-other-windows)
+
+    ;; Under the SPC leader, where (NAME . COMMAND) carries the name
+    ;; into ? and into which-key.
     (keymap-set donkey-leader-map "b" '("switch buffer" . switch-to-buffer))
     (keymap-set donkey-leader-map "g" '("magit"         . magit-status))
 
-    ;; and on
-    (donkey-mode 1))
+    ;;; One key back to its own mode
 
-  ;; one key back to its mode, outside the block because it is that
-  ;; mode's business rather than DONKEY's
-  (with-eval-after-load 'org-noter
-    (define-key org-noter-doc-mode-map
-                [remap donkey-insert-here] #'org-noter-insert-note))
+    ;; Remapping the DONKEY command in that mode's own map: i writes a
+    ;; note in an org-noter document buffer and is INSERT state
+    ;; everywhere else, with nothing to remember.
+    (with-eval-after-load 'org-noter
+      (define-key org-noter-doc-mode-map
+                  [remap donkey-insert-here] #'org-noter-insert-note))
+
+    ;;; Hooks
+
+    ;; (add-hook 'donkey-mode-hook        #'my-donkey-setup)
+    ;; (add-hook 'donkey-normal-mode-hook #'my-normal-state-setup)
+    ;; (add-hook 'donkey-insert-mode-hook #'my-insert-state-setup)
+
+    ;;; And on
+
+    (donkey-mode 1))
 
 #+end_src
 
@@ -1913,6 +1995,7 @@ and =M-x apropos-command donkey-= finds any of them.
 | Option                             | Default                          | What it does |
 |------------------------------------+----------------------------------+--------------|
 | =donkey-excluded-modes=            | 16 modes, see above              | where DONKEY steps aside completely |
+| =donkey-excluded-mode-exceptions=  | =nil=                            | modes that stay on under an excluded parent |
 | =donkey-editing-modes=             | 7 broad modes                    | where =RET= does nothing |
 | =donkey-position-ring-max=         | =10=                             | how far =S= remembers |
 | =donkey-cursor-normal=             | =box=                            | cursor in NORMAL state |
