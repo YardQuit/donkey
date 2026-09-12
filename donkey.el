@@ -7754,23 +7754,40 @@ mode wants one of `donkey-handed-back-keys', to a child of the same map
 with that key rebound.  A variable rather than a constant for that
 reason: what Emacs reads here is per buffer.")
 
-(defcustom donkey-handed-back-keys '(?p)
+(defcustom donkey-handed-back-keys '(?p ?u ?o ?c ?U ?P ?C ?O
+                                     ?a ?i ?A ?I)
   "Keys NORMAL state gives back to a major mode that binds one itself.
 
 A key here answers the major mode\\='s own command in a buffer whose
-mode binds it, and DONKEY\\='s everywhere else.  \\=`p\\=' is the one key
-this ships with, and the reason is that it is the one key the rest of
-Emacs agrees about: 93 of the major modes Emacs ships bind it, and 90
-of those mean the previous line, the previous page, the previous error
-or the previous item.  DONKEY answers all of them with `donkey-yank',
-which in a buffer nothing can be typed into could only ever have
-failed.
+mode binds it, and DONKEY\\='s everywhere else.
+
+The twelve that ship are the ones whose DONKEY command could not have
+worked in such a buffer anyway.
+
+Eight of them only modify: p and P paste, u undoes, U redoes, c
+changes, C comments, o and O open a line.  A buffer a program made for
+you refuses every one.
+
+Four only turn Insert state on: a, i, A and I leave a reader in a
+state that cannot type, which was a trap rather than a feature.
+
+\\=`p\\=' is the one the rest of Emacs agrees about most: 93 of the major
+modes Emacs ships bind it, and 90 of those mean the previous line, the
+previous page, the previous error or the previous item.
+
+Measured across the 310 major modes Emacs ships that can be
+instantiated, none of the twelve is bound by any of them to a command
+that destroys something.  The delete family is deliberately absent for
+that reason -- \\=`d\\=', \\=`x\\=', \\=`D\\=' are the keys where a
+mode\\='s own command removes a buffer, a process or a file with no
+second step.
 
 Not a general escape hatch.  A key is given away only where the mode
 has a command of its own for it; where the mode has none the key stays
-DONKEY\\='s, so nothing changes in an ordinary editing buffer -- which
-is most of them, `prog-mode', `text-mode' and their derivatives binding
-no plain letters at all.
+DONKEY\\='s, so nothing changes in a mode you write in.  Programming and
+prose modes are protected twice over: of the editing modes measured
+none binds a plain letter at all, and `org-mode', which binds all
+fifty-two, binds them to a command that types.
 
 Three kinds of binding are passed over rather than taken: anything on
 `donkey-self-insert-commands', because NORMAL state does not type;

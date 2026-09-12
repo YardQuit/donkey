@@ -25,7 +25,7 @@
 - [[#typing-characters-your-keyboard-lacks][Typing characters your keyboard lacks]]
 - [[#other-languages][Other languages]]
 - [[#suppressed-keys][Suppressed keys]]
-- [[#a-key-the-mode-gets-to-keep][A key the mode gets to keep]] — =p=, where the mode has one
+- [[#keys-the-mode-gets-to-keep][Keys the mode gets to keep]] — twelve, where the mode has one
 
 *Making it yours*
 
@@ -668,55 +668,90 @@ that is the point: an unbound key falls through to the major mode, and
 some major modes type with punctuation. The rest of the punctuation is
 not on this list because it wraps — see [[#wrapping-a-selection-in-a-pair][Wrapping a selection]].
 
-* A Key the Mode Gets to Keep
+* Keys the Mode Gets to Keep
 :PROPERTIES:
-:CUSTOM_ID: a-key-the-mode-gets-to-keep
+:CUSTOM_ID: keys-the-mode-gets-to-keep
 :END:
 
-=p= is DONKEY's paste — except in a buffer whose major mode has a =p=
-of its own, where it is the mode's.
+*In a mode you write in — code or prose — the letters are DONKEY's.*
+That is the promise, and nothing below bends it.
 
-| Where | =p= runs |
-|-------+----------|
-| a file you are editing | =donkey-yank=, DONKEY's paste |
-| a compilation log | =previous-error-no-select= |
-| a help buffer | =help-goto-previous-page= |
-| a man page | =Man-previous-section= |
-| a PDF in =doc-view= | =doc-view-previous-page= |
+Elsewhere, in the buffers a program made for you, twelve letters go to
+the major mode when the mode has a command of its own for them:
 
-The reason is that =p= is the one key the rest of Emacs agrees about.
-Ninety-three of the major modes Emacs ships bind it, and ninety of
-those mean the previous line, the previous page, the previous error or
-the previous item. DONKEY answered all of them with paste, which in a
-buffer you cannot type into could only ever have failed.
+#+begin_example
+
+  p  u  o  c  U  P  C  O        a  i  A  I
+
+#+end_example
+
+They are the keys whose DONKEY command could not have worked in such a
+buffer anyway. Eight of them only modify — =p= and =P= paste, =u=
+undoes, =U= redoes, =c= changes, =C= comments, =o= and =O= open a line
+— and a buffer you cannot type into refuses every one. The other four
+only turn INSERT state on: =a=, =i=, =A= and =I= used to leave you in a
+state that cannot type, which was a trap rather than a feature.
+
+What that looks like:
+
+| Where | what changes |
+|-------+--------------|
+| a file you are editing | nothing at all |
+| a compilation log | =p= is =previous-error-no-select= |
+| a help buffer | =p= previous page, =c= customize, =i= info, =I= the Lisp reference |
+| a man page | =p= previous section, =u= update the page |
+| a PDF in =doc-view= | =p= previous page, =u= unmark, =P= fit page |
 
 =C-h k= tells you which you have: the key really is the mode's command
-in that buffer, not DONKEY's command pretending.
+in that buffer, not DONKEY's pretending.
 
-Nothing else changes. =j=, =k=, =d= and the rest are DONKEY's
-everywhere, and =p= is only given away where the mode has a command for
-it — so in a file you are editing nothing is different at all, most
-modes binding no plain letters whatever.
+** Why these twelve and not others
 
-Three kinds of binding are passed over rather than taken: a command
-that would type, because NORMAL state does not type; =describe-mode=,
-which is =C-h m= and which many modes put on a key; and the stubs a
-mode uses to say its buffer cannot be edited.
+Measured across the 310 major modes Emacs ships that can be
+instantiated: none of the twelve is bound by any of them to a command
+that destroys something.
 
-** Turning it off, or widening it
+The delete family is deliberately absent for that reason. =d=, =x= and
+=D= are the keys where a mode's own command removes a buffer, a
+process or a file with no second step — =process-menu-delete-process=,
+=tab-switcher-delete=, =tar-expunge= — and DONKEY's binding is what
+stands in the way. Every motion and selection key is absent too: =h=,
+=j=, =k=, =l=, =w=, =b=, =v=, =y=, =G=, =M= and =S= are how you move,
+and they stay yours everywhere.
+
+** Why a writing mode is never touched
+
+Two separate things, either of which would be enough.
+
+The editing modes bind no plain letters. Of the ones measured —
+=prog-mode=, =text-mode=, =python-mode=, =emacs-lisp-mode=,
+=outline-mode= and their derivatives — not one binds a letter at all,
+so there is nothing for the rule to take.
+
+And where one does, it binds it to typing. =org-mode= binds all
+fifty-two letters, every one to =org-self-insert-command=, and a
+command on =donkey-self-insert-commands= is never handed a key: NORMAL
+state does not type, and this rule cannot lower that floor.
+
+** Turning it off, or changing it
 
 #+begin_src emacs-lisp
 
-  ;; p is DONKEY's paste everywhere, as before
+  ;; every letter is DONKEY's everywhere, as before
   (setopt donkey-handed-back-keys nil)
 
-  ;; or hand back more than one key
-  (setopt donkey-handed-back-keys '(?p ?u))
+  ;; or just the one the rest of Emacs agrees about most
+  (setopt donkey-handed-back-keys '(?p))
+
+  ;; or add one of your own
+  (setopt donkey-handed-back-keys
+          (cons ?S donkey-handed-back-keys))
 
 #+end_src
 
-Characters, not strings. A key you add is given away on the same terms:
-only where the mode binds it, never where the mode would type with it.
+Characters, not strings. A key you add is given away on the same
+terms: only where the mode binds it, and never where the mode would
+type with it.
 
 * Making it yours
 :PROPERTIES:
@@ -1593,10 +1628,11 @@ Customize would. =setq= on those needs the refresh call by hand.
     ;; list, magit-mode is, so removing it there would do nothing.
     (setopt donkey-excluded-mode-exceptions nil)                 ; default
 
-    ;; Keys the major mode keeps where it binds one of its own.  p is
-    ;; the previous line, page, error or item in 93 of the modes Emacs
-    ;; ships; nil gives DONKEY its paste back everywhere.
-    (setopt donkey-handed-back-keys '(?p))                       ; default
+    ;; Keys the major mode keeps where it binds one of its own -- the
+    ;; twelve whose DONKEY command could not have worked there anyway.
+    ;; nil gives every letter back to DONKEY everywhere.
+    (setopt donkey-handed-back-keys '(?p ?u ?o ?c ?U ?P ?C ?O
+                                      ?a ?i ?A ?I))              ; default
 
     ;;; The Enter key
 
@@ -2058,7 +2094,7 @@ and =M-x apropos-command donkey-= finds any of them.
 | Option                             | Default                          | What it does |
 |------------------------------------+----------------------------------+--------------|
 | =donkey-excluded-modes=            | 16 modes, see above              | where DONKEY steps aside completely |
-| =donkey-handed-back-keys=          | =(?p)=                           | keys the major mode keeps where it binds one |
+| =donkey-handed-back-keys=          | 12 keys, see above               | keys the major mode keeps where it binds one |
 | =donkey-excluded-mode-exceptions=  | =nil=                            | modes that stay on under an excluded parent |
 | =donkey-editing-modes=             | 7 broad modes                    | where =RET= does nothing |
 | =donkey-position-ring-max=         | =10=                             | how far =S= remembers |

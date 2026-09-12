@@ -634,13 +634,42 @@ puts help under a motion key."
                      (define-key m "p" 'describe-mode) m))
     (should-not (donkey--command-the-mode-binds ?p))))
 
-(ert-deftest donkey-the-handed-back-keys-default-is-just-p ()
-  "One key ships, and the documentation says which.
+(ert-deftest donkey-the-handed-back-keys-default-is-the-twelve ()
+  "Twelve keys ship, and the documentation says which.
 
 An enumerable fact stated in the README and the docstring, recounted
-here."
-  (should (equal (eval (car (get 'donkey-handed-back-keys 'standard-value)) t)
-                 '(?p))))
+here.  Eight whose DONKEY command can only modify the buffer, and four
+that only turn Insert state on -- in a buffer a program made for you,
+neither could do anything."
+  (let ((shipped (eval (car (get 'donkey-handed-back-keys 'standard-value)) t)))
+    (should (equal shipped '(?p ?u ?o ?c ?U ?P ?C ?O ?a ?i ?A ?I)))
+    (should (= (length shipped) 12))
+    ;; the delete family is deliberately absent: those are the keys a
+    ;; mode binds to something that removes a thing with no second step.
+    (dolist (char '(?d ?x ?D ?k))
+      (should-not (memq char shipped)))
+    ;; and so is every key NORMAL state needs to move and select with.
+    (dolist (char '(?h ?j ?k ?l ?w ?b ?v ?y ?G ?M ?S))
+      (should-not (memq char shipped)))))
+
+(ert-deftest donkey-no-shipped-handed-back-key-is-a-motion-key ()
+  "Every key that ships could only have modified, or only entered Insert.
+
+The test that says why these twelve and not others: in a buffer a
+program made for you, each of them either is refused outright or leaves
+a reader in a state that cannot type.  A motion or selection key would
+fail this, which is what keeps `j' and `w' out of the list."
+  (let ((shipped (eval (car (get 'donkey-handed-back-keys 'standard-value)) t))
+        (modifying '(donkey-yank donkey-yank-rectangle undo donkey-redo
+                     donkey-change donkey-comment-dwim donkey-open-below
+                     donkey-open-above))
+        (entering '(donkey-insert-after donkey-insert-here
+                    donkey-insert-end-of-line donkey-insert-beginning-of-line)))
+    (dolist (char shipped)
+      (let ((own (donkey--binding-value
+                  (lookup-key donkey-normal-mode-map (vector char)))))
+        (should own)
+        (should (memq own (append modifying entering)))))))
 
 (ert-deftest donkey-an-empty-handed-back-list-changes-nothing ()
   "Setting the option to nil puts every key back where it was."
