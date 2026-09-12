@@ -1624,9 +1624,16 @@ Customize would. =setq= on those needs the refresh call by hand.
 
     ;;; Hooks
 
-    ;; (add-hook 'donkey-mode-hook        #'my-donkey-setup)
-    ;; (add-hook 'donkey-normal-mode-hook #'my-normal-state-setup)
-    ;; (add-hook 'donkey-insert-mode-hook #'my-insert-state-setup)
+    ;; donkey-normal-mode-hook and donkey-insert-mode-hook run when
+    ;; their state is switched ON *and* when it is switched OFF, and
+    ;; one state change fires both of them -- so a function here reads
+    ;; the variable rather than assuming.  This keeps the current line
+    ;; highlighted while you are reading and drops it while you type:
+    (add-hook 'donkey-normal-mode-hook
+              (lambda () (hl-line-mode (if donkey-normal-mode 1 -1))))
+
+    ;; donkey-mode-hook runs when the global mode itself is toggled,
+    ;; for setup that needs DONKEY to be there already.
 
     ;;; And on
 
