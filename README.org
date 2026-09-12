@@ -680,6 +680,61 @@ Every letter under =SPC= is yours. DONKEY keeps only symbols there —
 =SPC i= for input methods — so nothing of yours can collide with
 something added later.
 
+*** Naming a prefix of your own
+
+A prefix with no name shows as =+prefix= in which-key, which tells a
+reader nothing. Name it the same way a leaf is named — by binding its
+keymap as =("name" . keymap)=.
+
+Either define the prefix whole and name it as you bind it:
+
+#+begin_src emacs-lisp
+
+  (defvar my-open-map
+    (define-keymap
+      "g" '("magit" . magit-status)
+      "m" '("ement" . ement-connect)))
+
+  (with-eval-after-load 'donkey
+    (keymap-set donkey-leader-map "o" (cons "open/apps" my-open-map)))
+
+#+end_src
+
+— or let =keymap-set= make the prefix for you, and put a name on it
+afterwards:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (keymap-set donkey-leader-map "t l" #'display-line-numbers-mode)
+    (keymap-set donkey-leader-map "t w" #'whitespace-mode)
+    (keymap-set donkey-leader-map "t"
+                (cons "toggle" (keymap-lookup donkey-leader-map "t"))))
+
+#+end_src
+
+Either way which-key then shows =+open/apps= and =+toggle= where it
+would otherwise show =+prefix=. Keys added under the prefix afterwards
+keep the name, and naming it a second time renames it.
+
+The name travels in the binding rather than in another package's
+table, which is why none of this needs which-key installed: DONKEY's
+own =SPC i= is named this way and shows as =+input-method=.
+
+To name a prefix you did *not* bind — one belonging to another package
+— which-key's own table is the way, and it is the only way:
+
+#+begin_src emacs-lisp
+
+  (which-key-add-key-based-replacements
+    "SPC a" "org/agenda"
+    "SPC d" "denote")
+
+#+end_src
+
+=?= lists everything under a prefix with each leaf's own name; the
+prefix's own name is shown by which-key rather than by =?=.
+
 ** Giving a key back to the buffer
 
 A key bound to =undefined= is refused. Unbind it and it falls through
