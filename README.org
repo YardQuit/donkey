@@ -1,281 +1,154 @@
-#+TITLE: README
+#+TITLE: DONKEY
+#+SUBTITLE: Modal editing that leaves Emacs alone
 #+AUTHOR: Michael A Jones (YardQuit)
 
 * Table of Contents
-
-- [[#overview][Overview]]
-- [[#installation][Installation]]
-- [[#usage][Usage]]
-- [[#default-keybindings][Default Keybindings]]
-- [[#excluded-modes][Excluded Modes]]
-- [[#customizing-keybindings][Customizing Keybindings]]
-- [[#binding-report][When a Key Is Not DONKEY's Any More]]
-- [[#mode-insert-commands][Keys a Major Mode Types With]]
-- [[#enter-key-rules-dwim][Enter Key Rules (DWIM)]]
-- [[#cursor-management][Cursor Management]]
-- [[#clipboard-integration][Clipboard Integration]]
-- [[#input-method-management][Input Method Management]]
-- [[#smartparens-integration][Smartparens Integration]]
-- [[#wrapping-a-selection][Wrapping a Selection]]
-- [[#position-tracking][Position Tracking]]
-- [[#org-scratch-buffer][Org-Scratch Buffer]]
-- [[#tutor][Tutor]]
-- [[#describe-bindings][Describe Bindings]]
-- [[#digraphs-and-unicode][Digraphs and Unicode]]
-- [[#version][Version]]
-- [[#changelog][Changelog]]
-- [[#customization-group][Customization Group]]
-- [[#troubleshooting][Troubleshooting]]
-- [[#development][Development]]
-
-* Overview
 :PROPERTIES:
-:CUSTOM_ID: overview
+:CUSTOM_ID: toc
 :END:
 
-Donkey is an opinionated modal editing minor-mode for Emacs, that
-leverages Emacs' own built-in functions wherever possible. Which state
-you are in is a minor-mode keymap that toggles on and off — there is
-no parallel model of the buffer keeping score beside it.
+*Start here*
 
-Two things live outside that keymap, and both are visible while they
-last rather than kept in the dark: banked lines are drawn as overlays,
-and mark run mode holds a transient map for as long as a run does.
-Each is named where it is used, and each goes when the thing it serves
-does.
+- [[#what-donkey-is][What DONKEY is]]
+- [[#installing][Installing]]
+- [[#first-five-minutes][Your first five minutes]]
 
-It is meant to be an *addition* to Emacs rather than a replacement.
-What it provides are improvements layered on top of what is already
-there; your existing keys, packages and habits are meant to survive
-intact. A modal editor cannot be entirely free of friction, so the few
-native behaviors it does take are named in full below rather than left
-to be discovered.
+*Everyday use*
 
-That interference is as small as a modal editor's can be, and it is
-measured rather than promised. In Insert state exactly one key
-changes: =C-g= returns to Normal state. In Normal state exactly four
-things differ: letters run commands instead of typing, digits are not
-counts (=C-u 3= is), =RET= does nothing in a buffer you are editing,
-and =BACKSPACE= and =DELETE= do nothing. No other Emacs command is
-shadowed in either state. Every =C-x= and =C-c= sequence, =M-x=,
-=C-h=, isearch, the arrow keys and every Meta binding work exactly as
-they always did — no DONKEY keymap binds a Meta key or the =ESC=
-prefix at all. A key one of your packages binds works as it always did
-too, unless Normal state binds that key as well: there it is Normal
-state's, whichever of the two loaded first, and the package's key is
-waiting for you in Insert state. A test walks every key of the
-keymaps against a plain Emacs buffer so that a fifth difference cannot
-appear unannounced. "What DONKEY takes from native Emacs" below has
-the full table.
+- [[#moving][Moving]]
+- [[#entering-insert][Entering INSERT state]]
+- [[#editing][Editing]]
+- [[#selecting][Selecting]] — objects, rectangles, banks, the mark run
+- [[#wrapping][Wrapping a selection in a pair]]
+- [[#enter-key][The Enter key]]
+- [[#search-replace][Search and replace]]
+- [[#digraphs][Typing characters your keyboard lacks]]
+- [[#input-methods][Other languages]]
+- [[#suppressed-keys][Suppressed keys]]
 
-** Design Philosophy
+*Making it yours*
 
-- An addition to Emacs, not a replacement — improvements layered on
-  top, never a reimplementation of what already works
-- As little friction with native Emacs as possible; whatever cannot be
-  kept is named in full rather than left to surprise you
-- Leverage Emacs native commands and built-in functions wherever possible
-- Custom commands only where beneficial
-- State is a minor-mode keymap, not a model of the buffer kept
-  alongside it; the two things that need more — banked overlays and
-  mark run mode's transient map — are named where they are used
-- Graceful handling of optional dependencies (smartparens, org-mode)
-- Cross-platform support (Linux/Wayland/X11, macOS, Windows)
-- Terminal mode (=emacs -nw=) support with DECSCUSR cursor sequences
+- [[#making-it-yours][Your own keys]] — one key, the leader, giving a key back
+- [[#key-not-doing][If a key is not doing what you want]]
+- [[#stepping-aside][Modes where DONKEY steps aside]]
+- [[#cursor][The cursor]]
+- [[#clipboard][The clipboard]]
+- [[#enter-rules][Configuring the Enter key]]
+- [[#own-pairs][Choosing your own pairs]]
+- [[#mode-insert-commands][Keys a major mode types with]]
+- [[#digraph-chart][The digraph chart]]
+- [[#complete-config][A complete configuration]]
 
-** What DONKEY takes from native Emacs
+*When something is not right*
 
-Concretely: your =C-x= and =C-c= prefixes, =M-x=, =C-h=, isearch, the
-arrow keys, every =M-= binding and every package you have bound work
-exactly as they always did, in both states.
+- [[#troubleshooting][Troubleshooting and diagnostics]]
 
-What follows is the complete list of what does not — better named than
-discovered.
+*Reference*
 
-*** Insert state
+- [[#reference][Every key, every command, every option]]
 
-Exactly Emacs, with one key changed: =C-g= returns to Normal state
-instead of running =keyboard-quit=. It still deactivates the mark, and
-in the minibuffer or an excluded mode it hands off to the real
-=keyboard-quit=, so the escape hatch is intact where you need it.
+* What DONKEY is
+:PROPERTIES:
+:CUSTOM_ID: what-donkey-is
+:END:
 
-It also stops a keyboard macro that is being recorded, the way
-=keyboard-quit= does. The one thing it still does not do is signal a
-=quit= condition. Everything else you reach for =C-g= for is untouched —
-interrupting a running command is handled below the keymap, isearch has
-its own, and =C-x C-g= is a different key sequence.
+DONKEY gives Emacs two states. In INSERT state Emacs is exactly the
+Emacs you know. In NORMAL state the letter keys run editing commands
+instead of typing letters — =j= moves down, =d= deletes, =y= copies.
+=C-g= takes you from INSERT to NORMAL; =i= takes you back.
 
-If smartparens is loaded, whatever key runs =sp-cancel= also returns to
-Normal state.
+It is an addition, not a replacement. Nothing is taken away to make
+room: every =C-x= and =C-c= sequence, =M-x=, =C-h=, isearch, the arrow
+keys and every Meta binding work in both states exactly as they always
+did. No DONKEY keymap binds a Meta key or the =ESC= prefix at all.
 
-*** Normal state
+If you have used Vim or Helix, the letters will feel familiar. If you
+have not, the only thing you must know is the =C-g= / =i= pair; the
+rest you can learn a key at a time, and =M-x donkey-tutor= will walk
+you through it in a buffer you can practise in.
 
-| What                    | Native Emacs                    | In DONKEY               |
-|-------------------------+---------------------------------+-------------------------|
-| Printable characters    | insert themselves               | run commands            |
-| Digits =0=–=9=          | insert themselves               | unbound; use =C-u N=    |
-| =RET=                   | =newline=                       | nothing, in an editing buffer |
-| =BACKSPACE= / =DELETE=  | delete a character              | nothing                 |
+** What changes, and what does not
 
-(=BACKSPACE= and =DELETE= are blocked under all four of the key names
-they arrive as — =<backspace>= and =<delete>= on a graphical frame,
-=DEL= and =<deletechar>= in a terminal — so the block behaves the same
-whichever way you run Emacs.)
+INSERT state changes exactly one key: =C-g= returns to NORMAL state.
 
-The first is the whole point of a modal editor rather than a cost. The
-others are worth knowing:
+NORMAL state differs in four ways, and only four:
 
-- *No bare counts.* =3 j= is not "down three lines" the way it is in
-  vi — digits are not prefix arguments here. =C-u 3 j= is, and every
-  counted command takes it.
-- *=RET= does nothing* in a buffer you are editing, on purpose:
-  inserting a newline in Normal state is rarely what was meant. In
-  =dired=, =magit=, =org-agenda= and other non-editing modes it is
-  *not* inert — it hands the key back to whatever that mode has bound,
-  so =RET= still opens the file, visits the entry, follows the link.
-  What it never does, in any mode, is type: a binding that would
-  insert a line break is refused rather than run.
-- *Backspace and Delete do nothing*, so a stray press cannot damage the
-  buffer from Normal state. Use =d= or =x=.
+1. Letters run commands instead of typing.
+2. Digits are not counts — =C-u 3= is, as in stock Emacs.
+3. =RET= does nothing in a buffer you are editing, and is handed back
+   to Dired, Magit and the like in buffers you are not.
+4. =BACKSPACE= and =DELETE= do nothing.
 
 Everything else falls through: =C-a=, =C-e=, =C-k=, =C-w=, =M-w=,
 =C-y=, =C-s=, =C-SPC=, =C-/=, =M-f=, =M-b=, =M-^=, =C-x= …, =C-c= …,
 =M-x=, =C-h= …, =TAB=, =C-u=, arrows, Home/End, PageUp/PageDown.
 
-*** In dired, magit and other special buffers
+A test walks every key of DONKEY's keymaps against a plain Emacs
+buffer, so a fifth difference cannot appear without somebody noticing,
+and another walks that list above and checks each key really does
+resolve to what it resolves to with DONKEY off.
 
-DONKEY is on there too, and its single-letter commands take precedence
-over the major mode's. A major-mode key that DONKEY does *not* bind
-still works — suppressing self-insertion is done by remapping
-=self-insert-command= rather than by claiming each letter, so anything
-the mode bound to a real command survives. In =dired=, =e=, =f=, =n=,
-=q=, =s=, =t=, =^= and =+= all still do what dired means by them; the
-other twenty letters are DONKEY's, including =M= and =%=.
+A key one of your packages binds works as it always did too, unless
+NORMAL state binds that key as well — there it is NORMAL state's, and
+the package's key is waiting for you in INSERT state. [[#key-not-doing][If a Key Is Not
+Doing What You Want]] is the chapter for that, and it has three ways out.
 
-A major mode can also refine a key DONKEY bound, rather than losing it
-or keeping it. =dired= remaps =next-line=, =previous-line= and =undo=,
-so =j=, =k= and =u= stay DONKEY's keys and do dired's version of the
-job — moving by dired lines, undoing a dired operation.
+** Where DONKEY steps aside completely
 
-Modes where suppressing keys would break the underlying process —
-=eshell=, =term=, =vterm=, =comint= — stay in Insert passthrough
-entirely. See Excluded Modes.
+Some buffers are not documents. In a terminal, a shell, or a language
+REPL the keys belong to the program on the other end, so DONKEY stays
+in INSERT passthrough there and NORMAL state cannot be reached at all.
+The modeline says =DONKEY[E]= instead of =DONKEY[I]= so you can see it
+without pressing anything. You can add your own modes to that list —
+see [[#stepping-aside][Modes Where DONKEY Steps Aside]].
 
-* Installation
+* Installing
 :PROPERTIES:
-:CUSTOM_ID: installation
+:CUSTOM_ID: installing
 :END:
 
-Donkey isn't on MELPA, so pick whichever of these fits your setup.
-All are equivalent; they just differ in how =donkey.el= gets onto
-disk and onto your =load-path=.
+DONKEY is one file with no dependencies beyond Emacs 29.1.
 
-** Manual
-
-Place =donkey.el= at =donkey/donkey.el= inside your
-=user-emacs-directory= (run =C-h v user-emacs-directory= to see
-where that is on your system — typically =~/.config/emacs/= or
-=~/.emacs.d/= on Linux and macOS, or the equivalent under =%APPDATA%=
-on Windows), then add the following to your =init.el= or =config.el=:
-
-#+begin_src emacs-lisp
-
-  (let ((donkey-path (expand-file-name "donkey/donkey.el"
-                                     user-emacs-directory)))
-    (if (file-exists-p donkey-path)
-        (load donkey-path nil t)
-      (message "WARNING: Donkey modal module not found at %s." donkey-path)))
-
-  (donkey-mode 1)
-
-#+end_src
-
-Loaded this way the file is interpreted, which costs several times
-more per keystroke than the compiled file; see Byte-compiling a
-manual install below.
-
-** use-package with a manual clone
-
-Clone the repository into =donkey/= inside your
-=user-emacs-directory=, then point =use-package= at it with
-=:load-path=. A relative path is resolved against
-=user-emacs-directory= automatically:
+** With use-package and a clone
 
 #+begin_src emacs-lisp
 
   (use-package donkey
-    :load-path "donkey"
+    :load-path "~/src/donkey"          ; where you cloned it
     :config
     (donkey-mode 1))
 
 #+end_src
 
-=:load-path= adds the directory and loads what it finds there, which
-is the source; see Byte-compiling a manual install below.
+#+begin_src sh
 
-** Byte-compiling a manual install
+  git clone https://github.com/yardquit/donkey ~/src/donkey
 
-The two methods above load =donkey.el= as source, and Emacs then
-interprets every DONKEY function on every keystroke. Compiled, the
-same work costs about a ninth as much: in a graphical frame,
-everything DONKEY does between keystrokes falls from about nine
-microseconds to one. Neither figure is anywhere near what a hand can
-feel, so this is tidiness rather than a fix for a problem you have,
-but it is free.
+#+end_src
 
-=straight.el=, =quelpa= and any package archive compile the file when
-they install it, and again when they update it. A clone does not, so
-compile it yourself. Once =donkey.elc= exists beside =donkey.el=, both
-methods above load it in preference with no further change.
+** By hand
 
-This form keeps it current. It rebuilds whenever the source is newer,
-and never loads a stale compiled file, so a failed compile falls back
-to the source rather than leaving you on an older version:
+Put =donkey.el= somewhere on your =load-path= and:
 
 #+begin_src emacs-lisp
 
-  (let* ((donkey-path (expand-file-name "donkey/donkey.el"
-                                        user-emacs-directory))
-         (donkey-elc (expand-file-name "donkey/donkey.elc"
-                                       user-emacs-directory)))
-    (when (file-newer-than-file-p donkey-path donkey-elc)
-      ;; Loaded first, so that `byte-compile-dest-file-function' is a
-      ;; special variable here: under lexical binding a `let' on it
-      ;; would otherwise bind it lexically, and the compiler would
-      ;; never read it.
-      (require 'bytecomp)
-      (let ((byte-compile-dest-file-function (lambda (_) donkey-elc)))
-        (ignore-errors (byte-compile-file donkey-path))))
-    (if (and (file-exists-p donkey-elc)
-             (not (file-newer-than-file-p donkey-path donkey-elc)))
-        (load donkey-elc nil t)
-      (load donkey-path nil t)))
-
+  (require 'donkey)
   (donkey-mode 1)
 
 #+end_src
 
-If you track the repository with a symlink into your configuration,
-keep the symlink. A hard link looks equivalent and is not: git
-replaces a file rather than editing it in place, so the link would go
-on pointing at the version you cloned, and nothing would say so.
-
-** use-package with =straight.el=
+** With straight.el
 
 #+begin_src emacs-lisp
 
   (use-package donkey
-    :straight (:host github :repo "yardquit/donkey")
+    :straight (donkey :type git :host github :repo "yardquit/donkey")
     :config
     (donkey-mode 1))
 
 #+end_src
 
-** use-package with =quelpa=
-
-The =:quelpa= keyword isn't built into =use-package= itself — it's
-added by the separate =quelpa-use-package= package, so both =quelpa=
-and =quelpa-use-package= need to be installed first:
+** With quelpa
 
 #+begin_src emacs-lisp
 
@@ -286,2045 +159,56 @@ and =quelpa-use-package= need to be installed first:
 
 #+end_src
 
-* Usage
+** Byte-compiling a manual install
+
+Worth doing — it is several times faster per keystroke. The catch is
+that Emacs prefers =donkey.elc= to =donkey.el=, so a stale =.elc= is
+the copy that loads and a later =(load "donkey.el")= cannot undo it.
+Compile *before* the =require=:
+
+#+begin_src emacs-lisp
+
+  (let ((src (expand-file-name "~/src/donkey/donkey.el"))
+        (elc (expand-file-name "~/src/donkey/donkey.elc")))
+    (when (file-newer-than-file-p src elc)
+      (require 'bytecomp)
+      (unless (byte-compile-file src)
+        ;; compilation failed: drop the stale .elc so the source loads
+        (when (file-exists-p elc) (delete-file elc)))))
+  (require 'donkey)
+  (donkey-mode 1)
+
+#+end_src
+
+** Turning it on and off
+
+=M-x donkey-mode= toggles DONKEY everywhere. Turning it off clears
+every trace of it from every buffer and gives you stock Emacs back.
+
+* Your first five minutes
 :PROPERTIES:
-:CUSTOM_ID: usage
+:CUSTOM_ID: first-five-minutes
 :END:
 
-Once =(donkey-mode 1)= has run (see Installation above), every buffer
-starts in DONKEY Normal state, with one exception: buffers whose major
-mode is on the Excluded Modes list (see below) — things like =eshell=
-or a shell/terminal buffer — stay in ordinary Insert passthrough
-instead, since suppressing keys there would break the underlying
-process interaction.
-
-- Press =C-g= to enter Normal state from any ordinary buffer. Excluded
-  Modes are the exception, and the only one: there =C-g= does what it
-  does in stock Emacs, and Normal state cannot be reached at all.
-- In Normal state: =h=/=j=/=k=/=l= navigate; =i=/=I=/=a=/=A=/=o=/=O=/=c=
-  enter Insert state at various positions (see Default Keybindings
-  below for the full reference).
-- In Insert state: standard Emacs behavior — nothing is remapped.
-  Press =C-g= to return to Normal.
-- The modeline shows the current state: =DONKEY[N]= (Normal),
-  =DONKEY[I]= (Insert), or =DONKEY[E]= in an *excluded* mode. =E= is
-  still Insert state — keys really do pass straight through — but it is
-  reported separately because Normal state is unreachable there, so
-  pressing =C-g= and seeing nothing change is the design rather than a
-  stuck key.
-- New to DONKEY? Run =M-x donkey-tutor= — see Tutor below.
-
-* Default Keybindings
-:PROPERTIES:
-:CUSTOM_ID: default-keybindings
-:END:
-
-** Navigation
-
-| Key | Command         | Description |
-|-----+-----------------+-------------|
-| =h= | =backward-char= | Move left   |
-| =j= | =next-line=     | Move down   |
-| =k= | =previous-line= | Move up     |
-| =l= | =forward-char=  | Move right  |
-
-** Visual Line Movement
-
-| Key | Command                     | Description                           |
-|-----+-----------------------------+---------------------------------------|
-| =J= | =donkey-visual-next-line=     | Move down, extending visual selection |
-| =K= | =donkey-visual-previous-line= | Move up, extending visual selection   |
-| =V= | =donkey-visual-line-toggle=   | Toggle visual line selection; a count selects that many rows |
-| =v= | =donkey-set-mark=           | Drop a mark and start selecting; =C-g= lets go |
-| =M= | =donkey-mark-run-toggle=    | Toggle mark run mode: bare =w W b B s S= mark and grow |
-| =(= =[= ={= ="= ='= =`= =)= =]= =}= | =donkey-wrap-region= | Wrap the selection in that delimiter, or take it off again, see below |
-
-=V=, =M= and =m v= toggle: pressing any of them a second time cancels
-the selection it started (=M='s cancel press is the one *inside* its
-mode; over an existing selection it adopts instead — see the mark run
-section). =v= does not. It is =set-mark-command=, so a
-second press drops a fresh mark where point is standing and begins
-selecting again from there — the old selection is gone, but you are
-still selecting. Use =C-g= to let go of a =v= selection.
-
-*** Changing your mind
-
-You can go from any of the four to any other without letting go first.
-What becomes of the selection you already had is the whole of what
-there is to know:
-
-| Press | What happens to what was selected |
-|-------+-----------------------------------|
-| =M=   | *Adopted.* It becomes the run's starting selection, and the object keys grow it from there. |
-| =m v= | *Reinterpreted.* The region's corners become the block. |
-| =V=   | *Dropped.* A fresh session anchors on the line the cursor is on. |
-| =v=   | *Dropped.* A new selection starts, empty, where the cursor stands. |
-
-So =v l l l= on the =b= of "beta" selects =bet=, and =M w= then grows
-it to =beta= — the run picked up what was there rather than starting
-over. =m w M w= extends the marked word the same way.
-
-Three exceptions:
-
-- Inside a mark run, =v= and =V= are *refused*. Neither can take a
-  run's selection over honestly, and both used to drop it without
-  saying so. Leave first with =M=, =C-g=, or any action key.
-- A *rectangle* is the one selection =M= will not adopt — a block has
-  no forward end for the object keys to own — so =M= drops it and
-  starts a fresh run on the word under the cursor.
-- Reaching =m v= *from* =V= gives a full-width block. =V= selects whole
-  lines, so the corners =m v= inherits are the whole line's width.
-  Start =m v= from nothing, or from a =v= selection, for a narrow one.
-- Inside a rectangle =J= and =K= move as =j= and =k= do there, keeping
-  the column, so the block grows by a row. They are the visual-line
-  keys and a rectangle is no visual-line session; falling through to a
-  plain line motion used to land on column 0 and collapse the block.
-
-The =m= keys end nothing: =m w= inside a run grows the run, and outside
-one it marks and leaves you selecting. Over a rectangle it clears the
-block first, no mark command being able to act on columns. =%= is the
-same — inside a run it takes the whole buffer and the run carries on.
-
-All four selections keep an echo-area reminder up for as long as they
-are live, and it goes when they do:
-
-| =v=   | =Linear selection: any motion extends, v re-anchors, C-g to cancel= |
-| =V=   | =Visual line: J/K whole lines, j/k by char, V to cancel= |
-| =m v= | =Rectangle: any motion sizes the block, m v or C-g to cancel= |
-| =M=   | =Mark run: w/b words, W/B symbols, s/S sentences, m p/m P paragraphs, * other end, M to cancel= |
-
-Only one of them is ever on screen: a selection entered over another —
-=M= adopting a =v= region, =m v= reinterpreting one — hands the echo
-area to the mode that took over. A command that prints a message of
-its own keeps its echo, and the next motion brings the reminder back.
-
-The =v= and =m v= lines say what the other two do not have to. Those
-own their keys and can list them; these own none — every motion
-extends a =v= selection or sizes a rectangle — so what is worth saying
-is how to let go, which is the part neither key tells you.
-
-A count on =V= selects that many rows at once: =C-u 3 V= is =V=
-followed by =J= twice, anchored on the current line, and =C-u -3 V=
-selects upward. A counted press always starts a fresh selection, even
-over a live session — only the bare press cancels.
-
-Within a visual-line session (started with =V=), =J= and =K= extend the
-selection by whole lines, always anchored to the line =V= was pressed
-on. Plain =j= and =k= still work too, extending character-wise from
-wherever point currently is -- so a selection can stop mid-line. The
-two can be mixed freely: after moving with =j=/=k=, pressing =J=/=K=
-snaps the selection back to whole lines from the original anchor.
-
-=J= and =K= take a count like =j= and =k= do, so =C-u 3 J= is the same
-as pressing =J= three times, and a negative count moves the other way.
-
-The echo-area reminder =V= shows stays visible across the session's
-motions, as mark run mode's does; a command that prints its own
-message keeps its echo, and the next motion brings the reminder back.
-
-If the buffer is narrowed so that the anchor line is no longer visible,
-=J= and =K= stop extending and just move by lines — the session cannot
-honestly continue from an anchor the buffer is not showing. Widening
-brings it back.
-
-=y= and =d= act on *whole lines* during a visual-line session, including
-the newline that ends the last one. So =V d= removes the line outright
-rather than emptying it and leaving a blank behind, and =V J y= gives a
-kill that =p= inserts as complete lines instead of splicing onto whatever
-line it lands in. This matches what banking (=m l=) has always done. A
-character-wise region made with =v= is unaffected — it still means
-exactly the characters it covers.
-
-The highlight does not show that trailing newline: it stops at the end
-of the last line, so a =V= selection always looks one character shorter
-than what =y= and =d= actually take. That is deliberate — the
-highlight ends where the text does, and =J=/=K= count lines from where
-point sits — and only the two commands widen. Worth knowing before
-reporting it: the newline goes along even though nothing marks it.
-
-** Insert Mode Entry
-
-| Key | Command                         | Description                         |
-|-----+---------------------------------+-------------------------------------|
-| =i= | =donkey-insert-here=              | Insert at current position          |
-| =a= | =donkey-insert-after=             | Insert after current char           |
-| =I= | =donkey-insert-beginning-of-line= | Insert at beginning of line         |
-| =A= | =donkey-insert-end-of-line=       | Insert at end of line               |
-| =o= | =donkey-open-below=               | Open a line below, enter Insert     |
-| =O= | =donkey-open-above=               | Open a line above, enter Insert     |
-| =c= | =donkey-change=                   | Change char or region, enter Insert |
-
-During a visual-line session (=V=), =c= does *not* take the trailing
-newline the way =y= and =d= do. =V c= empties the line and leaves point
-on it ready to type, rather than removing the line and dropping you onto
-the next one — this is vi's =cc=, the linewise change that keeps its
-line. =V J c= collapses the whole span to a single empty line. It is the
-one place the two line commands part company: =V d= takes the newline
-because you asked for the line to go, =V c= keeps it because you asked
-to replace what is on it.
-
-Under =rectangle-mark-mode= (=m v=), =c= behaves differently: it runs
-=string-rectangle=, which prompts for the replacement text and applies
-it to every covered line itself. Since that finishes the whole edit,
-DONKEY stays in *Normal* state afterward rather than entering Insert —
-there is nothing left to type, and dropping into Insert would make the
-next navigation keypress self-insert.
-
-** Editing
-
-| Key   | Command                      | Description                      |
-|-------+------------------------------+----------------------------------|
-| =d=   | =donkey-delete=                | Delete char or region (Helix)    |
-| =x=   | =donkey-delete=                | Delete char or region (Vim)      |
-| =D=   | =kill-line=                  | Kill to end of line              |
-| =C=   | =donkey-comment-dwim=          | Comment/uncomment line or region |
-| =g j= | =donkey-join-line=             | Join the next line or selection  |
-| =>=   | =donkey-indent-region-or-line= | Indent region or line            |
-
-=g j= absorbs the line *below* the one you are on, the direction vi's
-=J= and Helix's =J= both use. =C-u 3 g j= collapses three lines into
-this one. Emacs' own =M-^= goes the other way — pulling the current
-line up onto the previous one — and is untouched, since every =M-= key
-falls through in Normal state.
-
-With lines selected, =g j= joins the whole selection into one line and
-drops the selection, the way vi's =J= reads a visual selection: =V J J
-g j= makes three lines one. A selection that ends at the start of a
-line leaves that line out; a selection inside a single line joins that
-line with the next, vi's minimum of two; a rectangle's rows are lines
-like any other selection's. The count is not read while a selection
-is. Banked lines are left alone — =y=, =d= and =p= are the keys that
-spend a bank.
-
-On the last line there is nothing below to pull up, so nothing happens
-and it says so. Left to =join-line= this quietly removed the buffer's
-final newline instead — the "line" below the last one is the empty
-position after it — with no visible change to show for it until a diff
-reported =\\ No newline at end of file=. A count that overshoots stops
-there too.
-
-This moved off =C-j=, and changed direction with it. =C-j= looks free
-but is not: globally it is =electric-newline-and-maybe-indent=,
-and in =*scratch*= or any =lisp-interaction-mode= buffer it is
-=eval-print-last-sexp=. A minor-mode keymap outranks the major mode, so
-binding it here quietly cost the scratch buffer its evaluate-and-print
-key. The old binding also ran =join-line= with no argument, which joins
-with the *previous* line — the opposite of what this table had always
-described.
-
-** Yank and Paste
-
-| Key | Command          | Description                                 |
-|-----+------------------+---------------------------------------------|
-| =p= | =donkey-yank=      | Yank from clipboard, replacing region or banked lines |
-| =P= | =donkey-yank-rectangle= | Paste =killed-rectangle= as a block of columns |
-| =y= | =donkey-copy=      | Copy region (or char at point) to kill ring |
-
-=C-u 3 p= pastes three copies — the vi reading of a count on a paste,
-not the Emacs one. Emacs takes a prefix argument on =C-y= to mean *which*
-kill-ring entry to pull, but nothing is given up here: =C-y= is untouched
-in Insert state, so that meaning is still available on the key it belongs
-to. A count below 1 pastes nothing, matching zero and negative counts
-elsewhere.
-
-On a *rectangle*, a count widens the block rather than stacking copies:
-=C-u 2 P= repeats each row's text, so a three-row block comes back twice
-as wide. That is what a count on a blockwise paste does in vi, and it is
-the only reading that makes sense — pasting the block twice in sequence
-would drop the second copy partway down and across the first.
-
-Stepping back through earlier copies is Emacs' own =M-y= (=yank-pop=),
-which DONKEY does not rebind — it works in both states, on the key it
-has always been on.
-
-=p= replaces whatever is selected — an active region, banked lines, or
-both together — exactly as =y= and =d= act on them, and spends the bank
-the same way. Pasting over banked lines drops the paste where the first
-banked line was:
-
-#+begin_example
-  AAA one     <- banked          ZZZ
-  BBB two                 =p=    BBB two
-  CCC three   <- banked   ==>    DDD four
-  DDD four                       EEE five
-  EEE five
-#+end_example
-
-With *nothing to paste* — an empty kill ring and no clipboard content —
-=p= does nothing at all and says =Nothing to paste=. It does not remove
-the selection first: the replaced text is deleted rather than killed, so
-losing it to a paste that then had nothing to insert would have put it
-out of reach of everything but =undo=.
-
-** Motions
-
-| Key | Command          | Description                      |
-|-----+------------------+----------------------------------|
-| =w= | =forward-word=   | Move forward by word             |
-| =b= | =backward-word=  | Move backward by word            |
-| =W= | =forward-sexp=   | Move forward by sexp             |
-| =B= | =backward-sexp=  | Move backward by sexp            |
-| =S= | =donkey-jump-back= | Jump to previous cursor position |
-
-** Mark Objects (=m= prefix)
-
-| Key   | Command                    | Description                          |
-|-------+----------------------------+--------------------------------------|
-| =m w= | =donkey-mark-word=           | Mark word at point                   |
-| =m W= | =donkey-mark-symbol=         | Mark symbol (hyphens, underscores)   |
-| =m b= | =donkey-mark-word-backward=  | Mark word, or grow a selection backward |
-| =m B= | =donkey-mark-symbol-backward= | Mark symbol, or grow a selection backward |
-| =m s= | =donkey-mark-sentence=       | Mark sentence                        |
-| =m S= | =donkey-mark-sentence-backward= | Mark sentence, or grow a selection backward |
-| =m p= | =donkey-mark-paragraph=      | Mark paragraph                       |
-| =m P= | =donkey-mark-paragraph-backward= | Mark paragraph, or grow a selection backward |
-| =m i= | =donkey-mark-inner=          | Mark inside delimiter pair           |
-| =m a= | =donkey-mark-outer=          | Mark including delimiter pair        |
-| =m I= | =donkey-mark-sexp-inner=     | Mark inside balanced expression      |
-| =m A= | =donkey-mark-sexp-outer=     | Mark including balanced expression   |
-| =m v= | =donkey-rectangle-mark-mode= | Toggle rectangle mark mode           |
-| =m l=   | =donkey-bank-selection=      | Bank lines, keep navigating          |
-| =m u=   | =donkey-unbank-line=         | Unbank the line at point             |
-| =m U=   | =donkey-unbank-section=      | Unbank the whole run at point        |
-| =m DEL= | =donkey-clear-banked-selection= | Discard all banked lines (Backspace or Delete) |
-
-=m w= marks a word; =m W= marks a symbol, which is the same thing plus
-whatever the major mode counts as holding a name together. Hyphens and
-underscores usually do, so =m W= anywhere in =send-mail_to= takes all of
-it while =m w= takes only =send=, =mail= or =to=.
-
-Periods and commas are the mode's call too, and modes disagree: in
-=emacs-lisp-mode= =m W= on =foo.bar= takes the whole of it, while in
-=python-mode= and =text-mode= it stops at =foo=.
-
-One part is DONKEY's own rather than the mode's: punctuation at either
-END of the selection is dropped. A trailing =.= or =,= goes, so =m W= on
-the last name of a sentence gives you the name without its full stop even
-where the mode would have included it — and so do the quotes around a
-name written in prose, which is how Emacs prints one in its own help.
-=m W= on the second half of a quoted key sequence gives you that half,
-not that half and a curly quote.
-
-Punctuation is the test, and an expression prefix is not punctuation: in
-Lisp, =m W= on ='bar= still gives you ='bar=, backquote and =#'= the
-same, because those introduce the form after them and belong with it.
-Punctuation between two marked symbols is interior and stays, so
-=C-u 3 m W= across a quoted sequence keeps the quote in the middle of
-what it selected.
-
-The same rule decides where =m W= looks from a gap. It marks the symbol
-AHEAD of point, the way =m w= marks the word ahead, and it reaches across
-whatever punctuation is in the way to find it — standing between the two
-halves of a quoted key sequence, =m W= marks the half on the right, and
-on the opening quote it marks the first half.
-
-Every mark key has a side. On a word both =m w= and =m b= mark that
-word; from the space between two words =m w= marks the word ahead and
-=m b= the word behind, so from one space the two keys are the two words
-on either side of it — and =M=, which is =m w= with the mode switched
-on, takes the word ahead too. =m W= and =m B=, =m s= and =m S=, =m p=
-and =m P= divide their gaps the same way. The eight used to agree on the
-object behind, which made =m w= and =m b= from the same space mark the
-same word. Where the preferred side is empty the other answers: the end
-of a buffer gives the forward keys the last object, and the start gives
-the backward keys the first.
-
-=m w=, =m W=, =m s= and =m p= all report =No ... at or before point=
-rather than marking nothing when there is nothing of substance to mark —
-an empty buffer, or one holding only blank lines and whitespace. A blank
-line *between* paragraphs is not such a case: =m p= marks the paragraph
-below it and =m P= the one above, each with its one blank line.
-
-=donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ‘ ’ “ ” « » ‹ › = * ~ | \ / : + _ $=
-by default -- an alist of (OPEN . CLOSE) pairs in =donkey-mark-pair-delimiters=
-(a Customization Group variable). For symmetric delimiters (e.g. straight
-or curly single quotes, where the same character both opens and closes a
-pair), OPEN and CLOSE are identical. Matching is always case-sensitive,
-regardless of the buffer's own =case-fold-search= setting. Add or remove
-entries in your =config.el= to change what's recognized, e.g. to add
-=#= as a language's inline-comment marker and remove =~= (freeing that
-key up for something else):
-
-#+begin_src emacs-lisp
-
-  ;; Add a pair
-  (add-to-list 'donkey-mark-pair-delimiters '(?# . ?#))
-
-  ;; Remove a pair
-  (setq donkey-mark-pair-delimiters
-        (assq-delete-all ?~ donkey-mark-pair-delimiters))
-
-#+end_src
-
-Either half names the pair: =m i )= means what =m i (= means, and
-=m a ]= what =m a [= does. With the cursor already sitting on a
-delimiter — either end of one — the character is taken from the buffer
-and nothing is asked, so =m i= alone is enough there.
-
-A delimiter typed after the selection is a key of its own and acts at
-once: =m i= then =(= takes that pair off, since =m i= selected what
-the pair holds; =m a= then =(= wraps, since =m a= selected the pair as
-well. See [[#wrapping-a-selection][Wrapping a Selection]].
-
-A delimiter that is not on your keyboard is named with a digraph, by
-the keys that ask for one everywhere else: =SPC i &= at the prompt,
-then the mnemonic. =m i SPC i & < <= selects inside =«…»=, and
-=m a SPC i & " 6= takes a curly-quoted run with its quotes. Keys the
-method does not know are refused by name, and no single character at
-the prompt is spent on an escape — =&= there is the =&= delimiter, if
-you have made one.
-
-Adding a pair here does not give the character a key: see
-[[#wrapping-a-selection][Wrapping a Selection]] for the second line
-that does.
-
-The prompt names =donkey-mark-pair-delimiters= rather than reciting it.
-The list above is twenty-one pairs and grows with whatever you add,
-so =C-h v donkey-mark-pair-delimiters= is where to see the pairs in
-force — your own additions marked as customized — and =C-h f
-donkey-mark-inner= describes the command.
-
-For asymmetric pairs (e.g. =(= and =)=), nested occurrences of the same
-pair are matched correctly -- the outer =(= of =(a(b)c)= selects
-=a(b)c=, not just up to the first =)= found. This is a plain character
-scan, though, not syntax-table aware: unlike =donkey-mark-sexp-inner=/
-=donkey-mark-sexp-outer=, it doesn't know about strings or comments, so
-the same character appearing inside one can still throw off the match.
-For balanced expressions in real code, use =donkey-mark-sexp-inner=/
-=donkey-mark-sexp-outer= instead -- those are always syntax-aware and
-need no delimiter list.
-
-With no matching pair either way, both commands signal an error and
-leave point exactly where it was, instead of landing somewhere else in
-the buffer as a side effect of the failed search.
-
-** Banking Lines (Non-Contiguous Selection)
-
-Emacs has a single region, so you normally can't select line 3, skip a
-few, and add line 9 to the same selection. =m l= works around that:
-it *banks* the lines you have selected right now, highlights them with
-the =donkey-banked-selection= face, and releases the mark so you can
-carry on navigating and selecting freely.
-
-Repeat as often as you like, then press =y= or =d= — both act on every
-banked line at once:
-
-#+begin_example
-
-  V J          select lines 0-1
-  m l          bank them, mark released
-  j j j        navigate past lines you want to skip
-  V J          select lines 4-5
-  m l          bank those too
-  j j j        navigate on
-  V            select line 8
-  y            copies lines 0,1,4,5,8 as one kill
-
-#+end_example
-
-The live region counts too, so the final piece never has to be banked
-explicitly — in the example above, line 8 is included by =y= without a
-third =m l=.
-
-=y=, =d= and =p= all act on the banked lines plus the live region, and
-all three spend the bank once they have — only the spans they actually
-acted on, so banks hidden by narrowing survive to count again once the
-buffer is widened.
-
-=c= is the exception: it changes the character at point and leaves banks
-standing. Nothing has been settled about what changing a multi-line bank
-should mean, so it does not guess.
-
-*** Banks and rectangles
-
-A rectangle is columns and a bank is whole lines, so no command can act
-on both. One rule settles it everywhere: *the live selection you are
-looking at wins, and the bank is the fallback.*
-
-| Situation                              | What acts                  |
-|----------------------------------------+----------------------------|
-| =y= / =d= with a rectangle drawn       | the rectangle; banks survive |
-| =y= / =d= with no rectangle drawn      | the banks                  |
-| =p= with lines banked                  | the banks                  |
-
-The reasoning is that a drawn rectangle is on screen and the bank is
-the fallback, so whichever one you can currently see is the better guess
-at what you meant. Nothing is discarded either way — take the rectangle
-and your banks are still waiting afterwards.
-
-Pasting needs no such rule. =p= reads the kill ring and system
-clipboard; =P= reads =killed-rectangle=. They are separate stores and
-each key names one of them, so nothing has to be inferred.
-
-This used to be one key. =p= decided by tracking which store had been
-written more recently, in a flag, because Emacs gives a rectangle no way
-to say so itself — the kill ring is untyped text and =killed-rectangle=
-is a separate variable that is only ever written, never cleared. The
-flag went stale in ways a reader could not predict: importing the system
-clipboard during a paste counts as a kill in Emacs, so a paste could
-retire the pending rectangle in a graphical session and not in a
-terminal one. Two keys need no bookkeeping and behave identically
-everywhere.
-
-The three commands used to disagree, each silently: =y= and =d= took
-the banks and ignored a rectangle you were looking at, while =p= took a
-rectangle out of =killed-rectangle= and ignored banks highlighted on
-screen. Drawing a rectangle over two rows and pressing =d= deleted
-three whole lines.
-
-Note =m l= collapses the two states in the other direction: banking
-while a rectangle is drawn banks the whole lines it covers and ends
-rectangle mode.
-
-One consequence worth knowing: when a bank claims =p=, the kill ring
-may hold something *older* than the rectangle, since a rectangle copy
-never touches the kill ring. That is the entry =p= pastes; the
-rectangle is reached with =P=, which the bank never claims.
-
-=m l= toggles, with or without a region:
-
-- *No region* — banks the current line; pressing it again on an
-  already-banked line *unbanks* that line.
-- *Region over an already-banked block* — unbanks the whole block in
-  one press, leaving every other bank untouched. This is how to take
-  back a multi-line bank without walking it line by line or clearing
-  everything.
-- *Region over a partly-banked block* — banks the rest of it. A block
-  only toggles off once it is uniformly on, so press again to then
-  clear it.
-
-*** Taking banks back
-
-Banked lines are consumed by =y=, =d= or =p=. To remove them without
-doing anything else, there are three levels:
-
-| Key     | Removes                                          |
-|---------+--------------------------------------------------|
-| =m u=   | the banked line at point                         |
-| =m U=   | the whole contiguous run point is standing on    |
-| =m DEL= | every bank in the buffer                         |
-
-=m u= and =m U= only ever *remove*. Pressing either on a line that is
-not banked reports =No banked line at point= / =No banked section at
-point= and changes nothing, so you can lean on them without tracking
-the state of each line.
-
-A "run" is every banked line adjacent to the one you are on — exactly
-the stretch that =y= and =d= treat as one piece — so a block you banked
-line by line comes back off in one press of =m U=, without re-selecting
-it. Banks outside the run are left alone.
-
-=m DEL= is =m= followed by *Backspace*, which is what Emacs calls
-=DEL=. The physical *Delete* key is bound to the same command, so
-whichever of the two you reach for clears the bank.
-
-Notes:
-
-- Banking is whole-line only. Partial selections are rounded out to the
-  full lines they touch.
-- Adjacent banked lines are copied and deleted as one contiguous run,
-  so banking a block line-by-line gives the same result as selecting it
-  in one go.
-- =d= deletes back-to-front internally, so the lines you banked are the
-  lines that get removed regardless of how the earlier deletions shift
-  positions.
-- Banked lines follow the text as you edit around them. If a banked
-  line is deleted outright, its bank goes with it rather than lingering
-  as an invisible, empty selection.
-- Turning off =donkey-mode= discards any banked lines along with the
-  rest of DONKEY's state.
-
-** Buffer Navigation (=g= prefix and standalone)
-
-| Key   | Command                  | Description                 |
-|-------+--------------------------+-----------------------------|
-| =g g= | =beginning-of-buffer=    | Go to beginning of buffer          |
-| =g e= | =end-of-buffer=          | Go to end of buffer               |
-| =G=   | =end-of-buffer=          | Go to end of buffer (Vim)         |
-| =g h= | =beginning-of-line=      | Go to beginning of line     |
-| =g j= | =donkey-join-line=       | Join next line or selection |
-| =g l= | =move-end-of-line=       | Go to end of line           |
-| =g q= | =fill-region=            | Fill region                 |
-| =g Q= | =fill-paragraph=         | Fill paragraph              |
-| =:=   | =donkey-goto-line=         | Go to line number (prompts) |
-| =%=   | =donkey-mark-whole-buffer= | Select entire buffer      |
-| =.=   | =repeat=                 | Repeat last command         |
-| =?=   | =donkey-describe-bindings= | Show all DONKEY keybindings   |
-
-*** Counts
-
-A count works wherever "how many" means something, and it always means
-exactly that — so =C-u 3 x= deletes three characters and =C-u 2 m s=
-marks two sentences. Every motion takes one, as does every =m= key that
-selects a thing, along with =d=, =y=, =c=, =p=, =o=, =O= and =V=. The
-keys with no "how many" in them — entering INSERT at the cursor, the
-=M= and =m v= toggles, asking for help — ignore a count rather than
-refusing it.
-
-| Keys        | Effect                                  |
-|-------------+-----------------------------------------|
-| =C-u 3 p=   | paste three copies                      |
-| =C-u 2 P=   | paste the rectangle twice as wide       |
-| =C-u 3 J=   | down three lines, extending a visual selection |
-| =C-u 3 K=   | up three lines, extending a visual selection |
-| =C-u 3 V=   | select three rows, anchored on this one; =C-u -3 V= upward |
-| =C-u 3 x=   | delete three characters                 |
-| =C-u 3 y=   | copy three characters                   |
-| =C-u 3 c=   | change three characters                 |
-| =C-u 3 o=   | open three lines below, cursor on the first |
-| =C-u 3 O=   | open three lines above, cursor on the lowest |
-| =C-u 3 m w= | mark three words                        |
-| =C-u 3 m b= | mark the word and the two before it     |
-| =C-u 2 m W= | mark two symbols                        |
-| =C-u 2 m s= | mark two sentences                      |
-| =C-u 2 m p= | mark two paragraphs                     |
-| =C-u 2 m A= | mark two levels out of the expression   |
-| =C-u 2 m i= | mark two levels out of the delimiter pair |
-| =C-u 3 S=   | jump back three recorded positions       |
-| =C-u 3 m l= | bank three lines                         |
-
-A count larger than the text remaining does what it can and stops, rather
-than erroring — =C-u 99 x= at the end of a buffer clears the rest.
-
-Bare digits are not counts: =3= is not bound, because =suppress-keymap=
-is called with digits left out so they cannot self-insert. Use =C-u=.
-
-**** Zero and negative counts
-
-A *negative* count works backwards from point, the same way it does for
-stock =C-d=: =C-u -2 x= deletes the two characters *before* point, and
-=C-u -2 m w= marks the two words before the one the cursor is on. As
-with a positive count, running out of buffer stops at the edge and
-reports instead of erroring.
-
-The selection ends where the object behind the cursor ends, so it holds
-those objects and nothing else — no separator between the last of them
-and the one the count was measured from, and nothing at all from ahead
-of the cursor when the buffer runs out first. =m w= and =m W= answer
-alike.
-
-A count of *zero* does nothing at all on the editing keys — =C-u 0 x=
-deletes no characters, =C-u 0 y= leaves the kill ring untouched rather
-than pushing an empty string over whatever =p= was about to paste.
-=C-u 0 c= is the one exception worth naming: it changes no text but
-still drops into INSERT state, because entering INSERT is what the
-command is for and only the deletion is governed by the count.
-
-On the mark keys a count of zero is a bare press: =C-u 0 m w= marks the
-word, as =m w= does, and =m W=, =m s= and =m p= read it the same way. A
-key that says "word" selects a word.
-
-=m s= goes one step further and treats a negative count as 1 as well.
-That command normalizes onto the start of the sentence it marks and
-counts from there with =mark-end-of-sentence=, so a negative count
-would reach back over the sentence already behind that start — which
-is not a sentence at point.
-
-=m b=, =m B=, =m S= and =m P= are the others, treating a count below 1
-as 1 for the mirrored reason: they *are* the backward direction, so a
-negative count has nothing left to point at that =C-u -2 m w= and
-friends do not already say.
-
-**** Repeating a mark key extends the selection
-
-Pressing =m w=, =m W=, =m s= or =m p= a second time straight away
-*grows* the selection by another word, symbol, sentence or paragraph
-instead of re-marking the same one, and keeps growing on each further
-press until the buffer runs out. So =m s m s m s= is another way to say
-=C-u 3 m s=, and the same holds for the other three.
-
-All four grow *backward* as well: =m b= adds the word before the
-selection, =m B= the symbol, =m S= the sentence, =m P= the paragraph,
-and either direction continues the same run. Starting on =that= in
-"This buffer is for text that is not saved", =m w m w m b= selects
-=text that is= — two words forward, one back. Pressed fresh, with no
-run to continue, each backward key selects exactly what its forward
-partner would; the two differ only in the direction further presses grow.
-
-Runs mix objects freely: each press adds one object of its own kind at
-its own end, so =m w m s= grows the word selection forward to the end
-of its sentence, and =m s m b= takes the sentence plus the word before
-it. A backward press whose end sits inside a larger object of its own
-kind first reaches that object's start — =m B= after marking the word
-=two= inside =b-two= completes the symbol backward — and the next
-press adds a whole one.
-
-=M= is the =m= prefix held down for you: it enters *mark run mode*,
-where the bare letters =w W b B s S= run exactly what their
-=m=-prefixed keys run. The press itself is =m w=, so =M w b= selects
-what =m w m w m b= selects: every letter grows the one selection,
-counts work (=M C-u 3 w= is four words, as =m w C-u 3 m w= is), and
-objects mix as above.
-
-The echo-area reminder stays visible for as long as the mode is
-active, and goes when the mode does. It names the keys whose *subject*
-the mode changes and no others: =w= moves by a word in normal state
-and marks one here, which nobody could guess from the key. A key that
-keeps its subject is left out — =h j k l= still move, =J= and =K=
-still work on lines, =.= still repeats, =u= and =U= still step back
-and forward, of the run rather than the buffer. Spelling those out
-spent the line on the keys least in need of it, and the line has to be
-taken in at a glance.
-The complete list is here and in the tutor.
-
-=M= arrives holding a word, since that is what nearly every run starts
-from — pressed on =that=, the word is selected before you have touched
-a letter, so =M d= takes it, =M w= is two words and =M b= the word and
-the one before it.
-
-*Which* word is =m w='s answer, exactly: the one under the cursor, or
-from a gap the one ahead of it. The two keys agree because there is no
-reading under which they should differ — and because an empty run is
-worth nothing anyway. =h j k l=, =g h=, =g l= and =g e= all continue a
-*visible* run only, so they select nothing from an empty one, and the
-keys that can grow it (=w=, =J=, =%=) mark afresh whether it is there
-or not. Only where =m w= itself declines — a buffer with no word in it
-at all — does the mode arrive empty, and it still arrives.
-
-The word is the run's first press, and the rule is one sentence: =M=
-is =m w=, and each letter after it is one more =m=-prefixed press. It
-was a head start for a long time, the letter after it marking afresh
-so that =M w w b= spelled =m w m w m b= — and what that bought was
-=M w= re-marking the very word already on screen, so that the first
-letter looked like nothing happening and only the second grew. =M s=
-is therefore the word grown to the end of its sentence, as =m w m s=
-is; the whole sentence is =m s= and then =M=.
-
-The =m= prefix still works inside the mode and needs no thinking
-about: =m w= runs the very command the bare =w= runs, so the mode
-survives it and the run keeps growing — =M m w w= selects three
-words, and the two spellings can be mixed mid-run. Paragraphs are
-reached that way and only that way: =p= and =P= stay the *paste* keys
-inside the mode, so =M p= replaces the marked word with the kill
-ring, and =m p= / =m P= grow the run by paragraphs. Lettering them
-cost the mode the one ordinary edit it could not otherwise make — =d=,
-=y=, =x= and =c= all act on a mark run selection, and only pasting had
-nowhere to go.
-
-=h j k l= move point without ending the run, adjusting the selection's
-near end the way =j=/=k= adjust a =V= session. =g h= and =g l= reach
-the line's ends, and unlike =h j k l= they own an end apiece rather
-than both moving point, so they add up: =M g h g l= selects the
-whole line's text, in either order. =g g= and =g e= (and =G=) do the
-same for the buffer's ends, so =M g g g e= is everything from a word
-in the middle. With nothing selected yet all four are still plain
-motions, for placing the cursor before marking. Other =g= keys are not
-shadowed and end the mode like any foreign key.
-
-=J= and =K= make lines a growable object of the mode: =J= grows the
-run's bottom end by a line and =K= its top, an end sitting mid-line
-completing its own line first. From a word, =M J= is therefore the
-word grown to the end of its line — from the line's first word, the
-whole line — and =M K= reaches back to its start; =M J K= is the whole
-line from anywhere, in either order, and =V= then =M= adopts one
-whole. Whole lines means the newline too, so =M J K d= removes the
-line outright rather than leaving the blank one behind, and =M J K y=
-yanks back as a line. The highlight reaches the next line's first
-column to show it. Fresh, where =M= found no word to mark, either key
-marks the current line.
-
-=u= puts the run back where the last press found it and =U= puts it
-forward again, one press per step, the motions and =*= included. A run
-only ever grows — =b= after =w= adds a word at the other end rather
-than taking one back — so without them a press that reached further
-than it looked left cancelling and starting again as the only way out.
-A press that is neither of the two ends the redo, a new branch having
-nothing to redo onto, and each reports rather than guessing when there
-is nothing left.
-
-The pair is why =U= is bound at all. Outside the mode =u= and =U= are
-=undo= and =undo-redo=; =u= was taken for the run while =U= still
-meant the buffer, so the press anyone would reach for after =u= redid
-a *text edit*, dropped the selection and lapsed the mode without
-saying so — worst exactly where it was likeliest, straight after =u=.
-Inside a run both keys are about the run, which is the same idea one
-level down. Outside it they are untouched.
-
-=.= repeats the last press, as it does everywhere else: =M w .= is
-three words and =M w . .= four, a count carries — =M C-u 3 w .= is
-seven — and each =.= is one step for =u= to take back. It used to end
-the mode. The key runs =repeat=, which runs the previous command by
-name, and the mode judged the key by its own name rather than by the
-command it stood for; the selection grew all the same, so the run
-looked alive when it was not — the next =w= *moved*, dragging the
-highlight with it, and =u= undid a text edit inside the selection.
-The mode now reads the press as the command it repeats. =M .= repeats
-=M= itself, which takes the selection up again as if freshly pressed,
-with no steps behind it.
-
-=*= swaps point and mark, so the motions adjust the selection's
-*other* end — vi's =o= in visual mode. The object keys own fixed ends
-and simply trade back before they grow, so =M * w= selects what
-=M w= selects, and the same goes for a motion that has walked point
-past the mark.
-
-Pressed with a selection already active — a =V= session, a =v= region,
-or one the =m=-prefixed keys built — =M= *adopts* it into the mode
-rather than dropping it: =m w M w= extends the marked word, and a
-=V J= selection keeps its lines while the object keys grow it — whole
-lines, the final newline included, so =V J M d= removes both lines
-outright the way =V J d= does. A rectangle is the one selection =M=
-drops rather than adopts, having no forward end for the family to own
-— and having dropped it, =M= starts a run as it would over nothing at
-all, so the press still leaves you somewhere to press a letter. An
-*empty* selection is dropped the same way, so after a bare =v=
-mid-word, =M= still marks the whole word.
-
-Any other key ends the mode and then does its ordinary job in the same
-press — =M w d= selects two words and deletes them. Two are held
-back. A key that does nothing — one that is unbound, or =DEL= — leaves
-the run standing, so a mistyped key costs a beep rather than the
-selection. A mistyped *sequence* counts as one too: =m x= for =m w=,
-or a slip after =g=, beeps and leaves the run exactly as it was. And =v= and =V= are refused: neither a fresh mark nor a
-visual line session can own a mark run's selection, and both presses
-used to drop the run and start over without saying so, which is worse
-than being told to leave the mode first. =M= pressed again, inside the mode, drops the selection
-and the mode, and =C-g= does the same, as it does for every selection.
-
-=%= is a third exception, and the widest one: it marks the whole
-buffer, so the mode keeps the selection and =u= takes it back, rather
-than changing it on the way out. Nothing can grow a selection that
-already covers everything, so the press after it simply finds nothing
-to do.
-
-Only these eight keys are in the family:
-=m i= and =m a= count levels rather than objects, and a selection
-started with =v= is still never grown by a mark key. All eight grow a
-run inside =M= too; six of them have a bare letter there, and the
-paragraph pair keeps its =m= prefix.
-
-Any other key in between ends the run — =m w l m w= marks a single word
-again rather than two. An active selection made some other way is left
-alone: =v=, a few motions, then =m w= still marks the word at the
-cursor. Emacs' own rule is wider than this and would extend that
-selection too; DONKEY uses the narrower one so =v= keeps working the way
-it reads.
-
-=m i= and =m a= are not in this: they count *levels*, and one more level
-out is not one more of the same thing. Use a count for those.
-
-=m i= and =m a= take a count for *every* pair in
-=donkey-mark-pair-delimiters=, but the two kinds count different things.
-A nesting pair — =()=, =[]=, ={}=, =<>= — counts *levels*, resolving the
-correctly balanced match at each one. A symmetric delimiter — a quote,
-=*=, =~=, =/=, =_= — opens and closes with the same character, so there
-are no levels to count and it counts *occurrences* outward instead:
-
-#+begin_example
-  "No use "writing on paper." That"
-                ^ cursor here
-#+end_example
-
-- =m i "= → =writing on paper.=
-- =C-u 2 m i "= → =No use "writing on paper." That=
-
-That is a nearest-occurrence-each-way rule, not real nesting, and it can
-be fooled — with the cursor between two *separate* quoted strings, =m i "=
-already selects the gap between them rather than a quoted string, because
-nothing in the text says which quote opens. A count inherits that; it
-does not add a new way to go wrong.
-
-*Give the count as =C-u 2= or =M-2=, not =C-2=.* Whether =C-<digit>=
-reaches Emacs at all depends on the terminal — many do not transmit it
-as a distinct key, and it is not worth relying on. =C-u 2= is a plain
-control character followed by a digit and always gets through.
-
-Watch out for bare =C-u=: on its own it means *four*, not one. =C-u m i=
-asks for four levels of nesting, so on text only two deep it reports
-=No enclosing '(' beyond that level= — the count overshot, the delimiter
-is fine.
-
-If a count seems to be ignored, =C-h k= followed by the keys you press
-names the command Emacs actually received, which settles where it is
-being lost.
-
-Some commands are reachable by more than one key on purpose, so that
-whichever editor you arrive from, the key you already know works:
-
-| Key   | Does                | Familiar from |
-|-------+---------------------+---------------|
-| =g e= | end of buffer       | Helix         |
-| =G=   | end of buffer       | Vim           |
-| =d=   | delete char/region  | Helix         |
-| =x=   | delete char/region  | Vim           |
-
-=g g= needs no twin: both editors already use it for the start of the
-buffer.
-
-The duplication is deliberate and worth keeping — it is not a leftover.
-
-One difference from Vim worth knowing: =d= here is *not* an
-operator-pending key. It acts immediately on the selection, or on the
-character at point when there is none, the way Helix's =d= does — so
-=d d= deletes two characters rather than a line, and =d w= deletes a
-character and then moves a word. To delete to the end of a line, use
-=D=; to delete whole lines, select them first (=V=, =J=/=K=) and press
-=d=.
-
-** Search and Replace (=r= prefix)
-
-| Key   | Command          | Description    |
-|-------+------------------+----------------|
-| =r r= | =replace-regexp= | Replace regexp |
-| =r q= | =query-replace=  | Query replace  |
-
-** Undo and Scroll
-
-| Key   | Command               | Description     |
-|-------+-----------------------+-----------------|
-| =u=   | =undo=                | Undo            |
-| =U=   | =undo-redo=           | Redo            |
-| =z z= | =recenter-top-bottom= | Recenter cursor |
-
-** Enter Key
-
-| Key               | Command           | Description                            |
-|-------------------+-------------------+----------------------------------------|
-| =RET= / =<enter>= | =donkey-enter-dwim= | Context-aware Enter (see DWIM section) |
-
-** Suppressed Keys (ignored in Normal state)
-
-These keys are explicitly suppressed to prevent unwanted behavior:
-
-| Key           | Effect  |
-|---------------+---------|
-| =<backspace>= | Ignored |
-| =<delete>=    | Ignored |
-| =,=           | Ignored |
-| =-=           | Ignored |
-| =/=           | Ignored |
-| =;=           | Ignored |
-| =_=           | Ignored |
-
-** Commands without a key
-
-These DONKEY commands are bound to no key and are run with =M-x=,
-unless you bind them yourself (see Customizing Keybindings). The
-first two tables are things you run now and then: help and
-reports, and settings. The third holds commands that do nothing
-new but exist to be put on a key you like.
-
-Help and reports:
-
-| Command                 | What it does                               |
-|-------------------------+--------------------------------------------|
-| =donkey-tutor=          | Open the learn-by-doing tutor              |
-| =donkey-digraph=        | Show the digraph and Unicode chart         |
-| =donkey-version=        | Show the version of DONKEY that is loaded  |
-| =donkey-debug-platform= | Show a DONKEY and platform report for troubleshooting |
-| =donkey-toggle-wrap-engine= | Switch who wraps a selection, DONKEY or your pairing package |
-
-Settings:
-
-| Command                        | What it does                                              |
-|--------------------------------+-----------------------------------------------------------|
-| =donkey-add-denylist-entry=    | Stop driving the terminal cursor shape on a terminal type |
-| =donkey-remove-denylist-entry= | Drive it again on that terminal type                      |
-| =donkey-setup-smartparens=     | Set up the Smartparens integration, called from a config  |
-
-For a key of your own:
-
-| Command                      | What it does                                                  |
-|------------------------------+---------------------------------------------------------------|
-| =donkey-enter-normal=        | Switch to Normal state, for a key such as =ESC= if you want one |
-| =donkey-mark-run-adopt=      | Adopt the active selection into a mark run                    |
-| =donkey-switch-other-buffer= | Switch to the previous buffer                                 |
-| =donkey-org-scratch=         | Create or switch to the =_org-scratch_= buffer                |
-| =donkey-org-todo=            | Toggle a headline between TODO and DONE                       |
-
-* Excluded Modes
-:PROPERTIES:
-:CUSTOM_ID: excluded-modes
-:END:
-
-DONKEY Normal state is permanently disabled in certain major modes where
-key suppression would break core functionality. In these modes, DONKEY
-stays in Insert state (passthrough), keeping DONKEY active but
-non-interfering.
-
-*Permanently* is meant literally: there is no key that reaches Normal
-state from one of these buffers. =C-g= behaves as it does in stock
-Emacs — interrupting the subprocess, aborting a recursive edit — rather
-than switching state, and anything that manages to turn Normal state on
-by another route is bounced straight back. The modeline says
-=DONKEY[E]= rather than =DONKEY[I]= there, so the difference is visible
-without having to press a key to find out.
-
-** Built-in Defaults
-
-The following modes are excluded by default because they manage
-subprocess interaction or terminal emulation where suppressing keys
-via =suppress-keymap= would break functionality:
-
-| Mode                       | Reason                                                                 |
-|----------------------------+------------------------------------------------------------------------|
-| =comint-mode=              | Process interaction — all input goes to subprocess. Covers derivatives |
-|                            | like =shell-mode=, =inferior-python-mode=, =ielm-mode=, =gud-mode=     |
-|                            | via =derived-mode-p=.                                                  |
-| =term-mode=                | Full PTY terminal emulation — character-at-a-time, raw mode.           |
-| =vterm-mode=               | Same as =term-mode= but faster implementation.                         |
-| =eshell-mode=              | Own command-line parser and input loop.                                |
-| =eat-mode=                 | A terminal emulator that derives from none of the above.               |
-| =mistty-mode=              | The same, wrapping a shell in a terminal of its own.                   |
-| =slime-repl-mode=          | Common Lisp REPL, not a comint derivative.                             |
-| =cider-repl-mode=          | Clojure REPL, the same.                                                |
-| =racket-repl-mode=         | Racket REPL, the same.                                                 |
-| =haskell-interactive-mode= | GHCi REPL, the same.                                                   |
-
-Derived modes are caught automatically by the =derived-mode-p= check
-in =donkey--excluded-mode-p= (used consistently everywhere DONKEY needs
-to know whether a buffer is excluded), so listing =comint-mode= alone
-covers dozens of comint derivatives.
-
-The six after =eshell-mode= are there because they are covered by none
-of the four: each was measured answering =derived-mode-p= for none of
-them, and each is a buffer whose keys go to a process. That is a list
-rather than a rule, and it stops where the reading stopped — a REPL or
-a terminal that is not a comint derivative and is not named here gets
-Normal state, and belongs on the list the day somebody meets it.
-
-** Adding Additional Excluded Modes
-
-Modes like =dired-mode=, =ibuffer-mode=, =magit-status-mode=, and
-=epa-key-list-mode= are NOT excluded by default. In these modes, DONKEY
-Normal state works (keys are suppressed, =hjkl= navigates), but some
-users may prefer passthrough to retain native keybindings.
-
-To add modes to the exclusion list in your =config.el=:
-
-#+begin_src emacs-lisp
-
-  (with-eval-after-load 'donkey
-    (dolist (mode '(dired-mode ibuffer-mode magit-status-mode epa-key-list-mode))
-      (add-to-list 'donkey-excluded-modes mode)))
-
-#+end_src
-
-Or add a single mode:
-
-#+begin_src emacs-lisp
-
-  (with-eval-after-load 'donkey
-    (add-to-list 'donkey-excluded-modes 'pdf-view-mode))
-
-#+end_src
-
-Verify the current exclusion list:
-
-#+begin_src emacs-lisp
-
-  M-x eval-expression RET donkey-excluded-modes RET
-
-#+end_src
-
-* Customizing Keybindings
-:PROPERTIES:
-:CUSTOM_ID: customizing-keybindings
-:END:
-
-You can override existing bindings or add new ones in your =config.el=
-by modifying =donkey-normal-mode-map=.
-
-** Override an existing binding:
-
-#+begin_src emacs-lisp
-
-  ;; Replace the default behavior of ';' with consult-outline
-  (when (boundp 'donkey-normal-mode-map)
-    (keymap-set donkey-normal-mode-map ";" #'consult-outline))
-
-#+end_src
-
-** Unbind a suppressed key to fall through:
-
-#+begin_src emacs-lisp
-
-  ;; Make ',' fall through to the major mode instead of being refused
-  (when (boundp 'donkey-normal-mode-map)
-    (keymap-unset donkey-normal-mode-map ","))
-
-#+end_src
-
-Unbinding is the only thing that lets a key through. A key DONKEY
-binds is blocked whether the binding is =undefined= (which beeps and
-says "=,= is undefined") or =ignore= (which is silent): the major
-mode's own binding is out of reach either way. Normal state uses
-=undefined= for the keys it refuses, so a press is answered, and
-=ignore= for the four delete-key names, where a beep on every stray
-backspace would be noise you cannot act on.
-
-** Put your own keys under the leader, =SPC=:
-
-=SPC= in Normal state is a prefix, =donkey-leader-map=, that DONKEY
-keeps almost empty: it is there for keys of your own. Add to it with
-=keymap-set=. Write a binding as =(NAME . COMMAND)= and the name
-travels with the key: =?= shows it beside the command, and which-key,
-part of Emacs since 30 and a package before that, shows it in its
-popup. Nothing needs which-key to be installed, and none of its own
-functions, such as =which-key-add-key-based-replacements=, is needed
-to name a key.
-
-#+begin_src emacs-lisp
-
-  (keymap-set donkey-leader-map "SPC" '("other window" . other-window))
-  (keymap-set donkey-leader-map ","   '("switch buffer" . consult-buffer))
-  (keymap-set donkey-leader-map ";"   '("outline" . consult-outline))
-
-#+end_src
-
-A prefix of your own is named the same way, by binding its keymap
-with a name. Either define the keymap with its keys first, or let
-=keymap-set= create it and name it afterwards:
-
-#+begin_src emacs-lisp
-
-  ;; A prefix defined whole, then named.
-  (defvar my-open-map
-    (define-keymap "g" '("magit" . magit-status) "m" '("ement" . ement-connect)))
-  (keymap-set donkey-leader-map "o" (cons "open/apps" my-open-map))
-
-  ;; A prefix keymap-set made for you, named afterwards.
-  (keymap-set donkey-leader-map "t l" #'display-line-numbers-mode)
-  (keymap-set donkey-leader-map "t" (cons "toggle" (keymap-lookup donkey-leader-map "t")))
-
-#+end_src
-
-DONKEY reserves one key under =SPC= today: =SPC i=, the input method
-prefix (see Input Method Management). Everything else is yours. To
-move a reserved prefix, bind its map elsewhere and free the key:
-
-#+begin_src emacs-lisp
-
-  (keymap-set donkey-leader-map "m" (cons "input-method" donkey-input-method-map))
-  (keymap-unset donkey-leader-map "i" t)
-
-#+end_src
-
-Or just unset it if you never want it. The same works inside a
-reserved prefix: =(keymap-unset donkey-input-method-map "-" t)= frees
-=SPC i -=. =keymap-unset= with a non-nil third argument removes the
-key; with nil it leaves a hole that shadows nothing.
-
-** Everything in one =use-package= block:
-
-All of DONKEY's settings can sit in one =use-package= form. With a
-manual clone, =:ensure nil= keeps the package manager out of it and
-=:load-path= says where the file is; =:custom= sets options, and
-=:config= runs after the file is loaded, which is where key bindings
-go:
-
-#+begin_src emacs-lisp
-
-  (use-package donkey
-    :ensure nil
-    :load-path "donkey"
-    :custom
-    (donkey-input-methods '(("s" "Swedish" "swedish-postfix")
-                            ("p" "Polish"  "polish-slash")))
-    (donkey-digraph-line-spacing 0.2)
-    :config
-    (donkey-mode 1)
-    (keymap-set donkey-leader-map "SPC" '("other window" . other-window))
-    (keymap-set donkey-leader-map ","   '("switch buffer" . consult-buffer))
-    (keymap-set donkey-normal-mode-map "n" #'forward-paragraph))
-
-#+end_src
-
-* When a Key Is Not DONKEY's Any More
-:PROPERTIES:
-:CUSTOM_ID: binding-report
-:END:
-
-DONKEY remembers the keys it bound when it loaded, and once at first
-idle after =donkey-mode= comes on it says in the message log what has
-taken any of them since:
-
-#+begin_example
-
-  DONKEY: ; is consult-outline now, was donkey-goto-line
-  DONKEY: the wrap delimiter : is donkey-goto-line, so it does not wrap
-
-#+end_example
-
-The first line is a key of DONKEY's that something else runs now —
-your own binding, usually, and nothing to do about it except know. The
-second is the one that used to be silent: a character you named in
-=donkey-wrap-delimiters= whose key another DONKEY command already
-answers never wraps, and now says so instead of doing nothing. Only
-characters you named: under the default the list comes from the pair
-table, and =:= and =>= are quietly passed over.
-
-Nothing is said when nothing differs. Set
-=donkey-report-binding-changes= to nil to turn the pass off.
-
-=M-x donkey-check-bindings= asks the same question whenever you like,
-and asked by hand it tells the whole truth — including the two
-delimiters the automatic pass keeps quiet about. Run in a buffer where
-Normal state is on, it also reports the keys another map answers
-*here*, which differs from buffer to buffer and is why the automatic
-pass leaves it out.
-
-*** A key your buffer remaps is not a key you lost
-
-In an Org buffer you will see lines like these:
-
-#+begin_example
-
-  DONKEY: D runs org-kill-line in this org-mode buffer, which remaps
-  kill-line
-  DONKEY: g Q runs org-fill-paragraph in this org-mode buffer, which
-  remaps fill-paragraph
-
-#+end_example
-
-Nothing was taken. =org-mode= does not bind =C-k= at all; it *remaps*
-=kill-line= to =org-kill-line=, and a remap catches the command
-whichever key reached it — =C-k=, DONKEY's =D=, or a key you bind
-yourself. You get Org's structure-aware version everywhere, which is
-what you want, and it is the same mechanism DONKEY suppresses typing
-with. Those lines are counted apart from keys that really did change
-hands:
-
-#+begin_example
-
-  DONKEY: every key is as DONKEY left it; 2 wrap delimiters cannot take
-  their key; 3 keys this buffer remaps -- see the message log
-
-#+end_example
-
-A key another map genuinely took reads differently — "=DONKEY's own
-key is …=" — and is counted with the keys that differ.
-
-** Which map wins
-
-Bind in =donkey-normal-mode-map= and your binding wins: it is the same
-map, and your config runs after the package loads. The two routes that
-lose are the ones people reach for first — a global binding and a
-major-mode binding both sit below Normal state's map.
-
-A minor mode of your own loses as well, and that is deliberate. Normal
-state's keymap is on =emulation-mode-map-alists=, which Emacs reads
-before every entry in =minor-mode-map-alist=, so a key Normal state
-binds answers with Normal state's command whether the other package
-loaded before DONKEY or after it. Without that, the answer depended on
-load order — =define-minor-mode= pushes each new map onto the front of
-=minor-mode-map-alist= — and a package loaded later took the key:
-=paredit-mode= typed =;= and =(= in Normal state and deleted on =DEL=,
-=haskell-indentation-mode= typed =)= and broke the line on =RET=, and
-=slime-mode= turned the =SPC= leader into a space. Which of those a
-reader met depended on nothing they could see.
-
-A key Normal state does *not* bind is untouched and still reaches the
-mode that binds it. Three routes still win, for a key you want back in
-one particular mode:
-
-- *Remap the command.* A =[remap donkey-insert-here]= binding in the
-  mode's own map wins in the buffers where that map is live and
-  nowhere else — it is what =org-mode= already does to =D=, and
-  =donkey-check-bindings= reports it as a remap rather than as a key
-  somebody took. A remap catches a command, so it moves every key that
-  reaches it: =donkey-delete= is both =d= and =x=, and
-  =donkey-wrap-region= is every wrap key at once. It cannot hand a key
-  back to a prefix map.
-
-  #+begin_src emacs-lisp
-    ;; i is org-noter's in its own buffers, and DONKEY's everywhere else
-    (with-eval-after-load 'org-noter
-      (define-key org-noter-doc-mode-map
-                  [remap donkey-insert-here] #'org-noter-insert-note))
-  #+end_src
-
-- *An override map.* =bind-key*=, =use-package='s =:bind*= and
-  =general='s override maps install emulation maps of their own;
-  DONKEY's entry is appended after whatever is already there, so those
-  keep the precedence you asked them for.
-- *Higher still.* A transient map, =overriding-local-map=, and a
-  =keymap= text or overlay property are all read before any emulation
-  map.
-
-* Keys a Major Mode Types With
-:PROPERTIES:
-:CUSTOM_ID: mode-insert-commands
-:END:
-
-Normal state suppresses typing by remapping =self-insert-command=, and
-DONKEY's remap outranks a major mode's — which is how =org-mode=, that
-types nearly every key through a remap of its own, is answered.
-
-A mode that binds a key *directly* to an insert command of its own is
-another matter. =org-mode= puts =org-force-self-insert= on =|=,
-=cc-mode= puts electric commands on =#=, =*= and =/=, and AUCTeX puts
-its own on =$=, =\= and =^=; DONKEY had nothing bound on those keys,
-so the major mode's command ran and the character appeared. Those
-commands are refused now, by name:
-
-#+begin_src emacs-lisp
-
-  ;; the default
-  (setq donkey-self-insert-commands
-        '(org-self-insert-command org-force-self-insert
-          c-electric-pound c-electric-star c-electric-paren
-          c-electric-brace c-electric-slash c-electric-semi&comma
-          c-electric-colon c-electric-lt-gt
-          TeX-insert-quote TeX-insert-dollar TeX-insert-backslash
-          TeX-insert-sub-or-superscript LaTeX-insert-left-brace
-          LaTeX-babel-insert-hyphen))
-
-#+end_src
-
-Only the typing is refused. A mode's other commands are untouched,
-which is what lets Dired's =n=, =q= and =^= work in Normal state.
-
-If a mode of yours types through a command not on the list, add it and
-=M-x donkey-refresh-suppressed-commands= (=setopt= and Customize need
-no refresh). A command that is not installed costs nothing to name — a
-remap names a symbol, it does not call it.
-
-* Enter Key Rules (DWIM)
-:PROPERTIES:
-:CUSTOM_ID: enter-key-rules-dwim
-:END:
-
-DONKEY's =donkey-enter-dwim= command dispatches the Enter (RET) key based
-on context. In editing modes, Enter is blocked to prevent accidental
-line breaks. In non-editing modes the mode's own RET binding is
-invoked -- unless that binding would itself type or break a line, which
-is refused everywhere. Normal state does not type, and Enter never
-puts a newline in a buffer.
-
-For =org-mode=, DONKEY uses a rule-based dispatch system to execute
-context-aware actions when Enter is pressed. In =markdown-mode= and
-=gfm-mode=, Enter follows the link at point through markdown-mode's
-own =markdown-follow-thing-at-point= (its =C-c C-o=) and does nothing
-elsewhere on the page.
-
-** Which Modes Block Enter
-
-=donkey-editing-modes= (a Customization Group variable) lists the major
-modes where Enter does nothing: =prog-mode=, =text-mode=, =org-mode=,
-=fundamental-mode=, =conf-mode=, =markdown-mode=, and =gfm-mode=, by
-default. Derived modes are caught automatically via =derived-mode-p=,
-so =prog-mode= alone covers =python-mode=, =emacs-lisp-mode=, and every
-other language mode derived from it.
-
-Any major mode NOT in this list falls through to whatever the key
-means underneath Normal state's own keymap -- e.g. =dired-find-file= in
-=dired-mode=, or =magit-status='s own RET binding. The question is
-asked at the press, not remembered from when Normal state was entered,
-so a binding a minor mode adds later is found too.
-
-Two answers are refused, and Enter does nothing at all instead: a
-command that types or breaks a line, and the global =newline= a mode
-that binds nothing at all would otherwise fall through to. Normal
-state does not type, whatever the mode asks for. =donkey-self-insert-commands=
-is where a mode's own typing command goes if DONKEY does not already
-know it; it can only add to what is refused.
-
-To also block Enter in an additional mode, or remove one so it falls
-through to its native binding, from your =config.el=:
-
-#+begin_src emacs-lisp
-
-  (with-eval-after-load 'donkey
-    (add-to-list 'donkey-editing-modes 'lisp-interaction-mode)
-    (setq donkey-editing-modes (delq 'conf-mode donkey-editing-modes)))
-
-#+end_src
-
-** Built-in Default Rules
-
-The following rules are installed by default (controlled by
-=donkey-default-enter-rules-enabled=, which defaults to =t=):
-
-#+begin_src emacs-lisp
-
-  ;; Toggle checkboxes in org list items
-  (donkey-add-enter-rule item :checkbox org-toggle-checkbox)
-
-  ;; Toggle TODO/DONE on org headlines
-  (donkey-add-enter-rule headline :todo-type donkey-org-todo)
-
-  ;; Follow links in org
-  (donkey-add-enter-rule link nil org-open-at-point)
-
-#+end_src
-
-Each rule specifies:
-- =ELEMENT-TYPE= :: Org element type to match (e.g. =item=, =headline=, =link=)
-- =PROPERTY= :: Org element property to check (e.g. =:checkbox=, =:todo-type=), or =nil= for no property check
-- =COMMANDS= :: One or more commands tried in sequence (fallback chain). The first =fboundp= and =commandp= match wins.
-
-** Rule Priority
-
-Rules use =add-to-list= which prepends to the front of the list. The
-first matching rule wins.
-
-To prioritize a specific command for an element type, add it LAST in
-your =config.el= so it appears at the front of the dispatch list:
-
-#+begin_src emacs-lisp
-
-  ;; These will be checked in this order:
-  ;; 1. shr-follow-link-at-point (added last, checked first)
-  ;; 2. org-open-at-point (added first, checked second)
-  (donkey-add-enter-rule link nil org-open-at-point)
-  (donkey-add-enter-rule link nil shr-follow-link-at-point)
-
-#+end_src
-
-To replace a default rule entirely, disable the built-ins first, then
-add your own:
-
-#+begin_src emacs-lisp
-
-  (with-eval-after-load 'donkey
-    (setq donkey-default-enter-rules-enabled nil)
-    (donkey-add-enter-rule link nil shr-follow-link-at-point))
-
-#+end_src
-
-** Disabling Built-in Rules
-
-To define your own rules entirely, disable the defaults:
-
-#+begin_src emacs-lisp
-
-  (with-eval-after-load 'donkey
-    (setq donkey-default-enter-rules-enabled nil))
-
-#+end_src
-
-** Adding Custom Enter Rules
-
-Rules can be added from =config.el= using the =donkey-add-enter-rule=
-macro. Example:
-
-#+begin_src emacs-lisp
-
-  (with-eval-after-load 'donkey
-    ;; Follow links with shr-follow-link-at-point as first choice
-    (donkey-add-enter-rule link nil shr-follow-link-at-point
-                         org-open-at-point
-                         browse-url-at-point)
-
-    ;; Open agenda files from org-agenda table view
-    (donkey-add-enter-rule org-agenda-heading nil
-                         org-agenda-do-default-action))
-
-#+end_src
-
-** Dispatch Order
-
-=donkey-enter-dwim= checks elements in this order:
-
-1. =org-agenda-mode= RET binding (if in agenda)
-2. Context element (most specific, e.g. a link inside a headline)
-3. Parent element (e.g. the headline itself)
-4. Ancestor elements (walking up the org element tree)
-5. The link at point in =markdown-mode= or =gfm-mode=, through
-   =markdown-follow-thing-at-point=
-6. Non-editing mode native RET binding
-
-All rules are checked at each level before moving to the next. This
-ensures the most specific match fires first. Steps 2 to 4 run in Org
-buffers only: the rules match Org elements, and Org's parser is not
-asked to read any other kind of buffer.
-
-** Available Element Types
-
-Common org element types for rules:
-
-| Element Type | Useful Properties | Example Commands                           |
-|--------------+-------------------+--------------------------------------------|
-| =link=       | =nil=             | =org-open-at-point=, =browse-url-at-point= |
-| =headline=   | =:todo-type=      | =org-todo=, =donkey-org-todo=                |
-| =item=       | =:checkbox=       | =org-toggle-checkbox=                      |
-| =src-block=  | =nil=             | =org-edit-special=                         |
-| =table-row=  | =nil=             | =org-table-next-row=                       |
-| =plain-list= | =nil=             | =org-toggle-item=                          |
-
-* Cursor Management
-:PROPERTIES:
-:CUSTOM_ID: cursor-management
-:END:
-
-DONKEY manages cursor shapes independently for Normal and Insert states.
-In terminal mode (=emacs -nw=), DECSCUSR escape sequences are used for
-reliable cursor rendering across terminal emulators.
-
-** Configuration
-
-#+begin_src emacs-lisp
-
-  (with-eval-after-load 'donkey
-    (setq donkey-cursor-normal 'box      ; box, bar, hollow, or nil for global default
-          donkey-cursor-insert '(bar . 2))) ; bar with width 2
-
-#+end_src
-
-** Terminal Compatibility
-
-Some terminals do not support DECSCUSR or produce garbled output. DONKEY
-maintains a denylist of terminal types where escape sequences are
-suppressed:
-
-#+begin_src emacs-lisp
-
-  ;; View current denylist
-  M-x eval-expression RET donkey-decscusr-denied-terminals RET
-
-  ;; Add a terminal to the denylist interactively
-  M-x donkey-add-denylist-entry RET
-
-  ;; Remove a terminal from the denylist
-  M-x donkey-remove-denylist-entry RET
-
-#+end_src
-
-Default denied terminals: =dumb=, =linux= (framebuffer console).
-
-** Platform Diagnostics
-
-Run =M-x donkey-debug-platform= for a detailed report. It opens with
-DONKEY itself, gathered from the buffer you ran it in:
-
-#+begin_example
-
-  --- DONKEY ---
-  Version:        1.9.2
-  donkey-mode:    on
-  State here:     Normal
-  Buffer:         notes.org (org-mode)
-  Wrap engine:    donkey
-  Wrap keys:      27 of 29 claimed (all of donkey-mark-pair-delimiters)
-  Pair table:     21 pairs
-
-  Bindings:
-    the wrap delimiter : is donkey-goto-line, so it does not wrap
-    the wrap delimiter > is donkey-indent-region-or-line, so it does not
-    wrap; press < instead
-    D runs org-kill-line in this org-mode buffer, which remaps kill-line
-
-#+end_example
-
-The =Bindings:= lines are the same ones =M-x donkey-check-bindings=
-says in the message log — one place they are computed, two places to
-read them. Then the machine:
-
-- System type and Emacs version
-- Display backend (GUI vs terminal)
-- TTY type and TERM environment variable
-- Clipboard tool availability
-- Native compilation status
-
-Paste the whole buffer into a bug report.
-
-* Clipboard Integration
-:PROPERTIES:
-:CUSTOM_ID: clipboard-integration
-:END:
-
-DONKEY's =donkey-yank= command integrates with the system clipboard,
-falling back to the kill ring when no clipboard tools are available.
-=donkey-yank-rectangle= does not: a rectangle has no shape a flat
-clipboard could carry, so it round-trips inside Emacs only.
-
-** Detection
-
-DONKEY asks which frame it is in every time the answer is needed, since
-that differs per frame — a single =emacs --daemon= process can have
-both a GUI frame (=emacsclient -c=) and a terminal frame
-(=emacsclient -t=) at once, each with different capabilities. The walk
-of =PATH= for the command-line tools is done once and kept for the
-session, because that answer does not change per frame: install
-=wl-clipboard= while Emacs is running and DONKEY notices it the next
-time you start. Detection covers:
-- =wl-copy= / =wl-paste= (Wayland)
-- =xclip= / =xsel= (X11)
-- =pbcopy= / =pbpaste= (macOS)
-- Native GUI clipboard (graphical Emacs)
-- Windows native clipboard
-
-If no tools are found and Emacs is running in terminal mode, a warning
-is shown once at load time. Yank operations fall back to the kill ring
-silently after the first warning.
-
-** Daemon with Mixed GUI and Terminal Frames (Wayland)
-
-One known trap sits outside DONKEY's reach. On a pgtk Emacs daemon
-serving both a GUI frame and an =emacsclient -t= frame, copy in the
-GUI frame and then =donkey-yank= (=p=) in the terminal frame: the
-terminal frame reads the clipboard through =wl-paste=, which asks the
-compositor, which asks the owner of the selection — the very Emacs
-that is now blocked waiting for =wl-paste=. The result is a hang until
-the subprocess times out. Nothing in DONKEY can prevent it, because
-the wait happens inside =gui-backend-get-selection= before DONKEY's
-fallbacks run.
-
-What works for us on pgtk with Emacs 31 is to route the terminal
-frame's clipboard reads through a live GUI frame — pgtk serves Emacs'
-own selection locally, so the round-trip through the compositor never
-happens — and to have =xclip= drive =wl-copy= for writes:
-
-#+begin_src emacs-lisp
-  (use-package xclip
-    :ensure t
-    :init
-    (setq xclip-method 'wl-copy          ; Wayland only; X11 keeps the default
-          xclip-program "wl-copy")
-    :config
-    (xclip-mode 1))
-
-  ;; Daemon with mixed GUI/tty frames: read the clipboard through a live
-  ;; GUI frame.  pgtk serves Emacs' own selection locally, avoiding the
-  ;; wl-paste self-deadlock right after a copy in a GUI frame.
-  (cl-defmethod gui-backend-get-selection :around (type data-type
-                                                        &context (window-system nil))
-    (let ((gui-frame (seq-find #'display-graphic-p (frame-list))))
-      (if gui-frame
-          (with-selected-frame gui-frame
-            (gui-backend-get-selection type data-type))
-        (cl-call-next-method))))
-#+end_src
-
-This overrides an internal generic and is a workaround, not a
-recommendation: apply it only if you see the hang described above,
-and drop it once a stock Emacs no longer needs it.
-
-* Input Method Management
-:PROPERTIES:
-:CUSTOM_ID: input-method-management
-:END:
-
-DONKEY automatically saves and restores the active input method when
-transitioning between Normal and Insert states. This is useful for
-non-English keyboard layouts (e.g. Swedish Postfix).
-
-- Entering Normal state: saves and deactivates the current input method
-- Entering Insert state: restores the previously saved input method
-
-This prevents input method key sequences from interfering with Normal
-mode keybindings.
-
-DONKEY also names the method in the echo area when it is switched on
-or off, which Emacs itself does not: =C-\= turning =rfc1345= on in
-Insert state says "rfc1345 on", turning it off says "rfc1345 off",
-and in Normal state, where the method is put away until you go back
-to Insert, it says "rfc1345 on when you enter INSERT state". The
-saving and restoring DONKEY does on every state change says nothing,
-or every =ESC= and every =i= would.
-
-** Choosing a method: =SPC i=
-
-=SPC i= in Normal state is DONKEY's input method prefix. Its own keys
-are symbols, so every letter is free for a language of yours:
-
-| Key       | What it does                                                    |
-|-----------+-----------------------------------------------------------------|
-| =SPC i &= | One digraph: asks for its keys, no method needed; wraps a selection |
-| =SPC i .= | Digraphs: the =rfc1345= method the digraph chart lists          |
-| =SPC i -= | Off, for good: the held method is forgotten too                 |
-
-A method chosen in Normal state waits and comes on when you enter
-Insert state; the echo area says so. It also becomes the default, so
-=C-\= switches that method off and on afterwards.
-
-Your own languages go in =donkey-input-methods=, one =(KEY LABEL
-METHOD)= each. Every entry becomes a command named
-=donkey-input-method-LABEL= on its key, so =M-x= reaches it too, and
-the chart and which-key show the label. The list takes effect as soon
-as it is set, however it is set:
-
-#+begin_src emacs-lisp
-
-  (setq donkey-input-methods
-        '(("s" "Swedish"   "swedish-postfix")
-          ("n" "Norwegian" "norwegian-postfix")
-          ("d" "Danish"    "danish-postfix")
-          ("p" "Polish"    "polish-slash")))
-
-#+end_src
-
-METHOD is a name =M-x set-input-method= accepts; =C-h I= describes
-one. An entry on =.= or =-=, or that is not three strings, is left
-out; a method Emacs does not know is refused by name when its key is
-pressed.
-
-* Smartparens Integration
-:PROPERTIES:
-:CUSTOM_ID: smartparens-integration
-:END:
-
-DONKEY always, with no configuration needed:
-- Clears transient smartparens overlays on Insert-to-Normal transition
-- Defers overlay cleanup via idle timer to avoid race conditions
-
-Call =(donkey-setup-smartparens)= in your config after loading
-=smartparens= to additionally bind =C-g= in =smartparens-mode-map= and
-its overlay keymaps. This binding is opt-in and not installed
-automatically. If smartparens is not installed, DONKEY functions
-normally without errors.
-
-These bindings live in Smartparens' own keymaps, independent of
-=donkey-mode='s lifecycle, so they are not undone when =donkey-mode=
-is disabled. That's safe: with =donkey-mode= off, pressing =C-g=
-through one of these bindings falls through to =keyboard-quit=
-instead of re-enabling DONKEY's Normal state.
-
-#+begin_src emacs-lisp
-
-  (with-eval-after-load 'smartparens
-    (donkey-setup-smartparens))
-
-#+end_src
-
-Or with =use-package=, in =smartparens='s =:config= block, which runs
-at the same point as =with-eval-after-load=:
-
-#+begin_src emacs-lisp
-
-  (use-package smartparens
-    :ensure t
-    :config
-    (donkey-setup-smartparens))
-
-#+end_src
-
-* Wrapping a Selection with a Delimiter
-:PROPERTIES:
-:CUSTOM_ID: wrapping-a-selection
-:END:
-
-Select a region (=v=, =V=, =m w=, =m i= …), then press a delimiter
-while still in Normal state to wrap it — selecting =word= and pressing
-=(= gives =(word)=. The closing half of a pair does what its opener
-does, so =)=, =]= and =}= are wrap keys too. DONKEY wraps by itself,
-the same way in every buffer and whether or not you have a pairing
-package installed.
-
-Every pair =m i= and =m a= know is a wrap key: what you can select,
-you can wrap. That is =(=, =[=, ={=, =<=, ="=, ='=, =`=, the curved
-quotes, =«=, =‹=, ===, =*=, =~=, =|=, =\=, =/=, =+=, =_= and =$=,
-their closers included. The two exceptions are =:= and =>=, which run
-DONKEY commands of their own and go on running them.
-
-** The selection decides whether the pair goes on or comes off
-
-A press whose pair already stands *immediately outside* the selection
-takes that pair off. A press whose pair does not wraps. So the mark
-command you used says which of the two you get, and nothing has to be
-guessed:
-
-| Text                | Selection made with | Press | Result             |
-|---------------------+---------------------+-------+--------------------|
-| =say word now=      | =m w=               | ="=   | =say "word" now=   |
-| =say "word" now=    | =m i "= (inside)    | ="=   | =say word now=     |
-| =say "word" now=    | =m a "= (with them) | ="=   | =say ""word"" now= |
-
-The pair goes on and comes off, and nothing between the two characters
-is touched: no escaping, in any mode. So a layer at a time comes off
-in the order it went on — from =""word""=, selecting =word= gives
-="word"=, and selecting =word= again gives =word=. Whether the text
-that results is valid source in the buffer's language is yours to
-judge, as it is when you type the delimiter yourself.
-
-Only an unescaped pair counts as already standing there: a selection
-between escaped quotes, =\"word\"= in a string, gets a pair of its own
-rather than losing the escaped ones — the backslashes would have
-nowhere to go.
-
-** A character that is not on the keyboard
-
-=SPC i &= wraps as well as inserts: with a selection live it asks for
-an rfc1345 digraph and wraps in the character it names, closing from
-=donkey-mark-pair-delimiters=. =SPC i & < <= gives =«word»=, and
-=SPC i & " 6= gives =“word”=. It does not ask which command made the
-selection, so =m w=, =v=, =V=, =m i=, =m a=, a mark run and a
-rectangle are all wrapped the same way. See
-[[#digraphs-and-unicode][Digraphs and Unicode]].
-
-** Rectangles
-
-Under =rectangle-mark-mode= (=m v=) each line of the rectangle is
-wrapped at its own start and end column, with the matching close
-character inserted automatically. Selecting a 3-column rectangle
-across three lines of =alpha=/=bravo=/=charlie= and pressing =[= gives:
-
-#+begin_example
-
-  [alp]ha
-  [bra]vo
-  [cha]rlie
-
-#+end_example
-
-Lines shorter than the rectangle are padded with spaces first, the
-same way =string-rectangle= and other built-in rectangle commands
-handle them. A rectangle is never unwrapped: the pair goes on, row by
-row.
-
-** Letting your pairing package wrap instead
-
-If you would rather these keys behaved as they did before DONKEY
-wrapped for itself — handing the press to Smartparens or
-=electric-pair-mode= — set the engine:
-
-#+begin_src emacs-lisp
-
-  (setq donkey-wrap-region-engine 'pairing-package)
-
-#+end_src
-
-=M-x donkey-toggle-wrap-engine= flips between the two and says which
-is in force — and, handing the press over, whether anything is pairing
-in the buffer you are in:
-
-#+begin_example
-
-  DONKEY: the pairing package wraps now -- smartparens-mode is on in this buffer
-  DONKEY: the pairing package wraps now -- but nothing this package knows of is
-  pairing in this buffer, so a press will insert one character
-  DONKEY: DONKEY wraps and unwraps now
-
-#+end_example
-
-While the pairing package wraps, =all= means the six characters such a
-package pairs — =(=, =[=, ={=, ="=, ='= and =`= — rather than every
-pair in the table, because a package handed one it does not pair
-inserts a single character and no pair at all. Name the characters
-yourself and the list is taken as it stands under either engine, which
-is how you use a pair you have taught Smartparens.
-
-The press is then handed to the ordinary character insertion with the
-selection still live, and whatever is on =post-self-insert-hook=
-decides what happens:
-
-| Pressed on a selected =alpha= | =electric-pair-mode= | Smartparens | Nothing installed |
-|-------------------------------+----------------------+-------------+-------------------|
-| =(=                           | =(alpha)=            | =(alpha)=   | =(alpha=          |
-| ="=                           | ="alpha"=            | ="alpha"=   | ="alpha=          |
-| ='=                           | ='alpha=             | ='alpha'=   | ='alpha=          |
-
-That last row is the stock answer in =text-mode=, and it is the one
-row that moves. What a pairing package does with a selection depends
-on the major mode and on your own configuration: Smartparens wraps
-='alpha'= in =text-mode= and declines in =emacs-lisp-mode=, where ='=
-is a quote character rather than a delimiter, and =(sp-pair "'" nil
-:actions nil)= switches it off everywhere. =electric-pair-mode= never
-wraps ='= in any mode: there is no ='= pair in =electric-pair-pairs=
-at all — it appears only as the closer of a backquote.
-
-Nothing is ever taken off under that setting, and a delimiter the
-package does not pair leaves a single character at the selection's
-start. The rectangle path and the =SPC i &= wrap are DONKEY's own
-under either setting. The variable is read at each press, so a change
-takes effect on the next one, and any value but =pairing-package=
-reads as =donkey=.
-
-*** Escaping, and what DONKEY does instead
-
-Press a delimiter on a selection that already sits inside that
-delimiter and the three engines part company:
-
-| Selection                    | DONKEY          | =electric-pair-mode= | Smartparens         |
-|------------------------------+-----------------+----------------------+---------------------|
-| =word= in =say "word" now=   | =say word now=  | =say ""word"" now=   | =say ""word"" now=  |
-| =word= in =(setq x "word")=  | =(setq x word)= | =(setq x ""word"")=  | =(setq x "\"word\"")= |
-
-DONKEY takes the pair off — the press that put a pair on is the press
-that removes it, and nothing is escaped in any mode. Smartparens
-escapes, but only inside a string, which is where the syntax needs it.
-=electric-pair-mode= does neither: it nests, unescaped, and leaves you
-with source that will not read.
-
-So the engines are not two ways of doing one thing. DONKEY's own wrap
-also keeps two behaviors apart that a pairing package ties together:
-whether ='= pairs while you TYPE is your package's business, and
-whether ='= wraps a SELECTION is DONKEY's. Turn off the first — many
-people do, in Lisp and Org, where ='= and =`= are quote characters —
-and the second goes on working, in every mode.
-
-And when you do want the package's answer, including its escaping,
-=M-x donkey-toggle-wrap-engine= is the short way to it: flip, press
-the delimiter, flip back, without leaving Normal state or calling the
-package's own rewrap command by name.
-
-** Under the hood
-
-=donkey-normal-mode-map= normally suppresses every printable key so it
-cannot accidentally self-insert. These delimiters are the one
-exception, and only while a region is active. With no region:
-
-- in a buffer you can edit, the key does nothing, same as any other
-  suppressed key;
-- in a buffer you *cannot* edit, the press goes back to the major
-  mode, so Dired keeps =+=, =(= and =<=, Info keeps =[= and =]=, and a
-  help buffer keeps =<=.
-
-A wrap key is borrowed for as long as a selection lasts, and a
-read-only buffer is where nothing can be typed anyway, so the two
-questions have the same answer. A mode command that types is refused
-even there — see [[#mode-insert-commands][Keys a Major Mode Types With]]. DONKEY's own wrap
-never leaves Normal state; the =pairing-package= engine enters Insert
-state *without* clearing the selection first (unlike =i=/=a= and the
-other Insert Mode Entry commands), runs the ordinary character
-insertion so that region-wrap logic can see the still-active region,
-then returns to Normal state automatically.
-
-A read-only buffer, or read-only text where the change would land, is
-refused before anything is changed and the selection is left standing.
-A count is ignored: one delimiter press, one wrap.
-
-** Adding a delimiter of your own
-
-Two variables, and they are not the same one:
-
-- =donkey-mark-pair-delimiters= says *what closes what*. It is the
-  table =m i= and =m a= read, and where the wrap keys look up a
-  closer.
-- =donkey-wrap-delimiters= says *which characters are keys* that wrap
-  in Normal state.
-
-=donkey-wrap-delimiters= is =all= by default, which means *every pair
-the first one knows*. So a pair added to the table is a wrap key too,
-and one line in your init file is the whole of it:
-
-#+begin_src emacs-lisp
-
-  (add-to-list 'donkey-mark-pair-delimiters '(?# . ?#))
-
-#+end_src
-
-The keys are claimed once when =donkey.el= loads and once more at the
-first idle moment after =donkey-mode= comes on — which is after your
-init file has finished, so a pair added there needs no call of its
-own. =setopt= and Customize claim immediately.
-
-Adding a pair LATER in a running session — from =M-x eval-expression=,
-or a =setq= in a file you just loaded — is the one case that needs
-=M-x donkey-refresh-wrap-keys=, and DONKEY says so if you press the
-key first:
-
-#+begin_example
-
-  DONKEY: the wrap delimiter @ has no key yet; M-x donkey-refresh-wrap-keys
-
-#+end_example
-
-To wrap with some characters and not others, name them instead of
-=all=:
-
-#+begin_src emacs-lisp
-
-  (setopt donkey-wrap-delimiters '(?\( ?\[ ?{ ?\" ?' ?`))
-
-#+end_src
-
-Dropping a character, or a pair, gives its key back the same way.
-
-*** A key that already runs something is never taken
-
-=x= deletes, =c= changes, =i= and =a= start typing, =:= goes to a
-line, =>= indents. Naming any of them in =donkey-wrap-delimiters= does
-not turn them into wrap keys — the command stays, and DONKEY says
-which ones it left alone:
-
-#+begin_example
-
-  DONKEY: the wrap delimiter x is donkey-delete, so it does not wrap
-
-#+end_example
-
-So a character can be a delimiter for =m i= and =m a= without being a
-wrap key, which is the useful half of adding =x= to the pair table,
-and the dangerous half never happens.
-
-=:= and =>= are in the pair table and cannot wrap for exactly this
-reason: =:= goes to a line and =>= indents. So =m w <= gives
-=<word>= and =m w >= indents the line — the closing half of that one
-pair is the exception to "either half wraps".
-
-The once-a-session report passes those two over, being the same in
-every installation. Ask by hand and you are told:
-
-#+begin_example
-
-  M-x donkey-check-bindings
-  DONKEY: the wrap delimiter : is donkey-goto-line, so it does not wrap
-  DONKEY: the wrap delimiter > is donkey-indent-region-or-line, so it does not wrap
-  DONKEY: every key is as DONKEY left it; 2 wrap delimiters cannot take
-  their key -- see the message log
-
-#+end_example
-
-=M-x donkey-refresh-wrap-keys= answers the same question. A pair *you*
-added whose key is taken is always reported, by hand or not.
-
-Free means the key *does nothing*: unbound, suppressed, or bound to
-=ignore= to make it harmless. And it is your keymap that is asked, not
-a list of names DONKEY carries — rebind =x= to =ignore= and it becomes
-available to wrap; give =/= a command of its own and it stops being
-available, whichever of them DONKEY bound where to begin with.
-
-Both halves of a pair are judged on their own. =<= is free and becomes
-a wrap key; its closer =>= belongs to =donkey-indent-region-or-line=
-and keeps it — so =m w <= gives =<word>=, and =>= goes on indenting.
-
-* Position Tracking
-:PROPERTIES:
-:CUSTOM_ID: position-tracking
-:END:
-
-=M-x donkey-jump-back= (bound to =S=) rotates through a ring of
-previously recorded cursor positions in the current buffer. Positions
-are tracked automatically via =post-command-hook= whenever the cursor
-moves.
-
-It exists mainly to *undo navigation mistakes*. A big jump is easy to
-mis-key — =g e= when you meant =g l= — and =S= makes that a single
-keystroke to put right. Other uses suggest themselves, but it is a
-recovery key rather than a filing system, and it is not a substitute for
-Emacs' own bookmarks: positions are recorded as you move, so nothing in
-the ring is a place you *chose* to remember.
-
-- Ring size controlled by =donkey-position-ring-max= (default: 10)
-- Ring is buffer-local — each buffer keeps its own history
-- Independent of the mark ring and region
-- In a narrowed buffer, only positions inside the visible portion are
-  offered; if none of them are, =S= says so rather than jumping to the
-  narrowing edge
-
-To keep more (or fewer) positions, set =donkey-position-ring-max= in
-your =init.el= or =config.el=, e.g. after the =load= call from
-Installation:
-
-#+begin_src emacs-lisp
-
-  (setq donkey-position-ring-max 20)
-
-#+end_src
-
-Unlike =donkey-wrap-delimiters=, this takes effect immediately —
-`donkey--track-position` reads it fresh on every call, so it can be
-changed at any time, not just before =donkey.el= loads.
-
-* Org-Scratch Buffer
-:PROPERTIES:
-:CUSTOM_ID: org-scratch-buffer
-:END:
-
-=M-x donkey-org-scratch= creates or switches to a scratch buffer in
-=org-mode=. Useful for quick note-taking without creating a file.
-
-* Tutor
-:PROPERTIES:
-:CUSTOM_ID: tutor
-:END:
-
-=M-x donkey-tutor= opens a learn-by-doing buffer, the way =C-h t= and
-vimtutor do; like vimtutor, it has no key of its own: the text holding the instructions is the text you practice
-on, and changing it is the point. Lines beginning with =>>= are things to
-do; everything else is explanation.
+1. =M-x donkey-mode=. The modeline shows =DONKEY[N]=: you are in
+   NORMAL state.
+2. Press =i=. The modeline shows =DONKEY[I]=. Type a sentence — this
+   is ordinary Emacs.
+3. Press =C-g=. Back to =DONKEY[N]=.
+4. =h j k l= move left, down, up, right. =w= and =b= move by words.
+5. =v= starts a selection, =j= and =l= grow it, =y= copies it, =p=
+   pastes.
+6. =d= deletes the character under the cursor, or the selection if you
+   have one.
+7. =u= undoes. =C-x C-s= saves, as always.
+
+That is enough to work. =?= shows every key DONKEY binds, in a buffer
+you can read.
+
+** The tutor
+
+=M-x donkey-tutor= opens a buffer you learn in by editing it, the way
+=M-x help-with-tutorial= and vimtutor do.
 
 Thirteen lessons, ending with the two the keyboard itself cannot give
 you — wrapping a selection, and the characters that are not on it:
@@ -2344,363 +228,1339 @@ you — wrapping a selection, and the characters that are not on it:
 13. Characters your keyboard does not have (digraphs)
 
 The keys it names are *your* keys: the lessons are written with
-=substitute-command-keys= escapes, so anyone who has rebound something is
-taught the binding they actually have rather than the default.
+=substitute-command-keys= escapes, so anyone who has rebound something
+is taught the binding they actually have rather than the default.
 
 Running =M-x donkey-tutor= again returns you to the buffer as you left
 it. Kill the buffer to start over — nothing is written to disk.
 
-* Describe Bindings
+* Moving
 :PROPERTIES:
-:CUSTOM_ID: describe-bindings
+:CUSTOM_ID: moving
 :END:
 
-Press =?= in Normal state to see all active DONKEY keybindings in a
-formatted, clickable buffer. Bindings are grouped by prefix with
-section headers.
+| Key   | Does                                   |
+|-------+----------------------------------------|
+| =h=   | left one character                     |
+| =j=   | down one line                          |
+| =k=   | up one line                            |
+| =l=   | right one character                    |
+| =w=   | forward one word                       |
+| =b=   | back one word                          |
+| =W=   | forward one balanced expression        |
+| =B=   | back one balanced expression           |
+| =g g= | beginning of the buffer                |
+| =G=   | end of the buffer                      |
+| =g e= | end of the buffer (Helix's spelling)   |
+| =g h= | beginning of the line                  |
+| =g l= | end of the line                        |
+| =:=   | go to a line by number                 |
+| =z z= | recentre the screen                    |
+
+** Long lines: =J=, =K= and =V=
+:PROPERTIES:
+:CUSTOM_ID: long-lines
+:END:
+
+On a wrapped line, =j= moves to the next *line*, which may be off the
+screen. =J= and =K= move by what you can see instead — the next and
+previous screen row.
+
+=V= turns that around: it switches the buffer into visual-line mode,
+where =j= and =k= move by screen rows and =J= and =K= move by logical
+lines. Press =V= again to switch back.
+
+** Counts
+
+Digits type digits in stock Emacs and DONKEY leaves that alone, so a
+count is =C-u= and the number, exactly as everywhere else in Emacs:
+
+- =C-u 5 j= — down five lines
+- =C-u 3 d= — delete three characters
+- =C-u 10 w= — forward ten words
+
+=C-u 0 j= and a negative count do the sensible thing: zero is a bare
+press, and a negative count reverses the direction where that means
+something.
+
+** Coming back: =S=
+
+=S= walks back through the places you have been. DONKEY keeps a ring of
+the last =donkey-position-ring-max= positions (10 by default); pressing
+=S= repeatedly steps back through them, and any other command starts
+the ring collecting again from where you are.
 
 #+begin_src emacs-lisp
 
-  M-x donkey-describe-bindings
+  (setq donkey-position-ring-max 20)
 
 #+end_src
 
-* Digraphs and Unicode
+* Entering INSERT state
 :PROPERTIES:
-:CUSTOM_ID: digraphs-and-unicode
+:CUSTOM_ID: entering-insert
 :END:
 
-A digraph is two characters that stand for one you cannot type
-directly: =e'= for =é=, =Eu= for =€=. The codes are those of RFC 1345,
-the same ones vi uses, and Emacs holds the whole table as the
-=rfc1345= input method, each entry typed with an ampersand in front
-of it.
+| Key | Where you end up                                  |
+|-----+---------------------------------------------------|
+| =i= | before the cursor                                 |
+| =a= | after the cursor                                  |
+| =I= | at the first non-blank character of the line      |
+| =A= | at the end of the line                            |
+| =o= | on a new line below                               |
+| =O= | on a new line above                               |
+| =c= | replacing the selection, or the character at point |
 
-=M-x donkey-digraph= opens a buffer with the common ones, the steps,
-and then the whole table, grouped by script with Latin first: every
-digraph the method knows, with what it types, its code point and
-the character's name, ready to copy from. In a graphical frame the rows of each script group are padded
-to one height, the least the group's fonts allow, with the baselines
-aligned, so a Latin group sits at the line's own height and an
-Arabic group at its fonts'. =donkey-digraph-line-spacing= adds air
-under every row on top of that, so that a tall glyph such as a floor
-bracket stands clear: a number of pixels, or a fraction of a padded
-row's height. The default is zero, and the text around the tables
-keeps its spacing whatever the value.
+=C-g= brings you back from any of them.
 
-Which height a group gets depends on the font your frame draws that
-script with: a main font that lacks Arabic or CJK sends those groups
-to a fallback font and they come out taller, while a broad font such
-as JuliaMono keeps more of them at the line's own height. The
-padding is measured when the chart is built and again when its text
-is scaled; after changing the frame's font, run the command again. A
-row whose result is blank or a box is a control character or a
-private-use code point, which RFC 1345 assigns to mnemonics that
-have no Unicode character; no font draws those. In a terminal every
-row is one cell and none of this applies.
+* Editing
+:PROPERTIES:
+:CUSTOM_ID: editing
+:END:
 
-The option is read each time the chart is built, so it can be set
-in =init.el= or =config.el= before or after DONKEY loads:
+| Key   | Does                                                      |
+|-------+-----------------------------------------------------------|
+| =d=   | delete the selection, or the character under the cursor    |
+| =x=   | the same as =d= (Vim's spelling; =d= is Helix's)           |
+| =D=   | delete to the end of the line                             |
+| =c=   | change: delete, then INSERT state                          |
+| =y=   | copy the selection                                        |
+| =p=   | paste                                                     |
+| =P=   | paste as a rectangle                                      |
+| =u=   | undo                                                      |
+| =U=   | redo                                                      |
+| =C=   | comment or uncomment                                      |
+| =g j= | join this line and the next                               |
+| =>=   | indent the selection, or this line                        |
+| =g q= | fill the selection                                        |
+| =g Q= | fill the paragraph                                        |
+| =.=   | repeat the last command                                   |
+| =%=   | select the whole buffer                                   |
+
+=d= is deliberately *not* an operator the way Vim's is: there is no
+=d w= or =d d=. Select first, or use =D= for the rest of the line.
+
+Two smaller rules worth knowing, because they are choices rather than
+accidents:
+
+- Deleting a single character does not go on the kill ring. Single
+  characters are typo fixes, not cuts; the kill ring keeps what you
+  deliberately cut.
+- What a selection replaces is always recoverable — from the kill ring
+  or from undo, and each command's documentation says which.
+
+* Selecting
+:PROPERTIES:
+:CUSTOM_ID: selecting
+:END:
+
+** A plain selection: =v=
+
+=v= sets the mark and starts a selection that any motion extends. =v=
+again re-anchors it where the cursor is; =C-g= cancels it.
+
+** Whole lines: =V=
+
+=V= — see [[#long-lines][Long lines]] above — also serves as a line-wise selection
+when a selection is what you are after.
+
+** Text objects: the =m= prefix
+
+| Key   | Selects                                    |
+|-------+--------------------------------------------|
+| =m w= | the word at point                          |
+| =m W= | the symbol at point                        |
+| =m b= | the word before point                      |
+| =m B= | the symbol before point                    |
+| =m s= | the sentence                               |
+| =m S= | the sentence before                        |
+| =m p= | the paragraph                              |
+| =m P= | the paragraph before                       |
+| =m i= | inside a pair — quotes, brackets, anything |
+| =m a= | the pair as well as what it holds          |
+| =m I= | inside the balanced expression             |
+| =m A= | the balanced expression as well            |
+| =m v= | a rectangle                                |
+
+=m i= and =m a= ask which pair: press the delimiter after them, and
+either half will do — =m i (= and =m i )= mean the same thing. With
+the cursor already on a delimiter they use that one without asking.
+
+=donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ‘ ’ “ ” « » ‹ › = * ~ | \ / : + _ $=
+by default — 21 pairs, kept in =donkey-mark-pair-delimiters=. Where a
+character both opens and closes, the same key does both jobs. Adding
+your own is [[#own-pairs][one line]], and what =m i= can select, a key can wrap.
+
+*** Pressing again grows the selection
+
+Press =m w= twice and you get two words, not the same word twice. The
+same holds for =m W=, =m s= and =m p=, and it keeps going on each
+further press until the buffer runs out — so =m s m s m s= is another
+way to write =C-u 3 m s=.
+
+The backward keys grow backward, and continue the same run: starting
+on "that" in /This buffer is for text that is not saved/, =m w m w m b=
+selects "text that is" — two words forward, one back.
+
+Pressed fresh, with no run to continue, a backward key selects exactly
+what its forward partner would. The pair differ only in the direction
+further presses grow.
+
+Objects mix freely, each press adding one object of its own kind at its
+own end: =m w m s= grows a word selection forward to the end of its
+sentence, and =m s m b= takes the sentence plus the word before it.
+
+** The mark run: =M=
+
+=M= is the =m= prefix held down for you. In a mark run the bare letters
+=w W b B s S= do what their =m=-prefixed versions do, so =M w b=
+selects what =m w m w m b= selects, and the run keeps growing with
+every letter.
+
+=M= arrives already holding a word — the word =m w= would have marked
+— because that is what nearly every run starts from. So =M d= takes
+the word under the cursor, =M w= is two words, =M b= is the word and
+the one before it.
+
+One sentence covers the whole design: *=M= is =m w=, and each letter
+after it is one more =m=-prefixed press.*
+
+Inside a run:
+
+| Keys                 | Do                                                  |
+|----------------------+-----------------------------------------------------|
+| =w W b B s S=        | mark and grow, as the =m= versions do               |
+| =m w=, =m p=, =m P=… | still work, and continue the run — paragraphs are reached this way |
+| =h j k l=, =g h=, =g l=, =g g=, =g e=, =J=, =K= | continue a visible run by character, line and buffer |
+| =u=, =U=            | step back and forward through the *run's* history    |
+| =.=                  | repeat                                              |
+| =*=                  | swap which end of the selection grows                |
+| =p=, =P=             | stay the paste keys — =M p= replaces the marked word |
+| =d=, =y=, =x=, =c=   | act on the run's selection, as everywhere else      |
+| =v=, =V=             | refused: neither can take a selection the run owns   |
+| =M=                  | end the run                                         |
+| anything else        | a beep, and the run survives it                     |
+
+Counts work: =M C-u 3 w= is four words, exactly as =m w C-u 3 m w= is.
+
+A reminder in the echo area stays for as long as the run does. It names
+only the keys whose *subject* the run changes — =w= moves by a word in
+NORMAL state and marks one here, which nobody could guess — and leaves
+out the keys that keep their meaning. The full list is above, in =?=,
+and in the tutor.
+
+A run follows you between buffers and frames rather than dying when you
+leave; see [[#run-follows][A mark run follows you between buffers]].
+
+** Rectangles: =m v=
+
+=m v= starts a rectangle. =P= pastes one back. Rectangles work with the
+wrap keys and with banking, below.
+
+** Banking lines: keeping a selection that is not contiguous
+
+Sometimes the lines you want are not next to each other. =m l= banks
+the current selection — puts it aside, visibly highlighted — and you
+can go and bank another somewhere else. The banked lines together are
+what the next command acts on.
+
+| Key     | Does                                  |
+|---------+---------------------------------------|
+| =m l=   | bank the selection                    |
+| =m u=   | take back the last bank               |
+| =m U=   | take back the whole run of banks      |
+| =m DEL= | clear every bank                      |
+
+Banked lines survive =C-g=: they are a store you put something in on
+purpose, like the kill ring, and only the key that means discard
+discards them.
+
+* Wrapping a selection in a pair
+:PROPERTIES:
+:CUSTOM_ID: wrapping
+:END:
+
+With a selection, press a delimiter and the selection is wrapped in
+it. Nineteen keys do this out of the box —
+
+#+begin_example
+
+  "  $  '  (  )  *  +  /  <  =  [  \  ]  _  `  {  |  }  ~
+
+#+end_example
+
+— and so do the curved and angled quotes =«= =»= =‘= =’= =“= =”= =‹= =›=,
+which you can reach with a digraph even if your keyboard cannot type
+them. Either half of a pair does the same job: =)= wraps in =(= and =)=
+just as =(= does.
+
+Press the same delimiter with the pair *already* around the selection
+and it comes off again. Which one you get is decided by what you
+selected: select what the pair holds and the pair goes on; select the
+pair as well and it comes off.
+
+Characters your keyboard cannot reach are available too — see
+[[#digraphs][Typing characters your keyboard lacks]] — and rectangles can be wrapped
+line by line.
+
+** What a wrap key does with no selection
+
+Nothing, in a buffer you can edit — the same as any other suppressed
+key. In a buffer you *cannot* edit, the press goes back to the major
+mode: Dired keeps =+=, =(= and =<=, Info keeps =[= and =]=, a help
+buffer keeps =<=. A wrap key is borrowed only for as long as a
+selection lasts, and a read-only buffer is one where nothing could be
+typed anyway, so both questions have the same answer.
+
+A mode command that would type is refused even there.
+
+** Two more rules worth knowing
+
+- A read-only buffer, or read-only text where the pair would land, is
+  refused before anything changes, and your selection is left standing.
+- A count is ignored: one delimiter press, one wrap.
+
+** Wrapping something that is already wrapped
+
+Press a delimiter on a selection that already sits inside that
+delimiter and the three engines part company:
+
+| Your selection             | DONKEY          | =electric-pair-mode= | Smartparens           |
+|----------------------------+-----------------+----------------------+-----------------------|
+| =word= in =say "word" now= | =say word now=  | =say ""word"" now=   | =say ""word"" now=    |
+| =word= in =(setq x "word")= | =(setq x word)= | =(setq x ""word"")=  | =(setq x "\"word\"")= |
+
+DONKEY takes the pair off — the press that puts a pair on is the press
+that removes it, and nothing is escaped in any mode. Smartparens
+escapes, but only inside a string, where the syntax needs it.
+=electric-pair-mode= does neither: it nests, unescaped, and leaves you
+with source that will not read.
+
+So the two engines are not two ways of doing one thing. DONKEY's own
+wrap also keeps apart two things a pairing package ties together:
+whether ='= pairs while you *type* is your package's business, and
+whether ='= wraps a *selection* is DONKEY's. Turn the first off — many
+people do in Lisp and Org, where ='= and =`= are quote characters —
+and the second goes on working in every mode.
+
+When you do want your package's answer, including its escaping, =M-x
+donkey-toggle-wrap-engine= is the short way: flip, press the delimiter,
+flip back, without leaving NORMAL state.
+
+* The Enter key
+:PROPERTIES:
+:CUSTOM_ID: enter-key
+:END:
+
+In a buffer you are editing — code, prose, org — =RET= does nothing in
+NORMAL state. That is deliberate: NORMAL state does not type, and
+=RET= is the last key that should put a newline in a buffer you are
+reading.
+
+In a buffer you are *not* editing, =RET= is handed back to the mode:
+=dired-find-file= in Dired, =magit-visit-thing= in Magit,
+=Info-follow-nearest-node= in Info. In Org and Markdown it follows the
+link at point, toggles the checkbox, or flips the TODO — see [[#enter-rules][Enter
+Rules]] to change or extend that.
+
+* Search and replace
+:PROPERTIES:
+:CUSTOM_ID: search-replace
+:END:
+
+| Key   | Runs            |
+|-------+-----------------|
+| =r r= | =replace-regexp= |
+| =r q= | =query-replace=  |
+
+isearch is untouched: =C-s= and =C-r= work in both states, as does
+everything else Emacs binds to a control or meta key.
+
+* Typing characters your keyboard lacks
+:PROPERTIES:
+:CUSTOM_ID: digraphs
+:END:
+
+=SPC i &= types one character from a two-key digraph — =SPC i & a '=
+gives á, =SPC i & - >= gives →. With a selection, the digraph wraps it.
+
+For more than one, turn the input method on with =SPC i .= and type
+=&= followed by the two keys as you go; =SPC i -= turns it off again.
+
+=M-x donkey-digraph= opens a chart of every digraph, sorted with the
+twelve most useful first.
+
+* Other languages
+:PROPERTIES:
+:CUSTOM_ID: input-methods
+:END:
+
+=donkey-input-methods= puts your own input methods under =SPC i=:
 
 #+begin_src emacs-lisp
 
-  ;; A fraction of a padded row's height as air under each row.
-  (setq donkey-digraph-line-spacing 0.3)
-
-  ;; Or a number of pixels.
-  (setq donkey-digraph-line-spacing 6)
-
-  ;; Or none, which is the default.
-  (setq donkey-digraph-line-spacing 0)
+  (setq donkey-input-methods
+        '(("s" "swedish"   "swedish-postfix")
+          ("n" "norwegian" "norwegian-postfix")
+          ("p" "polish"    "polish-slash")))
 
 #+end_src
 
-=M-x customize-variable RET donkey-digraph-line-spacing= does the
-same; a change shows the next time =M-x donkey-digraph= runs.
+That gives you =SPC i s=, =SPC i n= and =SPC i p=. DONKEY's own
+entries under =SPC i= sit on symbols — =&=, =.= and =-= — precisely so
+that every letter stays free for a language of yours.
 
-The common ones are the twelve characters English web text uses
-most that a keyboard lacks, the most frequent first, quotation
-marks in pairs — and the guillemets, which =m i=, =m a= and a wrap
-all know as a pair:
+Emacs's own way in, =C-x RET C-\= and =M-x set-input-method=, works
+exactly as it always did.
 
-| Digraph | Type   | Result |
-|---------+--------+--------|
-| ='6=    | =&'6=  | ‘      |
-| ='9=    | =&'9=  | ’      |
-| ="6=    | =&"6=  | “      |
-| ="9=    | =&"9=  | ”      |
-| =<<=    | =&<<=  | «      |
-| =>>=    | =&>>=  | »      |
-| =-N=    | =&-N=  | –      |
-| =-M=    | =&-M=  | —      |
-| =sb=    | =&sb=  | •      |
-| =e'=    | =&e'=  | é      |
-| =Pd=    | =&Pd=  | £      |
-| =Rg=    | =&Rg=  | ®      |
-| =1'=    | =&1'=  | ′      |
-| =Eu=    | =&Eu=  | €      |
-
-To type one: press =SPC i .= in Normal state, and the digraphs are on
-as soon as you enter Insert state; Emacs's own way works too, =C-x RET
-C-\= or =M-x set-input-method RET= and choosing =rfc1345=. Either way
-once is enough; after that =C-\= switches it off and on. Then, in
-Insert state, type the ampersand and the digraph. DONKEY names the
-method in the echo area when it switches, which Emacs itself does
-not; the mode line shows =m= while the method is on.
-=C-\= brings back the method the buffer used last, so after typing
-with another method choose =rfc1345= again the same way.
-DONKEY turns the input method off in Normal state, so the letters
-stay commands, and back on when you return to Insert. The full table
-is =C-h I rfc1345=.
-
-For just one character, =SPC i &= in Normal state asks for the
-digraph's keys and inserts it, with no input method turned on:
-=SPC i & e '= gives =é=. The keys are read as the method reads them
-after its ampersand, so a three-key mnemonic such as =!!>= works, and
-=RET= accepts a shorter one that is also the start of a longer one,
-as =12= is. A count repeats it, and keys the method does not know
-insert nothing. =C-g= cancels, as it does at any other prompt.
-
-With a selection live the character wraps it instead of being
-inserted, closing with whatever =donkey-mark-pair-delimiters= pairs it
-with: =SPC i & < <= on a selected =word= gives =«word»=, and
-=SPC i & " 6= gives =“word”=. A selection those already stand around
-loses them, the same rule the delimiter keys follow. The count is
-ignored there — one press, one wrap — and so is
-=donkey-wrap-region-engine=: no pairing package has an opinion about a
-digraph. This is also the way to reach a pair that has no key of its
-own, the guillemets among them.
-
-For any character by code point or name, =C-x 8 RET= works in either
-state: =C-x 8 RET 20ac RET= gives =€=. On a Linux desktop,
-=Ctrl+Shift+u= starts GTK's own hex entry in a graphical frame: keep
-Ctrl and Shift held while typing the hex code, and the character
-appears when you release them; release after the =u= and the entry is
-over. With an IBus daemon running the order is the other way round:
-release after the =u=, type the code, then Space or Enter. In a
-terminal it depends on the terminal.
-
-* Version
+* Suppressed keys
 :PROPERTIES:
-:CUSTOM_ID: version
+:CUSTOM_ID: suppressed-keys
 :END:
 
-=M-x donkey-version= shows the version of DONKEY that is *loaded* —
-captured from the package header at load time, so after updating the
-file on disk it keeps reporting the version actually running until
-you reload. From Lisp, =(donkey-version)= returns the version string,
-or =nil= when no readable header was found at load time.
+These do nothing in NORMAL state, on purpose:
 
-What changed in each release is in [[file:CHANGELOG.org][CHANGELOG.org]], newest first.
+| Key                                        | Why |
+|--------------------------------------------+-----|
+| =BACKSPACE=, =DELETE= (all four key names) | silenced — pressed from habit, and a beep on every stray press is noise nobody can act on |
+| =,= =-= =;=                                | refused with "is undefined": a punctuation key pressed in NORMAL state is a question, and this answers it |
 
-* Changelog
+They are bound to something harmless rather than left unbound, and
+that is the point: an unbound key falls through to the major mode, and
+some major modes type with punctuation. The rest of the punctuation is
+not on this list because it wraps — see [[#wrapping][Wrapping a selection]].
+
+* Making it yours
 :PROPERTIES:
-:CUSTOM_ID: changelog
+:CUSTOM_ID: making-it-yours
 :END:
 
-[[file:CHANGELOG.org][CHANGELOG.org]] lists every release, newest first, with what changed
-for someone using the package. Entries for 1.4.1 and earlier were
-written after the fact from the git history; the commits remain the
-record of why.
+Everything below goes in your init file. DONKEY has to be loaded first,
+so wrap anything that touches its keymaps or options in
+=with-eval-after-load=, or put it in a =use-package= =:config= block.
 
-* Customization Group
-:PROPERTIES:
-:CUSTOM_ID: customization-group
-:END:
-
-All DONKEY variables are under the =donkey= Customize group:
+** One key of your own
 
 #+begin_src emacs-lisp
 
-  M-x customize-group RET donkey RET
+  (with-eval-after-load 'donkey
+    (keymap-set donkey-normal-mode-map "F" #'delete-other-windows))
 
 #+end_src
 
-| Variable                           | Type    | Default            | Description                            |
-|------------------------------------+---------+--------------------+----------------------------------------|
-| =donkey-excluded-modes=              | list    | (see above)        | Modes where Normal state is disabled   |
-| =donkey-editing-modes=               | list    | (see above)        | Modes where Enter/RET is blocked       |
-| =donkey-cursor-normal=               | symbol  | =box=              | Cursor shape in Normal state           |
-| =donkey-cursor-insert=               | cons    | =(bar . 2)=        | Cursor shape in Insert state           |
-| =donkey-default-enter-rules-enabled= | boolean | =t=                | Install default Enter DWIM rules       |
-| =donkey-position-ring-max=           | integer | =10=               | Number of positions in jump-back ring  |
-| =donkey-decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
-| =donkey-wrap-delimiters=             | =all= or list | =all=        | Which delimiters wrap an active region |
-| =donkey-wrap-region-engine=          | symbol  | =donkey=           | Who wraps: DONKEY, or your pairing package |
-| =donkey-report-binding-changes=      | boolean | =t=                | Say in the message log what has taken DONKEY's keys |
-| =donkey-self-insert-commands=        | list    | =(see below)=      | Commands Normal state refuses because they type |
-| =donkey-mark-pair-delimiters=        | alist   | =(see above)=      | Delimiter pairs for mark-inner/outer   |
+That key is yours in every NORMAL-state buffer.
 
-* Troubleshooting
+** Several keys: the =SPC= leader
+
+Rather than spending single letters, put your keys under =SPC=. Write
+each as =("name" . command)= and the name shows up in =?= and in
+which-key, with nothing depending on which-key being installed:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (keymap-set donkey-leader-map "b" '("switch buffer"  . switch-to-buffer))
+    (keymap-set donkey-leader-map "f" '("find file"      . find-file))
+    (keymap-set donkey-leader-map "g" '("magit"          . magit-status))
+    ;; a prefix of your own, with its own leaves
+    (keymap-set donkey-leader-map "w h" '("window left"  . windmove-left))
+    (keymap-set donkey-leader-map "w l" '("window right" . windmove-right)))
+
+#+end_src
+
+=SPC b= then runs =switch-to-buffer=, and =?= shows the row:
+
+#+begin_example
+
+  SPC b          switch-to-buffer  switch buffer
+
+#+end_example
+
+Every letter under =SPC= is yours. DONKEY keeps only symbols there —
+=SPC i= for input methods — so nothing of yours can collide with
+something added later.
+
+** Giving a key back to the buffer
+
+A key bound to =undefined= is refused. Unbind it and it falls through
+to whatever the major mode has:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (keymap-unset donkey-normal-mode-map ";"))   ; ; is the mode's again
+
+#+end_src
+
+Be aware of what you are letting through: some major modes bind
+punctuation to a command that types, which is why these keys are
+refused rather than left open in the first place.
+
+* If a Key Is Not Doing What You Want
+:PROPERTIES:
+:CUSTOM_ID: key-not-doing
+:END:
+
+NORMAL state gives the letters to DONKEY. Most of the time that is the
+point, and now and then it takes a key you wanted for something else.
+
+First: it still works in INSERT state. Press =i= and the key is the
+package's again, exactly as it was.
+
+If you want it in NORMAL state too, there are three ways, in order of
+how much they change.
+
+** 1. Give one key back, in one mode
+
+Say you use =org-noter=, and in its document window you would rather
+=i= wrote a note than started INSERT state:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'org-noter
+    (define-key org-noter-doc-mode-map
+                [remap donkey-insert-here] #'org-noter-insert-note))
+
+#+end_src
+
+Now =i= writes a note in an org-noter document buffer and is INSERT
+state everywhere else. You do not have to remember which buffer you
+are in — the mode does.
+
+The pattern is always the same: take the DONKEY command you want out
+of the way, wrap it in =[remap ...]=, bind that in the mode's own map.
+=M-x donkey-check-bindings= lists it afterwards as a key that mode
+remaps, which is its way of saying "somebody meant this".
+
+Three things it cannot do:
+
+- It moves a *command*, not a key. =d= and =x= are both
+  =donkey-delete=, so remapping that moves both; every wrap key is
+  =donkey-wrap-region=, so remapping that moves all nineteen.
+- It cannot give a key back to a *prefix* — a key that opens a further
+  menu of keys, as AUCTeX's =`= does.
+- It needs a command to name. "Whatever that mode would have done" is
+  not something you can write here.
+
+For those, exclude the mode.
+
+** 2. Turn NORMAL state off for that kind of buffer
+
+See [[#stepping-aside][Modes Where DONKEY Steps Aside]], just below. One line, and the
+mode has all of its keys back.
+
+** 3. Take the key for yourself
+
+If it is your key rather than the mode's, bind it in
+=donkey-normal-mode-map= as above — that wins everywhere.
+
+* Modes Where DONKEY Steps Aside
+:PROPERTIES:
+:CUSTOM_ID: stepping-aside
+:END:
+
+In a mode on =donkey-excluded-modes=, DONKEY is out of the way
+completely: every key is the mode's, NORMAL state cannot be reached by
+any route, =C-g= means what it means in stock Emacs, and the modeline
+says =DONKEY[E]=.
+
+Add your own:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (dolist (mode '(dired-mode magit-mode ibuffer-mode pdf-view-mode))
+      (add-to-list 'donkey-excluded-modes mode)))
+
+#+end_src
+
+Naming a parent mode covers its children, which saves a lot of typing:
+=magit-mode= alone covers the status, log, diff, revision, refs,
+reflog, stash and process buffers, and the =forge= ones too.
+
+=wdired= is the exception worth knowing: it is not built on
+=dired-mode=, so excluding dired leaves it alone — which is what you
+want, since a wdired buffer is one you are editing.
+
+** What is on the list already
+
+| Mode                       | Why                                                     |
+|----------------------------+---------------------------------------------------------|
+| =comint-mode=              | every key goes to a subprocess. Covers its derivatives: =shell-mode=, =ielm-mode=, =inferior-python-mode=, =sql-interactive-mode=, =geiser-repl-mode=, =inf-ruby-mode=, =gud-mode= and the rest |
+| =term-mode=                | a full terminal — character at a time, raw mode         |
+| =vterm-mode=               | the same, faster                                        |
+| =eshell-mode=              | its own command line and input loop                     |
+| =eat-mode=                 | a terminal that derives from none of the above          |
+| =mistty-mode=              | the same, wrapping a shell                              |
+| =slime-repl-mode=          | Common Lisp REPL, not a comint derivative               |
+| =cider-repl-mode=          | Clojure REPL, the same                                  |
+| =racket-repl-mode=         | Racket REPL, the same                                   |
+| =haskell-interactive-mode= | GHCi REPL, the same                                     |
+
+The first four cover a great many modes by derivation. The six after
+them derive from none of the four and had to be named one at a time.
+That makes this a list rather than a rule, and it stops where the
+reading stopped: a REPL or a terminal that is not a comint derivative
+and is not named here gets NORMAL state, and belongs on the list the
+day somebody meets it. Add it as above, and please open an issue so
+the next person does not have to.
+
+To see the list in force: =M-x eval-expression= =donkey-excluded-modes=.
+
+* The Cursor
+:PROPERTIES:
+:CUSTOM_ID: cursor
+:END:
+
+DONKEY changes the cursor shape with the state, so you can see which
+one you are in without reading the modeline.
+
+#+begin_src emacs-lisp
+
+  (setq donkey-cursor-normal 'box)        ; NORMAL state
+  (setq donkey-cursor-insert '(bar . 2))  ; INSERT state
+
+#+end_src
+
+Either accepts what Emacs's =cursor-type= accepts: =box=, =bar=,
+=hbar=, =hollow=, or a cons like =(bar . 2)= for a bar two pixels
+wide. Set one to nil to leave the cursor alone in that state.
+
+** In a terminal
+
+In a graphical frame Emacs draws the cursor itself. In a terminal the
+shape has to be asked for with an escape sequence (DECSCUSR), and not
+every terminal understands it. DONKEY sends it only where it is known
+to work, and refuses terminals by name:
+
+#+begin_src emacs-lisp
+
+  (setq donkey-decscusr-denied-terminals '("dumb" "linux"))
+
+#+end_src
+
+Those two are the default: =dumb= supports no escape sequences at all,
+and the Linux console changes its cursor by a different mechanism.
+Matching is by prefix on what =tty-type= reports.
+
+If your terminal prints stray characters when the state changes, add
+its type:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (donkey-add-denylist-entry "eterm"))
+
+#+end_src
+
+=M-x donkey-add-denylist-entry= and =M-x donkey-remove-denylist-entry=
+do the same interactively, and remember the change.
+
+=M-x donkey-debug-platform= prints what DONKEY thinks it is running in
+— window system, terminal type, whether the cursor escape is allowed,
+which clipboard tool was found — which is the first thing to paste
+into a bug report.
+
+* The Clipboard
+:PROPERTIES:
+:CUSTOM_ID: clipboard
+:END:
+
+=y= and =p= use the system clipboard where there is one, falling back
+to the kill ring. On most systems this needs no configuration at all:
+DONKEY looks for =wl-copy=, =xclip=, =xsel=, =pbcopy= or Windows
+PowerShell and uses the first that fits.
+
+=M-x donkey-debug-platform= shows which one it found.
+
+** Daemon with both graphical and terminal frames
+
+A Wayland session with =emacs --daemon= and a mix of =emacsclient -c=
+and =emacsclient -nw= frames has a known trap that is not DONKEY's:
+=wl-paste= can deadlock when Emacs owns the clipboard itself. If you
+run that combination, route terminal clipboard reads through a live
+graphical frame:
+
+#+begin_src emacs-lisp
+
+  (use-package xclip
+    :config
+    (setq xclip-method 'wl-copy)   ; autodetection picks xsel first
+    (xclip-mode 1))
+
+#+end_src
+
+* Configuring the Enter Key
+:PROPERTIES:
+:CUSTOM_ID: enter-rules
+:END:
+
+=RET= does nothing in the modes listed in =donkey-editing-modes=:
+
+#+begin_src emacs-lisp
+
+  ;; the default
+  (setq donkey-editing-modes
+        '(prog-mode text-mode org-mode fundamental-mode
+          conf-mode markdown-mode gfm-mode))
+
+#+end_src
+
+Derived modes are covered, so those seven names cover nearly every
+buffer you actually edit. Add a mode to make =RET= inert there; remove
+one to let =RET= fall through to whatever that mode binds.
+
+Everywhere else, =RET= tries these in order and stops at the first
+that answers:
+
+1. An =org-agenda= buffer — whatever the agenda binds =RET= to.
+2. An Org buffer — the rules below: follow the link, toggle the
+   checkbox, flip the TODO.
+3. A Markdown buffer — follow the link at point.
+4. Anything else — whatever the mode itself binds =RET= to, asked at
+   the moment you press it. A command that would type or break a line
+   is refused, so =RET= stays inert rather than inserting a newline in
+   a buffer you are reading.
+
+** Rules of your own
+
+#+begin_src emacs-lisp
+
+  ;; (donkey-add-enter-rule ELEMENT-TYPE PROPERTY COMMAND...)
+  (donkey-add-enter-rule item :checkbox org-toggle-checkbox)
+  (donkey-add-enter-rule headline :todo-type donkey-org-todo)
+  (donkey-add-enter-rule link nil org-open-at-point)
+
+#+end_src
+
+Those three are the defaults. A rule names an Org element type, a
+property to test (or nil for "any"), and one or more commands tried in
+order until one is bound and callable — so a rule can name a command
+from a package you may not have installed.
+
+Rules added later are tried first, which lets you override a default
+without removing it. Within one press, the element *at point* is tried
+against every rule before the element that contains it, and so on
+outward, so the most specific rule wins.
+
+Turn the defaults off entirely:
+
+#+begin_src emacs-lisp
+
+  (setq donkey-default-enter-rules-enabled nil)
+
+#+end_src
+
+Element types you can write rules for are Org's own: =headline=,
+=item=, =link=, =table-row=, =src-block=, =quote-block=, =example-block=,
+=footnote-reference=, =timestamp=, =inline-src-block= and the rest of
+=org-element='s vocabulary.
+
+* Wrapping: Choosing Your Own Pairs
+:PROPERTIES:
+:CUSTOM_ID: own-pairs
+:END:
+
+The pairs =m i= and =m a= can select are the pairs a key can wrap —
+one table, read by both, so a pair added once is added everywhere:
+
+#+begin_src emacs-lisp
+
+  ;; add a pair of your own
+  (with-eval-after-load 'donkey
+    (setopt donkey-mark-pair-delimiters
+            (cons '(?# . ?#) donkey-mark-pair-delimiters)))
+
+#+end_src
+
+=setopt= matters here: it runs the setter that claims the key. With
+plain =setq= or =add-to-list=, the key is claimed at the first idle
+moment after startup instead — which is still before you can press it,
+but =M-x donkey-refresh-wrap-keys= is the way to ask by hand if you
+change the table later.
+
+To wrap with only some of them:
+
+#+begin_src emacs-lisp
+
+  (setq donkey-wrap-delimiters '(?\( ?\[ ?\" ?*))   ; these four only
+
+#+end_src
+
+=all=, the default, means every pair in the table.
+
+** A key that already runs something is never taken
+
+If a character you name already runs a DONKEY command, that command
+keeps the key and the character simply does not wrap. =:= goes to a
+line and =>= indents, so neither wraps, and DONKEY says so if you ask:
+
+#+begin_example
+
+  DONKEY: the wrap delimiter : is donkey-goto-line, so it does not wrap
+
+#+end_example
+
+Either rebind the key yourself or pick another character.
+
+** Letting your pairing package wrap instead
+
+If you use smartparens, electric-pair-mode or similar and would rather
+it did the wrapping:
+
+#+begin_src emacs-lisp
+
+  (setq donkey-wrap-region-engine 'pairing-package)
+
+#+end_src
+
+DONKEY then hands the keypress to =self-insert-command= with the mark
+still active and lets your package's hook do the work. The trade: what
+wraps and how is then your package's business, including whether
+pressing the same delimiter again takes the pair off. =M-x
+donkey-toggle-wrap-engine= flips between the two so you can feel the
+difference.
+
+** Smartparens
+
+If you use smartparens, one call improves =C-g= inside its overlays,
+especially in a terminal:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'smartparens
+    (donkey-setup-smartparens))
+
+#+end_src
+
+* Keys a Major Mode Types With
+:PROPERTIES:
+:CUSTOM_ID: mode-insert-commands
+:END:
+
+NORMAL state suppresses typing by remapping =self-insert-command=,
+which catches every key a mode types through Emacs's normal path — and
+that is most of them, Org included.
+
+A mode that binds a key *directly* to an insert command of its own is
+a different matter: =org-mode= puts =org-force-self-insert= on =|=,
+=cc-mode= puts electric commands on =#=, =*= and =/=, AUCTeX puts its
+own on =$=, =\= and =^=. Those are refused by name:
+
+#+begin_src emacs-lisp
+
+  ;; add one you have met
+  (with-eval-after-load 'donkey
+    (add-to-list 'donkey-self-insert-commands 'my-mode-electric-quote)
+    (donkey-refresh-suppressed-commands))
+
+#+end_src
+
+=donkey-refresh-suppressed-commands= is only needed when you use
+=setq= or =add-to-list=; through Customize the list re-installs itself.
+
+This is a list and not a rule: a mode with a typing command nobody has
+met yet will type. If you find one, add it and open an issue.
+
+* The Digraph Chart
+:PROPERTIES:
+:CUSTOM_ID: digraph-chart
+:END:
+
+=M-x donkey-digraph= opens the chart of every two-key sequence. If the
+rows look cramped or too airy in your font:
+
+#+begin_src emacs-lisp
+
+  (setq donkey-digraph-line-spacing 0.3)   ; a third of a row's height
+
+#+end_src
+
+A whole number is pixels; a fraction is that share of the row, so the
+spacing keeps its proportion if you scale the text.
+
+* A Complete Configuration
+:PROPERTIES:
+:CUSTOM_ID: complete-config
+:END:
+
+Everything above, in one block, as a starting point to cut down:
+
+#+begin_src emacs-lisp
+
+  (use-package donkey
+    :load-path "~/src/donkey"
+    :config
+    ;; modes that are really applications
+    (dolist (mode '(dired-mode ibuffer-mode magit-mode pdf-view-mode))
+      (add-to-list 'donkey-excluded-modes mode))
+
+    ;; cursor
+    (setq donkey-cursor-normal 'box
+          donkey-cursor-insert '(bar . 2))
+
+    ;; a longer jump-back ring
+    (setq donkey-position-ring-max 20)
+
+    ;; a pair of my own, claimed now rather than at first idle
+    (setopt donkey-mark-pair-delimiters
+            (cons '(?# . ?#) donkey-mark-pair-delimiters))
+
+    ;; input methods under SPC i
+    (setq donkey-input-methods
+          '(("s" "swedish" "swedish-postfix")
+            ("p" "polish"  "polish-slash")))
+
+    ;; keys of my own
+    (keymap-set donkey-normal-mode-map "F" #'delete-other-windows)
+    (keymap-set donkey-leader-map "b" '("switch buffer" . switch-to-buffer))
+    (keymap-set donkey-leader-map "g" '("magit"         . magit-status))
+
+    ;; and on
+    (donkey-mode 1))
+
+  ;; one key back to its mode, outside the block because it is that
+  ;; mode's business rather than DONKEY's
+  (with-eval-after-load 'org-noter
+    (define-key org-noter-doc-mode-map
+                [remap donkey-insert-here] #'org-noter-insert-note))
+
+#+end_src
+
+* When Something Is Not Right
 :PROPERTIES:
 :CUSTOM_ID: troubleshooting
 :END:
 
-** A =C-g= in Insert state that sometimes does nothing
+** What does this key do?
 
-The symptom: you press =C-g= to leave Insert state and nothing happens
-— or =Quit= flashes in the echo area — and the second or third press
-works. Intermittently, more on some files than others, more when the
-window is large.
+=C-h k= then the key, as always in Emacs: it tells you what that key
+runs *in this buffer*, whoever bound it.
+
+=?= in NORMAL state opens DONKEY's own chart — every key it binds,
+grouped by prefix, with the mark run's keys listed too because they
+live in a transient map that =C-h b= cannot show. Command names in it
+are buttons; click one for its documentation.
+
+** What happened to DONKEY's keys?
+
+=M-x donkey-check-bindings= compares the keys DONKEY bound when it
+loaded with the keys as they stand, and answers for the current buffer
+as well:
+
+#+begin_example
+
+  DONKEY: every key is as DONKEY left it; 2 wrap delimiters cannot
+  take their key -- see the message log
+
+#+end_example
+
+The lines it can print, in plain terms:
+
+- =; is consult-outline now, was donkey-goto-line= — you, or a
+  package, bound that key. Nothing is broken; you are being told so
+  you are not surprised later.
+- =D runs org-kill-line in this org-mode buffer, which remaps
+  kill-line= — the mode has its own better version of the same
+  command and DONKEY's key gets it. Counted separately from keys that
+  changed hands, because nothing was lost.
+- =the wrap delimiter : is donkey-goto-line, so it does not wrap= —
+  you asked for =:= as a wrap pair, but that key already runs a DONKEY
+  command. Pick another character, or rebind the key.
+- =the wrap delimiter # has no key yet; M-x donkey-refresh-wrap-keys= —
+  you added a pair after startup. Run that command.
+
+DONKEY says the quieter half of this once, a moment after startup, and
+nothing at all when nothing differs. Turn even that off with:
+
+#+begin_src emacs-lisp
+
+  (setq donkey-report-binding-changes nil)
+
+#+end_src
+
+** =M-x donkey-debug-platform=
+
+Prints what DONKEY sees: window system, terminal type, whether the
+cursor escape sequence is allowed here and why, which clipboard tool
+was found, and the same binding report. The first thing to paste into
+a bug report.
+
+** A =C-g= in INSERT state that sometimes does nothing
+
+The symptom: you press =C-g= to leave INSERT state and nothing
+happens — or =Quit= flashes — and the second or third press works.
+More often on large frames and prose-heavy buffers.
 
 This is not a DONKEY binding misfiring, and no package can intercept
 it, because the press never becomes a keypress at all. =C-g= is also
-Emacs's *interrupt character*: when it arrives while Emacs is running
-Lisp, it is consumed interrupting that work — below every keymap and
-every hook. And the moment right after an edit is exactly when Emacs
-tends to be running Lisp: refontifying the visible window (built-in,
-every configuration has this), re-spellchecking it (=jinx=), running
-checkers (=flymake=, =eglot=). Press =C-g= fast after =o= or a burst
-of typing — modal muscle memory does — and the press can land inside
-that window and vanish. The bigger the visible region and the more
-post-edit machinery, the wider the window: large frames, prose-heavy
-buffers, multiple dictionaries, and many frames sharing one Emacs
-(daemon setups) all raise the odds.
+Emacs's *interrupt character*: arriving while Emacs is running Lisp it
+is consumed interrupting that work, below every keymap and every hook.
+The moment right after an edit is exactly when Emacs tends to be
+running Lisp — refontifying the window, re-spellchecking it, running
+checkers.
 
-The confirming test: reproduce it, then immediately =C-h l=
-(=view-lossage=). A press that was eaten as an interrupt is simply
-absent from the key log — you pressed three times, the log shows one.
+To confirm: reproduce it, then press =C-h l= (=view-lossage=). A press
+eaten as an interrupt is simply absent from the log — you pressed
+three times, the log shows one.
 
 What helps is shrinking the busy window:
 
 #+begin_src emacs-lisp
-  ;; Redisplay skips fontification while input is pending, so a fast
-  ;; keypress is read as a key instead of interrupting jit-lock.
+
+  ;; redisplay skips fontification while input is pending, so a fast
+  ;; keypress is read as a key instead of interrupting jit-lock
   (setq redisplay-skip-fontification-on-input t)
 
-  ;; If you run jinx: move its visible-region recheck out from under
-  ;; your fingers (default is 0.2, squarely where a quick C-g lands).
+  ;; if you run jinx: move its recheck out from under your fingers
+  ;; (the default 0.2 is squarely where a quick C-g lands)
   (setq jinx-delay 0.8)
+
 #+end_src
 
-The same idea applies to any checker with an idle delay: raise it past
-your reaction time.
+The same applies to any checker with an idle delay: raise it past your
+reaction time.
 
-DONKEY also recovers on its own where recovery is possible: a quit
-that unwinds to the command loop while Insert state is on is given
-the meaning the press had — the exit runs instead of =Quit= being
-printed. That catches the flavor you would otherwise see as a bare
-=Quit= while stuck in Insert. It cannot catch a quit that redisplay
-or a timer swallows before the command loop sees it — those never
-reach Lisp that DONKEY controls — which is what the settings above
-are for: they shrink the window in which the press can be eaten at
-all. Prevention where prevention is possible, recovery where only
-recovery is; together they collapse the frequency to rare.
+DONKEY recovers where recovery is possible: a quit that unwinds to the
+command loop while INSERT state is on is given the meaning the press
+had, so the exit runs instead of =Quit= being printed. It cannot catch
+a quit that redisplay or a timer swallows before the command loop sees
+it — which is what the settings above are for.
 
-* Development
+** A mark run follows you between buffers
 :PROPERTIES:
-:CUSTOM_ID: development
+:CUSTOM_ID: run-follows
 :END:
 
-** A mark run follows you
+That is deliberate. A mark run is a transient keymap, and Emacs keeps
+those per *terminal* — two graphical frames on one display are one
+terminal — so a plain transient map would be armed in the other frame
+too, and any command outside the run would end it.
 
-A mark run is a transient keymap, and Emacs keeps those per
-terminal: two graphical frames on one display are one terminal to
-it, so a run started with =M= in one frame would be armed for the
-other as well, and any command outside the run ends it, a buffer
-switch included.
+DONKEY puts the run down instead: leave its buffer, or let its frame
+lose focus, and the run is stored with its selection and its =u=/=U=
+history; come back, and it is armed again exactly as it was.
+Everywhere in between, every key is itself.
 
-DONKEY keeps a run for you instead. When you leave its buffer, by
-switching buffer or window, or when its frame loses the keyboard
-focus, the run is put down with its selection and its =u=/=U=
-history kept, and when that buffer is back in the selected window,
-or its frame has the focus again, the run is armed again exactly as
-it was. Wherever you went in between, every key is itself; back at
-the run, it continues. Three things to know:
+Three things to know:
 
-- The selection must still be active when you come back; a run
-  whose selection is gone is forgotten, like one ended by =C-g=.
-  So is a run you cancel with =M= before leaving.
+- The selection must still be active when you come back. A run whose
+  selection is gone is forgotten, like one you ended with =C-g=.
 - A command that stays in the run's buffer but is not one of the
-  run's still ends it, as it always did: =x= deletes the selection
-  and the run is over.
-- Clicking into a frame to focus it is a mouse command in that
-  buffer, and ends the run the same way. Switch frames with the
-  keyboard, or click once and start the run again.
+  run's still ends it: =x= deletes the selection, and the run is over.
+- Clicking into a frame to focus it is a mouse command in that buffer
+  and ends the run. Switch frames with the keyboard, or click once and
+  start the run again.
 
-** Every key is undefined in a frame you just switched to
+** Every key is undefined in a frame I just switched to
 
-The symptom: you switch to another frame of the same Emacs with a
-desktop shortcut, press a key, and the echo area says something
-like =s-w is undefined=; every key does the same until you press
-=C-g= or a modifier key once, after which the keys are themselves
-again.
+The symptom: you switch frames with a desktop shortcut, press a key,
+and the echo area says =s-w is undefined=; every key does the same
+until you press =C-g= or a modifier once.
 
-The =s-= is the tell: the keys arrive with the Super modifier held.
-The shortcut that moved the focus held Super, its press reached the
-frame you switched to as part of the focus change, and its release
-went to the compositor instead, so GDK, which Emacs's PGTK build
-reads its modifiers from, keeps Super down on that frame until it
-sees the key again. DONKEY never sees the keys: =s-w= is not =w=,
-and nothing binds it. The log tells the story: =C-h l= shows the
-keys with the modifier you did not press.
+The =s-= is the tell — the keys are arriving with Super held. The
+shortcut that moved the focus held Super, its press reached the new
+frame as part of the focus change, and its release went to the
+compositor, so GDK keeps Super down until it sees the key again.
+DONKEY never sees those keys at all: =s-w= is not =w=. =C-h l= shows
+them with the modifier you did not press.
 
-What to do: tap Super once after switching, or switch frames with
-a click or a shortcut that releases its modifier before the frame
-has the focus. A terminal frame does not have the problem, and
-neither does a second Emacs process on its own display.
+What to do: tap Super once after switching, or switch frames with a
+click or a shortcut that releases its modifier first. Terminal frames
+do not have the problem.
 
-** Running the checks locally
+* Reference
+:PROPERTIES:
+:CUSTOM_ID: reference
+:END:
 
-CI runs on every push to =master= and on every pull request (see
-=.github/workflows/ci.yml=). The same four checks can be run by hand:
+** Every key
+
+*** Movement
+
+| =h= =j= =k= =l= | left, down, up, right                |
+| =w= =b=         | forward, back one word               |
+| =W= =B=         | forward, back one balanced expression |
+| =J= =K=         | down, up one screen row              |
+| =S=             | back through where you have been     |
+| =:=             | go to line                           |
+| =%=             | select the whole buffer              |
+| =z z=           | recentre                             |
+
+*** The =g= prefix
+
+| =g g= | beginning of buffer | =g e= | end of buffer   |
+| =g h= | beginning of line   | =g l= | end of line     |
+| =g j= | join lines          | =g q= | fill region     |
+| =g Q= | fill paragraph      | =G=   | end of buffer   |
+
+*** Entering INSERT
+
+| =i= | before point | =a= | after point  |
+| =I= | line start   | =A= | line end     |
+| =o= | line below   | =O= | line above   |
+| =c= | change       |     |              |
+
+*** Editing
+
+| =d= =x= | delete selection or character | =D= | to end of line |
+| =c=     | change                        | =C= | comment        |
+| =y=     | copy                          | =p= | paste          |
+| =P=     | paste rectangle               | =>= | indent         |
+| =u=     | undo                          | =U= | redo           |
+| =.=     | repeat                        |     |                |
+
+*** Selecting, and the =m= prefix
+
+| =v=     | selection        | =V=     | visual line / line selection |
+| =M=     | mark run         | =m v=   | rectangle                    |
+| =m w=   | word             | =m W=   | symbol                       |
+| =m b=   | word backward    | =m B=   | symbol backward              |
+| =m s=   | sentence         | =m S=   | sentence backward            |
+| =m p=   | paragraph        | =m P=   | paragraph backward           |
+| =m i=   | inside a pair    | =m a=   | pair and contents            |
+| =m I=   | inside a sexp    | =m A=   | sexp and contents            |
+| =m l=   | bank selection   | =m u=   | unbank last                  |
+| =m U=   | unbank the run   | =m DEL= | clear the bank               |
+
+*** The =r=, =z= and =SPC= prefixes
+
+| =r r=     | =replace-regexp=       |
+| =r q=     | =query-replace=        |
+| =z z=     | recentre               |
+| =SPC=     | your leader            |
+| =SPC i &= | insert one digraph     |
+| =SPC i .= | digraph input method   |
+| =SPC i -= | input method off       |
+
+*** Wrapping
+
+Nineteen keys — ~"~ =$= ~'~ =(= =)= =*= =+= =/= =<= ~=~ =[= =\= =]= =_=
+=`= ={= =|= =}= =~= — plus =«= =»= =‘= =’= =“= =”= =‹= =›=. With a
+selection they wrap it; press again with the pair around the selection
+and it comes off.
+
+*** Refused on purpose
+
+=,= =-= =;= answer "is undefined". =BACKSPACE= and =DELETE= (under all
+four of their key names) do nothing at all.
+
+** Every command
+
+79 commands. These have no key and are reached with =M-x=:
+
+| Command                              | Does                                         |
+|--------------------------------------+----------------------------------------------|
+| =donkey-mode=                        | turn DONKEY on or off everywhere             |
+| =donkey-normal-mode=                 | NORMAL state in this buffer                  |
+| =donkey-insert-mode=                 | INSERT state in this buffer                  |
+| =donkey-enter-normal=                | enter NORMAL state                           |
+| =donkey-tutor=                       | the tutor buffer                             |
+| =donkey-digraph=                     | the digraph chart                            |
+| =donkey-check-bindings=              | what has taken DONKEY's keys                 |
+| =donkey-debug-platform=              | what DONKEY sees on this machine             |
+| =donkey-version=                     | the loaded version                           |
+| =donkey-org-scratch=                 | an =*org-scratch*= buffer                    |
+| =donkey-org-todo=                    | toggle a headline's TODO state               |
+| =donkey-switch-other-buffer=         | back to the previous buffer                  |
+| =donkey-mark-run-adopt=              | adopt the current selection into a mark run  |
+| =donkey-refresh-wrap-keys=           | claim wrap keys after changing the pair table |
+| =donkey-refresh-suppressed-commands= | re-apply =donkey-self-insert-commands=       |
+| =donkey-toggle-wrap-engine=          | switch between DONKEY and your pairing package |
+| =donkey-setup-smartparens=           | improve =C-g= inside smartparens overlays     |
+| =donkey-add-denylist-entry=          | stop sending cursor escapes to a terminal    |
+| =donkey-remove-denylist-entry=       | undo that                                    |
+
+The rest are bound to keys. In full, so that every command can be found
+by name — one row per key, and every row is checked against the keymap
+by the test suite:
+
+| Key | Command |
+|-----+---------|
+| =m l= | =donkey-bank-selection= |
+| =c= | =donkey-change= |
+| =m <delete>= | =donkey-clear-banked-selection= |
+| =m <deletechar>= | =donkey-clear-banked-selection= |
+| =m DEL= | =donkey-clear-banked-selection= |
+| =C= | =donkey-comment-dwim= |
+| =y= | =donkey-copy= |
+| =d= | =donkey-delete= |
+| =x= | =donkey-delete= |
+| =?= | =donkey-describe-bindings= |
+| =SPC i -= | =donkey-disable-input-method= |
+| =<enter>= | =donkey-enter-dwim= |
+| =RET= | =donkey-enter-dwim= |
+| =:= | =donkey-goto-line= |
+| =>= | =donkey-indent-region-or-line= |
+| =SPC i .= | =donkey-input-method-digraphs= |
+| =a= | =donkey-insert-after= |
+| =I= | =donkey-insert-beginning-of-line= |
+| =SPC i &= | =donkey-insert-digraph= |
+| =A= | =donkey-insert-end-of-line= |
+| =i= | =donkey-insert-here= |
+| =g j= | =donkey-join-line= |
+| =S= | =donkey-jump-back= |
+| =m i= | =donkey-mark-inner= |
+| =m a= | =donkey-mark-outer= |
+| =m p= | =donkey-mark-paragraph= |
+| =m P= | =donkey-mark-paragraph-backward= |
+| =M= | =donkey-mark-run-toggle= |
+| =m s= | =donkey-mark-sentence= |
+| =m S= | =donkey-mark-sentence-backward= |
+| =m I= | =donkey-mark-sexp-inner= |
+| =m A= | =donkey-mark-sexp-outer= |
+| =m W= | =donkey-mark-symbol= |
+| =m B= | =donkey-mark-symbol-backward= |
+| =%= | =donkey-mark-whole-buffer= |
+| =m w= | =donkey-mark-word= |
+| =m b= | =donkey-mark-word-backward= |
+| =O= | =donkey-open-above= |
+| =o= | =donkey-open-below= |
+| =m v= | =donkey-rectangle-mark-mode= |
+| =v= | =donkey-set-mark= |
+| =m u= | =donkey-unbank-line= |
+| =m U= | =donkey-unbank-section= |
+| =V= | =donkey-visual-line-toggle= |
+| =J= | =donkey-visual-next-line= |
+| =K= | =donkey-visual-previous-line= |
+| ="= | =donkey-wrap-region= |
+| =$= | =donkey-wrap-region= |
+| ='= | =donkey-wrap-region= |
+| =(= | =donkey-wrap-region= |
+| =)= | =donkey-wrap-region= |
+| =*= | =donkey-wrap-region= |
+| =+= | =donkey-wrap-region= |
+| =/= | =donkey-wrap-region= |
+| =<= | =donkey-wrap-region= |
+| === | =donkey-wrap-region= |
+| =[= | =donkey-wrap-region= |
+| =\= | =donkey-wrap-region= |
+| =]= | =donkey-wrap-region= |
+| =_= | =donkey-wrap-region= |
+| =`= | =donkey-wrap-region= |
+| ={= | =donkey-wrap-region= |
+| =|= | =donkey-wrap-region= |
+| =}= | =donkey-wrap-region= |
+| =~= | =donkey-wrap-region= |
+| =«= | =donkey-wrap-region= |
+| =»= | =donkey-wrap-region= |
+| =‘= | =donkey-wrap-region= |
+| =’= | =donkey-wrap-region= |
+| =“= | =donkey-wrap-region= |
+| =”= | =donkey-wrap-region= |
+| =‹= | =donkey-wrap-region= |
+| =›= | =donkey-wrap-region= |
+| =p= | =donkey-yank= |
+| =P= | =donkey-yank-rectangle= |
+
+Inside a mark run the letters mean something else. Listed the other way
+round, because these are true of the run and not of NORMAL state:
+
+| Command | Key in a run |
+|---------+--------------|
+| =donkey-mark-run-buffer-end= | =G= |
+| =donkey-mark-run-buffer-end= | =g e= |
+| =donkey-mark-run-buffer-start= | =g g= |
+| =donkey-mark-run-cancel= | =M= |
+| =donkey-mark-run-down= | =j= |
+| =donkey-mark-run-exchange= | =*= |
+| =donkey-mark-run-left= | =h= |
+| =donkey-mark-run-line-backward= | =K= |
+| =donkey-mark-run-line-end= | =g l= |
+| =donkey-mark-run-line-forward= | =J= |
+| =donkey-mark-run-line-start= | =g h= |
+| =donkey-mark-run-refuse= | =V= |
+| =donkey-mark-run-refuse= | =v= |
+| =donkey-mark-run-right= | =l= |
+| =donkey-mark-run-step-back= | =u= |
+| =donkey-mark-run-step-forward= | =U= |
+| =donkey-mark-run-up= | =k= |
+
+=w= =W= =b= =B= =s= =S= inside a run mark and grow, running the same
+commands their =m=-prefixed versions run in NORMAL state.
+
+=?= shows the same list inside Emacs, with the mark run's keys as well,
+and =M-x apropos-command donkey-= finds any of them.
+
+** Every user option
+
+| Option                             | Default                          | What it does |
+|------------------------------------+----------------------------------+--------------|
+| =donkey-excluded-modes=            | 10 modes, see above              | where DONKEY steps aside completely |
+| =donkey-editing-modes=             | 7 broad modes                    | where =RET= does nothing |
+| =donkey-position-ring-max=         | =10=                             | how far =S= remembers |
+| =donkey-cursor-normal=             | =box=                            | cursor in NORMAL state |
+| =donkey-cursor-insert=             | =(bar . 2)=                      | cursor in INSERT state |
+| =donkey-decscusr-denied-terminals= | =("dumb" "linux")=               | terminals that get no cursor escapes |
+| =donkey-mark-pair-delimiters=      | 21 pairs                         | what =m i=/=m a= select and the keys wrap |
+| =donkey-wrap-delimiters=           | =all=                            | which of those pairs get a key |
+| =donkey-wrap-region-engine=        | =donkey=                         | who puts the pair on: DONKEY or your pairing package |
+| =donkey-self-insert-commands=      | 16 commands                      | mode commands that type, refused in NORMAL state |
+| =donkey-input-methods=             | =nil=                            | your input methods under =SPC i= |
+| =donkey-default-enter-rules-enabled= | =t=                            | install the three built-in Enter rules |
+| =donkey-report-binding-changes=    | =t=                              | say once at startup what has taken DONKEY's keys |
+| =donkey-digraph-line-spacing=      | =0=                              | air under each row of the digraph chart |
+
+=M-x customize-group= =donkey= shows them all with their
+documentation.
+
+** Version, changelog, and reporting a bug
+
+=M-x donkey-version= prints the version running in this session.
+=CHANGELOG.org= in the repository is written for people using the
+package rather than from the commit log.
+
+In a bug report, please include the output of =M-x
+donkey-debug-platform= and, for anything about a key, =C-h l=
+(=view-lossage=) taken right after reproducing it.
+
+** Developing
+
+CI runs on every push to =master= and every pull request; the same
+checks by hand:
 
 #+begin_src sh
 
-  # Full ERT suite
+  # the full suite
   emacs -Q --batch -L . -L donkey-testing \
         $(for f in donkey-testing/*-test.el; do printf ' -l %s' "$f"; done) \
         -f ert-run-tests-batch-and-exit
 
-  # Byte-compile the package, warnings treated as errors
+  # byte-compile, warnings as errors
   emacs -Q --batch --eval '(setq byte-compile-error-on-warn t)' \
         -f batch-byte-compile donkey.el
 
-  # Documentation conventions
+  # documentation conventions
   emacs -Q --batch --eval "(progn (require 'checkdoc) (checkdoc-file \"donkey.el\"))"
 
-  # MELPA packaging conventions (requires package-lint from MELPA)
+  # MELPA packaging conventions (needs package-lint)
   emacs -Q --batch --eval "(package-initialize)" \
         -l package-lint -f package-lint-batch-and-exit donkey.el
 
 #+end_src
 
-*Delete =donkey.elc= before running the test suite.* With a compiled
-file present, =-L .= loads it in preference to the source, and byte-code
-open-codes =delete-region=, =forward-char= and =forward-line= — which
-defeats the =cl-letf= mocks several tests use to assert those were
-called. Seven tests fail for reasons unrelated to any real change. CI
-avoids this by keeping compilation in a separate job from the tests.
+*Delete =donkey.elc= before running the suite.* With a compiled file
+present =-L .= loads it in preference to the source, and byte-code
+open-codes =delete-region=, =forward-char= and =forward-line=, which
+defeats the mocks several tests use; seven tests then fail for reasons
+unrelated to any change. CI keeps compilation in a separate job for
+exactly this reason.
 
-The test files themselves are deliberately not byte-compiled under
-=byte-compile-error-on-warn=: they carry unused lambda arguments (mock
-signatures that have to match the real command) and references to
-optional third-party symbols such as =smartparens-mode-map=.
+The test files are deliberately not compiled with warnings as errors:
+they carry unused lambda arguments (mock signatures that must match the
+real command) and references to optional third-party symbols.
 
-** Emacs versions
+*** Emacs versions
 
-The suite runs against four versions that must all pass:
+| Version            | What it is                                      |
+|--------------------+-------------------------------------------------|
+| =29.1=             | the minimum in =Package-Requires=                |
+| =30.1=             | the previous stable series                      |
+| =31.1=             | the current stable release                      |
+| =release-snapshot= | the branch upstream is preparing its next release from |
 
-| Version             | What it is                                         |
-|---------------------+----------------------------------------------------|
-| =29.1=              | the minimum declared in =Package-Requires=         |
-| =30.1=              | the previous stable series                         |
-| =31.1=              | the current stable release                         |
-| =release-snapshot=  | the release branch upstream, i.e. the next release |
-
-=release-snapshot= is whatever branch Emacs is preparing its next
-release from. At time of writing that is =emacs-31=, reporting
-=31.1.50= on the way to 31.2; when upstream cuts =emacs-32= it follows
-that branch without any change here, which is how 31 was covered before
-it shipped. Once a release comes out of it, the released version is
-pinned in the table like the others.
-
-A fifth, =snapshot=, builds Emacs master — the next release in
-development, a version nobody is running yet (it reports =32.0.50=). It
-is allowed to fail without blocking the repository, so churn upstream
-does not turn the build red.
-
-The single-version jobs — each test file in isolation, Smartparens,
-shuffled order, the terminal frame and lint — run on =31.1=. They test
-properties of the suite rather than of Emacs; the matrix above covers
-the older versions.
+A fifth job builds Emacs =master= and is allowed to fail, so churn in a
+version nobody runs yet does not turn the build red. The single-version
+jobs — each test file alone, Smartparens, shuffled order, the terminal
+frame, and lint — run on =31.1=: they test properties of the suite
+rather than of Emacs.
