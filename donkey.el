@@ -7555,6 +7555,47 @@ no name of its own; anything else is printed."
         ((keymapp binding) "a keymap")
         (t (format "%S" binding))))
 
+(defun donkey--mode-list-entry-for (mode-list)
+  "Return the entry of MODE-LIST the current major mode answers to.
+
+The mode itself where it is listed, otherwise the ancestor that is,
+otherwise nil -- which is the question `donkey--major-mode-in-p'
+answers yes or no to, asked so the answer can be named.
+
+MODE-LIST is read through `donkey--mode-list', so a mis-set user
+option cannot signal from here."
+  (let ((modes (donkey--mode-list mode-list)))
+    (or (car (memq major-mode modes))
+        (seq-find (lambda (mode) (provided-mode-derived-p major-mode mode))
+                  modes))))
+
+(defun donkey--state-availability-line ()
+  "Return a line saying what decided Normal state here, or nil.
+
+Nil in an ordinary buffer, where nothing decided it and there is
+nothing to say.  Otherwise the entry that did, which need not be this
+buffer's own major mode: the exclusions ship as a list of parents, so
+`magit-log-mode' is decided by `magit-mode' and `shell-mode' by
+`comint-mode', and a reader who looks for their own mode on the list
+does not find it.  Naming the entry is the difference between a
+modeline saying \" DONKEY[E]\" and a reader knowing why."
+  (let ((excluded (donkey--mode-list-entry-for donkey-excluded-modes))
+        (exempt (donkey--mode-list-entry-for donkey-excluded-mode-exceptions)))
+    (cond
+     ((and excluded exempt)
+      (format "Normal state is on here: %s is on donkey-excluded-modes, %s"
+              excluded
+              (if (eq exempt major-mode)
+                  (format "and %s is on donkey-excluded-mode-exceptions" exempt)
+                (format "but %s derives from %s, on donkey-excluded-mode-exceptions"
+                        major-mode exempt))))
+     (excluded
+      (if (eq excluded major-mode)
+          (format "Normal state is off here: %s is on donkey-excluded-modes"
+                  major-mode)
+        (format "Normal state is off here: %s derives from %s, on donkey-excluded-modes"
+                major-mode excluded))))))
+
 (defun donkey-check-bindings ()
   "Say what has taken DONKEY's keys, in the message log.
 
@@ -7572,9 +7613,15 @@ session report to pass them over and no reason at all to hide them
 from a reader who asked.  They are counted apart from the keys that
 differ, being nothing that went wrong.
 
+In a buffer where Normal state is OFF it says so first, and names the
+entry of `donkey-excluded-modes' that decided it -- which need not be
+this buffer's major mode, the exclusions being a list of parents.
+
 DONKEY asks the quieter half of this itself once after `donkey-mode'
 comes on; see `donkey-report-binding-changes'."
   (interactive)
+  (let ((availability (donkey--state-availability-line)))
+    (when availability (message "DONKEY: %s" availability)))
   (let* ((delimiters (length (donkey--delimiters-that-cannot-wrap t)))
          (remapped (seq-count (lambda (row) (nth 3 row))
                               (donkey--shadowed-normal-bindings)))
@@ -7587,7 +7634,9 @@ comes on; see `donkey-report-binding-changes'."
                                         "s cannot take their key")))
                             (when (> remapped 0)
                               (format "%d key%s this buffer remaps" remapped
-                                      (if (= remapped 1) "" "s")))))))
+                                      (if (= remapped 1) "" "s")))
+                            (when (donkey--excluded-mode-p)
+                              "Normal state is off in this buffer")))))
     (message
      "DONKEY: %s%s%s"
      (if (zerop taken)

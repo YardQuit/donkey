@@ -1372,10 +1372,22 @@ children:
 | =dired-mode=        | yes          | itself                |
 
 So =M-x eval-expression= =donkey-excluded-modes= can quite correctly
-fail to mention the mode you are standing in. =C-h v major-mode= tells
-you where you are, and =M-x describe-mode= names the parent it derives
-from; the entry that matched is the first one on the list that the
-parent chain reaches.
+fail to mention the mode you are standing in. Rather than work it out,
+ask:
+
+#+begin_example
+
+  M-x donkey-check-bindings
+
+  DONKEY: Normal state is off here: magit-log-mode derives from
+          magit-mode, on donkey-excluded-modes
+
+#+end_example
+
+It names the entry that decided, whether that is the mode itself or an
+ancestor of it, and says the same for an exception that put NORMAL
+state back. In an ordinary buffer it says nothing about state at all —
+nothing decided it there.
 
 A consequence worth knowing before you try it: *you cannot take a child
 off the list while its parent is on it.* Removing =magit-log-mode= does

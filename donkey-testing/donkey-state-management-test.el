@@ -492,6 +492,69 @@ derivation -- so removing it there does nothing."
       (donkey--check-post-command-non-editing)
       (should (bound-and-true-p donkey-normal-mode)))))
 
+(ert-deftest donkey-an-ordinary-buffer-has-no-availability-line ()
+  "Nothing decided Normal state here, so nothing is said about it."
+  (with-temp-buffer
+    (let ((major-mode 'text-mode))
+      (should-not (donkey--state-availability-line)))))
+
+(ert-deftest donkey-the-availability-line-names-the-mode-itself ()
+  "A mode listed by name is named by name."
+  (with-temp-buffer
+    (let ((donkey-excluded-modes '(text-mode))
+          (donkey-excluded-mode-exceptions nil)
+          (major-mode 'text-mode))
+      (should (equal (donkey--state-availability-line)
+                     "Normal state is off here: text-mode is on donkey-excluded-modes")))))
+
+(ert-deftest donkey-the-availability-line-names-the-ancestor-that-decided ()
+  "A mode covered by a parent is told which parent.
+
+The whole point of the line: `shell-mode' is not on the list and
+`comint-mode' is, so a reader looking for their own mode does not find
+it and the modeline alone cannot say why."
+  (require 'shell)
+  (with-temp-buffer
+    (let ((donkey-excluded-modes '(comint-mode))
+          (donkey-excluded-mode-exceptions nil)
+          (major-mode 'shell-mode))
+      (should (equal (donkey--state-availability-line)
+                     (concat "Normal state is off here: shell-mode derives from"
+                             " comint-mode, on donkey-excluded-modes"))))))
+
+(ert-deftest donkey-the-availability-line-explains-an-exception-too ()
+  "Normal state ON under a listed parent is explained the same way."
+  (require 'shell)
+  (with-temp-buffer
+    (let ((donkey-excluded-modes '(comint-mode))
+          (donkey-excluded-mode-exceptions '(shell-mode))
+          (major-mode 'shell-mode))
+      (should (equal (donkey--state-availability-line)
+                     (concat "Normal state is on here: comint-mode is on"
+                             " donkey-excluded-modes, and shell-mode is on"
+                             " donkey-excluded-mode-exceptions"))))))
+
+(ert-deftest donkey-check-bindings-says-normal-state-is-off-here ()
+  "Asked by hand in an excluded buffer, the summary says so.
+
+The line above it in the log names the entry; this is the one-line
+answer, which must not read as though every key were available."
+  (require 'shell)
+  (let (said)
+    (with-temp-buffer
+      (let ((donkey-excluded-modes '(comint-mode))
+            (donkey-excluded-mode-exceptions nil)
+            (donkey--excluded-mode-cache nil)
+            (major-mode 'shell-mode))
+        (cl-letf (((symbol-function 'message)
+                   (lambda (f &rest a) (when f (push (apply #'format f a) said)) nil)))
+          (donkey-check-bindings))))
+    (should (seq-find (lambda (l) (string-match-p "Normal state is off in this buffer" l))
+                      said))
+    (should (seq-find (lambda (l)
+                        (string-match-p "shell-mode derives from comint-mode" l))
+                      said))))
+
 (ert-deftest donkey-the-help-like-modes-are-left-on ()
   "Normal state stays on where the mode binds few letters.
 
