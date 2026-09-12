@@ -118,8 +118,9 @@ the mode stops being usable for the job it exists to do.  `magit-mode',
 which covers every magit and forge buffer, loses commit, log, branch,
 diff, push and stash; `dired-mode' loses mark, flag and execute;
 `git-rebase-mode' loses pick, reword, drop and exec; `ibuffer-mode'
-and `tabulated-list-mode' (package menu, buffer menu, proced, and the
-tabulated UIs other packages build) lose their mark-and-execute keys;
+and `tabulated-list-mode' (the package menu, the buffer menu, and the
+tabulated UIs other packages build on it) lose their mark-and-execute
+keys;
 `Info-mode' loses \\`SPC' and its whole node vocabulary.  What is given
 up by listing them is motion: `magit-mode' and `dired-mode' remap
 `next-line', so \\`j' and \\`k' move by their own lines while Normal state
@@ -6724,7 +6725,7 @@ changed.
 
 Some buffers are really applications, and DONKEY steps aside in them
 altogether: magit and dired, ibuffer, Info, the tabulated lists
-(package menu, buffer menu, proced), a rebase todo, and every terminal
+(the package menu, the buffer menu), a rebase todo, and every terminal
 and REPL.  There every key is the mode's, \\`C-g' quits the way stock
 Emacs does instead of switching state, and the modeline says DONKEY[E]
 rather than DONKEY[I].  DONKEY-EXCLUDED-MODES is that list; add a mode

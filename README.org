@@ -36,6 +36,7 @@
 - [[#enter-rules][Configuring the Enter key]]
 - [[#own-pairs][Choosing your own pairs]]
 - [[#mode-insert-commands][Keys a major mode types with]]
+- [[#why-excluded][Why those six modes ship excluded]] — the reasoning, for readers who want it
 - [[#digraph-chart][The digraph chart]]
 - [[#complete-config][A complete configuration]]
 
@@ -878,7 +879,7 @@ them derive from none of the four and had to be named one at a time.
 | =dired-mode=          | mark, flag, execute, copy, rename                           |
 | =ibuffer-mode=        | the same mark-and-execute keys                              |
 | =git-rebase-mode=     | pick, reword, drop, exec, break — an interactive rebase cannot be finished without them |
-| =tabulated-list-mode= | the package menu, buffer menu, =proced=, and the tabulated UIs other packages build on it |
+| =tabulated-list-mode= | the package menu, the buffer menu, and the tabulated UIs other packages build on it |
 | =Info-mode=           | =SPC= to scroll, and =n p l u m i d g= — the whole node vocabulary |
 
 Nothing could have been damaged in any of them: they are read-only, so
@@ -922,7 +923,8 @@ and =kubernetes= UIs. Add any of them as above — and please open an
 issue so the next person does not have to.
 
 That makes this a list rather than a rule, and it stops where the
-reading stopped.
+reading stopped. [[#why-excluded][Why Those Six Modes Ship Excluded]]
+sets out the reasoning and how to undo any of it.
 
 To see the list in force: =M-x eval-expression= =donkey-excluded-modes=.
 
@@ -1183,6 +1185,230 @@ Twenty-one such commands are refused by name:
 
 This is a list and not a rule: a mode with a typing command nobody has
 met yet will type. If you find one, add it and open an issue.
+
+* Why Those Six Modes Ship Excluded
+:PROPERTIES:
+:CUSTOM_ID: why-excluded
+:END:
+
+For readers who want the reasoning rather than the setting. Nothing
+here is needed to use DONKEY — it is here so the default can be argued
+with rather than taken on trust, and so that undoing it is a decision
+rather than a guess.
+
+** What NORMAL state actually costs in an application buffer
+
+Dired is the clearest case, because its keymap is the biggest. Press a
+key there with NORMAL state on and one of four things happens.
+
+*** It reaches Dired, because DONKEY does not bind it
+
+#+begin_example
+
+  !  #  &  0 1 2 3 4 5 6 7 8 9  E  H  L  N  Q  R  T  X  Y  Z  ^  e  f  n  q  s  t
+
+#+end_example
+
+Suppression is done by remapping =self-insert-command=, not by claiming
+every letter, so a key DONKEY leaves alone is simply the mode's.
+
+*** It reaches Dired through Dired's own remap
+
+=j=, =k= and =u=. Dired remaps =next-line=, =previous-line= and =undo=,
+and a remap catches the command whichever key ran it — so DONKEY's
+motion keys arrive at =dired-next-line= and =dired-previous-line=.
+
+This one is a happy accident worth knowing, because it is *better* than
+what Dired binds those keys to itself:
+
+| Key | Dired's own binding    | What you get with NORMAL state on |
+|-----+------------------------+-----------------------------------|
+| =j= | =dired-goto-file=      | =dired-next-line=                 |
+| =k= | =dired-do-kill-lines=  | =dired-previous-line=             |
+| =u= | =dired-unmark=         | =dired-undo=                      |
+
+*** It is borrowed, and handed back at the press
+
+The wrap keys — =$= =(= =+= =<= ~=~ =~= — and =RET=. A wrap key is
+borrowed only while a selection could use it, and a buffer you cannot
+type into gets it back the moment you press it. What =C-h k= reports
+and what the key runs are different things here:
+
+#+begin_example
+
+  +    binding: donkey-wrap-region   pressing runs: dired-create-directory
+  <    binding: donkey-wrap-region   pressing runs: dired-prev-dirline
+  RET  binding: donkey-enter-dwim    pressing runs: dired-find-file
+
+#+end_example
+
+*** It is DONKEY's, and the mode does not get it
+
+Everything else. In Dired that is =a c d i m o p v w x y=, =A C D G I M
+O P S U W=, =SPC= =.= =-= =>=, and the =*= and =%= mark prefixes.
+
+Read that last row again and the argument makes itself. =m= marks, =d=
+flags, =x= executes, =C= copies, =D= deletes, and =*= and =%= are both
+of the mark prefixes. Those are not incidental keys — they are what
+Dired *is*. A file manager you cannot mark, flag or execute in is not a
+file manager with some keys moved; it is a file manager you cannot use.
+
+** Nothing was ever at risk
+
+Worth saying plainly, because it is the first thing a reader worries
+about. Every one of these buffers is read-only, so every editing key
+was refused before it did anything:
+
+#+begin_example
+
+  d  →  error: Buffer is read-only
+  x  →  error: Buffer is read-only
+  c  →  error: Buffer is read-only
+
+#+end_example
+
+What went missing was the mode, not your work. This is a usability
+default and not a safety fix.
+
+Two wrinkles you may have met and wondered about:
+
+- =i= and =a= put you in INSERT state in a buffer you cannot type into
+  — no error, no message, just =DONKEY[I]= in the modeline. =C-g=
+  comes back out.
+- =o= and =D= move point before they fail, so a mistyped key can lose
+  your place in a long listing.
+
+** Why each of the six
+
+| Mode                  | Its letters are                        | So NORMAL state answered with       |
+|-----------------------+----------------------------------------+-------------------------------------|
+| =magit-mode=          | commit, log, branch, diff, push, stash | change, forward-char, backward-word |
+| =dired-mode=          | mark, flag, execute, copy, rename      | the whole fourth row above          |
+| =ibuffer-mode=        | the same mark-and-execute keys         | the same                            |
+| =git-rebase-mode=     | pick, reword, drop, exec, break        | yank, delete, change                |
+| =tabulated-list-mode= | mark-install, mark-delete, execute     | insert, delete, delete              |
+| =Info-mode=           | =SPC= to scroll, =n p l u m i d g=     | the leader, forward-char, undo      |
+
+=git-rebase-mode= is the sharpest of them: seven of its twelve verbs
+were gone, =pick= and =drop= among them, so an interactive rebase could
+not be finished with the keys that finish it.
+
+Two of the six are parents, which matters more than it looks.
+
+=magit-mode= covers the status buffer, the log, the diff, the revision,
+refs, reflog, stash, cherry, log-select, process and every =forge=
+buffer. Naming =magit-status-mode= instead covers exactly one of them —
+the rest are its *siblings*, not its children, since they all derive
+from =magit-mode= directly.
+
+=tabulated-list-mode= is the same idea one level up. A tabulated list
+is a control panel by construction: rows you act on, single letters as
+verbs, always read-only. One entry covers the package menu, the buffer
+menu, and the tabulated UIs that other packages build on it —
+=pdf-tools='s =tablist=, =docker= and =tmr= among them.
+
+** When =DONKEY[E]= appears and the mode is not on the list
+
+This one surprises people, so it is worth being explicit. The modeline
+says =DONKEY[E]= exactly when DONKEY has stepped aside — it is never
+showing you something that is not true. But the mode you are looking at
+may not be the mode that is on the list, because a parent covers its
+children:
+
+| Buffer's major mode | On the list? | What matched it       |
+|---------------------+--------------+-----------------------|
+| =magit-log-mode=    | no           | =magit-mode=          |
+| =shell-mode=        | no           | =comint-mode=         |
+| =package-menu-mode= | no           | =tabulated-list-mode= |
+| =dired-mode=        | yes          | itself                |
+
+So =M-x eval-expression= =donkey-excluded-modes= can quite correctly
+fail to mention the mode you are standing in. =C-h v major-mode= tells
+you where you are, and =M-x describe-mode= names the parent it derives
+from; the entry that matched is the first one on the list that the
+parent chain reaches.
+
+A consequence worth knowing before you try it: *you cannot take a child
+off the list while its parent is on it.* Removing =magit-log-mode= does
+nothing at all, because it was never there and =magit-mode= still
+matches:
+
+#+begin_src emacs-lisp
+
+  ;; does nothing — magit-log-mode is covered by magit-mode
+  (setopt donkey-excluded-modes (remq 'magit-log-mode donkey-excluded-modes))
+
+#+end_src
+
+Take the parent off and name the children you still want instead:
+
+#+begin_src emacs-lisp
+
+  ;; NORMAL state in the log, DONKEY out of the way everywhere else in Magit
+  (with-eval-after-load 'donkey
+    (setopt donkey-excluded-modes
+            (append (remq 'magit-mode donkey-excluded-modes)
+                    '(magit-status-mode magit-diff-mode magit-refs-mode
+                      magit-process-mode magit-stash-mode))))
+
+#+end_src
+
+=magit-revision-mode= is not in that list because it derives from
+=magit-diff-mode= and follows it — the same rule, one level down.
+
+** Why ship the list rather than leave it to you
+
+Three reasons, in the order they matter.
+
+*** A wrong default should fail where you can see it
+
+If DONKEY ships ON in Magit, you press =c= to commit, something else
+happens, and nothing anywhere says why. The keys do not fail — they do
+other things, quietly and plausibly. There is no thread to pull, and
+the bug that gets filed is filed against Magit.
+
+If DONKEY ships OFF in Magit and you wanted NORMAL state there, you
+notice at once, the modeline tells you why (=DONKEY[E]=), and the fix
+is one line, below.
+
+Both defaults are wrong for somebody. Only one of them is wrong out
+loud.
+
+*** A rule would have been worse than a list
+
+The tempting rule is "step aside in every read-only buffer", or in
+every =special-mode= derivative. Measured across the read-only modes,
+the numbers split rather than converge. The application half hide most
+of the mode's keys. The help-like half hide a handful and gain DONKEY's
+motion in exchange, which is the better trade there — so =help-mode=,
+=occur-mode=, =compilation-mode=, =grep-mode=, =Man-mode= and
+=org-agenda-mode= are read-only and deliberately *not* on the list. A
+rule that caught the six would have caught those as well.
+
+The honest cost of a list is that it has to admit where it stops. A
+mode nobody has met yet is not on it: =eww-mode=, =elfeed-search-mode=,
+=deft-mode=, =vundo-mode=, =ranger-mode= and =pdf-view-mode= are all
+reasonable additions that nobody has asked for. Add them as
+[[#stepping-aside][Modes Where DONKEY Steps Aside]] shows, and please
+open an issue so the next reader does not have to.
+
+*** Undoing it is one line
+
+#+begin_src emacs-lisp
+
+  ;; NORMAL state back in Info, everything else left alone
+  (with-eval-after-load 'donkey
+    (setopt donkey-excluded-modes (remq 'Info-mode donkey-excluded-modes)))
+
+#+end_src
+
+=remq= rather than =delq=: =delq= edits the list in place whenever what
+it removes is not the first element, and the list it would be editing
+is the shipped default.
+
+If what you wanted was only Magit's or Dired's line motion back, that
+is a smaller change than un-excluding the whole mode — see
+[[#stepping-aside][What you give up by excluding magit and dired]].
 
 * The Digraph Chart
 :PROPERTIES:
