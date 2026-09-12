@@ -58,9 +58,12 @@ things differ: letters run commands instead of typing, digits are not
 counts (=C-u 3= is), =RET= does nothing in a buffer you are editing,
 and =BACKSPACE= and =DELETE= do nothing. No other Emacs command is
 shadowed in either state. Every =C-x= and =C-c= sequence, =M-x=,
-=C-h=, isearch, the arrow keys, every Meta binding and every key your
-packages bind work exactly as they always did — no DONKEY keymap binds
-a Meta key or the =ESC= prefix at all. A test walks every key of the
+=C-h=, isearch, the arrow keys and every Meta binding work exactly as
+they always did — no DONKEY keymap binds a Meta key or the =ESC=
+prefix at all. A key one of your packages binds works as it always did
+too, unless Normal state binds that key as well: there it is Normal
+state's, whichever of the two loaded first, and the package's key is
+waiting for you in Insert state. A test walks every key of the
 keymaps against a plain Emacs buffer so that a fifth difference cannot
 appear unannounced. "What DONKEY takes from native Emacs" below has
 the full table.
@@ -1497,9 +1500,47 @@ key is …=" — and is counted with the keys that differ.
 Bind in =donkey-normal-mode-map= and your binding wins: it is the same
 map, and your config runs after the package loads. The two routes that
 lose are the ones people reach for first — a global binding and a
-major-mode binding both sit below a minor-mode map. A minor mode of
-your own wins if its entry in =minor-mode-map-alist= comes before
-DONKEY's, which it does when it is defined after DONKEY.
+major-mode binding both sit below Normal state's map.
+
+A minor mode of your own loses as well, and that is deliberate. Normal
+state's keymap is on =emulation-mode-map-alists=, which Emacs reads
+before every entry in =minor-mode-map-alist=, so a key Normal state
+binds answers with Normal state's command whether the other package
+loaded before DONKEY or after it. Without that, the answer depended on
+load order — =define-minor-mode= pushes each new map onto the front of
+=minor-mode-map-alist= — and a package loaded later took the key:
+=paredit-mode= typed =;= and =(= in Normal state and deleted on =DEL=,
+=haskell-indentation-mode= typed =)= and broke the line on =RET=, and
+=slime-mode= turned the =SPC= leader into a space. Which of those a
+reader met depended on nothing they could see.
+
+A key Normal state does *not* bind is untouched and still reaches the
+mode that binds it. Three routes still win, for a key you want back in
+one particular mode:
+
+- *Remap the command.* A =[remap donkey-insert-here]= binding in the
+  mode's own map wins in the buffers where that map is live and
+  nowhere else — it is what =org-mode= already does to =D=, and
+  =donkey-check-bindings= reports it as a remap rather than as a key
+  somebody took. A remap catches a command, so it moves every key that
+  reaches it: =donkey-delete= is both =d= and =x=, and
+  =donkey-wrap-region= is every wrap key at once. It cannot hand a key
+  back to a prefix map.
+
+  #+begin_src emacs-lisp
+    ;; i is org-noter's in its own buffers, and DONKEY's everywhere else
+    (with-eval-after-load 'org-noter
+      (define-key org-noter-doc-mode-map
+                  [remap donkey-insert-here] #'org-noter-insert-note))
+  #+end_src
+
+- *An override map.* =bind-key*=, =use-package='s =:bind*= and
+  =general='s override maps install emulation maps of their own;
+  DONKEY's entry is appended after whatever is already there, so those
+  keep the precedence you asked them for.
+- *Higher still.* A transient map, =overriding-local-map=, and a
+  =keymap= text or overlay property are all read before any emulation
+  map.
 
 * Keys a Major Mode Types With
 :PROPERTIES:

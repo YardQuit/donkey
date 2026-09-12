@@ -3502,6 +3502,30 @@ Reported as a loss it would cry wolf in every Org buffer, three times."
       (donkey-mode -1)
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
+(ert-deftest donkey-a-composed-prefix-is-not-a-key-taken ()
+  "A prefix of DONKEY\\='s own is not reported as a key something else runs.
+
+Normal state\\='s map is active twice -- as the mode\\='s own map, and on
+`emulation-mode-map-alists' -- and Emacs composes the prefix maps of
+every active map, so `SPC' answers with a keymap that is not `eq' to
+the leader.  The keys under it are reached all the same."
+  (let ((buffer (get-buffer-create "*donkey-prefix*")))
+    (unwind-protect
+        (progn
+          (switch-to-buffer buffer)
+          (text-mode)
+          (donkey-mode 1)
+          (donkey-normal-mode 1)
+          (should (keymapp (key-binding (kbd "SPC"))))
+          (should-not (eq (key-binding (kbd "SPC")) donkey-leader-map))
+          (should (eq (key-binding (kbd "SPC i .")) #'donkey-input-method-digraphs))
+          ;; The report keys its rows by VECTOR, as `lookup-key' takes
+          ;; them; `kbd' would answer with a string and match nothing.
+          (should-not (assoc (vector ?\s) (donkey--shadowed-normal-bindings)
+                             #'equal)))
+      (donkey-mode -1)
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (ert-deftest donkey-a-key-that-reaches-nothing-here-is-not-a-remap ()
   "A key with no binding in this buffer is not reported as remapped.
 
@@ -3518,11 +3542,14 @@ key a remap."
           (text-mode)
           (donkey-mode 1)
           (donkey-normal-mode 1)
-          ;; an overriding map with nothing in it: `<f9>' reaches
-          ;; neither DONKEY nor the global map.
-          (setq-local minor-mode-overriding-map-alist
-                      (list (cons 'donkey-normal-mode (make-sparse-keymap))))
-          (let ((donkey--default-normal-bindings
+          ;; An overriding map with nothing in it: `<f9>' reaches
+          ;; neither DONKEY nor the global map.  It has to be
+          ;; `overriding-local-map': Normal state's map is on
+          ;; `emulation-mode-map-alists', which Emacs reads before
+          ;; `minor-mode-overriding-map-alist' and before every
+          ;; minor-mode map.
+          (let ((overriding-local-map (make-sparse-keymap))
+                (donkey--default-normal-bindings
                  (list (cons (kbd "<f9>") 'kill-line))))
             (should (equal (donkey--shadowed-normal-bindings)
                            (list (list (kbd "<f9>") 'kill-line nil nil))))))

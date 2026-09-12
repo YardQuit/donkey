@@ -3179,6 +3179,99 @@ but it is the obvious thing for this change to have broken."
           (should (eq (key-binding (kbd key)) #'donkey-clear-banked-selection))))
     (donkey-mode -1)))
 
+;;; ---------------------------------------------------------------------------
+;;; Which map answers a key
+;;; ---------------------------------------------------------------------------
+
+(defvar donkey-precedence-test--on nil
+  "Non-nil while the stand-in minor mode of the precedence tests is on.")
+
+(defun donkey-precedence-test--probe ()
+  "Put PROBE in the buffer, so a key that reached this is visible."
+  (interactive)
+  (insert "PROBE"))
+
+(defvar donkey-precedence-test--map
+  (let ((map (make-sparse-keymap)))
+    ;; Two keys Normal state binds, and one it leaves alone.
+    (keymap-set map ";" #'donkey-precedence-test--probe)
+    (keymap-set map "RET" #'donkey-precedence-test--probe)
+    (keymap-set map "q" #'donkey-precedence-test--probe)
+    map)
+  "Keymap of the stand-in minor mode of the precedence tests.")
+
+(defvar donkey-precedence-test--first-map
+  (let ((map (make-sparse-keymap)))
+    (keymap-set map "j" #'donkey-precedence-test--probe)
+    map)
+  "Keymap of a stand-in override map, for the emulation-order test.")
+
+(defvar donkey-precedence-test--first-alist
+  (list (cons 'donkey-precedence-test--on donkey-precedence-test--first-map))
+  "An `emulation-mode-map-alists' entry that is installed before DONKEY's.")
+
+(defmacro donkey-precedence-test--in-front (name keys &rest body)
+  "Run KEYS in NAME with the stand-in mode's map ahead of DONKEY's own.
+
+The map is pushed onto the FRONT of `minor-mode-map-alist', which is
+where `define-minor-mode' puts the map of every mode defined after this
+package loads.  BODY runs once the keys have."
+  (declare (indent 2))
+  `(donkey-test-keys--harness ,name #'text-mode
+       ((donkey-precedence-test--on t)
+        (minor-mode-map-alist
+         (cons (cons 'donkey-precedence-test--on donkey-precedence-test--map)
+               minor-mode-map-alist)))
+       "alpha" ,keys
+     ,@body))
+
+(ert-deftest donkey-normal-state-outranks-a-minor-mode-map-in-front-of-it ()
+  "A minor-mode map ahead of DONKEY's cannot answer a key Normal state binds."
+  (donkey-precedence-test--in-front "*donkey-precedence*" "RET"
+    (should (eq (key-binding (kbd ";")) 'undefined))
+    (should (eq (key-binding (kbd "RET")) #'donkey-enter-dwim))
+    ;; RET does nothing in an editing mode, so the probe never ran.
+    (should (string= (buffer-string) "alpha"))))
+
+(ert-deftest donkey-normal-state-leaves-a-key-it-does-not-bind-to-the-mode ()
+  "A key Normal state does not bind still reaches the mode that binds it."
+  (donkey-precedence-test--in-front "*donkey-precedence-free*" "q"
+    (should (eq (key-binding (kbd "q")) #'donkey-precedence-test--probe))
+    (should (string= (buffer-string) "PROBEalpha"))))
+
+(ert-deftest donkey-hiding-normal-state-hides-its-emulation-map-as-well ()
+  "Binding `donkey-normal-mode' to nil hides Normal state's map entirely.
+
+What `donkey--wrap-key-would-run' asks, and what the keys handed back
+to a buffer -- RET in Dired, a wrap key in Info -- are answered with."
+  (donkey-precedence-test--in-front "*donkey-precedence-under*" ""
+    (should (eq (donkey--wrap-key-would-run (kbd "RET"))
+                #'donkey-precedence-test--probe))
+    (should (eq (donkey--wrap-key-would-run (kbd ";"))
+                #'donkey-precedence-test--probe))))
+
+(ert-deftest donkey-insert-state-leaves-a-minor-mode-map-alone ()
+  "Insert state answers with the mode's own keys, DONKEY's map being empty."
+  (donkey-precedence-test--in-front "*donkey-precedence-insert*" ""
+    (donkey-insert-mode 1)
+    (should (eq (key-binding (kbd ";")) #'donkey-precedence-test--probe))
+    (should (eq (key-binding (kbd "RET")) #'donkey-precedence-test--probe))))
+
+(ert-deftest donkey-an-emulation-map-installed-first-keeps-its-precedence ()
+  "An override map already installed outranks Normal state.
+
+`bind-key*' and `general' install emulation maps of their own.  The
+installation is repeated here against an entry that is already there,
+which is the order a reader gets when one of those loaded first."
+  (let ((emulation-mode-map-alists (list 'donkey-precedence-test--first-alist)))
+    (donkey--install-emulation-map)
+    (donkey-test-keys--harness "*donkey-precedence-emul*" #'text-mode
+        ((donkey-precedence-test--on t))
+        "alpha" ""
+      (should (eq (key-binding (kbd "j")) #'donkey-precedence-test--probe))
+      ;; A key that override map does not bind is still Normal state's.
+      (should (eq (key-binding (kbd "k")) #'previous-line)))))
+
 (provide 'donkey-state-management-test)
 
 ;;; donkey-state-management-test.el ends here

@@ -34,10 +34,13 @@
 ;;
 ;; DONKEY is an addition to Emacs, not a replacement, and it takes as
 ;; little as a modal editor can -- measured, not promised.  Every `C-x'
-;; and `C-c' sequence, `M-x', `C-h', isearch, the arrow keys, every Meta
-;; binding and every key your packages bind work exactly as they always
-;; did, in both states; no DONKEY keymap binds a Meta key or the ESC
-;; prefix at all.  INSERT state is Emacs with one key changed: `C-g'
+;; and `C-c' sequence, `M-x', `C-h', isearch, the arrow keys and every
+;; Meta binding work exactly as they always did, in both states; no
+;; DONKEY keymap binds a Meta key or the ESC prefix at all.  A key one
+;; of your packages binds works as it always did too, unless NORMAL
+;; state binds that key as well: there it is NORMAL state's, whichever
+;; of the two loaded first, and the package's key is waiting for you in
+;; INSERT state.  INSERT state is Emacs with one key changed: `C-g'
 ;; returns to NORMAL state.  NORMAL state differs in four things, all
 ;; of them named: letters run commands instead of typing, digits are
 ;; not counts (`C-u 3' is), RET does nothing in a buffer you are
@@ -6631,9 +6634,14 @@ Your Emacs still works
 ----------------------
 
 DONKEY is meant to be an addition, not a replacement.  In BOTH states
-your \\`C-x' and \\`C-c' prefixes, \\[execute-extended-command], \\`C-h', isearch, the arrow keys, every
-Meta binding and every package you have bound behave exactly as they
-always did.  Nothing was taken away to make room for the letters above.
+your \\`C-x' and \\`C-c' prefixes, \\[execute-extended-command], \\`C-h', isearch, the arrow keys and every
+Meta binding behave exactly as they always did.  Nothing was taken away
+to make room for the letters above.
+
+A key one of your packages binds behaves as it always did as well,
+unless NORMAL state binds the same key: there the letter above wins, in
+every session and whatever loaded first, and the package's key is
+waiting for you in INSERT state.
 
 A modal editor cannot be entirely free, though, and the price is short
 enough to state in full.
@@ -7259,10 +7267,13 @@ outright."
   "Return the DONKEY keys another map answers in THIS buffer.
 
 As (KEYS OWN EFFECTIVE REMAP): `donkey-normal-mode-map' still holds
-OWN, and a map that outranks it -- another minor mode, a
-terminal-local map -- answers with EFFECTIVE instead.  A buffer where
-Normal state is not on has nothing to say, since DONKEY's map is not
-consulted there at all.
+OWN, and a map that outranks it answers with EFFECTIVE instead.  Normal
+state's map is on `emulation-mode-map-alists', so another minor mode is
+not one of those any more: what is left above it is an emulation map
+installed before DONKEY's, an overriding or terminal-local map, and a
+`keymap' text or overlay property.  A buffer where Normal state is not
+on has nothing to say, since DONKEY's map is not consulted there at
+all.
 
 REMAP is non-nil where EFFECTIVE is this buffer REMAPPING the very
 command DONKEY bound -- named by its mode when reported, the answer
@@ -7278,7 +7289,16 @@ called it a loss would cry wolf in every Org buffer."
       (pcase-dolist (`(,keys . ,_default) donkey--default-normal-bindings)
         (let ((own (donkey--binding-value (lookup-key donkey-normal-mode-map keys)))
               (effective (donkey--binding-value (key-binding keys))))
-          (when (and own (not (eq own effective)))
+          (when (and own (not (eq own effective))
+                     ;; A PREFIX answers with a COMPOSED keymap: Normal
+                     ;; state's map is active twice -- as this mode's
+                     ;; own map, and on `emulation-mode-map-alists' --
+                     ;; and Emacs merges the prefix maps of every active
+                     ;; map rather than letting the first win.  The keys
+                     ;; under it are reached all the same, so nothing was
+                     ;; taken and there is nothing to report.
+                     (not (and (keymapp own) (keymapp effective)
+                               (memq own effective))))
             (push (list keys own effective
                         ;; EFFECTIVE nil is a key that reaches nothing
                         ;; here, and `command-remapping' answers nil
@@ -7504,6 +7524,52 @@ versa."
   (when donkey-normal-mode
     (when (bound-and-true-p donkey-insert-mode)
       (donkey-insert-mode -1))))
+
+(defconst donkey--emulation-mode-map-alist
+  (list (cons 'donkey-normal-mode donkey-normal-mode-map))
+  "Normal state\\='s keymap, in the shape `emulation-mode-map-alists' takes.
+
+Emacs reads that variable before every entry in
+`minor-mode-map-alist', so a key Normal state binds answers with
+Normal state\\='s own command whatever else is on.  Without it the answer
+depends on which file loaded first: `define-minor-mode' pushes each
+new map onto the FRONT of `minor-mode-map-alist', so a package that
+arrives after this one -- an autoload, a deferred `use-package', a
+mode entered for the first time -- sits ahead of Normal state and
+answers before it.
+
+Keyed on `donkey-normal-mode', the variable the minor-mode entry is
+keyed on as well.  Insert state is untouched, and binding that one
+variable to nil still hides the whole of Normal state, which is how
+`donkey--wrap-key-would-run' asks what a key means underneath.
+
+A key Normal state does NOT bind is unaffected and still reaches the
+mode that binds it, and a mode that wants one of Normal state\\='s keys
+back remaps the command; the README says how, under which map wins.
+
+The map is active twice as a result, here and as this mode\\='s own
+keymap, and Emacs composes the prefix maps of every active map rather
+than letting the first win.  Nothing is reached differently;
+`donkey--shadowed-normal-bindings' is where that shows, and it passes
+over it.")
+
+(defun donkey--install-emulation-map ()
+  "Put `donkey--emulation-mode-map-alist' on `emulation-mode-map-alists'.
+
+APPENDED, so an emulation map already installed -- the one `bind-key*'
+puts its keys in, another modal package\\='s -- keeps the precedence its
+own reader asked it for.
+
+Called once as this file loads, and never undone.  That is what the
+minor-mode entry `define-minor-mode' installs does too, and for the
+same reason: the entry answers only while `donkey-normal-mode' is on,
+which the disable path turns off in every buffer, and a state switched
+on by itself afterwards -- with no `donkey-mode' anywhere, which this
+package allows -- would be left without its precedence had teardown
+taken the entry away."
+  (add-to-list 'emulation-mode-map-alists 'donkey--emulation-mode-map-alist t))
+
+(donkey--install-emulation-map)
 
 (define-minor-mode donkey-insert-mode
   "DONKEY Insert state - passthrough to standard Emacs input.
