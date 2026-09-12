@@ -291,6 +291,18 @@ class `donkey--exit-insert' has its own `donkey-mode' guard for."
 ;;; donkey--excluded-mode-p
 ;;; ---------------------------------------------------------------------------
 
+(ert-deftest donkey-the-excluded-modes-default-is-the-list-the-docs-name ()
+  "The shipped `donkey-excluded-modes' is the list the README tabulates.
+
+An enumerable fact stated in the documentation, recounted here: a mode
+added to the default without a row in the README's table, or a row
+without a mode, fails this."
+  (should (equal (eval (car (get 'donkey-excluded-modes 'standard-value)) t)
+                 '(comint-mode term-mode vterm-mode eshell-mode
+                   eat-mode mistty-mode
+                   slime-repl-mode cider-repl-mode racket-repl-mode
+                   haskell-interactive-mode))))
+
 (ert-deftest donkey-excluded-mode-p-exact-match ()
   "An exactly listed major mode is excluded.
 

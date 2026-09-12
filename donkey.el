@@ -82,7 +82,10 @@
 ;;; ---------------------------------------------------------------------------
 
 (defcustom donkey-excluded-modes
-  '(comint-mode term-mode vterm-mode eshell-mode)
+  '(comint-mode term-mode vterm-mode eshell-mode
+    eat-mode mistty-mode
+    slime-repl-mode cider-repl-mode racket-repl-mode
+    haskell-interactive-mode)
   "Major modes where DONKEY Normal state should be permanently disabled.
 
 These modes manage subprocess interaction or terminal emulation
@@ -90,6 +93,17 @@ where suppressing keys via `suppress-keymap' would break
 functionality.  Derived modes (e.g. `shell-mode' from
 `comint-mode') are caught by `derived-mode-p' in
 `donkey--ensure-default-state'.
+
+The first four cover their own derivatives and most of what a
+reader meets: every comint REPL, `ielm-mode', `inferior-python-mode',
+`sql-interactive-mode', `geiser-repl-mode', `inf-ruby-mode' and the
+rest answer `derived-mode-p' for `comint-mode'.  The six named after
+them derive from none of the four and had to be named one at a time:
+`eat-mode' and `mistty-mode' are terminals, and the four REPLs are
+their languages\\=' own.  That is a list rather than a rule, and it
+stops where the reading stopped: a REPL or a terminal that is not a
+comint derivative and is not named here gets Normal state, and goes
+on this list when somebody meets it.
 
 For modes like `dired-mode' or `magit-status-mode' where normal
 mode is a preference rather than a necessity, add them here

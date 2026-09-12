@@ -1253,19 +1253,32 @@ The following modes are excluded by default because they manage
 subprocess interaction or terminal emulation where suppressing keys
 via =suppress-keymap= would break functionality:
 
-| Mode          | Reason                                                                 |
-|---------------+------------------------------------------------------------------------|
-| =comint-mode= | Process interaction — all input goes to subprocess. Covers derivatives |
-|               | like =shell-mode=, =inferior-python-mode=, =ielm-mode=, =gud-mode=     |
-|               | via =derived-mode-p=.                                                  |
-| =term-mode=   | Full PTY terminal emulation — character-at-a-time, raw mode.           |
-| =vterm-mode=  | Same as =term-mode= but faster implementation.                         |
-| =eshell-mode= | Own command-line parser and input loop.                                |
+| Mode                       | Reason                                                                 |
+|----------------------------+------------------------------------------------------------------------|
+| =comint-mode=              | Process interaction — all input goes to subprocess. Covers derivatives |
+|                            | like =shell-mode=, =inferior-python-mode=, =ielm-mode=, =gud-mode=     |
+|                            | via =derived-mode-p=.                                                  |
+| =term-mode=                | Full PTY terminal emulation — character-at-a-time, raw mode.           |
+| =vterm-mode=               | Same as =term-mode= but faster implementation.                         |
+| =eshell-mode=              | Own command-line parser and input loop.                                |
+| =eat-mode=                 | A terminal emulator that derives from none of the above.               |
+| =mistty-mode=              | The same, wrapping a shell in a terminal of its own.                   |
+| =slime-repl-mode=          | Common Lisp REPL, not a comint derivative.                             |
+| =cider-repl-mode=          | Clojure REPL, the same.                                                |
+| =racket-repl-mode=         | Racket REPL, the same.                                                 |
+| =haskell-interactive-mode= | GHCi REPL, the same.                                                   |
 
 Derived modes are caught automatically by the =derived-mode-p= check
 in =donkey--excluded-mode-p= (used consistently everywhere DONKEY needs
 to know whether a buffer is excluded), so listing =comint-mode= alone
 covers dozens of comint derivatives.
+
+The six after =eshell-mode= are there because they are covered by none
+of the four: each was measured answering =derived-mode-p= for none of
+them, and each is a buffer whose keys go to a process. That is a list
+rather than a rule, and it stops where the reading stopped — a REPL or
+a terminal that is not a comint derivative and is not named here gets
+Normal state, and belongs on the list the day somebody meets it.
 
 ** Adding Additional Excluded Modes
 
