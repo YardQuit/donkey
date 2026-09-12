@@ -1100,7 +1100,10 @@ that is most of them, Org included.
 A mode that binds a key *directly* to an insert command of its own is
 a different matter: =org-mode= puts =org-force-self-insert= on =|=,
 =cc-mode= puts electric commands on =#=, =*= and =/=, AUCTeX puts its
-own on =$=, =\= and =^=. Those are refused by name:
+own on =$=, =\= and =^=, =python-mode= (the MELPA one) puts
+=py-electric-comment= on =#=, =tagedit= puts one on =!=, and
+=fortran-mode=, =pascal-mode= and =tcl-mode= each have their own.
+Twenty-one such commands are refused by name:
 
 #+begin_src emacs-lisp
 
@@ -1551,7 +1554,7 @@ and =M-x apropos-command donkey-= finds any of them.
 | =donkey-mark-pair-delimiters=      | 21 pairs                         | what =m i=/=m a= select and the keys wrap |
 | =donkey-wrap-delimiters=           | =all=                            | which of those pairs get a key |
 | =donkey-wrap-region-engine=        | =donkey=                         | who puts the pair on: DONKEY or your pairing package |
-| =donkey-self-insert-commands=      | 16 commands                      | mode commands that type, refused in NORMAL state |
+| =donkey-self-insert-commands=      | 21 commands                      | mode commands that type, refused in NORMAL state |
 | =donkey-input-methods=             | =nil=                            | your input methods under =SPC i= |
 | =donkey-default-enter-rules-enabled= | =t=                            | install the three built-in Enter rules |
 | =donkey-report-binding-changes=    | =t=                              | say once at startup what has taken DONKEY's keys |

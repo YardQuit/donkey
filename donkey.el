@@ -6965,7 +6965,12 @@ are prefixes on a key of their own.")
     TeX-insert-backslash
     TeX-insert-sub-or-superscript
     LaTeX-insert-left-brace
-    LaTeX-babel-insert-hyphen)
+    LaTeX-babel-insert-hyphen
+    py-electric-comment
+    tagedit-insert-exclamation-mark
+    fortran-electric-line-number
+    electric-pascal-hash
+    tcl-electric-hash)
   "Commands Normal state refuses, because they type a character.
 
 `suppress-keymap' installs one entry, a remap of

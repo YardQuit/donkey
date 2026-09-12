@@ -3969,4 +3969,25 @@ way round.  The list had not been touched since the tutor was added."
         (should (string-prefix-p (downcase (cdr lesson))
                                  (downcase item)))))))
 
+(ert-deftest donkey-the-self-insert-list-is-the-one-the-readme-counts ()
+  "`donkey-self-insert-commands' ships the 21 the README says it does.
+
+An enumerable fact stated in the documentation, recounted here: a
+command added to the list without the README's count following it, or
+the other way round, fails this."
+  (should (= (length (eval (car (get 'donkey-self-insert-commands 'standard-value)) t))
+             21)))
+
+(ert-deftest donkey-a-mode-command-that-types-is-refused-by-name ()
+  "Each named typing command is remapped to `undefined' in Normal state.
+
+The list is a list and not a rule: what it names is refused, and a
+command nobody has met yet still types.  This pins the mechanism for
+the ones that have been met."
+  (dolist (cmd '(org-self-insert-command org-force-self-insert
+                 c-electric-pound py-electric-comment
+                 tagedit-insert-exclamation-mark fortran-electric-line-number
+                 electric-pascal-hash tcl-electric-hash))
+    (should (eq (lookup-key donkey-normal-mode-map (vector 'remap cmd)) 'undefined))))
+
 ;;; donkey-describe-bindings-test.el ends here
