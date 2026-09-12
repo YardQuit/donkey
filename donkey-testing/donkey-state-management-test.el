@@ -301,7 +301,76 @@ without a mode, fails this."
                  '(comint-mode term-mode vterm-mode eshell-mode
                    eat-mode mistty-mode
                    slime-repl-mode cider-repl-mode racket-repl-mode
-                   haskell-interactive-mode))))
+                   haskell-interactive-mode
+                   magit-mode dired-mode ibuffer-mode git-rebase-mode
+                   tabulated-list-mode Info-mode))))
+
+(ert-deftest donkey-the-excluded-modes-default-has-both-of-its-halves ()
+  "Ten terminals and REPLs, six applications, sixteen in all.
+
+The README tabulates the two halves separately, and the docstring
+gives each its own paragraph; this recounts both."
+  (let* ((shipped (eval (car (get 'donkey-excluded-modes 'standard-value)) t))
+         (terminals '(comint-mode term-mode vterm-mode eshell-mode
+                      eat-mode mistty-mode
+                      slime-repl-mode cider-repl-mode racket-repl-mode
+                      haskell-interactive-mode))
+         (applications '(magit-mode dired-mode ibuffer-mode git-rebase-mode
+                         tabulated-list-mode Info-mode)))
+    (should (= (length shipped) 16))
+    (should (= (length terminals) 10))
+    (should (= (length applications) 6))
+    (should (equal shipped (append terminals applications)))))
+
+(ert-deftest donkey-every-shipped-application-mode-is-excluded ()
+  "Each application mode on the default list answers as excluded.
+
+Named rather than derived: `magit-mode' and `git-rebase-mode' are not
+loaded in a batch run, and an exact member match does not need them
+to be."
+  (dolist (mode '(magit-mode dired-mode ibuffer-mode git-rebase-mode
+                  tabulated-list-mode Info-mode))
+    (with-temp-buffer
+      (let ((major-mode mode))
+        (should (donkey--excluded-mode-p))))))
+
+(ert-deftest donkey-a-tabulated-list-ui-is-excluded-by-derivation ()
+  "The package menu and the buffer menu come with `tabulated-list-mode'.
+
+One entry rather than a row each: both derive from it, and so do the
+tabulated UIs other packages build.  This is what the README claims
+when it says naming a parent covers its children."
+  (require 'package)
+  (require 'tabulated-list)
+  (should (provided-mode-derived-p 'package-menu-mode 'tabulated-list-mode))
+  (should (provided-mode-derived-p 'Buffer-menu-mode 'tabulated-list-mode))
+  (dolist (mode '(package-menu-mode Buffer-menu-mode))
+    (with-temp-buffer
+      (let ((major-mode mode))
+        (should (donkey--excluded-mode-p))))))
+
+(ert-deftest donkey-wdired-is-not-excluded-with-dired ()
+  "`wdired-mode' derives from nothing, so `dired-mode' does not cover it.
+
+The exception the README names, and the one that matters: a wdired
+buffer is one you are editing, and Normal state is wanted there."
+  (require 'wdired)
+  (should-not (provided-mode-derived-p 'wdired-mode 'dired-mode))
+  (with-temp-buffer
+    (let ((major-mode 'wdired-mode))
+      (should-not (donkey--excluded-mode-p)))))
+
+(ert-deftest donkey-the-help-like-modes-are-left-on ()
+  "Normal state stays on where the mode binds few letters.
+
+The other half of the README's split: `help-mode', `occur-mode',
+`compilation-mode' and `org-agenda-mode' are read-only too, and are
+deliberately NOT on the list."
+  (dolist (mode '(help-mode occur-mode compilation-mode grep-mode
+                  Man-mode org-agenda-mode))
+    (with-temp-buffer
+      (let ((major-mode mode))
+        (should-not (donkey--excluded-mode-p))))))
 
 (ert-deftest donkey-excluded-mode-p-exact-match ()
   "An exactly listed major mode is excluded.
@@ -3288,7 +3357,7 @@ which is the order a reader gets when one of those loaded first."
   (setq donkey-quit-test--ran 'probe))
 
 (defun donkey-quit-test--quits ()
-  "Stand in for a package's quit command that raises `quit'."
+  "Stand in for a package's quit command, raising `quit'."
   (interactive)
   (setq donkey-quit-test--ran 'quits)
   (signal 'quit nil))

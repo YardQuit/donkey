@@ -88,29 +88,51 @@
   '(comint-mode term-mode vterm-mode eshell-mode
     eat-mode mistty-mode
     slime-repl-mode cider-repl-mode racket-repl-mode
-    haskell-interactive-mode)
+    haskell-interactive-mode
+    magit-mode dired-mode ibuffer-mode git-rebase-mode
+    tabulated-list-mode Info-mode)
   "Major modes where DONKEY Normal state should be permanently disabled.
 
-These modes manage subprocess interaction or terminal emulation
-where suppressing keys via `suppress-keymap' would break
-functionality.  Derived modes (e.g. `shell-mode' from
-`comint-mode') are caught by `derived-mode-p' in
-`donkey--ensure-default-state'.
+In one of these, DONKEY is out of the way completely: every key is
+the mode\\='s, Normal state cannot be reached by any route, \\`C-g' means
+what it means in stock Emacs, and the modeline says \" DONKEY[E]\".
+Derived modes are caught by `derived-mode-p', so naming a parent
+covers its children.
 
-The first four cover their own derivatives and most of what a
-reader meets: every comint REPL, `ielm-mode', `inferior-python-mode',
+Two kinds of mode are here, for two different reasons.
+
+TERMINALS AND REPLS, where Normal state would break the program on
+the other end.  `comint-mode', `term-mode', `vterm-mode' and
+`eshell-mode' cover their own derivatives and most of what a reader
+meets: every comint REPL, `ielm-mode', `inferior-python-mode',
 `sql-interactive-mode', `geiser-repl-mode', `inf-ruby-mode' and the
 rest answer `derived-mode-p' for `comint-mode'.  The six named after
 them derive from none of the four and had to be named one at a time:
 `eat-mode' and `mistty-mode' are terminals, and the four REPLs are
-their languages\\=' own.  That is a list rather than a rule, and it
-stops where the reading stopped: a REPL or a terminal that is not a
-comint derivative and is not named here gets Normal state, and goes
-on this list when somebody meets it.
+their languages\\=' own.
 
-For modes like `dired-mode' or `magit-status-mode' where normal
-mode is a preference rather than a necessity, add them here
-explicitly if desired."
+APPLICATIONS, where the mode\\='s single letters ARE its commands and
+Normal state would answer nearly all of them.  Nothing can be damaged
+in one -- they are read-only, so every editing key is refused -- but
+the mode stops being usable for the job it exists to do.  `magit-mode',
+which covers every magit and forge buffer, loses commit, log, branch,
+diff, push and stash; `dired-mode' loses mark, flag and execute;
+`git-rebase-mode' loses pick, reword, drop and exec; `ibuffer-mode'
+and `tabulated-list-mode' (package menu, buffer menu, proced, and the
+tabulated UIs other packages build) lose their mark-and-execute keys;
+`Info-mode' loses \\`SPC' and its whole node vocabulary.  What is given
+up by listing them is motion: `magit-mode' and `dired-mode' remap
+`next-line', so \\`j' and \\`k' move by their own lines while Normal state
+is on, and go back to the mode\\='s own meaning once it is off.
+
+That makes this a list rather than a rule, and it stops where the
+reading stopped.  Not on it, and one line away for a reader who wants
+them: `wdired-mode' (which derives from nothing, so `dired-mode' does
+not cover it, and which is a buffer being edited), `org-agenda-mode',
+`eww-mode', `elfeed-search-mode', `deft-mode', `vundo-mode', and every
+help-like buffer -- `help-mode', `occur-mode', `compilation-mode',
+`Man-mode' -- where the mode binds few letters and Normal state\\='s
+motion is the better trade."
   :type '(repeat symbol)
   :group 'donkey)
 
@@ -887,7 +909,7 @@ order, stopping at the first one that reports it handled the key:
    `gfm-mode' buffers, follows the link at point through
    `markdown-follow-thing-at-point', Markdown's own key for it.
 4. `donkey--non-editing-enter-handler' -- outside `donkey-editing-modes'
-   (`dired-mode', `magit-status-mode', etc.), falls through to
+   (`org-agenda-mode', `compilation-mode', etc.), falls through to
    whatever the key means underneath Normal state's own keymap, asked
    at the press.  A command that would type or break a line is
    refused: see `donkey--line-break-commands'.
@@ -6605,8 +6627,8 @@ under the cursor is the answer.
 
 With NOTHING selected these keys do nothing at all, which is the state
 they spend most of their time in.  In a buffer you cannot edit they
-are handed back to the mode instead, so dired keeps \\`+' and Info keeps
-\\`['.
+are handed back to the mode instead, so the Org agenda keeps \\`+' and
+\\`<', and a help buffer keeps \\`<'.
 
 Under \\[donkey-rectangle-mark-mode] each line of the block is wrapped at its own columns, and a
 rectangle is never unwrapped: the pair goes on, row by row.
@@ -6678,9 +6700,10 @@ In NORMAL state, four things differ:
   - Letters run commands instead of typing.  That is the whole idea.
   - Digits are not counts.  \\`3 j' does nothing; \\`C-u 3' \\[next-line] moves down three.
   - RET does nothing in a buffer you are editing -- a stray newline in
-    NORMAL state is rarely what was meant.  In dired, magit and org-agenda
-    it is NOT inert: it still opens the file, visits the entry, follows
-    the link, because the key is handed back to the mode that owns it.
+    NORMAL state is rarely what was meant.  In a buffer you are NOT
+    editing it is not inert: in the Org agenda it visits the entry, in
+    a compilation log it jumps to the error, because the key is handed
+    back to the mode that owns it.
   - BACKSPACE and DELETE do nothing, so a slip cannot damage the buffer
     from NORMAL state.  Use DONKEY-DELETE-KEYS.
 
@@ -6699,14 +6722,18 @@ either of them.
 of what DONKEY does not touch.  This one covers only what DONKEY
 changed.
 
-In dired and other special buffers DONKEY is on too, and its letters win
-where they collide -- but a key the mode bound that DONKEY does not use
-still works.  In dired, \\`n', \\`t', \\`q', \\`^' and \\`+' are still dired's.  Terminals
-and shells (eshell, term, vterm) stay in INSERT throughout, so nothing
-is suppressed underneath a running process.  Their modeline says
-DONKEY[E] rather than DONKEY[I]: still INSERT, but NORMAL state cannot
-be reached there at all, so \\`C-g' quits the way stock Emacs does
-instead of switching state.
+Some buffers are really applications, and DONKEY steps aside in them
+altogether: magit and dired, ibuffer, Info, the tabulated lists
+(package menu, buffer menu, proced), a rebase todo, and every terminal
+and REPL.  There every key is the mode's, \\`C-g' quits the way stock
+Emacs does instead of switching state, and the modeline says DONKEY[E]
+rather than DONKEY[I].  DONKEY-EXCLUDED-MODES is that list; add a mode
+to it and the same is true there.
+
+In the read-only buffers NOT on that list -- a help buffer, an Occur
+list, a compilation log, the Org agenda -- DONKEY is on and its letters
+win where they collide, though a key the mode bound that DONKEY does
+not use still works.
 
 
 That is the working set

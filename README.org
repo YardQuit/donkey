@@ -80,7 +80,7 @@ NORMAL state differs in four ways, and only four:
 1. Letters run commands instead of typing.
 2. Digits are not counts — =C-u 3= is, as in stock Emacs.
 3. =RET= does nothing in a buffer you are editing, and is handed back
-   to Dired, Magit and the like in buffers you are not.
+   to the mode in buffers you are not.
 4. =BACKSPACE= and =DELETE= do nothing.
 
 Everything else falls through: =C-a=, =C-e=, =C-k=, =C-w=, =M-w=,
@@ -511,8 +511,9 @@ line by line.
 
 Nothing, in a buffer you can edit — the same as any other suppressed
 key. In a buffer you *cannot* edit, the press goes back to the major
-mode: Dired keeps =+=, =(= and =<=, Info keeps =[= and =]=, a help
-buffer keeps =<=. A wrap key is borrowed only for as long as a
+mode: the Org agenda keeps =+= and =<=, and a help buffer, an Occur
+list and a compilation log keep =<=. A wrap key is borrowed only for
+as long as a
 selection lasts, and a read-only buffer is one where nothing could be
 typed anyway, so both questions have the same answer.
 
@@ -562,10 +563,14 @@ NORMAL state. That is deliberate: NORMAL state does not type, and
 reading.
 
 In a buffer you are *not* editing, =RET= is handed back to the mode:
-=dired-find-file= in Dired, =magit-visit-thing= in Magit,
-=Info-follow-nearest-node= in Info. In Org and Markdown it follows the
-link at point, toggles the checkbox, or flips the TODO — see [[#enter-rules][Enter
-Rules]] to change or extend that.
+=org-agenda-switch-to= in the Org agenda, =compile-goto-error= in a
+compilation log, =man-follow= in a man page. In Org and Markdown it
+follows the link at point, toggles the checkbox, or flips the TODO —
+see [[#enter-rules][Enter Rules]] to change or extend that.
+
+(In Dired, Magit, Info and the other modes DONKEY steps aside from,
+=RET= is the mode's for a simpler reason: DONKEY is not there at all.
+See [[#stepping-aside][Modes Where DONKEY Steps Aside]].)
 
 * Search and replace
 :PROPERTIES:
@@ -823,12 +828,12 @@ completely: every key is the mode's, NORMAL state cannot be reached by
 any route, =C-g= means what it means in stock Emacs, and the modeline
 says =DONKEY[E]=.
 
-Add your own:
+Sixteen modes ship on the list. Add your own like this:
 
 #+begin_src emacs-lisp
 
   (with-eval-after-load 'donkey
-    (dolist (mode '(dired-mode magit-mode ibuffer-mode pdf-view-mode))
+    (dolist (mode '(pdf-view-mode eww-mode elfeed-search-mode))
       (add-to-list 'donkey-excluded-modes mode)))
 
 #+end_src
@@ -839,9 +844,15 @@ reflog, stash and process buffers, and the =forge= ones too.
 
 =wdired= is the exception worth knowing: it is not built on
 =dired-mode=, so excluding dired leaves it alone — which is what you
-want, since a wdired buffer is one you are editing.
+want, since a wdired buffer is one you are editing. =C-x C-q= puts you
+there in INSERT state, ready to type a new name; =C-g= gives you
+NORMAL state and DONKEY's editing keys.
 
 ** What is on the list already
+
+Two kinds of mode, for two different reasons.
+
+*** Terminals and REPLs — NORMAL state would break them
 
 | Mode                       | Why                                                     |
 |----------------------------+---------------------------------------------------------|
@@ -858,11 +869,60 @@ want, since a wdired buffer is one you are editing.
 
 The first four cover a great many modes by derivation. The six after
 them derive from none of the four and had to be named one at a time.
+
+*** Applications — their letters are their commands
+
+| Mode                  | What NORMAL state would take                                |
+|-----------------------+-------------------------------------------------------------|
+| =magit-mode=          | commit, log, branch, diff, push, stash. Covers every magit and forge buffer |
+| =dired-mode=          | mark, flag, execute, copy, rename                           |
+| =ibuffer-mode=        | the same mark-and-execute keys                              |
+| =git-rebase-mode=     | pick, reword, drop, exec, break — an interactive rebase cannot be finished without them |
+| =tabulated-list-mode= | the package menu, buffer menu, =proced=, and the tabulated UIs other packages build on it |
+| =Info-mode=           | =SPC= to scroll, and =n p l u m i d g= — the whole node vocabulary |
+
+Nothing could have been damaged in any of them: they are read-only, so
+every editing key is refused with =Buffer is read-only=. What went
+missing was the mode, not your work.
+
+*** What you give up by excluding magit and dired
+
+=j= and =k=. Both modes remap =next-line=, so while NORMAL state is on
+those two keys move by magit sections and dired lines — and with the
+mode excluded they go back to what the mode itself binds, which is
+=magit-delete-thing= and =dired-do-kill-lines=. If you want the motion
+back, two lines each:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'magit
+    (keymap-set magit-mode-map "j" #'magit-next-line)
+    (keymap-set magit-mode-map "k" #'magit-previous-line))
+
+  (with-eval-after-load 'dired
+    (keymap-set dired-mode-map "j" #'dired-next-line)
+    (keymap-set dired-mode-map "k" #'dired-previous-line))
+
+#+end_src
+
+*** Modes that are NOT on the list
+
+Deliberately, because the mode binds few letters and NORMAL state's
+motion is the better trade: =help-mode=, =occur-mode=,
+=compilation-mode=, =grep-mode=, =Man-mode=, =org-agenda-mode=. DONKEY
+is on in all of those, and =RET= and the wrap punctuation still reach
+the mode.
+
+Deliberately, because they are buffers you are editing: =wdired-mode=,
+=git-commit-mode=, =diff-mode=.
+
+Not on it because nobody has asked yet: =eww-mode=, =elfeed-search-mode=,
+=deft-mode=, =vundo-mode=, =ranger-mode=, =pdf-view-mode=, the =docker=
+and =kubernetes= UIs. Add any of them as above — and please open an
+issue so the next person does not have to.
+
 That makes this a list rather than a rule, and it stops where the
-reading stopped: a REPL or a terminal that is not a comint derivative
-and is not named here gets NORMAL state, and belongs on the list the
-day somebody meets it. Add it as above, and please open an issue so
-the next person does not have to.
+reading stopped.
 
 To see the list in force: =M-x eval-expression= =donkey-excluded-modes=.
 
@@ -1153,8 +1213,8 @@ Everything above, in one block, as a starting point to cut down:
   (use-package donkey
     :load-path "~/src/donkey"
     :config
-    ;; modes that are really applications
-    (dolist (mode '(dired-mode ibuffer-mode magit-mode pdf-view-mode))
+    ;; more modes that are really applications (16 ship on the list)
+    (dolist (mode '(pdf-view-mode eww-mode elfeed-search-mode))
       (add-to-list 'donkey-excluded-modes mode))
 
     ;; cursor
@@ -1549,7 +1609,7 @@ and =M-x apropos-command donkey-= finds any of them.
 
 | Option                             | Default                          | What it does |
 |------------------------------------+----------------------------------+--------------|
-| =donkey-excluded-modes=            | 10 modes, see above              | where DONKEY steps aside completely |
+| =donkey-excluded-modes=            | 16 modes, see above              | where DONKEY steps aside completely |
 | =donkey-editing-modes=             | 7 broad modes                    | where =RET= does nothing |
 | =donkey-position-ring-max=         | =10=                             | how far =S= remembers |
 | =donkey-cursor-normal=             | =box=                            | cursor in NORMAL state |

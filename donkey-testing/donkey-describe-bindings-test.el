@@ -3012,18 +3012,24 @@ would run by turning the mode off and pressing it."
           (donkey-mode -1)))
       (should (equal changed nil)))))
 
-(ert-deftest donkey-a-major-modes-own-keys-survive-in-dired ()
-  "A key Dired bound that DONKEY does not bind still runs Dired's command.
+(ert-deftest donkey-a-major-modes-own-keys-survive-where-normal-state-is-on ()
+  "A key the mode bound that DONKEY does not bind still runs the mode's command.
 
-The claim the README makes about special buffers, asked of a real
-Dired buffer rather than of the keymaps: suppression is done by
-remapping `self-insert-command', not by claiming every letter, so a
-letter DONKEY leaves alone reaches the major mode.
+The claim the README makes about read-only buffers Normal state is on
+in, asked of a real buffer rather than of the keymaps: suppression is
+done by remapping `self-insert-command', not by claiming every letter,
+so a letter DONKEY leaves alone reaches the major mode.
+
+Dired is the subject for its rich keymap, with the shipped exclusion
+lifted for the test -- `dired-mode' is on the default
+`donkey-excluded-modes', where this question does not arise because
+DONKEY is not there at all.
 
 The letters are not listed here.  Which ones Dired keeps is Dired's
 business and changes between Emacs versions; what must hold is the
 rule -- if DONKEY does not bind it, the mode still gets it."
-  (let ((buf (dired-noselect donkey-test--source-dir)))
+  (let ((buf (dired-noselect donkey-test--source-dir))
+        (donkey-excluded-modes nil))
     (unwind-protect
         (with-current-buffer buf
           (donkey-mode 1)
@@ -3547,8 +3553,12 @@ key a remap."
           ;; `overriding-local-map': Normal state's map is on
           ;; `emulation-mode-map-alists', which Emacs reads before
           ;; `minor-mode-overriding-map-alist' and before every
-          ;; minor-mode map.
-          (let ((overriding-local-map (make-sparse-keymap))
+          ;; minor-mode map.  `overriding-terminal-local-map' is bound
+          ;; away because it outranks that one: a transient map armed
+          ;; anywhere -- a mark run left running by whatever ran before
+          ;; this -- would let the lookup past it.
+          (let ((overriding-terminal-local-map nil)
+                (overriding-local-map (make-sparse-keymap))
                 (donkey--default-normal-bindings
                  (list (cons (kbd "<f9>") 'kill-line))))
             (should (equal (donkey--shadowed-normal-bindings)
