@@ -1600,6 +1600,27 @@ the same place."
     ;; At `point-max' `delete-char' would signal a bare `end-of-buffer'.
     (message "End of buffer -- nothing to delete")))))
 
+(defun donkey-redo (&optional count)
+  "Redo what was last undone, through whatever is managing undo here.
+
+Emacs\\='s own `undo-redo' is what this normally runs.  A buffer with
+`undo-tree-mode' on is the exception: that package keeps its own
+history and its own redo, and `undo-redo' finds nothing to redo there
+-- what it answers is \"No undone changes to redo\" while the tree
+holds the very state the reader is asking for.
+
+COUNT is passed on, so \\[universal-argument] 3 U redoes three
+changes wherever the underlying command takes a count.
+
+`u' is not the same shape of problem and needs nothing: `undo-tree'
+REMAPS `undo', so DONKEY\\='s key reaches the package\\='s version by
+itself."
+  (interactive "p")
+  (if (and (bound-and-true-p undo-tree-mode)
+           (fboundp 'undo-tree-redo))
+      (funcall 'undo-tree-redo count)
+    (undo-redo count)))
+
 (defun donkey-join-line (&optional count)
   "Pull the following line up onto this one, or join the selected lines.
 
@@ -6870,7 +6891,7 @@ are prefixes on a key of their own.")
 (keymap-set donkey-normal-mode-map ":" #'donkey-goto-line)
 (keymap-set donkey-normal-mode-map ">" #'donkey-indent-region-or-line)
 (keymap-set donkey-normal-mode-map "?" #'donkey-describe-bindings)
-(keymap-set donkey-normal-mode-map "U" #'undo-redo)
+(keymap-set donkey-normal-mode-map "U" #'donkey-redo)
 (keymap-set donkey-normal-mode-map "u" #'undo)
 (keymap-set donkey-normal-mode-map "z z" #'recenter-top-bottom)
 (keymap-set donkey-normal-mode-map "g e" #'end-of-buffer)

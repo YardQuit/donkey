@@ -6889,7 +6889,7 @@ of its own, and repeating `u' itself is a step back, not a press."
   "`U' inside a run touches the selection, never the buffer.
 
 This is why the key needed taking over at all.  Outside the mode `u'
-and `U' are `undo' and `undo-redo'; inside it `u' had been taken for
+and `U' are `undo' and `donkey-redo'; inside it `u' had been taken for
 the run while `U' still meant the buffer, so the press anyone would
 reach for after `u' redid a TEXT EDIT, dropped the selection and
 lapsed the mode, none of it announced.  It was worst exactly where it
@@ -6994,7 +6994,7 @@ it: a run cannot step FORWARD into a shape another run stepped out of
 any more sensibly than it can step back into one.
 
 And the keys are only borrowed.  In normal state they are `undo' and
-`undo-redo', and both are given straight back when the mode ends --
+`donkey-redo', and both are given straight back when the mode ends --
 which matters more for `U', since what it means out there writes to
 the buffer."
   (donkey-mark-test--keys "for text that is" "w w l M w w"
@@ -7013,7 +7013,7 @@ the buffer."
     (should-not donkey--mark-run-redo))
   (donkey-mark-test--keys "for text that is" "w w l"
     (should (eq (key-binding "u") 'undo))
-    (should (eq (key-binding "U") 'undo-redo))))
+    (should (eq (key-binding "U") 'donkey-redo))))
 
 (ert-deftest donkey-g-g-and-g-e-stretch-the-run-to-the-buffer-ends ()
   "`g g' and `g e' own an end apiece, as `g h' and `g l' do.

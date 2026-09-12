@@ -328,7 +328,7 @@ the ring collecting again from where you are.
 | =p=   | paste                                                     |
 | =P=   | paste as a rectangle                                      |
 | =u=   | undo                                                      |
-| =U=   | redo                                                      |
+| =U=   | redo — including undo-tree's own redo, where that is on   |
 | =C=   | comment or uncomment                                      |
 | =g j= | join this line and the next                               |
 | =>=   | indent the selection, or this line                        |
@@ -1472,6 +1472,7 @@ by the test suite:
 | =O= | =donkey-open-above= |
 | =o= | =donkey-open-below= |
 | =m v= | =donkey-rectangle-mark-mode= |
+| =U= | =donkey-redo= |
 | =v= | =donkey-set-mark= |
 | =m u= | =donkey-unbank-line= |
 | =m U= | =donkey-unbank-section= |

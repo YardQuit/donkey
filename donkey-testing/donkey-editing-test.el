@@ -4007,6 +4007,51 @@ either way."
       (should (equal (list stored donkey-test-keys--said (buffer-string))
                      (list stored "No rectangle to paste" "abcd\n"))))))
 
+(ert-deftest donkey-redo-uses-undo-trees-redo-where-undo-tree-is-on ()
+  "`donkey-redo' hands the job to `undo-tree-redo' in an undo-tree buffer.
+
+`undo-redo' finds nothing to redo there -- the package keeps its own
+history -- so the key would answer \"No undone changes to redo\" over a
+tree that holds exactly what the reader asked for."
+  (let (ran)
+    ;; undo-tree is not installed here and nothing will load it mid-test,
+    ;; so defining the two names it would bring is safe.
+    (cl-letf (((symbol-function 'undo-tree-redo)
+               (lambda (&optional count) (interactive "p") (setq ran (list 'tree count))))
+              ((symbol-function 'undo-redo)
+               (lambda (&optional count) (interactive "p") (setq ran (list 'plain count)))))
+      (with-temp-buffer
+        (defvar undo-tree-mode)
+        (let ((undo-tree-mode t))
+          (donkey-redo 3)
+          (should (equal ran '(tree 3))))))))
+
+(ert-deftest donkey-redo-uses-emacs-own-redo-everywhere-else ()
+  "With no `undo-tree-mode', `donkey-redo' is `undo-redo' and its count."
+  (let (ran)
+    (cl-letf (((symbol-function 'undo-redo)
+               (lambda (&optional count) (interactive "p") (setq ran (list 'plain count)))))
+      (with-temp-buffer
+        (defvar undo-tree-mode)
+        (let ((undo-tree-mode nil))
+          (donkey-redo 2)
+          (should (equal ran '(plain 2))))))))
+
+(ert-deftest donkey-redo-does-not-reach-for-a-redo-that-is-not-there ()
+  "A buffer claiming `undo-tree-mode' without the package still redoes.
+
+The mode variable can be non-nil with the function absent -- a stale
+session, a package the reader removed -- and the key must not signal."
+  (let (ran)
+    (cl-letf (((symbol-function 'undo-redo)
+               (lambda (&optional count) (interactive "p") (setq ran 'plain))))
+      (with-temp-buffer
+        (defvar undo-tree-mode)
+        (let ((undo-tree-mode t))
+          (should (not (fboundp 'undo-tree-redo)))
+          (donkey-redo 1)
+          (should (eq ran 'plain)))))))
+
 (provide 'donkey-editing-test)
 
 ;;; ---------------------------------------------------------------------------
