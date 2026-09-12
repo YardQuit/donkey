@@ -131,6 +131,33 @@ DONKEY is one file with no dependencies beyond Emacs 29.1.
 
 #+end_src
 
+*** A clone runs from source
+
+=:load-path= adds the directory and nothing more, so =require= reads
+=donkey.el= itself. Installing from a package archive byte-compiles;
+cloning does not, and nothing in the package compiles itself.
+
+It works perfectly well either way — if you would rather run compiled
+code, compile it when the source is newer, before the =use-package=
+block that loads it:
+
+#+begin_src emacs-lisp
+
+  (let* ((src (expand-file-name "~/src/donkey/donkey.el"))
+         (elc (concat src "c")))
+    (when (file-newer-than-file-p src elc)
+      (require 'bytecomp)
+      (let ((load-path (cons (file-name-directory src) load-path)))
+        (unless (byte-compile-file src)
+          ;; it did not compile: drop the stale .elc so the source loads
+          (when (file-exists-p elc) (delete-file elc))))))
+
+#+end_src
+
+One thing to know if you run the test suite over a clone: four tests
+mock =forward-char=, =forward-line= and =delete-region=, which
+byte-code open-codes, so delete =donkey.elc= before running them.
+
 ** By hand
 
 Put =donkey.el= somewhere on your =load-path= and:
@@ -1176,11 +1203,27 @@ own on =$=, =\= and =^=, =python-mode= (the MELPA one) puts
 =fortran-mode=, =pascal-mode= and =tcl-mode= each have their own.
 Twenty-one such commands are refused by name:
 
+*** Finding the name of one that got through
+
+You will meet this as a key that types in NORMAL state when it should
+not. To name the command it ran, press it, then =C-h l=
+(=view-lossage=): the last line names the key and the command beside
+it.
+
+#+begin_example
+
+  ;; forward-char
+  ;; mymode-electric-quote
+
+#+end_example
+
+=M-:= =last-command= answers the same question in one line. With the
+name in hand:
+
 #+begin_src emacs-lisp
 
-  ;; add one you have met
   (with-eval-after-load 'donkey
-    (add-to-list 'donkey-self-insert-commands 'my-mode-electric-quote)
+    (add-to-list 'donkey-self-insert-commands 'mymode-electric-quote)
     (donkey-refresh-suppressed-commands))
 
 #+end_src
@@ -1189,7 +1232,8 @@ Twenty-one such commands are refused by name:
 =setq= or =add-to-list=; through Customize the list re-installs itself.
 
 This is a list and not a rule: a mode with a typing command nobody has
-met yet will type. If you find one, add it and open an issue.
+met yet will type. If you find one, add it and open an issue — then
+the next reader does not have to find it twice.
 
 * Why Those Six Modes Ship Excluded
 :PROPERTIES:
