@@ -2346,6 +2346,28 @@ same reason."
                          offenders)))))))))
     (should-not offenders)))
 
+(ert-deftest donkey-the-key-harness-leaves-no-transient-map-armed ()
+  "`donkey-test-keys--harness' takes down a transient map its keys armed.
+
+`.' is `repeat' in Normal state, and `repeat' arms a transient map of
+its own -- which is not the mark run's, so
+`donkey--mark-run-exit' does not reach it.  A map left in
+`overriding-terminal-local-map' is terminal-wide and outranks
+`overriding-local-map' and every emulation map, so the next test to
+look a key up does so through a map it never set.
+
+Asked of the shared harness here and of the marking file's own in
+`donkey-no-test-leaves-a-transient-map-armed', because they are two
+macros and each has to clean up after itself."
+  (should-not overriding-terminal-local-map)
+  (donkey-test-keys--harness "*donkey-transient*" #'text-mode ()
+      "alpha beta gamma" "x ."
+    ;; The keys really did run, so the map really was armed: `x'
+    ;; deleted a character and `.' repeated it.
+    (should (equal (buffer-string) "pha beta gamma"))
+    (should overriding-terminal-local-map))
+  (should-not overriding-terminal-local-map))
+
 (ert-deftest donkey-docstrings-render-with-matched-quotes ()
   "Every docstring in donkey.el renders with its quotes paired.
 

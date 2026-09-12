@@ -4245,6 +4245,15 @@ full suite."
                ;; See `donkey-test-keys--clipboard-bindings' for what
                ;; these are and which GUI-only failure found them.
                ,@donkey-test-keys--clipboard-bindings
+               ;; Saved and restored, so a transient map armed while
+               ;; the keys run cannot outlive them.  The cleanup below
+               ;; takes down the mark run's and is no use against
+               ;; anybody else's: `.' is `repeat', which arms one of
+               ;; its own on top, and two tests here left it standing
+               ;; terminal-wide.  It outranks `overriding-local-map'
+               ;; and every emulation map, so the next test to look a
+               ;; key up did so through a map it never set.
+               (overriding-terminal-local-map overriding-terminal-local-map)
                (this-command nil) (last-command nil))
            (switch-to-buffer (get-buffer-create "*donkey-mark-test*"))
            ;; Nothing from outside is allowed to be armed when the keys
@@ -6815,6 +6824,23 @@ again."
   (should (memq 'donkey-mark-run-step-forward donkey--mark-run-commands))
   (should (memq 'donkey-mark-run-step-forward donkey--mark-run-adjusters)))
 
+
+(ert-deftest donkey-no-test-leaves-a-transient-map-armed ()
+  "The key harness takes down whatever transient map its keys armed.
+
+`.' is `repeat', and `repeat' arms a transient map of its own on top
+of the mark run's.  `donkey--mark-run-exit' takes down the mark run's
+and nothing else, so the harness saves and restores
+`overriding-terminal-local-map' as well.
+
+What it costs when it is not done: that map outranks
+`overriding-local-map' and every emulation map, so a later test looks
+its keys up through a map it never set.  The failure moves with the
+shuffle seed, which is why it is asserted here rather than waited for."
+  (should-not overriding-terminal-local-map)
+  (donkey-mark-test--keys "for text that is not saved here today" "w w l M w ."
+    (should (equal (donkey-mark-test--selection) "that is not")))
+  (should-not overriding-terminal-local-map))
 
 (ert-deftest donkey-dot-repeats-a-press-inside-a-run ()
   "`.' grows the run by the last press, and the mode survives it.

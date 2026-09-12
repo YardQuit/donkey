@@ -68,6 +68,11 @@ isolated, so a test neither reads the machine's clipboard nor writes
 it, and \"saved nothing\" stays distinguishable from \"found something
 already there\".
 
+`overriding-terminal-local-map' is saved and restored, so a transient
+map armed while the keys run cannot outlive them.  The mark run's own
+is taken down by `donkey--mark-run-exit' at the end; this covers every
+other, `repeat' included.
+
 Messages are captured into `donkey-test-keys--said' (last one wins)
 while still reaching the real `message', so a test can assert what the
 user was told without silencing the run."
@@ -96,6 +101,16 @@ user was told without silencing the run."
                (inhibit-message t)
                (kill-ring nil) (kill-ring-yank-pointer nil)
                (killed-rectangle nil)
+               ;; Saved and restored, so a transient map armed during
+               ;; the keys is gone when they are done -- whosever it
+               ;; is.  `donkey--mark-run-exit' below takes down the
+               ;; mark run's, and is no use against anybody else's:
+               ;; `.' is `repeat', and `repeat' arms one of its own on
+               ;; top, which two tests left standing terminal-wide for
+               ;; whatever ran next.  It outranks `overriding-local-map'
+               ;; and every emulation map, so the test it landed on
+               ;; looked up its keys through a map it never set.
+               (overriding-terminal-local-map overriding-terminal-local-map)
                ,@donkey-test-keys--clipboard-bindings
                (donkey-test-keys--said nil)
                ;; The macro's last command must not outlive the test:
