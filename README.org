@@ -845,9 +845,14 @@ reflog, stash and process buffers, and the =forge= ones too.
 
 =wdired= is the exception worth knowing: it is not built on
 =dired-mode=, so excluding dired leaves it alone — which is what you
-want, since a wdired buffer is one you are editing. =C-x C-q= puts you
-there in INSERT state, ready to type a new name; =C-g= gives you
-NORMAL state and DONKEY's editing keys.
+want, since a wdired buffer is one you are editing. =C-x C-q= takes you
+there in NORMAL state, like any other buffer you are editing; press
+=i= to type a new name.
+
+Editing =donkey-excluded-modes= reaches buffers that are already open,
+both ways: add a mode and its open buffers step aside on the next
+command, remove one and they get NORMAL state back. INSERT state you
+asked for yourself is never taken away by either.
 
 ** What is on the list already
 

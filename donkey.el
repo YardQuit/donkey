@@ -192,6 +192,43 @@ in place or not, recomputes on the next call."
   (donkey--memo-major-mode-in-p 'donkey--excluded-mode-cache
                                 donkey-excluded-modes))
 
+(defvar-local donkey--insert-state-was-forced nil
+  "Non-nil when Insert state here was forced by an excluded major mode.
+
+Insert state has two sources that look identical from the variable:
+the reader asked for it, or the major mode is on
+`donkey-excluded-modes' and Normal state is not available.  Only the
+second is undone when the mode stops being excluded, so which one it
+was has to be recorded at the moment it happens rather than guessed
+at afterwards.")
+
+(defun donkey--enter-insert-for-excluded ()
+  "Enter Insert state because the major mode is excluded, and record that.
+
+The one address for the three paths that force Insert state on an
+excluded buffer -- the sweep, the Normal-state hook and the
+post-command catch-all -- so that `donkey--release-forced-insert-state'
+has one thing to test."
+  (donkey-enter-insert)
+  (setq donkey--insert-state-was-forced t))
+
+(defun donkey--release-forced-insert-state ()
+  "Give Normal state back once this buffer's mode stops being excluded.
+
+Returns non-nil if the state was changed.  Does nothing for Insert
+state the reader asked for: only the state
+`donkey--enter-insert-for-excluded' put on is taken off again.
+
+A mode leaves the excluded set two ways, and both arrive here: the
+major mode changes to one that is not listed -- Dired to wdired -- or
+`donkey-excluded-modes' itself changes under a buffer that is already
+open."
+  (when (and donkey--insert-state-was-forced
+             (not (donkey--excluded-mode-p)))
+    (setq donkey--insert-state-was-forced nil)
+    (donkey-enter-normal)
+    t))
+
 (defun donkey--insert-state-lighter ()
   "Return the mode-line text for Insert state in the current buffer.
 
@@ -210,21 +247,34 @@ buffer's first activation, and `donkey--check-post-command-non-editing'
 covers anything that sets the variable without the toggle."
   (when (donkey--excluded-mode-p)
     (when (bound-and-true-p donkey-normal-mode)
-      (donkey-enter-insert))))
+      (donkey--enter-insert-for-excluded))))
 
 (add-hook 'donkey-normal-mode-hook #'donkey--handle-non-editing-buffer)
 
 (defun donkey--check-post-command-non-editing ()
-  "Force Insert state if Normal state is somehow active in an excluded mode.
+  "Keep the state here matching whether the major mode is excluded.
 
 On the global `post-command-hook', after every command in every
 buffer, reading the `donkey-normal-mode' variable directly: the
 catch-all behind `donkey--handle-non-editing-buffer' and
 `donkey--ensure-default-state' for anything that sets the variable
-without going through the minor-mode toggle."
-  (when (and (bound-and-true-p donkey-normal-mode)
-             (donkey--excluded-mode-p))
-    (donkey-enter-insert)))
+without going through the minor-mode toggle.
+
+Both directions, because `donkey-excluded-modes' can change under a
+buffer that is already open and no major mode changes when it does:
+Normal state in a mode that is now excluded becomes Insert, and Insert
+state this package forced becomes Normal again once the mode is off
+the list.  Insert state the reader asked for is left alone.
+
+The second test is a buffer-local variable that is nil nearly
+everywhere, so the cost in an ordinary buffer is one `and' that fails
+at its first branch."
+  (cond
+   ((and (bound-and-true-p donkey-normal-mode)
+         (donkey--excluded-mode-p))
+    (donkey--enter-insert-for-excluded))
+   (donkey--insert-state-was-forced
+    (donkey--release-forced-insert-state))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Org-Scratch Buffer Creation
@@ -8538,7 +8588,9 @@ fail and take the rest of a config file with it."
 (defun donkey--ensure-default-state ()
   "Enable DONKEY Normal state unless the current major mode is excluded.
 
-For an excluded mode, enable Insert state (passthrough) instead.  A
+For an excluded mode, enable Insert state (passthrough) instead, and
+give Normal state back to a buffer whose mode has stopped being
+excluded -- Dired turned into wdired, or the option itself edited.  A
 minibuffer gets no state at all.  Returns non-nil if a state was
 enabled.
 
@@ -8552,13 +8604,14 @@ resweep, and `after-change-major-mode-hook'."
       (cond
        (is-excluded-p
         (unless (bound-and-true-p donkey-insert-mode)
-          (donkey-enter-insert)
+          (donkey--enter-insert-for-excluded)
           t))
        (t
-        (unless (or (bound-and-true-p donkey-normal-mode)
-                    (bound-and-true-p donkey-insert-mode))
-          (donkey-enter-normal)
-          t)))))))
+        (or (donkey--release-forced-insert-state)
+            (unless (or (bound-and-true-p donkey-normal-mode)
+                        (bound-and-true-p donkey-insert-mode))
+              (donkey-enter-normal)
+              t))))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mode Indicator

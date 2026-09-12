@@ -360,6 +360,90 @@ buffer is one you are editing, and Normal state is wanted there."
     (let ((major-mode 'wdired-mode))
       (should-not (donkey--excluded-mode-p)))))
 
+(ert-deftest donkey-a-mode-that-stops-being-excluded-gets-normal-state-back ()
+  "Insert state forced by an excluded mode is undone when the mode is not.
+
+The buffer is left open and `donkey-excluded-modes' is edited under
+it, which is the case no major mode change reaches."
+  (with-temp-buffer
+    (let ((donkey-excluded-modes '(text-mode))
+          (donkey--excluded-mode-cache nil))
+      (text-mode)
+      (donkey--ensure-default-state)
+      (should (bound-and-true-p donkey-insert-mode))
+      (should donkey--insert-state-was-forced)
+      (setq donkey-excluded-modes nil)
+      (should (donkey--release-forced-insert-state))
+      (should (bound-and-true-p donkey-normal-mode))
+      (should-not donkey--insert-state-was-forced))))
+
+(ert-deftest donkey-insert-state-the-reader-asked-for-is-not-taken-away ()
+  "Only the Insert state an excluded mode forced is given back.
+
+`donkey--insert-state-was-forced' is what separates the two, and it is
+nil for a state the reader entered."
+  (with-temp-buffer
+    (let ((donkey-excluded-modes nil)
+          (donkey--excluded-mode-cache nil))
+      (text-mode)
+      (donkey-enter-insert)
+      (should-not donkey--insert-state-was-forced)
+      (should-not (donkey--release-forced-insert-state))
+      (should (bound-and-true-p donkey-insert-mode))
+      ;; And it survives the mode being excluded and un-excluded again.
+      (setq donkey-excluded-modes '(text-mode) donkey--excluded-mode-cache nil)
+      (donkey--check-post-command-non-editing)
+      (setq donkey-excluded-modes nil donkey--excluded-mode-cache nil)
+      (donkey--check-post-command-non-editing)
+      (should (bound-and-true-p donkey-insert-mode))
+      (should-not (bound-and-true-p donkey-normal-mode)))))
+
+(ert-deftest donkey-the-post-command-check-releases-as-well-as-forces ()
+  "The catch-all moves the state in both directions.
+
+Nothing else reaches a buffer whose mode left the excluded set without
+a major mode change, so the hook that forces Insert has to be the one
+that gives it back."
+  (with-temp-buffer
+    (let ((donkey-excluded-modes '(text-mode))
+          (donkey--excluded-mode-cache nil))
+      (text-mode)
+      (donkey-enter-normal)
+      (donkey--check-post-command-non-editing)
+      (should (bound-and-true-p donkey-insert-mode))
+      (should donkey--insert-state-was-forced)
+      (setq donkey-excluded-modes nil donkey--excluded-mode-cache nil)
+      (donkey--check-post-command-non-editing)
+      (should (bound-and-true-p donkey-normal-mode))
+      (should-not (bound-and-true-p donkey-insert-mode)))))
+
+(ert-deftest donkey-a-dired-buffer-turned-into-wdired-is-in-normal-state ()
+  "Turning an excluded Dired into wdired leaves NORMAL state behind.
+
+Dired is on the default `donkey-excluded-modes' and `wdired-mode'
+derives from nothing, so the buffer changes from excluded to not while
+staying the same buffer -- the case `donkey--release-forced-insert-state'
+exists for."
+  (require 'wdired)
+  (let* ((dir (make-temp-file "donkey-wdired" t))
+         (buf (progn (write-region "" nil (expand-file-name "a" dir) nil 'silent)
+                     (dired-noselect dir))))
+    (unwind-protect
+        (with-current-buffer buf
+          (donkey-mode 1)
+          (unwind-protect
+              (progn
+                (donkey--ensure-default-state)
+                (should (donkey--excluded-mode-p))
+                (should (bound-and-true-p donkey-insert-mode))
+                (wdired-change-to-wdired-mode)
+                (should-not (donkey--excluded-mode-p))
+                (should (bound-and-true-p donkey-normal-mode)))
+            (when (derived-mode-p 'wdired-mode) (wdired-abort-changes))
+            (donkey-mode -1)))
+      (when (buffer-live-p buf) (kill-buffer buf))
+      (delete-directory dir t))))
+
 (ert-deftest donkey-the-help-like-modes-are-left-on ()
   "Normal state stays on where the mode binds few letters.
 
