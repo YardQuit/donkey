@@ -444,6 +444,54 @@ exists for."
       (when (buffer-live-p buf) (kill-buffer buf))
       (delete-directory dir t))))
 
+(ert-deftest donkey-an-exception-takes-a-child-out-from-under-its-parent ()
+  "A mode on `donkey-excluded-mode-exceptions' is not excluded.
+
+The case nothing else reaches: `magit-log-mode' is never on
+`donkey-excluded-modes' -- `magit-mode' is, and covers it by
+derivation -- so removing it there does nothing."
+  (with-temp-buffer
+    (let ((donkey-excluded-modes '(prog-mode))
+          (donkey-excluded-mode-exceptions nil)
+          (donkey--excluded-mode-cache nil)
+          (donkey--exception-mode-cache nil)
+          (major-mode 'emacs-lisp-mode))
+      (should (donkey--excluded-mode-p))
+      (setq donkey-excluded-modes (remq 'emacs-lisp-mode donkey-excluded-modes)
+            donkey--excluded-mode-cache nil)
+      (should (donkey--excluded-mode-p))
+      (setq donkey-excluded-mode-exceptions '(emacs-lisp-mode))
+      (should-not (donkey--excluded-mode-p)))))
+
+(ert-deftest donkey-an-exception-matches-by-derivation-too ()
+  "Naming a parent in the exceptions exempts everything under it."
+  (with-temp-buffer
+    (let ((donkey-excluded-modes '(prog-mode))
+          (donkey-excluded-mode-exceptions '(lisp-data-mode))
+          (donkey--excluded-mode-cache nil)
+          (donkey--exception-mode-cache nil)
+          (major-mode 'emacs-lisp-mode))
+      (should (provided-mode-derived-p 'emacs-lisp-mode 'lisp-data-mode))
+      (should-not (donkey--excluded-mode-p)))))
+
+(ert-deftest donkey-the-exceptions-list-is-empty-by-default ()
+  "Nothing is exempt until a reader says so."
+  (should (null (eval (car (get 'donkey-excluded-mode-exceptions 'standard-value)) t))))
+
+(ert-deftest donkey-an-exception-gives-normal-state-back-to-an-open-buffer ()
+  "Naming an exception reaches a buffer already sitting in Insert state."
+  (with-temp-buffer
+    (let ((donkey-excluded-modes '(text-mode))
+          (donkey-excluded-mode-exceptions nil)
+          (donkey--excluded-mode-cache nil)
+          (donkey--exception-mode-cache nil))
+      (text-mode)
+      (donkey--ensure-default-state)
+      (should (bound-and-true-p donkey-insert-mode))
+      (setq donkey-excluded-mode-exceptions '(text-mode))
+      (donkey--check-post-command-non-editing)
+      (should (bound-and-true-p donkey-normal-mode)))))
+
 (ert-deftest donkey-the-help-like-modes-are-left-on ()
   "Normal state stays on where the mode binds few letters.
 

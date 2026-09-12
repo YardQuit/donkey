@@ -1345,7 +1345,23 @@ matches:
 
 #+end_src
 
-Take the parent off and name the children you still want instead:
+The way to do it is =donkey-excluded-mode-exceptions=, which is read
+first and wins:
+
+#+begin_src emacs-lisp
+
+  ;; DONKEY out of the way in Magit, except in a log buffer
+  (with-eval-after-load 'donkey
+    (setopt donkey-excluded-mode-exceptions '(magit-log-mode)))
+
+#+end_src
+
+It matches the way =donkey-excluded-modes= does — an exact mode, or a
+parent of one — so naming a parent there exempts everything under it.
+It is empty by default and costs nothing while it is.
+
+The older way, if you would rather keep it all in one list, is to take
+the parent off and name the children you still want:
 
 #+begin_src emacs-lisp
 

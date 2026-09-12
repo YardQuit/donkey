@@ -2396,12 +2396,14 @@ reason."
                  ;; the apostrophe character itself named as `\\=''.
                  ;; The second pattern is the same opener left standing
                  ;; before a possessive: "‘donkey-mode's".  The third is
-                 ;; the stray "=" a lone \\= leaves behind.
+                 ;; the stray "=" a lone \\= leaves behind, whatever
+                 ;; stands before it -- an example indented in a
+                 ;; docstring puts a space there, and the pattern used
+                 ;; to ask for an alphanumeric and miss it.
                  (when (or (string-match-p
                             "‘[^‘’]*'\\(?:[^[:alnum:]’]\\|$\\)" line)
                            (string-match-p "‘[^‘’ ]+'s\\b" line)
-                           (string-match-p
-                            "\\(?:[[:alnum:]]\\|[][()]\\)=[‘’]" line))
+                           (string-match-p "=[‘’]" line))
                    (push (format "%s: %s" (symbol-name sym) line)
                          offenders)))))))))
     (should-not offenders)))

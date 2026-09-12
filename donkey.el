@@ -137,6 +137,32 @@ motion is the better trade."
   :type '(repeat symbol)
   :group 'donkey)
 
+(defcustom donkey-excluded-mode-exceptions nil
+  "Major modes Normal state stays on in, whatever `donkey-excluded-modes' says.
+
+Read before that option and winning over it, so a mode here is never
+excluded.  Empty by default: the exclusions ship as a list of parents,
+and this is how a reader takes one child back out from under its
+parent.
+
+    ;; DONKEY out of the way in Magit, except in a log buffer
+    (setq donkey-excluded-mode-exceptions (list \\='magit-log-mode))
+
+Nothing else can do that.  Removing a child from `donkey-excluded-modes'
+is not the same thing and does nothing at all, because the child was
+never on that list -- `magit-mode' is, and it covers its children by
+derivation.  The alternative is to drop the parent and name every
+sibling instead, which is a list that goes stale the day the package
+adds a mode.
+
+Matched the way `donkey-excluded-modes' is: an exact major mode, or a
+parent of one, so naming a parent here exempts everything under it.
+
+Costs nothing while it is empty: the check is a variable read that
+fails before any list is searched."
+  :type '(repeat symbol)
+  :group 'donkey)
+
 ;; Every read of a mode-list option goes through `donkey--mode-list':
 ;; the readers sit on hooks, and a hook function that signals is
 ;; removed for the session.
@@ -187,10 +213,27 @@ in place or not, recomputes on the next call."
 (defvar-local donkey--excluded-mode-cache nil
   "Memo for `donkey--excluded-mode-p'; see `donkey--memo-major-mode-in-p'.")
 
+(defvar-local donkey--exception-mode-cache nil
+  "Memo for `donkey-excluded-mode-exceptions'; see `donkey--memo-major-mode-in-p'.")
+
+(defun donkey--excluded-mode-exception-p ()
+  "Return non-nil if this major mode is in `donkey-excluded-mode-exceptions'.
+
+Nil without the list ever being searched while the option is empty,
+which is its default and which every reader who has not asked for an
+exception is paying for on every command."
+  (and donkey-excluded-mode-exceptions
+       (donkey--memo-major-mode-in-p 'donkey--exception-mode-cache
+                                     donkey-excluded-mode-exceptions)))
+
 (defun donkey--excluded-mode-p ()
-  "Return non-nil if the current major mode is in `donkey-excluded-modes'."
-  (donkey--memo-major-mode-in-p 'donkey--excluded-mode-cache
-                                donkey-excluded-modes))
+  "Return non-nil if the current major mode is in `donkey-excluded-modes'.
+
+`donkey-excluded-mode-exceptions' is read first and wins, so a mode
+named there is not excluded however it matched the other list."
+  (and (not (donkey--excluded-mode-exception-p))
+       (donkey--memo-major-mode-in-p 'donkey--excluded-mode-cache
+                                     donkey-excluded-modes)))
 
 (defvar-local donkey--insert-state-was-forced nil
   "Non-nil when Insert state here was forced by an excluded major mode.
