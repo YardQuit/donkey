@@ -3272,6 +3272,106 @@ which is the order a reader gets when one of those loaded first."
       ;; A key that override map does not bind is still Normal state's.
       (should (eq (key-binding (kbd "k")) #'previous-line)))))
 
+;;; ---------------------------------------------------------------------------
+;;; The quit key finishes what a package had open
+;;; ---------------------------------------------------------------------------
+
+(defvar donkey-quit-test--ran nil
+  "What the stand-in quit command of these tests did, or nil.")
+
+(defvar donkey-quit-test--on nil
+  "Non-nil while the stand-in minor mode of these tests is on.")
+
+(defun donkey-quit-test--probe ()
+  "Stand in for a package's own quit command."
+  (interactive)
+  (setq donkey-quit-test--ran 'probe))
+
+(defun donkey-quit-test--quits ()
+  "Stand in for a package's quit command that raises `quit'."
+  (interactive)
+  (setq donkey-quit-test--ran 'quits)
+  (signal 'quit nil))
+
+(defun donkey-quit-test--errors ()
+  "Stand in for a package's quit command with a bug in it."
+  (interactive)
+  (setq donkey-quit-test--ran 'errors)
+  (error "Boom"))
+
+(defvar donkey-quit-test--map
+  (let ((map (make-sparse-keymap)))
+    (keymap-set map "C-g" #'donkey-quit-test--probe)
+    map)
+  "Keymap putting the stand-in quit command on the quit key.")
+
+(defmacro donkey-quit-test--intercept (command &rest body)
+  "Run the intercept with COMMAND as what the quit key resolved to, then BODY.
+
+`donkey-enter-normal' is stubbed, so BODY can ask whether the state
+change was reached without a second buffer being involved."
+  (declare (indent 1))
+  `(let ((donkey-quit-test--ran nil) (entered nil))
+     (with-temp-buffer
+       (let ((donkey-mode t)
+             (donkey-insert-mode t)
+             (donkey--just-exited-from-insert nil)
+             (this-command ,command))
+         (cl-letf (((symbol-function 'minibufferp) (lambda () nil))
+                   ((symbol-function 'this-single-command-keys) (lambda () [7]))
+                   ((symbol-function 'donkey-enter-normal)
+                    (lambda () (setq entered t))))
+           (donkey--intercept-quit-in-insert))))
+     ,@body))
+
+(ert-deftest donkey-the-quit-key-finishes-what-a-package-had-open ()
+  "A package's own quit command runs before Insert state is left.
+
+With a completion list showing, the quit key is the package's command
+and not `keyboard-quit'.  Replacing it with the exit left the list up
+with its keymap live, so the next key walked the candidates in NORMAL
+state instead of the buffer."
+  (donkey-quit-test--intercept 'donkey-quit-test--probe
+    (should (eq donkey-quit-test--ran 'probe))
+    (should entered)))
+
+(ert-deftest donkey-a-quit-that-raises-quit-still-leaves-insert-state ()
+  "A package's quit command may signal `quit'; the state change follows."
+  (donkey-quit-test--intercept 'donkey-quit-test--quits
+    (should (eq donkey-quit-test--ran 'quits))
+    (should entered)))
+
+(ert-deftest donkey-a-quit-command-with-a-bug-still-leaves-insert-state ()
+  "A package's quit command may signal an error; the state change follows."
+  (donkey-quit-test--intercept 'donkey-quit-test--errors
+    (should (eq donkey-quit-test--ran 'errors))
+    (should entered)))
+
+(ert-deftest donkey-the-plain-quit-is-not-run-a-second-time ()
+  "`keyboard-quit' is what leaving Insert state stands in for, not extra work."
+  (let (called)
+    (cl-letf (((symbol-function 'keyboard-quit) (lambda () (interactive) (setq called t))))
+      (donkey-quit-test--intercept 'keyboard-quit
+        (should-not called)
+        (should entered)))))
+
+(ert-deftest donkey-the-quit-key-runs-the-package-command-and-ends-in-normal ()
+  "Driven with real keys: the package's quit runs, and NORMAL state is on.
+
+The minor-mode map stands in for a package that binds the quit key
+while it has something open; Insert state's own map is empty, so that
+is the binding the key reaches."
+  (setq donkey-quit-test--ran nil)
+  (donkey-test-keys--harness "*donkey-quit-keys*" #'text-mode
+      ((donkey-quit-test--on t)
+       (minor-mode-map-alist
+        (cons (cons 'donkey-quit-test--on donkey-quit-test--map)
+              minor-mode-map-alist)))
+      "alpha" "i C-g"
+    (should (eq donkey-quit-test--ran 'probe))
+    (should (bound-and-true-p donkey-normal-mode))
+    (should-not (bound-and-true-p donkey-insert-mode))))
+
 (provide 'donkey-state-management-test)
 
 ;;; donkey-state-management-test.el ends here

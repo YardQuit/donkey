@@ -70,6 +70,10 @@ you through it in a buffer you can practise in.
 ** What changes, and what does not
 
 INSERT state changes exactly one key: =C-g= returns to NORMAL state.
+If a package has something open under the cursor when you press it — a
+completion list, a snippet with fields, extra cursors — that package's
+own quit runs first, so the one press closes what was open and returns
+you to NORMAL state.
 
 NORMAL state differs in four ways, and only four:
 

@@ -8155,6 +8155,46 @@ minibuffer and an excluded mode."
                  (donkey--own-prefix-p (substring keys 0 (1- (length keys)))))
         (setq this-command 'donkey--quit-the-sequence)))))
 
+(defconst donkey--quit-commands-of-its-own
+  '(keyboard-quit minibuffer-keyboard-quit abort-recursive-edit
+    donkey--exit-insert donkey--quit-the-sequence ignore undefined)
+  "Quit-key commands that are nobody else\\='s work to finish.
+
+What `donkey--run-shadowed-quit' passes over.  Each either IS leaving
+Insert state, or is the plain quit that leaving Insert state stands in
+for; running one before the exit would do the same job twice.")
+
+(defun donkey--run-shadowed-quit (command)
+  "Run COMMAND, the quit key\\='s own binding, before Insert state is left.
+
+A package with something open under the cursor puts its own command on
+the quit key -- `corfu-quit' while a completion list is showing,
+`yas-abort-snippet' in a snippet, `mc/keyboard-quit' with extra
+cursors.  Replacing that command with the exit left the thing open:
+the list stayed on the screen with its keymap live, so `j' walked the
+candidates in NORMAL state and a further key completed a word into the
+buffer.  Running it first closes what was open, and the state change
+follows.
+
+Nothing is run for the commands in `donkey--quit-commands-of-its-own',
+for a keyboard macro -- which answers `commandp' and then signals in
+`call-interactively' -- or for anything that is not a command.
+
+Wrapped, and returning nil either way: a package\\='s quit that signals
+must not be what keeps a reader in Insert state.  A `quit' from it is
+the condition it was asked to raise and is passed over in silence; an
+error is reported, since that one is a bug in the package."
+  (when (and command
+             (symbolp command)
+             (commandp command)
+             (not (memq command donkey--quit-commands-of-its-own)))
+    (condition-case err
+        (call-interactively command)
+      (quit nil)
+      (error (message "DONKEY: %s signaled leaving Insert state: %s"
+                      command (error-message-string err))))
+    nil))
+
 (defun donkey--intercept-quit-in-insert ()
   "Intercept the quit key in insert mode by raw key event or `sp-cancel' command.
 
@@ -8174,10 +8214,14 @@ function from the hook."
              (not donkey--just-exited-from-insert)
              (not (minibufferp))
              (not (donkey--excluded-mode-p)))
-    (setq this-command 'ignore
-          donkey--just-exited-from-insert t)
-    ;; Local, so the reset fires for this buffer's next command.
-    (add-hook 'pre-command-hook #'donkey--reset-exit-guard -100 t)
+    ;; What the key WOULD have run, before it is replaced: a package
+    ;; with something open under the cursor put its own command here.
+    (let ((shadowed this-command))
+      (setq this-command 'ignore
+            donkey--just-exited-from-insert t)
+      ;; Local, so the reset fires for this buffer's next command.
+      (add-hook 'pre-command-hook #'donkey--reset-exit-guard -100 t)
+      (donkey--run-shadowed-quit shadowed))
     (condition-case err
         (donkey--exit-insert)
       ;; Reported, not swallowed.
