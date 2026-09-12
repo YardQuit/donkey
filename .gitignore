@@ -30,3 +30,19 @@ mule--test.el
 ^20*.org$
 run_tests.sh
 *.patch
+
+# Working files, and why they are here rather than in a personal
+# ~/.config/git/ignore: what keeps something out of this repository
+# should travel with the repository.  A clone on another machine, or a
+# contributor, gets the same protection.
+
+# Reports, drafts, notes and the tooling that makes them.  Nothing in
+# here is ever pushed; put a working file here rather than in the root.
+/.donkey-local/
+
+# Read by the coding assistant from the project root, so it cannot be
+# moved into the directory above.
+/CLAUDE.md
+
+# Release notes, written for a GitHub release body and kept afterwards.
+/release-*.md
