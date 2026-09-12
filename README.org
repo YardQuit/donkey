@@ -4,45 +4,45 @@
 
 * Table of Contents
 :PROPERTIES:
-:CUSTOM_ID: toc
+:CUSTOM_ID: table-of-contents
 :END:
 
 *Start here*
 
 - [[#what-donkey-is][What DONKEY is]]
 - [[#installing][Installing]]
-- [[#first-five-minutes][Your first five minutes]]
+- [[#your-first-five-minutes][Your first five minutes]]
 
 *Everyday use*
 
 - [[#moving][Moving]]
-- [[#entering-insert][Entering INSERT state]]
+- [[#entering-insert-state][Entering INSERT state]]
 - [[#editing][Editing]]
 - [[#selecting][Selecting]] — objects, rectangles, banks, the mark run
-- [[#wrapping][Wrapping a selection in a pair]]
-- [[#enter-key][The Enter key]]
-- [[#search-replace][Search and replace]]
-- [[#digraphs][Typing characters your keyboard lacks]]
-- [[#input-methods][Other languages]]
+- [[#wrapping-a-selection-in-a-pair][Wrapping a selection in a pair]]
+- [[#the-enter-key][The Enter key]]
+- [[#search-and-replace][Search and replace]]
+- [[#typing-characters-your-keyboard-lacks][Typing characters your keyboard lacks]]
+- [[#other-languages][Other languages]]
 - [[#suppressed-keys][Suppressed keys]]
 
 *Making it yours*
 
 - [[#making-it-yours][Your own keys]] — one key, the leader, giving a key back
-- [[#key-not-doing][If a key is not doing what you want]]
-- [[#stepping-aside][Modes where DONKEY steps aside]]
-- [[#cursor][The cursor]]
-- [[#clipboard][The clipboard]]
-- [[#enter-rules][Configuring the Enter key]]
-- [[#own-pairs][Choosing your own pairs]]
-- [[#mode-insert-commands][Keys a major mode types with]]
-- [[#why-excluded][Why those six modes ship excluded]] — the reasoning, for readers who want it
-- [[#digraph-chart][The digraph chart]]
-- [[#complete-config][A complete configuration]]
+- [[#if-a-key-is-not-doing-what-you-want][If a key is not doing what you want]]
+- [[#modes-where-donkey-steps-aside][Modes where DONKEY steps aside]]
+- [[#the-cursor][The cursor]]
+- [[#the-clipboard][The clipboard]]
+- [[#configuring-the-enter-key][Configuring the Enter key]]
+- [[#wrapping-choosing-your-own-pairs][Choosing your own pairs]]
+- [[#keys-a-major-mode-types-with][Keys a major mode types with]]
+- [[#why-those-six-modes-ship-excluded][Why those six modes ship excluded]] — the reasoning, for readers who want it
+- [[#the-digraph-chart][The digraph chart]]
+- [[#a-complete-configuration][A complete configuration]]
 
 *When something is not right*
 
-- [[#troubleshooting][Troubleshooting and diagnostics]]
+- [[#when-something-is-not-right][Troubleshooting and diagnostics]]
 
 *Reference*
 
@@ -95,7 +95,7 @@ resolve to what it resolves to with DONKEY off.
 
 A key one of your packages binds works as it always did too, unless
 NORMAL state binds that key as well — there it is NORMAL state's, and
-the package's key is waiting for you in INSERT state. [[#key-not-doing][If a Key Is Not
+the package's key is waiting for you in INSERT state. [[#if-a-key-is-not-doing-what-you-want][If a Key Is Not
 Doing What You Want]] is the chapter for that, and it has three ways out.
 
 ** Where DONKEY steps aside completely
@@ -105,7 +105,7 @@ REPL the keys belong to the program on the other end, so DONKEY stays
 in INSERT passthrough there and NORMAL state cannot be reached at all.
 The modeline says =DONKEY[E]= instead of =DONKEY[I]= so you can see it
 without pressing anything. You can add your own modes to that list —
-see [[#stepping-aside][Modes Where DONKEY Steps Aside]].
+see [[#modes-where-donkey-steps-aside][Modes Where DONKEY Steps Aside]].
 
 * Installing
 :PROPERTIES:
@@ -219,7 +219,7 @@ every trace of it from every buffer and gives you stock Emacs back.
 
 * Your first five minutes
 :PROPERTIES:
-:CUSTOM_ID: first-five-minutes
+:CUSTOM_ID: your-first-five-minutes
 :END:
 
 1. =M-x donkey-mode=. The modeline shows =DONKEY[N]=: you are in
@@ -291,7 +291,7 @@ it. Kill the buffer to start over — nothing is written to disk.
 
 ** Long lines: =J=, =K= and =V=
 :PROPERTIES:
-:CUSTOM_ID: long-lines
+:CUSTOM_ID: long-lines-j-k-and-v
 :END:
 
 On a wrapped line, =j= moves to the next *line*, which may be off the
@@ -330,7 +330,7 @@ the ring collecting again from where you are.
 
 * Entering INSERT state
 :PROPERTIES:
-:CUSTOM_ID: entering-insert
+:CUSTOM_ID: entering-insert-state
 :END:
 
 | Key | Where you end up                                  |
@@ -393,7 +393,7 @@ again re-anchors it where the cursor is; =C-g= cancels it.
 
 ** Whole lines: =V=
 
-=V= — see [[#long-lines][Long lines]] above — also serves as a line-wise selection
+=V= — see [[#long-lines-j-k-and-v][Long lines]] above — also serves as a line-wise selection
 when a selection is what you are after.
 
 ** Text objects: the =m= prefix
@@ -421,7 +421,7 @@ the cursor already on a delimiter they use that one without asking.
 =donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ‘ ’ “ ” « » ‹ › = * ~ | \ / : + _ $=
 by default — 21 pairs, kept in =donkey-mark-pair-delimiters=. Where a
 character both opens and closes, the same key does both jobs. Adding
-your own is [[#own-pairs][one line]], and what =m i= can select, a key can wrap.
+your own is [[#wrapping-choosing-your-own-pairs][one line]], and what =m i= can select, a key can wrap.
 
 *** Pressing again grows the selection
 
@@ -482,7 +482,7 @@ out the keys that keep their meaning. The full list is above, in =?=,
 and in the tutor.
 
 A run follows you between buffers and frames rather than dying when you
-leave; see [[#run-follows][A mark run follows you between buffers]].
+leave; see [[#a-mark-run-follows-you-between-buffers][A mark run follows you between buffers]].
 
 ** Rectangles: =m v=
 
@@ -509,7 +509,7 @@ discards them.
 
 * Wrapping a selection in a pair
 :PROPERTIES:
-:CUSTOM_ID: wrapping
+:CUSTOM_ID: wrapping-a-selection-in-a-pair
 :END:
 
 With a selection, press a delimiter and the selection is wrapped in
@@ -532,7 +532,7 @@ selected: select what the pair holds and the pair goes on; select the
 pair as well and it comes off.
 
 Characters your keyboard cannot reach are available too — see
-[[#digraphs][Typing characters your keyboard lacks]] — and rectangles can be wrapped
+[[#typing-characters-your-keyboard-lacks][Typing characters your keyboard lacks]] — and rectangles can be wrapped
 line by line.
 
 ** What a wrap key does with no selection
@@ -582,7 +582,7 @@ flip back, without leaving NORMAL state.
 
 * The Enter key
 :PROPERTIES:
-:CUSTOM_ID: enter-key
+:CUSTOM_ID: the-enter-key
 :END:
 
 In a buffer you are editing — code, prose, org — =RET= does nothing in
@@ -594,15 +594,15 @@ In a buffer you are *not* editing, =RET= is handed back to the mode:
 =org-agenda-switch-to= in the Org agenda, =compile-goto-error= in a
 compilation log, =man-follow= in a man page. In Org and Markdown it
 follows the link at point, toggles the checkbox, or flips the TODO —
-see [[#enter-rules][Enter Rules]] to change or extend that.
+see [[#configuring-the-enter-key][Enter Rules]] to change or extend that.
 
 (In Dired, Magit, Info and the other modes DONKEY steps aside from,
 =RET= is the mode's for a simpler reason: DONKEY is not there at all.
-See [[#stepping-aside][Modes Where DONKEY Steps Aside]].)
+See [[#modes-where-donkey-steps-aside][Modes Where DONKEY Steps Aside]].)
 
 * Search and replace
 :PROPERTIES:
-:CUSTOM_ID: search-replace
+:CUSTOM_ID: search-and-replace
 :END:
 
 | Key   | Runs            |
@@ -615,7 +615,7 @@ everything else Emacs binds to a control or meta key.
 
 * Typing characters your keyboard lacks
 :PROPERTIES:
-:CUSTOM_ID: digraphs
+:CUSTOM_ID: typing-characters-your-keyboard-lacks
 :END:
 
 =SPC i &= types one character from a two-key digraph — =SPC i & a '=
@@ -629,7 +629,7 @@ twelve most useful first.
 
 * Other languages
 :PROPERTIES:
-:CUSTOM_ID: input-methods
+:CUSTOM_ID: other-languages
 :END:
 
 =donkey-input-methods= puts your own input methods under =SPC i=:
@@ -665,7 +665,7 @@ These do nothing in NORMAL state, on purpose:
 They are bound to something harmless rather than left unbound, and
 that is the point: an unbound key falls through to the major mode, and
 some major modes type with punctuation. The rest of the punctuation is
-not on this list because it wraps — see [[#wrapping][Wrapping a selection]].
+not on this list because it wraps — see [[#wrapping-a-selection-in-a-pair][Wrapping a selection]].
 
 * Making it yours
 :PROPERTIES:
@@ -790,7 +790,7 @@ refused rather than left open in the first place.
 
 * If a Key Is Not Doing What You Want
 :PROPERTIES:
-:CUSTOM_ID: key-not-doing
+:CUSTOM_ID: if-a-key-is-not-doing-what-you-want
 :END:
 
 NORMAL state gives the letters to DONKEY. Most of the time that is the
@@ -838,7 +838,7 @@ For those, exclude the mode.
 
 ** 2. Turn NORMAL state off for that kind of buffer
 
-See [[#stepping-aside][Modes Where DONKEY Steps Aside]], just below. One line, and the
+See [[#modes-where-donkey-steps-aside][Modes Where DONKEY Steps Aside]], just below. One line, and the
 mode has all of its keys back.
 
 ** 3. Take the key for yourself
@@ -848,7 +848,7 @@ If it is your key rather than the mode's, bind it in
 
 * Modes Where DONKEY Steps Aside
 :PROPERTIES:
-:CUSTOM_ID: stepping-aside
+:CUSTOM_ID: modes-where-donkey-steps-aside
 :END:
 
 In a mode on =donkey-excluded-modes=, DONKEY is out of the way
@@ -955,14 +955,14 @@ and =kubernetes= UIs. Add any of them as above — and please open an
 issue so the next person does not have to.
 
 That makes this a list rather than a rule, and it stops where the
-reading stopped. [[#why-excluded][Why Those Six Modes Ship Excluded]]
+reading stopped. [[#why-those-six-modes-ship-excluded][Why Those Six Modes Ship Excluded]]
 sets out the reasoning and how to undo any of it.
 
 To see the list in force: =M-x eval-expression= =donkey-excluded-modes=.
 
 * The Cursor
 :PROPERTIES:
-:CUSTOM_ID: cursor
+:CUSTOM_ID: the-cursor
 :END:
 
 DONKEY changes the cursor shape with the state, so you can see which
@@ -1016,7 +1016,7 @@ into a bug report.
 
 * The Clipboard
 :PROPERTIES:
-:CUSTOM_ID: clipboard
+:CUSTOM_ID: the-clipboard
 :END:
 
 =y= and =p= use the system clipboard where there is one, falling back
@@ -1045,7 +1045,7 @@ graphical frame:
 
 * Configuring the Enter Key
 :PROPERTIES:
-:CUSTOM_ID: enter-rules
+:CUSTOM_ID: configuring-the-enter-key
 :END:
 
 =RET= does nothing in the modes listed in =donkey-editing-modes=:
@@ -1111,7 +1111,7 @@ Element types you can write rules for are Org's own: =headline=,
 
 * Wrapping: Choosing Your Own Pairs
 :PROPERTIES:
-:CUSTOM_ID: own-pairs
+:CUSTOM_ID: wrapping-choosing-your-own-pairs
 :END:
 
 The pairs =m i= and =m a= can select are the pairs a key can wrap —
@@ -1188,7 +1188,7 @@ especially in a terminal:
 
 * Keys a Major Mode Types With
 :PROPERTIES:
-:CUSTOM_ID: mode-insert-commands
+:CUSTOM_ID: keys-a-major-mode-types-with
 :END:
 
 NORMAL state suppresses typing by remapping =self-insert-command=,
@@ -1237,7 +1237,7 @@ the next reader does not have to find it twice.
 
 * Why Those Six Modes Ship Excluded
 :PROPERTIES:
-:CUSTOM_ID: why-excluded
+:CUSTOM_ID: why-those-six-modes-ship-excluded
 :END:
 
 For readers who want the reasoning rather than the setting. Nothing
@@ -1466,7 +1466,7 @@ The honest cost of a list is that it has to admit where it stops. A
 mode nobody has met yet is not on it: =eww-mode=, =elfeed-search-mode=,
 =deft-mode=, =vundo-mode=, =ranger-mode= and =pdf-view-mode= are all
 reasonable additions that nobody has asked for. Add them as
-[[#stepping-aside][Modes Where DONKEY Steps Aside]] shows, and please
+[[#modes-where-donkey-steps-aside][Modes Where DONKEY Steps Aside]] shows, and please
 open an issue so the next reader does not have to.
 
 *** Undoing it is one line
@@ -1485,11 +1485,11 @@ is the shipped default.
 
 If what you wanted was only Magit's or Dired's line motion back, that
 is a smaller change than un-excluding the whole mode — see
-[[#stepping-aside][What you give up by excluding magit and dired]].
+[[#modes-where-donkey-steps-aside][What you give up by excluding magit and dired]].
 
 * The Digraph Chart
 :PROPERTIES:
-:CUSTOM_ID: digraph-chart
+:CUSTOM_ID: the-digraph-chart
 :END:
 
 =M-x donkey-digraph= opens the chart of every two-key sequence. If the
@@ -1506,7 +1506,7 @@ spacing keeps its proportion if you scale the text.
 
 * A Complete Configuration
 :PROPERTIES:
-:CUSTOM_ID: complete-config
+:CUSTOM_ID: a-complete-configuration
 :END:
 
 Every option DONKEY has, in one =use-package= block, with the shipped
@@ -1636,7 +1636,7 @@ Customize would. =setq= on those needs the refresh call by hand.
 
 * When Something Is Not Right
 :PROPERTIES:
-:CUSTOM_ID: troubleshooting
+:CUSTOM_ID: when-something-is-not-right
 :END:
 
 ** What does this key do?
@@ -1736,7 +1736,7 @@ it — which is what the settings above are for.
 
 ** A mark run follows you between buffers
 :PROPERTIES:
-:CUSTOM_ID: run-follows
+:CUSTOM_ID: a-mark-run-follows-you-between-buffers
 :END:
 
 That is deliberate. A mark run is a transient keymap, and Emacs keeps
