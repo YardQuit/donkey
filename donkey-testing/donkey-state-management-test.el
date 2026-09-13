@@ -670,7 +670,7 @@ puts help under a motion key."
                      (define-key m "p" 'describe-mode) m))
     (should-not (donkey--command-the-mode-binds ?p))))
 
-(ert-deftest donkey-the-motion-package-is-the-reading-half-of-normal-state ()
+(ert-deftest donkey-the-prose-package-is-the-reading-half-of-normal-state ()
   "An enumerable fact stated in the README, recounted here.
 
 Forty-five sequences, and not one of them changes the buffer -- which
@@ -679,7 +679,7 @@ every move, select and copy key NORMAL state has, plus `?', which
 charts the buffer it is pressed in.  The edits, the wrap keys,
 `repeat' and the state keys are all out."
   (let* ((table (eval (car (get 'donkey-key-packages 'standard-value)) t))
-         (motion (cdr (assq 'motion table))))
+         (motion (cdr (assq 'prose table))))
     (should (= (length table) 1))
     (should (= (length motion) 45))
     (dolist (seq motion) (should (stringp seq)))
@@ -849,6 +849,39 @@ package and neither of those."
                     (should (string-match-p "Mark Run Mode Key Bindings" text)))))
             (donkey-mode -1)))
       (when (buffer-live-p buf) (kill-buffer buf)))))
+
+(ert-deftest donkey-a-package-never-takes-enter-from-a-mode-that-uses-it ()
+  "Enter is the action key of a program\\='s buffer, so the mode keeps it.
+
+Where the mode has nothing on it -- `newline\\=' from the global map --
+the package takes it like any other key."
+  ;; a mode with a real Enter keeps it
+  (with-temp-buffer
+    (fundamental-mode)
+    (use-local-map (let ((m (make-sparse-keymap)))
+                     (define-key m (kbd "RET") 'forward-sexp) m))
+    (let ((donkey-support-modes '((fundamental-mode prose)))
+          (donkey--support-mode-cache nil))
+      (should (donkey--enter-key-the-mode-owns-p "RET" (kbd "RET")))
+      (should-not (assoc (kbd "RET") (donkey--support-mode-package-keys)))))
+  ;; a mode with nothing on it does not
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes '((fundamental-mode prose)))
+          (donkey--support-mode-cache nil))
+      (should-not (donkey--enter-key-the-mode-owns-p "RET" (kbd "RET")))
+      (should (eq (cdr (assoc (kbd "RET") (donkey--support-mode-package-keys)))
+                  'donkey-enter-dwim))))
+  ;; and it is only Enter that defers: every other package key is taken
+  (with-temp-buffer
+    (fundamental-mode)
+    (use-local-map (let ((m (make-sparse-keymap)))
+                     (define-key m "w" 'forward-sexp) m))
+    (let ((donkey-support-modes '((fundamental-mode prose)))
+          (donkey--support-mode-cache nil))
+      (should-not (donkey--enter-key-the-mode-owns-p "w" "w"))
+      (should (eq (cdr (assoc "w" (donkey--support-mode-package-keys)))
+                  'forward-word)))))
 
 (ert-deftest donkey-a-package-passes-over-what-donkey-does-not-bind ()
   "A sequence DONKEY has no command for costs nothing.
@@ -1024,7 +1057,7 @@ Two of the eighteen are here only because the rule misses them:
           (should (characterp (car item)))
           (should-not (memq (car item) '(?j ?k))))))
     ;; help-mode is the one that takes a package
-    (should (memq 'motion (cdr (assq 'help-mode table))))
+    (should (memq 'prose (cdr (assq 'help-mode table))))
     ;; and both sections carry what `j' and `k' displaced, on the
     ;; shifted keys, because neither command had another key
     (should (equal (cdr (assq 'dired-mode table))

@@ -221,7 +221,7 @@ in place or not, recomputes on the next call."
         result))))
 
 (defcustom donkey-key-packages
-  '((motion
+  '((prose
      ;; move
      "h" "j" "k" "l"  "w" "W" "b" "B"  "J" "K"
      "g g" "g e" "g h" "g l"  "G"  "S"  ":"  "z z"
@@ -244,7 +244,11 @@ A package is that middle, written once and named from as many sections
 as want it.  Each entry is NAME followed by key sequences in
 `kbd' form:
 
-  (motion \"h\" \"j\" \"w\" \"m w\" \"g g\" \"RET\")
+  (prose \"h\" \"j\" \"w\" \"m w\" \"g g\" \"RET\")
+
+Enter is the exception: a package never takes \\=`RET\\=' from a mode
+that has its own use for it, because in a program\\='s buffer that is
+the action key.  See `donkey--enter-key-the-mode-owns-p'.
 
 The COMMANDS are not written down.  Each sequence is looked up in
 `donkey-normal-mode-map' when the map is built, so a package carries
@@ -253,14 +257,14 @@ it.  A sequence DONKEY does not bind is passed over.
 
 \\=`m\\=' and \\=`g\\=' become prefixes in the buffer where a package puts
 them, which costs the major mode whatever it had on those keys.  The
-shipped `motion' package is the reading half of NORMAL state: move,
+shipped `prose' package is the reading half of NORMAL state: move,
 select, mark, jump, copy.  Nothing in it changes the buffer, which is
 what makes it safe in one you cannot type in.
 
 A section names a package by writing its name bare among the pairs, and
 the pairs are laid over the package, so a section\\='s own \\=`h\\=' wins:
 
-  (help-mode motion (?H . help-go-back) (?L . help-go-forward))"
+  (help-mode prose (?H . help-go-back) (?L . help-go-forward))"
   :type '(repeat (cons symbol (repeat string)))
   :group 'donkey)
 
@@ -272,7 +276,7 @@ the pairs are laid over the package, so a section\\='s own \\=`h\\=' wins:
     (Info-mode         (?h . Info-up) (?l . Info-follow-nearest-node))
     (Man-mode          (?h . Man-previous-section) (?l . Man-next-section))
     (woman-mode        (?l . woman-follow))
-    (help-mode         motion
+    (help-mode         prose
                        (?H . help-go-back) (?L . help-go-forward)
                        (?R . revert-buffer))
     (apropos-mode      (?l . apropos-follow))
@@ -286,7 +290,7 @@ the pairs are laid over the package, so a section\\='s own \\=`h\\=' wins:
     (package-menu-mode (?l . package-menu-describe-package))
     (Buffer-menu-mode  (?l . Buffer-menu-this-window))
     (org-agenda-mode   (?h . org-agenda-earlier) (?l . org-agenda-later))
-    (donkey-bindings-mode motion))
+    (donkey-bindings-mode prose))
   "Modes DONKEY supports rather than takes over, and what it keeps there.
 
 A section per mode.  NORMAL state does not run in these buffers: the
@@ -8371,6 +8375,32 @@ is not installed costs nothing."
                        (not (memq (cdr pair) typing))))
                 (cdr entry))))
 
+(defun donkey--enter-key-the-mode-owns-p (seq key)
+  "Return non-nil if SEQ is an Enter key this major mode has its own use for.
+
+KEY is SEQ in `kbd' form.  Nil for every other sequence a package
+names.
+
+Enter is the one key a package does not take.  In a buffer a program
+made for you it is the action key -- visit the file, follow the link,
+expand the frame, go to the error -- and `donkey-enter-dwim' has
+nothing to offer where a newline cannot be typed.  So the mode keeps
+it wherever the mode has one, and \\[describe-key] on Enter names the
+mode's own command.
+
+Where the mode has nothing on Enter -- `newline' from the global map,
+or nothing at all -- the package takes it as it takes any other key.
+
+A link keeps Enter either way: a button carries its own keymap as a
+text property, and Emacs reads that before any emulation map."
+  (and (member seq '("RET" "<enter>"))
+       (let ((own (let ((emulation-mode-map-alists nil)
+                        (minor-mode-map-alist nil)
+                        (minor-mode-overriding-map-alist nil))
+                    (key-binding key))))
+         (and own (symbolp own) (commandp own)
+              (not (memq own '(newline undefined ignore)))))))
+
 (defun donkey--support-mode-package-keys ()
   "Return the (SEQUENCE . COMMAND) pairs this buffer\\='s packages ask for.
 
@@ -8391,7 +8421,8 @@ without `donkey-key-packages' being read at all while it is empty."
           (when (stringp seq)
             (let* ((key (ignore-errors (kbd seq)))
                    (command (and key (lookup-key donkey-normal-mode-map key))))
-              (when (and command (symbolp command) (commandp command))
+              (when (and command (symbolp command) (commandp command)
+                         (not (donkey--enter-key-the-mode-owns-p seq key)))
                 (push (cons key command) pairs)))))))
     (nreverse pairs)))
 
