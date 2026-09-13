@@ -429,8 +429,9 @@ way `donkey--memo-major-mode-in-p' is: this runs from
 `post-command-hook' in every buffer, so the sections are read rather
 than searched on all but the first command after a change.
 
-A row that is not a cons whose car is a symbol is skipped, so a
-mis-typed option cannot signal from here."
+A row that is not a cons whose car is a symbol, or whose tail is not
+a proper list, is skipped -- so neither this function nor the callers
+that walk the tail can signal on a mis-typed option."
   (let ((cache donkey--support-mode-cache))
     (if (and cache
              (eq (car (car cache)) major-mode)
@@ -441,6 +442,7 @@ mis-typed option cannot signal from here."
                   (seq-find (lambda (row)
                               (and (consp row)
                                    (symbolp (car row))
+                                   (proper-list-p (cdr row))
                                    (or (eq major-mode (car row))
                                        (provided-mode-derived-p major-mode
                                                                 (car row)))))
@@ -8382,13 +8384,18 @@ The first entry this buffer\\='s major mode matches, by name or by
 derivation, and nothing from any later one: a mode listed twice is
 answered by whichever was written first.  A command that is not
 `fboundp' is dropped rather than bound, so an entry for a package that
-is not installed costs nothing."
-  (let* ((table (and (listp donkey-mode-navigation) donkey-mode-navigation))
-         (typing (donkey--mode-list donkey-self-insert-commands))
+is not installed costs nothing, and a command that would type is
+dropped whatever key names it.  An entry whose tail is not a proper
+list is skipped rather than walked."
+  (let* ((table (and (proper-list-p donkey-mode-navigation)
+                     donkey-mode-navigation))
+         (typing (cons 'self-insert-command
+                       (donkey--mode-list donkey-self-insert-commands)))
          (entry (seq-find
                  (lambda (row)
                    (and (consp row)
                         (symbolp (car row))
+                        (proper-list-p (cdr row))
                         (or (eq major-mode (car row))
                             (provided-mode-derived-p major-mode (car row)))))
                  table)))
@@ -8443,7 +8450,8 @@ without `donkey-key-packages' being read at all while it is empty."
         pairs)
     (when (and section table)
       (dolist (name (seq-filter #'symbolp section))
-        (dolist (seq (cdr (assq name table)))
+        (dolist (seq (let ((seqs (cdr (assq name table))))
+                       (and (proper-list-p seqs) seqs)))
           (when (stringp seq)
             (let* ((key (ignore-errors (kbd seq)))
                    (command (and key (lookup-key donkey-normal-mode-map key))))
@@ -8462,7 +8470,8 @@ that is not installed costs nothing, and \\=`j\\=' and \\=`k\\=' are dropped
 because they are DONKEY\\='s in every support mode; see
 `donkey--motion-keys'.  A command that would type is dropped as well:
 rule 74 is a floor a section does not get to lower either."
-  (let ((typing (donkey--mode-list donkey-self-insert-commands)))
+  (let ((typing (cons 'self-insert-command
+                      (donkey--mode-list donkey-self-insert-commands))))
     (seq-filter (lambda (pair)
                   (and (consp pair)
                        (characterp (car pair))

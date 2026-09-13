@@ -1002,8 +1002,9 @@ is never put in and the buffer is left with no keys at all."
 (ert-deftest donkey-a-section-may-not-name-a-command-that-types ()
   "Rule 74 is a floor a section does not get to lower either.
 
-`donkey--navigation-pairs' refused a typing command and
-`donkey--support-mode-keys' did not, so a section naming one bound it."
+Both readers drop a typing command whatever key names it, and the
+plain `self-insert-command' counts as one: `donkey-self-insert-commands'
+names the mode-specific typing commands only."
   (skip-unless (require 'org nil t))
   (with-temp-buffer
     (fundamental-mode)
@@ -1015,6 +1016,56 @@ is never put in and the buffer is left with no keys at all."
       (should (memq 'org-self-insert-command
                     (donkey--mode-list donkey-self-insert-commands)))
       ;; the typing one is dropped, the other survives
+      (should (equal (donkey--support-mode-keys) '((?h . forward-sexp))))))
+  ;; the plain one is not in the option -- a support map builds no
+  ;; `suppress-keymap', so nothing else would stop it
+  (should-not (memq 'self-insert-command
+                    (donkey--mode-list donkey-self-insert-commands)))
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes
+           '((fundamental-mode (?l . self-insert-command)
+                               (?h . forward-sexp))))
+          (donkey--support-mode-cache nil))
+      (should (equal (donkey--support-mode-keys) '((?h . forward-sexp))))))
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-mode-navigation
+           '((fundamental-mode (?l . self-insert-command)
+                               (?h . forward-sexp)))))
+      (should (equal (donkey--navigation-pairs) '((?h . forward-sexp)))))))
+
+(ert-deftest donkey-a-mis-typed-section-is-skipped-not-walked ()
+  "A row whose tail is not a proper list costs nothing and signals nothing.
+
+Every reader of `donkey-support-modes', `donkey-mode-navigation' and
+`donkey-key-packages' walks a tail, and these run from
+`post-command-hook', where a signal removes the hook for the session."
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes '((fundamental-mode . not-a-list)))
+          (donkey--support-mode-cache nil))
+      (should-not (donkey--support-mode-section))
+      (should-not (donkey--support-mode-keys))
+      (should-not (donkey--support-mode-package-keys))
+      (donkey--install-support-mode-keys)))
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-mode-navigation '((fundamental-mode . not-a-list))))
+      (should-not (donkey--navigation-pairs))))
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes '((fundamental-mode prose)))
+          (donkey-key-packages '((prose . not-a-list)))
+          (donkey--support-mode-cache nil))
+      (should-not (donkey--support-mode-package-keys))
+      (donkey--install-support-mode-keys)))
+  ;; and a well-formed row after a mis-typed one is still found
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes '((fundamental-mode . junk)
+                                  (fundamental-mode (?h . forward-sexp))))
+          (donkey--support-mode-cache nil))
       (should (equal (donkey--support-mode-keys) '((?h . forward-sexp)))))))
 
 (ert-deftest donkey-a-program-buffer-is-supported-without-being-named ()
