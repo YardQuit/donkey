@@ -760,7 +760,12 @@ mistake."
   (should (equal (donkey--mode-list 'dired-mode) '(dired-mode)))
   (should (equal (donkey--mode-list nil) nil))
   (should (equal (donkey--mode-list "dired-mode") nil))
-  (should (equal (donkey--mode-list 42) nil)))
+  (should (equal (donkey--mode-list 42) nil))
+  ;; A cons whose tail is not a list answers `listp' and then signals
+  ;; inside `seq-filter'.  It is what a mis-typed setq leaves behind,
+  ;; and the promise in the docstring is that nothing here signals.
+  (should (equal (donkey--mode-list '(dired-mode . text-mode)) nil))
+  (should (equal (donkey--mode-list '(a b . c)) nil)))
 
 (ert-deftest donkey-excluded-mode-p-survives-a-mis-set-option ()
   "`donkey--excluded-mode-p' never signals, whatever the option holds.

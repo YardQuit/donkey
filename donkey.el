@@ -170,8 +170,14 @@ fails before any list is searched."
   "Return VALUE as a list of major modes, never signaling.
 
 A list is returned with any non-symbol dropped, a bare symbol is taken
-as a one-element list, and anything else reads as the empty list."
-  (cond ((listp value) (seq-filter #'symbolp value))
+as a one-element list, and anything else reads as the empty list.
+
+`proper-list-p' rather than `listp': a cons whose tail is not a list,
+which is what a mis-typed `setq' leaves behind, answers `listp' and
+then signals inside `seq-filter'.  This function
+promises never to signal, and the readers of these options sit on
+hooks, where a function that signals is dropped for the session."
+  (cond ((proper-list-p value) (seq-filter #'symbolp value))
         ((symbolp value) (list value))
         (t nil)))
 
