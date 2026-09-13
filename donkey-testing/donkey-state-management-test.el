@@ -634,6 +634,90 @@ puts help under a motion key."
                      (define-key m "p" 'describe-mode) m))
     (should-not (donkey--command-the-mode-binds ?p))))
 
+(ert-deftest donkey-the-mode-typing-command-is-the-modes-remap ()
+  "What a mode types with is read off its remap of `self-insert-command'.
+
+Nil where a mode has none, and `undefined' where the mode called
+`suppress-keymap', which installs the same remap to refuse typing
+rather than to redirect it."
+  (with-temp-buffer
+    (text-mode)
+    (should-not (donkey--mode-typing-command)))
+  (with-temp-buffer
+    (org-mode)
+    (should (eq (donkey--mode-typing-command) 'org-self-insert-command)))
+  (with-temp-buffer
+    (fundamental-mode)
+    (use-local-map (let ((m (make-sparse-keymap))) (suppress-keymap m) m))
+    (should (eq (donkey--mode-typing-command) 'undefined))))
+
+(ert-deftest donkey-a-mode-that-types-through-a-remap-is-refused ()
+  "A key is not handed back to the command the mode types with.
+
+`donkey-self-insert-commands' names the typing commands a mode binds to
+a key directly; this one is discovered instead, so a mode nobody listed
+is refused all the same."
+  (with-temp-buffer
+    (fundamental-mode)
+    (use-local-map (let ((m (make-sparse-keymap)))
+                     (define-key m [remap self-insert-command] 'forward-sexp)
+                     (define-key m "p" 'forward-sexp)
+                     (define-key m "u" 'backward-sexp)
+                     m))
+    (should (eq (donkey--mode-typing-command) 'forward-sexp))
+    ;; the key the mode types with is refused
+    (should-not (donkey--command-the-mode-binds ?p))
+    ;; and a key that is not is handed back as before
+    (should (eq (donkey--command-the-mode-binds ?u) 'backward-sexp))))
+
+(ert-deftest donkey-a-suppressed-mode-still-hands-its-own-keys-back ()
+  "`suppress-keymap' remaps to `undefined', which blocks nothing.
+
+The other side of the same check: a read-only mode remaps
+`self-insert-command' too, and its real commands must still reach
+NORMAL state."
+  (with-temp-buffer
+    (compilation-mode)
+    (should (eq (donkey--mode-typing-command) 'undefined))
+    (should (eq (donkey--command-the-mode-binds ?p) 'previous-error-no-select))))
+
+(ert-deftest donkey-wdired-does-not-type-in-normal-state ()
+  "Renaming files with `wdired-mode' leaves NORMAL state unable to type.
+
+The mode wdired puts a buffer in is writable and types through a remap
+of `self-insert-command', so every handed-back key reached
+`wdired--self-insert' until the remap was read rather than listed."
+  (skip-unless (and (require 'dired nil t) (require 'wdired nil t)))
+  (let* ((dir (make-temp-file "donkey-wdired" t))
+         (buffer nil))
+    (unwind-protect
+        (progn
+          (write-region "x\n" nil (expand-file-name "one.txt" dir))
+          (setq buffer (dired-noselect dir))
+          (with-current-buffer buffer
+            (donkey-mode 1)
+            (unwind-protect
+                (let ((wdired-allow-to-change-permissions nil)
+                      (inhibit-message t))
+                  (wdired-change-to-wdired-mode)
+                  (setq donkey--handed-back-cache nil)
+                  (donkey--install-handed-back-keys)
+                  (donkey--ensure-default-state)
+                  (should (eq (donkey--mode-typing-command) 'wdired--self-insert))
+                  ;; `donkey--mode-list' keeps symbols; these are characters.
+                  (let ((keys (seq-filter #'characterp donkey-handed-back-keys)))
+                    (should (= (length keys) 15))
+                    (dolist (char keys)
+                      (should-not (eq (key-binding (vector char))
+                                      'wdired--self-insert))))
+                  (should (eq (key-binding "i") 'donkey-insert-here))
+                  (should (eq (key-binding "d") 'donkey-delete)))
+              (donkey-mode -1))))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer))
+      (delete-directory dir t))))
+
 (ert-deftest donkey-the-handed-back-keys-default-is-the-fifteen ()
   "Fifteen keys ship, and the documentation says which.
 

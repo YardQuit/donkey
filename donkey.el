@@ -7103,8 +7103,12 @@ are prefixes on a key of their own.")
 `suppress-keymap' installs one entry, a remap of
 `self-insert-command', and DONKEY's copy of it outranks a major
 mode's: a mode that types through a remap of its own -- which is how
-`org-mode' types most keys -- is answered by it.  A mode that binds a
-key DIRECTLY to an insert command of its own is not: `org-mode' puts
+`org-mode' types most keys -- is answered by it.  So is a key handed
+back by `donkey-handed-back-keys', which reads the same remap rather
+than going around it.
+
+A mode that binds a key DIRECTLY to an insert command of its own is a
+different matter, and those are what this list is for: `org-mode' puts
 `org-force-self-insert' on `|', `cc-mode' puts electric commands on
 `#' and `*', AUCTeX puts `TeX-insert-dollar' on `$', and those keys
 typed in Normal state inserted.
@@ -7809,11 +7813,14 @@ prose modes are protected twice over: of the editing modes measured
 none binds a plain letter at all, and `org-mode', which binds all
 fifty-two, binds them to a command that types.
 
-Three kinds of binding are passed over rather than taken: anything on
-`donkey-self-insert-commands', because NORMAL state does not type;
-`describe-mode', which is \\=`C-h m\\=' and which `special-mode' puts on a
-key in most of its children; and the stubs a mode uses to say that its
-buffer cannot be edited.
+Three kinds of binding are passed over rather than taken.  A command
+that types, because NORMAL state does not: the ones a mode binds to a
+key directly are named on `donkey-self-insert-commands', and the one it
+remaps `self-insert-command' to is read off the mode, so `wdired-mode'
+is refused without being named.  `describe-mode', which is
+\\=`C-h m\\=' and which `special-mode' puts on a key in most of its
+children.  And the stubs a mode uses to say that its buffer cannot be
+edited.
 
 Characters rather than strings: (?p ?n), not the strings."
   :type '(repeat character)
@@ -7916,14 +7923,44 @@ stopped.")
 The cons (MAJOR-MODE . KEYS) the buffer-local map was made for, so that
 the map is rebuilt when either changes rather than on every pass.")
 
-(defun donkey--command-the-mode-binds (char)
+(defun donkey--mode-typing-command ()
+  "Return the command this buffer\\='s major mode types with, or nil.
+
+The mode\\='s own remap of `self-insert-command', read with NORMAL
+state hidden.  That remap is how a mode says \"typing means something
+else here\": `wdired-mode' returns `wdired--self-insert' and
+`org-mode' returns `org-self-insert-command'.
+
+Nil where the mode has no remap, and `undefined' where the mode used
+`suppress-keymap', which is not a typing command and is refused
+elsewhere anyway."
+  (let ((emulation-mode-map-alists nil)
+        (minor-mode-map-alist nil)
+        (minor-mode-overriding-map-alist nil))
+    (let ((remap (key-binding [remap self-insert-command])))
+      (and (symbolp remap) remap))))
+
+(defun donkey--command-the-mode-binds (char &optional typing)
   "Return the major mode\\='s own command for CHAR, or nil.
 
 NORMAL state\\='s maps are hidden for the question, so the answer is what
 the key would mean with DONKEY out of the way.  Nil for a command that
 would type, for the stubs in `donkey--never-handed-back', and for
-anything that is not a command."
+anything that is not a command.
+
+A typing command is recognized two ways, because a mode has two ways
+to install one.  `donkey-self-insert-commands' names the ones bound to
+a key directly, which cannot be discovered.  The mode\\='s remap of
+`self-insert-command' is discovered instead, through
+`donkey--mode-typing-command', so a mode that types through a remap is
+refused without being named -- NORMAL state does not type, and handing
+a key back is not a reason to start.
+
+TYPING is that command, for a caller asking about several keys in the
+one buffer: the answer is the same every time, so passing it saves a
+lookup per key.  Omit it and the function reads it itself."
   (let* ((key (vector char))
+         (typing (or typing (donkey--mode-typing-command)))
          (own (let ((emulation-mode-map-alists nil)
                     (minor-mode-map-alist nil)
                     (minor-mode-overriding-map-alist nil))
@@ -7933,6 +7970,7 @@ anything that is not a command."
          (commandp own)
          (not (memq own donkey--never-handed-back))
          (not (eq own 'self-insert-command))
+         (not (eq own typing))
          (not (memq own (donkey--mode-list donkey-self-insert-commands)))
          own)))
 
@@ -7982,14 +8020,15 @@ reads the same global value it always did."
                       donkey-mode-navigation)))
     (unless (equal wanted donkey--handed-back-cache)
       (setq donkey--handed-back-cache wanted)
-      (let (pairs)
+      (let ((typing (donkey--mode-typing-command))
+            pairs)
         (dolist (char (seq-filter #'characterp
                                   (and (listp donkey-handed-back-keys)
                                        donkey-handed-back-keys)))
           ;; The floor: a reader moves with these wherever they are, so
           ;; the option does not get to hand one over.
           (unless (memq char donkey--navigation-keys)
-            (let ((own (donkey--command-the-mode-binds char)))
+            (let ((own (donkey--command-the-mode-binds char typing)))
               (when own (push (cons char own) pairs)))))
         ;; The table is chosen rather than discovered, so it wins over
         ;; the rule where both name the same key.

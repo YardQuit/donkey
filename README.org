@@ -760,8 +760,17 @@ so there is nothing for the rule to take.
 
 And where one does, it binds it to typing. =org-mode= binds all
 fifty-two letters, every one to =org-self-insert-command=, and a
-command on =donkey-self-insert-commands= is never handed a key: NORMAL
-state does not type, and this rule cannot lower that floor.
+command that types is never handed a key: NORMAL state does not type,
+and this rule cannot lower that floor.
+
+A mode has two ways to install a typing command, and the rule has to
+know both. One is to bind a key to it directly, which cannot be
+discovered and so is named on [[#keys-a-major-mode-types-with][=donkey-self-insert-commands=]]. The
+other is to remap =self-insert-command=, which is how =org-mode= types
+most keys and how =wdired-mode= — the mode =C-x C-q= puts a Dired
+buffer in so you can rename files by editing them — types all of them.
+That one is read off the mode rather than listed, so a mode nobody
+named is refused too.
 
 ** Where =h= and =l= have somewhere to go
 
@@ -1361,7 +1370,9 @@ especially in a terminal:
 
 NORMAL state suppresses typing by remapping =self-insert-command=,
 which catches every key a mode types through Emacs's normal path — and
-that is most of them, Org included.
+that is most of them, Org included. [[#keys-the-mode-gets-to-keep][The keys the mode gets to keep]]
+read the same remap, so a key is never handed back to the command its
+mode types with.
 
 A mode that binds a key *directly* to an insert command of its own is
 a different matter: =org-mode= puts =org-force-self-insert= on =|=,
