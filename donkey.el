@@ -220,6 +220,50 @@ in place or not, recomputes on the next call."
                              result))
         result))))
 
+(defcustom donkey-key-packages
+  '((motion
+     ;; move
+     "h" "j" "k" "l"  "w" "W" "b" "B"  "J" "K"
+     "g g" "g e" "g h" "g l"  "G"  "S"  ":"  "z z"
+     ;; select
+     "v" "V"  "M"  "%"
+     "m w" "m W" "m b" "m B"  "m i" "m a" "m I" "m A"
+     "m s" "m S" "m p" "m P"  "m v"
+     "m l" "m u" "m U"  "m DEL" "m <delete>" "m <deletechar>"
+     ;; copy, enter, and the chart
+     "y"  "RET" "<enter>"  "?"))
+  "Named bundles of DONKEY keys a support mode can keep.
+
+A support mode holds \\=`h\\=', \\=`j\\=', \\=`k\\=' and \\=`l\\=' and nothing
+else unless its section says otherwise.  That is right for a buffer
+whose own alphabet is the point, and thin for one that binds almost
+nothing -- a help buffer leaves forty keys reaching nothing, where
+DONKEY had motion and selection to put on them.
+
+A package is that middle, written once and named from as many sections
+as want it.  Each entry is NAME followed by key sequences in
+`kbd' form:
+
+  (motion \"h\" \"j\" \"w\" \"m w\" \"g g\" \"RET\")
+
+The COMMANDS are not written down.  Each sequence is looked up in
+`donkey-normal-mode-map' when the map is built, so a package carries
+whatever DONKEY binds there -- including a reader\\='s own rebinding of
+it.  A sequence DONKEY does not bind is passed over.
+
+\\=`m\\=' and \\=`g\\=' become prefixes in the buffer where a package puts
+them, which costs the major mode whatever it had on those keys.  The
+shipped `motion' package is the reading half of NORMAL state: move,
+select, mark, jump, copy.  Nothing in it changes the buffer, which is
+what makes it safe in one you cannot type in.
+
+A section names a package by writing its name bare among the pairs, and
+the pairs are laid over the package, so a section\\='s own \\=`h\\=' wins:
+
+  (help-mode motion (?H . help-go-back) (?L . help-go-forward))"
+  :type '(repeat (cons symbol (repeat string)))
+  :group 'donkey)
+
 (defcustom donkey-support-modes
   '((dired-mode        (?h . dired-up-directory) (?l . dired-find-file)
                        (?J . dired-goto-file) (?K . dired-do-kill-lines))
@@ -228,7 +272,9 @@ in place or not, recomputes on the next call."
     (Info-mode         (?h . Info-up) (?l . Info-follow-nearest-node))
     (Man-mode          (?h . Man-previous-section) (?l . Man-next-section))
     (woman-mode        (?l . woman-follow))
-    (help-mode         (?h . help-go-back) (?l . help-go-forward))
+    (help-mode         motion
+                       (?H . help-go-back) (?L . help-go-forward)
+                       (?R . revert-buffer))
     (apropos-mode      (?l . apropos-follow))
     (eww-mode          (?h . eww-back-url) (?l . eww-follow-link))
     (image-mode        (?h . image-previous-file) (?l . image-next-file))
@@ -239,7 +285,8 @@ in place or not, recomputes on the next call."
     (compilation-mode  (?l . compile-goto-error))
     (package-menu-mode (?l . package-menu-describe-package))
     (Buffer-menu-mode  (?l . Buffer-menu-this-window))
-    (org-agenda-mode   (?h . org-agenda-earlier) (?l . org-agenda-later)))
+    (org-agenda-mode   (?h . org-agenda-earlier) (?l . org-agenda-later))
+    (donkey-bindings-mode motion))
   "Modes DONKEY supports rather than takes over, and what it keeps there.
 
 A section per mode.  NORMAL state does not run in these buffers: the
@@ -945,6 +992,7 @@ zero changes none while still entering INSERT state, the same reading
 (defvar donkey--enter-rules nil
   "List of (ELEMENT-TYPE PROPERTY COMMAND1 COMMAND2 ...) for ENTER DWIM dispatch.")
 
+(defvar donkey--emulation-mode-map-alist) ;(donkey-describe-bindings); defined below, in "Donkey Normal Mode Keymap Definition"
 (defvar donkey-self-insert-commands) ;(donkey--enter-would-type-p, donkey--wrap-pass-the-key-on); defined below, in "Donkey Normal Mode Keymap Definition"
 
 (defconst donkey--line-break-commands
@@ -5655,6 +5703,33 @@ cannot show them: they live in a transient map."
   (interactive)
   (unless (boundp 'donkey-normal-mode-map)
     (user-error "Variable `donkey-normal-mode-map' is not defined yet"))
+  (if (and (donkey--support-mode-p)
+           (keymapp (cdr (car (bound-and-true-p
+                               donkey--emulation-mode-map-alist)))))
+      ;; A support mode answers with its own keys; NORMAL state's chart
+      ;; would list what this buffer cannot reach.
+      (donkey--describe-support-bindings
+       major-mode
+       (cdr (car donkey--emulation-mode-map-alist)))
+    (donkey--describe-normal-bindings)))
+
+(define-derived-mode donkey-bindings-mode special-mode "DONKEY-Bindings"
+  "Major mode for the \\\=`?\\\=' chart.
+
+A mode of its own rather than plain `special-mode' so the chart can
+have a section in `donkey-support-modes': a reader looking at the keys
+should be able to move through the list, and copy a line out of it,
+with the very keys it is describing.
+
+Read-only, `q' quits, and \\`RET' or a click opens a command\\='s
+documentation.")
+
+(let ((map donkey-bindings-mode-map))
+  (keymap-set map "q" #'quit-window)
+  (keymap-set map "RET" #'push-button))
+
+(defun donkey--describe-normal-bindings ()
+  "Show NORMAL state\\='s chart, and the mark run\\='s beneath it."
   (let ((buf (get-buffer-create "*DONKEY Bindings*")))
     (with-current-buffer buf
       (setq buffer-read-only nil)
@@ -5694,16 +5769,9 @@ cannot show them: they live in a transient map."
       (insert (propertize "q: quit  |  RET or click: describe command"
                           'face 'font-lock-comment-face))
       ;; Buffer settings
-      (special-mode)
+      (donkey-bindings-mode)
       (setq-local buffer-read-only t)
       (setq-local truncate-lines t)
-      ;; Local keymap — avoids polluting shared special-mode-map
-      (let ((local-map (make-sparse-keymap)))
-        (set-keymap-parent local-map special-mode-map)
-        (keymap-set local-map "q"   #'quit-window)
-        (keymap-set local-map "RET" #'push-button)
-        (use-local-map local-map))
-
       (goto-char (point-min)))
     (display-buffer buf)))
 
@@ -5751,6 +5819,50 @@ knows, so `m i' and `m a' select what they hold and
 `donkey-insert-digraph' wraps a selection in them -- and neither is on
 any keyboard this package can assume.  A reader sent looking for them
 by the wrap prompt should find them in the chart the prompt names.")
+
+(defun donkey--describe-support-bindings (mode map)
+  "Chart what DONKEY answers in a MODE buffer, reading MAP for it.
+
+The chart NORMAL state shows is the wrong one in a support mode: NORMAL
+state does not run there, and most of what that chart lists cannot be
+reached.  What a reader wants is the two-part answer -- these keys are
+DONKEY\\=', everything else is the major mode\\=' -- so that is what this
+says, naming \\[describe-mode] for the other half.
+
+MODE is the major mode the keys were read for, and MAP the buffer-local
+map `donkey--install-support-mode-keys' built for it."
+  (let ((buf (get-buffer-create "*DONKEY Bindings*")))
+    (with-current-buffer buf
+      (setq buffer-read-only nil)
+      (erase-buffer)
+      (insert (propertize (format "DONKEY Keys in %s\n" mode)
+                          'face '(bold font-lock-function-name-face :height 1.2)))
+      (insert (propertize (make-string 50 ?=)
+                          'face 'font-lock-comment-face) "\n")
+      (insert (propertize
+               (substitute-command-keys
+                (concat "A support mode: these keys are DONKEY\\='s, and every\n"
+                        "other key is the major mode\\='s.  \\[describe-mode]"
+                        " shows those.\n"))
+               'face 'font-lock-comment-face))
+      (insert (propertize (make-string 50 ?-)
+                          'face 'font-lock-comment-face) "\n")
+      (insert (propertize (format "%-14s %s\n" "KEY" "COMMAND")
+                          'face 'font-lock-keyword-face))
+      (insert (propertize (make-string 50 ?-)
+                          'face 'font-lock-comment-face) "\n")
+      (donkey--desc-bindings-insert-map map)
+      (insert "\n")
+      (insert (propertize (make-string 50 ?=)
+                          'face 'font-lock-comment-face) "\n")
+      (insert (propertize "q: quit  |  RET or click: describe command"
+                          'face 'font-lock-comment-face))
+      ;; Buffer settings, the same the other chart uses.
+      (donkey-bindings-mode)
+      (setq-local buffer-read-only t)
+      (setq-local truncate-lines t)
+      (goto-char (point-min)))
+    (display-buffer buf)))
 
 (defun donkey--digraph-result (digraph)
   "Return the string DIGRAPH types under the `rfc1345' input method, or nil.
@@ -8259,6 +8371,30 @@ is not installed costs nothing."
                        (not (memq (cdr pair) typing))))
                 (cdr entry))))
 
+(defun donkey--support-mode-package-keys ()
+  "Return the (SEQUENCE . COMMAND) pairs this buffer\\='s packages ask for.
+
+A section names a package by writing its name bare among the pairs.
+Each of the package\\='s sequences is looked up in
+`donkey-normal-mode-map', so what a package carries is whatever
+DONKEY binds there; a sequence it does not bind, or binds to a prefix,
+is passed over.
+
+Nil where the section names no package, which is most of them, and
+without `donkey-key-packages' being read at all while it is empty."
+  (let ((section (cdr (donkey--support-mode-section)))
+        (table (and (proper-list-p donkey-key-packages) donkey-key-packages))
+        pairs)
+    (when (and section table)
+      (dolist (name (seq-filter #'symbolp section))
+        (dolist (seq (cdr (assq name table)))
+          (when (stringp seq)
+            (let* ((key (ignore-errors (kbd seq)))
+                   (command (and key (lookup-key donkey-normal-mode-map key))))
+              (when (and command (symbolp command) (commandp command))
+                (push (cons key command) pairs)))))))
+    (nreverse pairs)))
+
 (defun donkey--support-mode-keys ()
   "Return the (CHARACTER . COMMAND) pairs this buffer\\='s section names.
 
@@ -8297,6 +8433,10 @@ the way an excluded one does, and the map has to answer there."
     (define-key map "k" #'previous-line)
     (define-key map "h" #'backward-char)
     (define-key map "l" #'forward-char)
+    ;; The package first, the section's own pairs over the top, so a
+    ;; section that names `h' gets its own rather than the package's.
+    (pcase-dolist (`(,key . ,command) (donkey--support-mode-package-keys))
+      (define-key map key command))
     (pcase-dolist (`(,char . ,command) (donkey--support-mode-keys))
       (define-key map (vector char) command))
     (setq-local donkey--emulation-mode-map-alist
@@ -8321,6 +8461,7 @@ reads the same global value it always did."
   (let ((wanted (list major-mode buffer-read-only
                       donkey-handed-back-keys donkey-mode-navigation
                       donkey-support-modes donkey-support-mode-exceptions
+                      donkey-key-packages
                       donkey-excluded-modes donkey-excluded-mode-exceptions)))
     (unless (equal wanted donkey--handed-back-cache)
       (setq donkey--handed-back-cache wanted)

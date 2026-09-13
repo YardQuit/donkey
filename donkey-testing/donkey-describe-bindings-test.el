@@ -3326,7 +3326,11 @@ has never touched."
         (should (get-buffer "*DONKEY Bindings*"))
         (with-current-buffer "*DONKEY Bindings*"
           (should buffer-read-only)
-          (should (eq major-mode 'special-mode))
+          ;; a mode of its own, so the chart can have a section; still
+          ;; a `special-mode' buffer for everything that matters
+          (should (eq major-mode 'donkey-bindings-mode))
+          (should (provided-mode-derived-p major-mode 'special-mode))
+          (should (eq (key-binding "q") 'quit-window))
           (should (= (point) (point-min)))))
     (when (get-buffer "*DONKEY Bindings*") (kill-buffer "*DONKEY Bindings*"))))
 

@@ -670,6 +670,205 @@ puts help under a motion key."
                      (define-key m "p" 'describe-mode) m))
     (should-not (donkey--command-the-mode-binds ?p))))
 
+(ert-deftest donkey-the-motion-package-is-the-reading-half-of-normal-state ()
+  "An enumerable fact stated in the README, recounted here.
+
+Forty-five sequences, and not one of them changes the buffer -- which
+is what makes the package safe in a buffer you cannot type in.  It is
+every move, select and copy key NORMAL state has, plus `?', which
+charts the buffer it is pressed in.  The edits, the wrap keys,
+`repeat' and the state keys are all out."
+  (let* ((table (eval (car (get 'donkey-key-packages 'standard-value)) t))
+         (motion (cdr (assq 'motion table))))
+    (should (= (length table) 1))
+    (should (= (length motion) 45))
+    (dolist (seq motion) (should (stringp seq)))
+    ;; every one is a key DONKEY actually binds
+    (dolist (seq motion)
+      (let ((command (lookup-key donkey-normal-mode-map (kbd seq))))
+        (should (symbolp command))
+        (should (commandp command))))
+    ;; and none of them edits
+    (dolist (seq motion)
+      (should-not (memq (lookup-key donkey-normal-mode-map (kbd seq))
+                        '(donkey-delete donkey-change donkey-yank kill-line
+                          donkey-open-below donkey-open-above undo
+                          donkey-redo donkey-yank-rectangle donkey-comment-dwim
+                          donkey-wrap-region donkey-join-line query-replace
+                          replace-regexp fill-region fill-paragraph repeat
+                          donkey-indent-region-or-line
+                          donkey-insert-here donkey-insert-after
+                          donkey-insert-beginning-of-line
+                          donkey-insert-end-of-line))))
+    ;; every move/select/copy key NORMAL state binds is in it.  The
+    ;; list is the audit: a key added to one of those families and not
+    ;; to the package fails here.
+    (dolist (seq '("h" "j" "k" "l" "w" "W" "b" "B" "J" "K" "G" "S" ":" "z z"
+                   "g g" "g e" "g h" "g l" "v" "V" "M" "%" "y" "RET"
+                   "m w" "m W" "m b" "m B" "m i" "m a" "m I" "m A"
+                   "m s" "m S" "m p" "m P" "m v" "m l" "m u" "m U"))
+      (should (member seq motion)))
+    ;; and `?', which is not one of those families but belongs here:
+    ;; it is how a reader asks what this buffer answers.
+    (should (member "?" motion))
+    (should (eq (lookup-key donkey-normal-mode-map "?")
+                'donkey-describe-bindings))))
+
+(ert-deftest donkey-a-package-gives-a-support-mode-its-reading-keys ()
+  "`help-mode' keeps its own alphabet and gets DONKEY's motion back.
+
+The keys a package carries are read out of `donkey-normal-mode-map' at
+build time, so a reader who rebound one of them there gets their own."
+  (skip-unless (require 'help-mode nil t))
+  (with-temp-buffer
+    (help-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (donkey--ensure-default-state)
+          (should (donkey--support-mode-p))
+          ;; the package
+          (should (eq (key-binding "w") 'forward-word))
+          (should (eq (key-binding "y") 'donkey-copy))
+          (should (eq (key-binding (kbd "m w")) 'donkey-mark-word))
+          (should (eq (key-binding (kbd "m A")) 'donkey-mark-sexp-outer))
+          (should (eq (key-binding (kbd "g g")) 'beginning-of-buffer))
+          (should (eq (key-binding (kbd "RET")) 'donkey-enter-dwim))
+          ;; h and l stay DONKEY's; help's own back and forward move up
+          (should (eq (key-binding "h") 'backward-char))
+          (should (eq (key-binding "l") 'forward-char))
+          (should (eq (key-binding "H") 'help-go-back))
+          (should (eq (key-binding "L") 'help-go-forward))
+          ;; the newly added half of the package
+          (should (eq (key-binding "M") 'donkey-mark-run-toggle))
+          (should (eq (key-binding "G") 'end-of-buffer))
+          (should (eq (key-binding "S") 'donkey-jump-back))
+          (should (eq (key-binding (kbd "m s")) 'donkey-mark-sentence))
+          (should (eq (key-binding (kbd "m l")) 'donkey-bank-selection))
+          ;; and the mode keeps everything the package did not name
+          (should (eq (key-binding "q") 'quit-window))
+          (should (eq (key-binding "n") 'help-goto-next-page))
+          (should (eq (key-binding "s") 'help-view-source))
+          ;; g became a prefix, so revert-buffer moved to a free key
+          (should (keymapp (key-binding "g")))
+          (should (eq (key-binding "R") 'revert-buffer)))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-the-chart-shows-the-buffer-it-is-asked-in ()
+  "In a support mode, \\=`?\\=' charts what is reachable there.
+
+NORMAL state\\='s chart is the wrong one in a support buffer: most of
+what it lists cannot be reached.  The support chart lists the map that
+really answers, and names \\[describe-mode] for the major mode\\='s half."
+  (skip-unless (require 'help-mode nil t))
+  (let ((buf nil))
+    (unwind-protect
+        (with-temp-buffer
+          (help-mode)
+          (donkey-mode 1)
+          (unwind-protect
+              (progn
+                (donkey--ensure-default-state)
+                (should (eq (key-binding "?") 'donkey-describe-bindings))
+                (donkey-describe-bindings)
+                (setq buf (get-buffer "*DONKEY Bindings*"))
+                (should buf)
+                (with-current-buffer buf
+                  (let ((text (buffer-substring-no-properties
+                               (point-min) (point-max))))
+                    ;; it says which buffer it is about
+                    (should (string-match-p "DONKEY Keys in help-mode" text))
+                    (should (string-match-p "every\nother key is the major mode" text))
+                    ;; the package and the section both show
+                    (should (string-match-p "donkey-mark-run-toggle" text))
+                    (should (string-match-p "help-go-back" text))
+                    ;; and NORMAL state's own chart does not
+                    (should-not (string-match-p "DONKEY Normal Mode Key Bindings" text))
+                    (should-not (string-match-p "donkey-delete" text)))))
+            (donkey-mode -1)))
+      (when (buffer-live-p buf) (kill-buffer buf)))))
+
+(ert-deftest donkey-the-chart-reads-with-the-keys-it-describes ()
+  "The chart is a support buffer with a section of its own.
+
+`special-mode' alone would leave it four keys, so a reader could not
+move through the list or copy a line out of it.  `help-mode' would give
+it the package but also `help-go-back' and `help-go-forward', which
+have nothing to go back to in a chart.  A mode of its own takes the
+package and neither of those."
+  (let ((buf nil))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (fundamental-mode)
+            (donkey-mode 1)
+            (unwind-protect (donkey-describe-bindings) (donkey-mode -1)))
+          (setq buf (get-buffer "*DONKEY Bindings*"))
+          (should buf)
+          (with-current-buffer buf
+            (should (eq major-mode 'donkey-bindings-mode))
+            (should (provided-mode-derived-p major-mode 'special-mode))
+            (donkey-mode 1)
+            (unwind-protect
+                (progn
+                  (donkey--ensure-default-state)
+                  (should (donkey--support-mode-p))
+                  (should (eq (car (donkey--support-mode-section))
+                              'donkey-bindings-mode))
+                  ;; read it, and copy out of it
+                  (should (eq (key-binding "j") 'next-line))
+                  (should (eq (key-binding (kbd "g g")) 'beginning-of-buffer))
+                  (should (eq (key-binding "G") 'end-of-buffer))
+                  (should (eq (key-binding "y") 'donkey-copy))
+                  (should (eq (key-binding "v") 'donkey-set-mark))
+                  ;; the mode's own way out survives the package
+                  (should (eq (key-binding "q") 'quit-window))
+                  ;; and no dead help history
+                  (should (memq (key-binding "H") '(nil undefined)))
+                  (should (memq (key-binding "L") '(nil undefined))))
+              (donkey-mode -1))))
+      (when (buffer-live-p buf) (kill-buffer buf)))))
+
+(ert-deftest donkey-the-chart-is-normal-states-where-normal-state-runs ()
+  "Outside a support mode the chart is the one it always was."
+  (let ((buf nil))
+    (unwind-protect
+        (with-temp-buffer
+          (text-mode)
+          (donkey-mode 1)
+          (unwind-protect
+              (progn
+                (donkey--ensure-default-state)
+                (should-not (donkey--support-mode-p))
+                (donkey-describe-bindings)
+                (setq buf (get-buffer "*DONKEY Bindings*"))
+                (with-current-buffer buf
+                  (let ((text (buffer-substring-no-properties
+                               (point-min) (point-max))))
+                    (should (string-match-p "DONKEY Normal Mode Key Bindings" text))
+                    (should (string-match-p "Mark Run Mode Key Bindings" text)))))
+            (donkey-mode -1)))
+      (when (buffer-live-p buf) (kill-buffer buf)))))
+
+(ert-deftest donkey-a-package-passes-over-what-donkey-does-not-bind ()
+  "A sequence DONKEY has no command for costs nothing.
+
+So does a package name no section uses, and a package a section names
+that does not exist."
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-key-packages '((tiny "w" "donkey-no-such-key-anywhere" "g g")))
+          (donkey-support-modes '((fundamental-mode tiny)))
+          (donkey--support-mode-cache nil))
+      (let ((pairs (donkey--support-mode-package-keys)))
+        (should (= (length pairs) 2))
+        (should (equal (mapcar #'cdr pairs) '(forward-word beginning-of-buffer)))))
+    ;; a section naming a package that is not there
+    (let ((donkey-key-packages '((tiny "w")))
+          (donkey-support-modes '((fundamental-mode absent)))
+          (donkey--support-mode-cache nil))
+      (should-not (donkey--support-mode-package-keys)))))
+
 (ert-deftest donkey-a-buffer-that-becomes-read-only-gets-the-support-map ()
   "The two caches have to agree, or the buffer gets neither state.
 
@@ -797,27 +996,35 @@ and pressing it left a reader in Insert state in a read-only buffer."
                                          donkey-insert-end-of-line))))
             (donkey-mode -1)))))))
 
-(ert-deftest donkey-the-support-table-ships-seventeen-sections ()
+(ert-deftest donkey-the-support-table-ships-eighteen-sections ()
   "The modes a section names, and what DONKEY keeps in each.
 
 An enumerable fact stated in the README, recounted here.  A section is
 not what makes most buffers support modes -- `donkey--program-buffer-p'
 answers for those -- it is what says which command `h' and `l' reach.
-Two of the seventeen are here only because the rule misses them:
+Two of the eighteen are here only because the rule misses them:
 `Custom-mode' and `org-agenda-mode' are neither derived from
 `special-mode' nor read-only."
   (let ((table (eval (car (get 'donkey-support-modes 'standard-value)) t)))
-    (should (= (length table) 17))
+    (should (= (length table) 18))
     (should (equal (mapcar #'car table)
                    '(dired-mode ibuffer-mode Info-mode Man-mode woman-mode
                      help-mode apropos-mode eww-mode image-mode doc-view-mode
                      tar-mode Custom-mode occur-mode compilation-mode
-                     package-menu-mode Buffer-menu-mode org-agenda-mode)))
-    ;; a section may name any key but `j' and `k'
+                     package-menu-mode Buffer-menu-mode org-agenda-mode
+                     donkey-bindings-mode)))
+    ;; a section may name any key but `j' and `k'; a bare symbol in it
+    ;; names a package rather than a key
     (dolist (row table)
-      (dolist (pair (cdr row))
-        (should (characterp (car pair)))
-        (should-not (memq (car pair) '(?j ?k)))))
+      (dolist (item (cdr row))
+        (if (symbolp item)
+            (should (assq item (eval (car (get 'donkey-key-packages
+                                                'standard-value))
+                                      t)))
+          (should (characterp (car item)))
+          (should-not (memq (car item) '(?j ?k))))))
+    ;; help-mode is the one that takes a package
+    (should (memq 'motion (cdr (assq 'help-mode table))))
     ;; and both sections carry what `j' and `k' displaced, on the
     ;; shifted keys, because neither command had another key
     (should (equal (cdr (assq 'dired-mode table))
@@ -1176,8 +1383,12 @@ entry would never be read."
       (dolist (pair (cdr row))
         (should (memq (car pair) '(?h ?l)))))))
 
-(ert-deftest donkey-a-mode-in-the-navigation-table-gets-h-and-l ()
-  "`help-mode' goes back and forward rather than by character."
+(ert-deftest donkey-a-section-may-move-a-mode-key-rather-than-take-it ()
+  "`help-mode' keeps DONKEY\='s h and l, and moves its own up to H and L.
+
+A section is free to put the mode's command anywhere, not only on the
+key it displaced.  Here h and l are worth more as motion than as help
+history, so the history goes to two keys that were free."
   (require 'help-mode)
   (with-temp-buffer
     (help-mode)
@@ -1185,9 +1396,10 @@ entry would never be read."
     (unwind-protect
         (progn
           (donkey--ensure-default-state)
-          (should (eq (key-binding "h") 'help-go-back))
-          (should (eq (key-binding "l") 'help-go-forward))
-          ;; j and k are not in the table and need not be
+          (should (eq (key-binding "h") 'backward-char))
+          (should (eq (key-binding "l") 'forward-char))
+          (should (eq (key-binding "H") 'help-go-back))
+          (should (eq (key-binding "L") 'help-go-forward))
           (should (eq (key-binding "j") 'next-line))
           (should (eq (key-binding "k") 'previous-line)))
       (donkey-mode -1))))
