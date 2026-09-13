@@ -789,6 +789,115 @@ entry would never be read."
           (should (eq (key-binding "l") 'forward-char)))
       (donkey-mode -1))))
 
+(ert-deftest donkey-the-navigation-keys-are-four-and-two-may-not-be-named ()
+  "The floor is four keys, and no per-mode entry may name two of them.
+
+An enumerable fact the docstrings state, recounted here.  `h' and `l'
+are outside `donkey--motion-keys' on purpose: the table chooses a
+meaning for them where a mode has somewhere to go."
+  (should (equal donkey--navigation-keys '(?h ?j ?k ?l)))
+  (should (equal donkey--motion-keys '(?j ?k)))
+  (dolist (char donkey--motion-keys)
+    (should (memq char donkey--navigation-keys)))
+  (dolist (char '(?h ?l))
+    (should (memq char donkey--navigation-keys))
+    (should-not (memq char donkey--motion-keys))))
+
+(ert-deftest donkey-a-mode-that-binds-hjkl-does-not-get-them ()
+  "The four keys move, in a buffer whose mode binds all four itself.
+
+NORMAL state\\='s map is an emulation map and answers before the major
+mode\\='s own, so a mode acquires nothing by binding them."
+  (with-temp-buffer
+    (text-mode)
+    (use-local-map (let ((m (make-sparse-keymap)))
+                     (define-key m "h" 'forward-sexp)
+                     (define-key m "j" 'forward-sexp)
+                     (define-key m "k" 'forward-sexp)
+                     (define-key m "l" 'forward-sexp)
+                     m))
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (donkey--ensure-default-state)
+          (should (eq (key-binding "h") 'backward-char))
+          (should (eq (key-binding "j") 'next-line))
+          (should (eq (key-binding "k") 'previous-line))
+          (should (eq (key-binding "l") 'forward-char)))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-the-handed-back-rule-cannot-give-away-hjkl ()
+  "Putting a navigation key on the option does nothing at all.
+
+The rule is filtered against `donkey--navigation-keys' rather than
+trusted, so the four hold whatever the option says -- including in a
+buffer whose mode has a command of its own for every one of them,
+which is the only case where the rule would otherwise fire."
+  (with-temp-buffer
+    (text-mode)
+    (use-local-map (let ((m (make-sparse-keymap)))
+                     (define-key m "h" 'forward-sexp)
+                     (define-key m "j" 'forward-sexp)
+                     (define-key m "k" 'forward-sexp)
+                     (define-key m "l" 'forward-sexp)
+                     m))
+    (donkey-mode 1)
+    (unwind-protect
+        (let ((donkey-handed-back-keys '(?h ?j ?k ?l))
+              (donkey--handed-back-cache nil))
+          ;; the rule does find the mode's command: it is the filter,
+          ;; not a missing binding, that keeps the key.
+          (dolist (char '(?h ?j ?k ?l))
+            (should (eq (donkey--command-the-mode-binds char) 'forward-sexp)))
+          (donkey--install-handed-back-keys)
+          (should (eq (key-binding "h") 'backward-char))
+          (should (eq (key-binding "j") 'next-line))
+          (should (eq (key-binding "k") 'previous-line))
+          (should (eq (key-binding "l") 'forward-char)))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-the-navigation-table-cannot-name-j-or-k ()
+  "An entry for `j' or `k' is dropped rather than bound.
+
+A mode with lines is served by its own remap of `next-line', so the
+table has nothing to add and is not allowed to try."
+  (with-temp-buffer
+    (text-mode)
+    (let ((donkey-mode-navigation
+           '((text-mode (?j . forward-sexp) (?k . forward-sexp)))))
+      (should (fboundp 'forward-sexp))
+      (should (equal (donkey--navigation-pairs) nil)))
+    (donkey-mode 1)
+    (unwind-protect
+        (let ((donkey-mode-navigation
+               '((text-mode (?j . forward-sexp) (?k . forward-sexp))))
+              (donkey--handed-back-cache nil))
+          (donkey--install-handed-back-keys)
+          (should (eq (key-binding "j") 'next-line))
+          (should (eq (key-binding "k") 'previous-line)))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-the-navigation-table-may-still-name-h-and-l ()
+  "The floor stops at `j' and `k': the table still chooses `h' and `l'.
+
+The other side of the filter.  Widen it to all four and a mode with
+somewhere to go loses the entries that shipped for it."
+  (with-temp-buffer
+    (text-mode)
+    (let ((donkey-mode-navigation
+           '((text-mode (?h . forward-sexp) (?l . backward-sexp)))))
+      (should (equal (donkey--navigation-pairs)
+                     '((?h . forward-sexp) (?l . backward-sexp)))))
+    (donkey-mode 1)
+    (unwind-protect
+        (let ((donkey-mode-navigation
+               '((text-mode (?h . forward-sexp) (?l . backward-sexp))))
+              (donkey--handed-back-cache nil))
+          (donkey--install-handed-back-keys)
+          (should (eq (key-binding "h") 'forward-sexp))
+          (should (eq (key-binding "l") 'backward-sexp)))
+      (donkey-mode -1))))
+
 (ert-deftest donkey-the-help-like-modes-are-left-on ()
   "Normal state stays on where the mode binds few letters.
 

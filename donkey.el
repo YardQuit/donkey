@@ -7798,6 +7798,10 @@ means UP here, and a mode that binds it means kill -- `Man-kill',
 so the key stays where a reader\\='s fingers expect it.  Every motion
 and selection key is absent for the same reason.
 
+\\=`h\\=', \\=`j\\=', \\=`k\\=' and \\=`l\\=' are never given away, whatever
+is put here: they are how a reader moves and the rule passes over them.
+See `donkey--navigation-keys'.
+
 Not a general escape hatch.  A key is given away only where the mode
 has a command of its own for it; where the mode has none the key stays
 DONKEY\\='s, so nothing changes in a mode you write in.  Programming and
@@ -7843,8 +7847,10 @@ would guess wrong.
 Magit and `image-mode' remap `next-line', so NORMAL state\\='s own keys
 already move by their lines.
 
+An entry for \\=`j\\=' or \\=`k\\=' is dropped: those move, and a mode
+with lines already reaches its own through its remap of `next-line'.
 A command that is not `fboundp' is passed over, so naming a mode from a
-package you do not have costs nothing.  A command that would type is
+package you do not have costs nothing, and a command that would type is
 refused as everywhere else.
 
 Empty the list and \\=`h\\=' and \\=`l\\=' are `backward-char' and
@@ -7856,6 +7862,44 @@ are not on this list -- the README has the entries to add if you take
 one of them off the excluded list."
   :type '(repeat (cons symbol (repeat (cons character function))))
   :group 'donkey)
+
+(defconst donkey--navigation-keys '(?h ?j ?k ?l)
+  "The four keys NORMAL state never gives to a major mode.
+
+A reader has to be able to move without knowing what buffer they are
+in, so these four are a floor rather than a default.  Three things
+cannot reach them:
+
+A mode that binds one cannot take it.  NORMAL state\\='s map is an
+emulation map and answers before the mode\\='s own, so \\=`k\\=' is
+`previous-line' in a buffer whose mode binds \\=`k\\=' to kill.
+
+`donkey-handed-back-keys' cannot give one away.  The rule is filtered
+against this list rather than trusted, so putting \\=`j\\=' there does
+nothing at all.
+
+`donkey-mode-navigation' cannot name \\=`j\\=' or \\=`k\\='; see
+`donkey--motion-keys' for why \\=`h\\=' and \\=`l\\=' are its to choose.
+
+A mode that means well is covered without any of this.  Dired, Magit
+and `image-mode' remap `next-line', and a remap catches the command
+whichever key ran it, so NORMAL state\\='s own \\=`j\\=' arrives at
+`dired-next-line' with the key never changing hands.")
+
+(defconst donkey--motion-keys '(?j ?k)
+  "The two of `donkey--navigation-keys' no per-mode entry may name.
+
+\\=`j\\=' and \\=`k\\=' move down and up a line, and there is no buffer
+where that is the wrong thing for them to do: a mode with lines is
+served by its own remap of `next-line', and a mode without them has
+nothing better to offer.  `donkey-mode-navigation' is filtered against
+this list, so an entry for either is dropped.
+
+\\=`h\\=' and \\=`l\\=' are missing from it deliberately.  Nothing
+discovers a meaning for them either -- the borrow rule passes over all
+four -- but a page, a link or a parent directory is a choice made for a
+mode rather than something read out of its keymap, so the table may
+name one and this list does not stand in its way.")
 
 (defconst donkey--never-handed-back
   '(describe-mode Custom-no-edit undefined ignore)
@@ -7912,6 +7956,7 @@ is not installed costs nothing."
     (seq-filter (lambda (pair)
                   (and (consp pair)
                        (characterp (car pair))
+                       (not (memq (car pair) donkey--motion-keys))
                        (symbolp (cdr pair))
                        (fboundp (cdr pair))
                        (not (memq (cdr pair) typing))))
@@ -7941,8 +7986,11 @@ reads the same global value it always did."
         (dolist (char (seq-filter #'characterp
                                   (and (listp donkey-handed-back-keys)
                                        donkey-handed-back-keys)))
-          (let ((own (donkey--command-the-mode-binds char)))
-            (when own (push (cons char own) pairs))))
+          ;; The floor: a reader moves with these wherever they are, so
+          ;; the option does not get to hand one over.
+          (unless (memq char donkey--navigation-keys)
+            (let ((own (donkey--command-the-mode-binds char)))
+              (when own (push (cons char own) pairs)))))
         ;; The table is chosen rather than discovered, so it wins over
         ;; the rule where both name the same key.
         (dolist (pair (donkey--navigation-pairs))
