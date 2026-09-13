@@ -89,8 +89,7 @@
     eat-mode mistty-mode
     slime-repl-mode cider-repl-mode racket-repl-mode
     haskell-interactive-mode
-    magit-mode git-rebase-mode
-    tabulated-list-mode Info-mode)
+    magit-mode git-rebase-mode)
   "Major modes where DONKEY Normal state should be permanently disabled.
 
 In one of these, DONKEY is out of the way completely: every key is
@@ -222,10 +221,25 @@ in place or not, recomputes on the next call."
         result))))
 
 (defcustom donkey-support-modes
-  '((dired-mode   (?h . dired-up-directory) (?l . dired-find-file)
-                  (?J . dired-goto-file)    (?K . dired-do-kill-lines))
-    (ibuffer-mode                           (?l . ibuffer-visit-buffer)
-                  (?J . ibuffer-jump-to-buffer) (?K . ibuffer-do-kill-lines)))
+  '((dired-mode        (?h . dired-up-directory) (?l . dired-find-file)
+                       (?J . dired-goto-file) (?K . dired-do-kill-lines))
+    (ibuffer-mode      (?l . ibuffer-visit-buffer)
+                       (?J . ibuffer-jump-to-buffer) (?K . ibuffer-do-kill-lines))
+    (Info-mode         (?h . Info-up) (?l . Info-follow-nearest-node))
+    (Man-mode          (?h . Man-previous-section) (?l . Man-next-section))
+    (woman-mode        (?l . woman-follow))
+    (help-mode         (?h . help-go-back) (?l . help-go-forward))
+    (apropos-mode      (?l . apropos-follow))
+    (eww-mode          (?h . eww-back-url) (?l . eww-follow-link))
+    (image-mode        (?h . image-previous-file) (?l . image-next-file))
+    (doc-view-mode     (?h . doc-view-previous-page) (?l . doc-view-next-page))
+    (tar-mode          (?l . tar-extract))
+    (Custom-mode       (?h . Custom-goto-parent))
+    (occur-mode        (?l . occur-mode-goto-occurrence))
+    (compilation-mode  (?l . compile-goto-error))
+    (package-menu-mode (?l . package-menu-describe-package))
+    (Buffer-menu-mode  (?l . Buffer-menu-this-window))
+    (org-agenda-mode   (?h . org-agenda-earlier) (?l . org-agenda-later)))
   "Modes DONKEY supports rather than takes over, and what it keeps there.
 
 A section per mode.  NORMAL state does not run in these buffers: the
@@ -273,6 +287,30 @@ you do not have costs nothing.
 all there, not even \\=`j\\=' and \\=`k\\='.  A mode on both is excluded."
   :type '(repeat (cons symbol (repeat (cons character function))))
   :group 'donkey)
+
+(defcustom donkey-support-mode-exceptions '(occur-edit-mode)
+  "Modes that look like a program\\='s buffer but are one you edit.
+
+`donkey-support-modes' answers for a mode it names.  Every other
+buffer a program made for you is answered by a rule instead: derived
+from `special-mode', or read-only, and not derived from `prog-mode',
+`text-mode' or `conf-mode'.  The rule is right nearly always and
+this list is where it is not.
+
+`occur-edit-mode' is the case it ships for.  It derives from
+`occur-mode', which derives from `special-mode', but it is the mode
+\\[occur-edit-mode] puts an Occur buffer in so the matches can be
+edited -- a buffer you type in, where NORMAL state belongs.
+
+Matched the way the other mode lists are: an exact major mode, or an
+ancestor of one.  A mode here is not a support mode however it matched
+the rule, and a mode named in `donkey-support-modes' is one however it
+matched this: a section is something a reader wrote on purpose."
+  :type '(repeat symbol)
+  :group 'donkey)
+
+(defvar-local donkey--support-exception-cache nil
+  "Memo for `donkey-support-mode-exceptions'.")
 
 (defvar-local donkey--support-mode-cache nil
   "Memo for `donkey--support-mode-p'; see `donkey--memo-major-mode-in-p'.")
@@ -338,19 +376,66 @@ mis-typed option cannot signal from here."
               (cons (cons major-mode (copy-tree donkey-support-modes)) result))
         result))))
 
-(defun donkey--support-mode-p ()
-  "Return non-nil if this major mode has a section in `donkey-support-modes'.
+(defun donkey--program-buffer-p ()
+  "Return non-nil if this buffer is one a program made for the reader.
 
-Nil without the sections ever being searched while the option is empty.
+Derived from `special-mode', which is Emacs\\=' own word for it, or
+read-only -- and not derived from `prog-mode', `text-mode' or
+`conf-mode'.
+
+That last clause is the one that earns its place.  Without it a source
+file opened read-only answers yes, and a reader looking at a file they
+cannot write loses every DONKEY key in it for no gain: the mode has
+nothing to put on those keys, because a writing mode binds no plain
+letters at all.  With it, read-only means \"a program\\='s buffer\" only
+where the mode is one.
+
+Dired is why read-only is asked at all: it derives from nothing, and
+sets the flag when it lists a directory."
+  (and (or (provided-mode-derived-p major-mode 'special-mode)
+           buffer-read-only)
+       (not (or (provided-mode-derived-p major-mode 'prog-mode)
+                (provided-mode-derived-p major-mode 'text-mode)
+                (provided-mode-derived-p major-mode 'conf-mode)))))
+
+(defun donkey--support-mode-exception-p ()
+  "Return non-nil if this mode is on `donkey-support-mode-exceptions'.
+
+Nil without the list ever being searched while the option is empty."
+  (and donkey-support-mode-exceptions
+       (donkey--memo-major-mode-in-p 'donkey--support-exception-cache
+                                     donkey-support-mode-exceptions)))
+
+(defun donkey--support-mode-p ()
+  "Return non-nil if DONKEY supports this buffer rather than taking it over.
+
+Two ways to be one, and the first is the reader\\='s: a section in
+`donkey-support-modes' names the mode.  Otherwise the buffer is one a
+program made -- `donkey--program-buffer-p' -- and nothing says
+otherwise.
 
 `donkey-excluded-modes' is the stronger form and is read first, so a
-mode on both lists is excluded and this answers nil: a reader who
-excluded a mode meant it, and a section DONKEY ships must not take
-that back."
-  (and donkey-support-modes
-       (not (donkey--excluded-mode-p))
-       (donkey--support-mode-section)
-       t))
+mode on it is excluded either way: a reader who excluded a mode meant
+it, and neither a shipped section nor a rule may take that back.
+
+`donkey-support-mode-exceptions' is read next and beats both.  A
+section reaches a child by derivation -- `occur-mode' has one and
+`occur-edit-mode' derives from it -- so an exception that only beat
+the rule would never fire for the one case it ships for."
+  (and (not (donkey--excluded-mode-p))
+       (not (donkey--support-mode-exception-p))
+       (or (and donkey-support-modes (donkey--support-mode-section) t)
+           (donkey--program-buffer-p))))
+
+(defvar-local donkey--normal-state-off-cache nil
+  "Memo for `donkey--normal-state-off-p', or nil.
+
+The six things the answer depends on, then the answer.  Compared with
+`eq' rather than `equal': this runs after every command in every
+buffer, and `equal' over the support sections is most of what the
+predicate costs.  A list a reader replaces -- `setopt',
+`customize', `add-to-list', all of which build a new one -- is a
+new object and fails the `eq', so the answer is computed again.")
 
 (defun donkey--normal-state-off-p ()
   "Return non-nil if NORMAL state does not run in this buffer.
@@ -364,12 +449,23 @@ The predicate every caller wants that has to decide whether to enter
 NORMAL state, leave it, or intercept a quit.  Use `donkey--excluded-mode-p'
 or `donkey--support-mode-p' only where the two have to be told apart,
 which is the mode line and the diagnostics."
-  (or (donkey--excluded-mode-p)
-      ;; `donkey--support-mode-p' asks the same question again, and this
-      ;; runs after every command: the `or' has already answered it.
-      (and donkey-support-modes
-           (donkey--support-mode-section)
-           t)))
+  (let ((c donkey--normal-state-off-cache))
+    (if (and c
+             (eq (nth 0 c) major-mode)
+             (eq (nth 1 c) buffer-read-only)
+             (eq (nth 2 c) donkey-excluded-modes)
+             (eq (nth 3 c) donkey-excluded-mode-exceptions)
+             (eq (nth 4 c) donkey-support-modes)
+             (eq (nth 5 c) donkey-support-mode-exceptions))
+        (nth 6 c)
+      (let ((result (or (donkey--excluded-mode-p)
+                        (donkey--support-mode-p))))
+        (setq donkey--normal-state-off-cache
+              (list major-mode buffer-read-only
+                    donkey-excluded-modes donkey-excluded-mode-exceptions
+                    donkey-support-modes donkey-support-mode-exceptions
+                    result))
+        result))))
 
 (defvar-local donkey--insert-state-was-forced nil
   "Non-nil when Insert state here was forced by an excluded major mode.
@@ -8068,7 +8164,16 @@ stopped.")
   "What `donkey--install-handed-back-keys' last built here.
 
 The cons (MAJOR-MODE . KEYS) the buffer-local map was made for, so that
-the map is rebuilt when either changes rather than on every pass.")
+the map is rebuilt when either changes rather than on every pass.
+
+Where the coverage stops: the mode\\='s KEYMAP is not part of the key, and
+`donkey--install-handed-back-keys' runs from
+`after-change-major-mode-hook'.  A binding a mode or a reader adds to
+the map after that point is not seen until something else invalidates
+this -- another major mode, or a change to one of the options.  Every
+mode builds its map before the hook runs, so this costs nothing in
+practice; `donkey-refresh-suppressed-commands' is the way to ask by
+hand.")
 
 (defun donkey--mode-typing-command ()
   "Return the command this buffer\\='s major mode types with, or nil.

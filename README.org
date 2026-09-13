@@ -38,7 +38,7 @@
 - [[#configuring-the-enter-key][Configuring the Enter key]]
 - [[#wrapping-choosing-your-own-pairs][Choosing your own pairs]]
 - [[#keys-a-major-mode-types-with][Keys a major mode types with]]
-- [[#why-those-four-modes-ship-excluded][Why those four modes ship excluded]] — the reasoning, for readers who want it
+- [[#why-those-two-modes-ship-excluded][Why those two modes ship excluded]] — the reasoning, for readers who want it
 - [[#the-digraph-chart][The digraph chart]]
 - [[#a-complete-configuration][A complete configuration]]
 
@@ -1031,12 +1031,42 @@ took =hjkl= with them. A *support mode* is the middle: DONKEY keeps
 
 #+end_example
 
-Two modes ship as support modes:
+*Every* buffer a program made for you is a support mode. DONKEY does
+not need to be told which: a mode derived from =special-mode= — Emacs's
+own word for it — or a read-only buffer, and not a mode you write in.
+That last clause matters: a source file opened read-only is still a
+file you read as a writer, and DONKEY keeps its keys there.
 
-| Mode | =h= | =j= | =k= | =l= |
-|------+-----+-----+-----+-----|
-| =dired-mode= | up a directory | down a line | up a line | open the file or enter the directory |
-| =ibuffer-mode= | — | down a line | up a line | visit the buffer |
+What a *section* adds is what =h= and =l= mean where the mode has
+somewhere to go. Seventeen ship:
+
+| Mode | =h= | =l= |
+|------+-----+-----|
+| =dired-mode= | up a directory | open the file or enter the directory |
+| =ibuffer-mode= | — | visit the buffer |
+| =Info-mode= | up a node | follow the nearest node |
+| =Man-mode= | previous section | next section |
+| =woman-mode= | — | follow |
+| =help-mode= | back | forward |
+| =apropos-mode= | — | follow |
+| =eww-mode= | back | follow the link |
+| =image-mode= | previous file | next file |
+| =doc-view-mode= | previous page | next page |
+| =tar-mode= | — | extract |
+| =Custom-mode= | up to the parent group | — |
+| =occur-mode= | — | go to the occurrence |
+| =compilation-mode= | — | go to the error (covers =grep-mode=) |
+| =package-menu-mode= | — | describe the package |
+| =Buffer-menu-mode= | — | visit the buffer |
+| =org-agenda-mode= | a week earlier | a week later |
+
+Where no section says otherwise, =h= and =l= are =backward-char= and
+=forward-char=, and =j= and =k= always move by a line.
+
+Two of the seventeen are there only because the rule misses them:
+=Custom-mode= and =org-agenda-mode= are neither derived from
+=special-mode= nor read-only, and a section makes a mode a support mode
+whatever the rule thinks.
 
 In Dired that means =j= and =k= walk the listing, =l= opens what is
 under the cursor and =h= goes back up — and =d=, =x=, =m=, =g=, =w=,
@@ -1083,16 +1113,24 @@ a letter to begin with — they use =C-c= and the modifiers. The promise
 that DONKEY owns the letters where you write costs those modes
 nothing.
 
-** Nothing here is worked out
+** What is decided, and what is not
 
-The list is the whole rule. A mode is a support mode because a section
-names it, not because DONKEY looked at its keymap and decided. A key
-belongs to the mode because no section named it. There is nothing to
-discover, nothing to guess, and nothing that changes when a mode
-gains a binding next year.
+One thing is decided by a rule: *is this a buffer a program made for
+me?* Emacs answers it — =special-mode= or read-only, and not a writing
+mode — and DONKEY takes the answer.
 
-That is the trade: DONKEY only knows about the modes somebody wrote a
-section for. Adding one is the whole of the fix:
+Nothing else is. Which keys DONKEY holds is fixed at =h j k l=; what
+=h= and =l= run is read off a section, never worked out from the
+mode's keymap; and every other key is the mode's because no section
+named it. Nothing changes when a mode gains a binding next year.
+
+=donkey-support-mode-exceptions= is where the rule is wrong.
+=occur-edit-mode= is the case it ships for: it derives from
+=occur-mode=, so it looks like a program's buffer, but it is the mode
+=e= puts an Occur buffer in so the matches can be edited — a buffer you
+type in, where NORMAL state belongs.
+
+Adding a section is how you change what =h= and =l= do:
 
 #+begin_src emacs-lisp
 
@@ -1186,8 +1224,6 @@ them derive from none of the four and had to be named one at a time.
 |-----------------------+-------------------------------------------------------------|
 | =magit-mode=          | commit, log, branch, diff, push, stash. Covers every magit and forge buffer |
 | =git-rebase-mode=     | pick, reword, drop, exec, break — an interactive rebase cannot be finished without them |
-| =tabulated-list-mode= | the package menu, the buffer menu, and the tabulated UIs other packages build on it |
-| =Info-mode=           | =SPC= to scroll, and =n p l u m i d g= — the whole node vocabulary |
 
 Nothing could have been damaged in any of them: they are read-only, so
 every editing key is refused with =Buffer is read-only=. What went
@@ -1230,7 +1266,7 @@ and =kubernetes= UIs. Add any of them as above — and please open an
 issue so the next person does not have to.
 
 That makes this a list rather than a rule, and it stops where the
-reading stopped. [[#why-those-four-modes-ship-excluded][Why Those Four Modes Ship Excluded]]
+reading stopped. [[#why-those-two-modes-ship-excluded][Why Those Two Modes Ship Excluded]]
 sets out the reasoning and how to undo any of it.
 
 To see the list in force: =M-x eval-expression= =donkey-excluded-modes=.
@@ -1512,9 +1548,9 @@ This is a list and not a rule: a mode with a typing command nobody has
 met yet will type. If you find one, add it and open an issue — then
 the next reader does not have to find it twice.
 
-* Why Those Four Modes Ship Excluded
+* Why Those Two Modes Ship Excluded
 :PROPERTIES:
-:CUSTOM_ID: why-those-four-modes-ship-excluded
+:CUSTOM_ID: why-those-two-modes-ship-excluded
 :END:
 
 For readers who want the reasoning rather than the setting. Nothing
@@ -1610,8 +1646,6 @@ Two wrinkles you may have met and wondered about:
 |-----------------------+----------------------------------------+-------------------------------------|
 | =magit-mode=          | commit, log, branch, diff, push, stash | change, forward-char, backward-word |
 | =git-rebase-mode=     | pick, reword, drop, exec, break        | yank, delete, change                |
-| =tabulated-list-mode= | mark-install, mark-delete, execute     | insert, delete, delete              |
-| =Info-mode=           | =SPC= to scroll, =n p l u m i d g=     | the leader, forward-char, undo      |
 
 =git-rebase-mode= is the sharpest of them: seven of its twelve verbs
 were gone, =pick= and =drop= among them, so an interactive rebase could
@@ -1750,7 +1784,7 @@ open an issue so the next reader does not have to.
 
   ;; NORMAL state back in Info, everything else left alone
   (with-eval-after-load 'donkey
-    (setopt donkey-excluded-modes (remq 'Info-mode donkey-excluded-modes)))
+    (setopt donkey-excluded-modes (remq 'magit-mode donkey-excluded-modes)))
 
 #+end_src
 
@@ -1806,7 +1840,7 @@ Customize would. =setq= on those needs the refresh call by hand.
 
     ;;; Where DONKEY steps aside
 
-    ;; Fourteen modes ship on the list: the terminals and REPLs, where
+    ;; Twelve modes ship on the list: the terminals and REPLs, where
     ;; NORMAL state would break the program on the other end, and the
     ;; applications whose single letters are their commands.  Add yours.
     (dolist (mode '(pdf-view-mode eww-mode elfeed-search-mode))
@@ -1819,11 +1853,10 @@ Customize would. =setq= on those needs the refresh call by hand.
 
     ;;; Modes DONKEY supports rather than takes over
 
-    ;; A section per mode.  DONKEY keeps h j k l; the mode keeps every
-    ;; other key it has.  Nothing is discovered: a mode is a support
-    ;; mode because a section names it.  j and k are never written
-    ;; down -- they are DONKEY's in every section.  J and K carry what
-    ;; j and k displaced, which had no other key in either mode.
+    ;; Every buffer a program made for you is a support mode, decided
+    ;; by the rule in donkey--program-buffer-p.  A section adds what h
+    ;; and l mean there; j and k are never written down.  Seventeen
+    ;; ship -- see the chapter above for the whole table.
     (setopt donkey-support-modes
             '((dired-mode   (?h . dired-up-directory)
                             (?l . dired-find-file)
@@ -2316,8 +2349,9 @@ and =M-x apropos-command donkey-= finds any of them.
 
 | Option                             | Default                          | What it does |
 |------------------------------------+----------------------------------+--------------|
-| =donkey-excluded-modes=            | 14 modes, see above              | where DONKEY steps aside completely |
-| =donkey-support-modes=             | 2 sections, see above            | where the mode keeps every key but =hjkl= |
+| =donkey-excluded-modes=            | 12 modes, see above              | where DONKEY steps aside completely |
+| =donkey-support-modes=             | 17 sections, see above           | what =h= and =l= do in a support mode |
+| =donkey-support-mode-exceptions=   | =occur-edit-mode=                | program-looking buffers you type in |
 | =donkey-handed-back-keys=          | 15 keys, see above               | keys the major mode keeps where it binds one |
 | =donkey-mode-navigation=           | 7 modes, see above               | what =h= and =l= do in those modes |
 | =donkey-excluded-mode-exceptions=  | =nil=                            | modes that stay on under an excluded parent |

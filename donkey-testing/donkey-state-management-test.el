@@ -302,34 +302,37 @@ without a mode, fails this."
                    eat-mode mistty-mode
                    slime-repl-mode cider-repl-mode racket-repl-mode
                    haskell-interactive-mode
-                   magit-mode git-rebase-mode
-                   tabulated-list-mode Info-mode))))
+                   magit-mode git-rebase-mode))))
 
 (ert-deftest donkey-the-excluded-modes-default-has-both-of-its-halves ()
-  "Ten terminals and REPLs, four applications, fourteen in all.
+  "Ten terminals and REPLs, two applications, twelve in all.
 
 The README tabulates the two halves separately, and the docstring
 gives each its own paragraph; this recounts both.  Dired and Ibuffer
-were the fifth and sixth applications and are support modes now:
-`donkey-support-modes' keeps four keys there rather than none."
+were the fifth and sixth applications, and Info and the tabulated
+lists the third and fourth.  All of them are support modes now: the
+mode keeps every key but `h', `j', `k' and `l' instead of every key."
   (let* ((shipped (eval (car (get 'donkey-excluded-modes 'standard-value)) t))
          (terminals '(comint-mode term-mode vterm-mode eshell-mode
                       eat-mode mistty-mode
                       slime-repl-mode cider-repl-mode racket-repl-mode
                       haskell-interactive-mode))
-         (applications '(magit-mode git-rebase-mode
-                         tabulated-list-mode Info-mode)))
-    (should (= (length shipped) 14))
+         (applications '(magit-mode git-rebase-mode)))
+    (should (= (length shipped) 12))
     (should (= (length terminals) 10))
-    (should (= (length applications) 4))
+    (should (= (length applications) 2))
     (should (equal shipped (append terminals applications)))
     ;; and the two that left are on the other list, not on neither
     (let ((sections (mapcar #'car (eval (car (get 'donkey-support-modes
                                                   'standard-value))
                                         t))))
-      (dolist (mode '(dired-mode ibuffer-mode))
+      (dolist (mode '(dired-mode ibuffer-mode Info-mode))
         (should-not (memq mode shipped))
-        (should (memq mode sections))))))
+        (should (memq mode sections)))
+      ;; tabulated-list-mode left too, and is a support mode by the
+      ;; rule rather than by a section
+      (should-not (memq 'tabulated-list-mode shipped))
+      (should-not (memq 'tabulated-list-mode sections)))))
 
 (ert-deftest donkey-every-shipped-application-mode-is-excluded ()
   "Each application mode on the default list answers as excluded.
@@ -337,34 +340,37 @@ were the fifth and sixth applications and are support modes now:
 Named rather than derived: `magit-mode' and `git-rebase-mode' are not
 loaded in a batch run, and an exact member match does not need them
 to be."
-  (dolist (mode '(magit-mode git-rebase-mode
-                  tabulated-list-mode Info-mode))
+  (dolist (mode '(magit-mode git-rebase-mode))
     (with-temp-buffer
       (let ((major-mode mode))
         (should (donkey--excluded-mode-p)))))
   ;; Dired and Ibuffer are supported rather than excluded: Normal state
   ;; is off in both, but DONKEY keeps four keys there.
-  (dolist (mode '(dired-mode ibuffer-mode))
+  (dolist (mode '(dired-mode ibuffer-mode Info-mode tabulated-list-mode))
     (with-temp-buffer
       (let ((major-mode mode))
         (should-not (donkey--excluded-mode-p))
         (should (donkey--support-mode-p))
         (should (donkey--normal-state-off-p))))))
 
-(ert-deftest donkey-a-tabulated-list-ui-is-excluded-by-derivation ()
+(ert-deftest donkey-a-tabulated-list-ui-is-supported-by-derivation ()
   "The package menu and the buffer menu come with `tabulated-list-mode'.
 
-One entry rather than a row each: both derive from it, and so do the
-tabulated UIs other packages build.  This is what the README claims
-when it says naming a parent covers its children."
+Both derive from it, and so do the tabulated UIs other packages build.
+None of the three needs naming: they derive from `special-mode', which
+is what `donkey--program-buffer-p' reads, so the rule answers for every
+one of them and a section is only needed to say what `h' and `l' do."
   (require 'package)
   (require 'tabulated-list)
   (should (provided-mode-derived-p 'package-menu-mode 'tabulated-list-mode))
   (should (provided-mode-derived-p 'Buffer-menu-mode 'tabulated-list-mode))
-  (dolist (mode '(package-menu-mode Buffer-menu-mode))
+  (dolist (mode '(package-menu-mode Buffer-menu-mode tabulated-list-mode))
     (with-temp-buffer
-      (let ((major-mode mode))
-        (should (donkey--excluded-mode-p))))))
+      (funcall mode)
+      (should-not (donkey--excluded-mode-p))
+      (should (donkey--program-buffer-p))
+      (should (donkey--support-mode-p))
+      (should (donkey--normal-state-off-p)))))
 
 (ert-deftest donkey-wdired-is-not-excluded-with-dired ()
   "`wdired-mode' derives from nothing, so `dired-mode' does not cover it.
@@ -578,16 +584,26 @@ answer, which must not read as though every key were available."
 (ert-deftest donkey-p-goes-to-a-mode-that-binds-it ()
   "A mode with a `p' of its own gets the key; NORMAL state keeps the rest.
 
-`compilation-mode' binds it to `previous-error-no-select'.  The child
-map carries only the handed-back key, so `j' and `d' are reached
-through its parent exactly as before."
-  (require 'compile)
+The child map carries only the handed-back key, so `j' and `d' are
+reached through its parent exactly as before.
+
+`fundamental-mode' with a map of its own rather than a real mode: every
+buffer a program makes is a support mode now, where nothing is handed
+back at all, so the rule can only be seen in a buffer that is neither
+that nor one you write in."
   (with-temp-buffer
-    (compilation-mode)
+    (fundamental-mode)
+    (use-local-map (let ((m (make-sparse-keymap)))
+                     (define-key m "p" 'previous-error-no-select) m))
     (donkey-mode 1)
     (unwind-protect
-        (progn
+        ;; The map is installed after the mode, and the installer runs
+        ;; from `after-change-major-mode-hook' -- so its cache is
+        ;; already built for a buffer that had no map.  A real mode
+        ;; builds its map before that hook and needs none of this.
+        (let ((donkey--handed-back-cache nil))
           (donkey--ensure-default-state)
+          (should-not (donkey--normal-state-off-p))
           (should (eq (key-binding "p") 'previous-error-no-select))
           (should (eq (key-binding "j") 'next-line))
           (should (eq (key-binding "d") 'donkey-delete)))
@@ -654,14 +670,106 @@ puts help under a motion key."
                      (define-key m "p" 'describe-mode) m))
     (should-not (donkey--command-the-mode-binds ?p))))
 
-(ert-deftest donkey-the-support-table-ships-two-sections ()
-  "The modes DONKEY supports rather than takes over, and what it keeps.
+(ert-deftest donkey-a-program-buffer-is-supported-without-being-named ()
+  "The rule answers for a buffer a program made, section or no section.
 
-An enumerable fact stated in the README, recounted here.  Nothing is
-derived: a mode is a support mode because a section names it."
+`special-mode' is Emacs\=' own word for it, and read-only catches Dired,
+which derives from nothing."
+  (dolist (mode '(help-mode Man-mode occur-mode tar-mode special-mode))
+    (when (fboundp mode)
+      (with-temp-buffer
+        (funcall mode)
+        (when (eq major-mode mode)
+          (should (donkey--program-buffer-p))
+          (should (donkey--support-mode-p))
+          (should (donkey--normal-state-off-p))))))
+  ;; read-only alone is enough
+  (with-temp-buffer
+    (fundamental-mode)
+    (should-not (donkey--program-buffer-p))
+    (setq buffer-read-only t)
+    (should (donkey--program-buffer-p))))
+
+(ert-deftest donkey-a-read-only-source-file-is-not-a-program-buffer ()
+  "A file you cannot write is still a file you read as a writer.
+
+The clause that earns its place.  Without it a source file opened
+read-only answers yes to the rule, and every DONKEY key in it is given
+to a mode that binds no letters -- forty-odd keys traded for nothing."
+  (dolist (mode '(emacs-lisp-mode text-mode))
+    (with-temp-buffer
+      (funcall mode)
+      (setq buffer-read-only t)
+      (should-not (donkey--program-buffer-p))
+      (should-not (donkey--support-mode-p))
+      (should-not (donkey--normal-state-off-p))))
+  ;; and NORMAL state really is still there
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (setq buffer-read-only t)
+    (donkey-mode 1)
+    (unwind-protect
+        (progn (donkey--ensure-default-state)
+               (should (bound-and-true-p donkey-normal-mode))
+               (should (eq (key-binding "y") 'donkey-copy))
+               (should (eq (key-binding "v") 'donkey-set-mark)))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-an-exception-beats-a-section-a-parent-holds ()
+  "`occur-edit-mode' is a buffer you type in, and derives from one that is not.
+
+The case the exception list ships for.  `occur-mode' has a section and
+`occur-edit-mode' derives from it, so an exception that only beat the
+rule would never fire here."
+  (skip-unless (require 'replace nil t))
+  (with-temp-buffer
+    (occur-mode)
+    (should (donkey--support-mode-p))
+    (ignore-errors (occur-edit-mode))
+    (when (eq major-mode 'occur-edit-mode)
+      (should (donkey--program-buffer-p))
+      (should (donkey--support-mode-section))
+      (should (donkey--support-mode-exception-p))
+      (should-not (donkey--support-mode-p))
+      (should-not (donkey--normal-state-off-p)))))
+
+(ert-deftest donkey-i-never-enters-a-state-that-cannot-type ()
+  "Rule 74, in the buffers that used to break it.
+
+Every one of these was a borrowed-key buffer where `i' was DONKEY\='s,
+and pressing it left a reader in Insert state in a read-only buffer."
+  (dolist (mode '(Man-mode occur-mode tar-mode compilation-mode grep-mode
+                  apropos-mode help-mode special-mode))
+    (when (fboundp mode)
+      (with-temp-buffer
+        (funcall mode)
+        (when (eq major-mode mode)
+          (donkey-mode 1)
+          (unwind-protect
+              (progn (donkey--ensure-default-state)
+                     (should-not (memq (key-binding "i")
+                                       '(donkey-insert-here
+                                         donkey-insert-after
+                                         donkey-insert-beginning-of-line
+                                         donkey-insert-end-of-line))))
+            (donkey-mode -1)))))))
+
+(ert-deftest donkey-the-support-table-ships-seventeen-sections ()
+  "The modes a section names, and what DONKEY keeps in each.
+
+An enumerable fact stated in the README, recounted here.  A section is
+not what makes most buffers support modes -- `donkey--program-buffer-p'
+answers for those -- it is what says which command `h' and `l' reach.
+Two of the seventeen are here only because the rule misses them:
+`Custom-mode' and `org-agenda-mode' are neither derived from
+`special-mode' nor read-only."
   (let ((table (eval (car (get 'donkey-support-modes 'standard-value)) t)))
-    (should (= (length table) 2))
-    (should (equal (mapcar #'car table) '(dired-mode ibuffer-mode)))
+    (should (= (length table) 17))
+    (should (equal (mapcar #'car table)
+                   '(dired-mode ibuffer-mode Info-mode Man-mode woman-mode
+                     help-mode apropos-mode eww-mode image-mode doc-view-mode
+                     tar-mode Custom-mode occur-mode compilation-mode
+                     package-menu-mode Buffer-menu-mode org-agenda-mode)))
     ;; a section may name any key but `j' and `k'
     (dolist (row table)
       (dolist (pair (cdr row))
@@ -995,12 +1103,14 @@ fail this, which is what keeps `j', `w' and `k' out."
 
 (ert-deftest donkey-an-empty-handed-back-list-changes-nothing ()
   "Setting the option to nil puts every key back where it was."
-  (require 'compile)
   (with-temp-buffer
-    (compilation-mode)
+    (fundamental-mode)
+    (use-local-map (let ((m (make-sparse-keymap)))
+                     (define-key m "p" 'previous-error-no-select) m))
     (donkey-mode 1)
     (unwind-protect
-        (let ((donkey-handed-back-keys nil))
+        (let ((donkey-handed-back-keys nil)
+              (donkey--handed-back-cache nil))
           (donkey--ensure-default-state)
           (should (eq (key-binding "p") 'donkey-yank)))
       (donkey-mode -1))))
@@ -1079,30 +1189,34 @@ entry would never be read."
 
 (ert-deftest donkey-the-navigation-table-wins-over-the-handed-back-rule ()
   "Where both name a key, the table decides: it is a choice, not a guess."
-  (require 'help-mode)
   (with-temp-buffer
-    (help-mode)
+    (fundamental-mode)
+    (use-local-map (let ((m (make-sparse-keymap)))
+                     (define-key m "p" 'backward-sexp) m))
     (donkey-mode 1)
     (unwind-protect
         (let ((donkey-handed-back-keys '(?p))
-              (donkey-mode-navigation '((help-mode (?p . help-go-forward))))
+              (donkey-mode-navigation '((fundamental-mode (?p . forward-sexp))))
               (donkey--handed-back-cache nil))
           (donkey--install-handed-back-keys)
-          ;; the rule would have found help-goto-previous-page
-          (should (eq (donkey--command-the-mode-binds ?p) 'help-goto-previous-page))
+          ;; the rule would have found the mode's own command
+          (should (eq (donkey--command-the-mode-binds ?p) 'backward-sexp))
           ;; the table answers instead
-          (should (eq (key-binding "p") 'help-go-forward)))
+          (should (eq (key-binding "p") 'forward-sexp)))
       (donkey-mode -1))))
 
 (ert-deftest donkey-an-empty-navigation-table-gives-motion-back ()
   "Emptying the option puts `h' and `l' back where they were."
-  (require 'help-mode)
   (with-temp-buffer
-    (help-mode)
+    (fundamental-mode)
     (donkey-mode 1)
     (unwind-protect
-        (let ((donkey-mode-navigation nil)
+        (let ((donkey-mode-navigation
+               '((fundamental-mode (?h . forward-sexp) (?l . backward-sexp))))
               (donkey--handed-back-cache nil))
+          (donkey--install-handed-back-keys)
+          (should (eq (key-binding "h") 'forward-sexp))
+          (setq donkey-mode-navigation nil donkey--handed-back-cache nil)
           (donkey--install-handed-back-keys)
           (should (eq (key-binding "h") 'backward-char))
           (should (eq (key-binding "l") 'forward-char)))
