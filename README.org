@@ -25,7 +25,7 @@
 - [[#typing-characters-your-keyboard-lacks][Typing characters your keyboard lacks]]
 - [[#other-languages][Other languages]]
 - [[#suppressed-keys][Suppressed keys]]
-- [[#keys-the-mode-gets-to-keep][Keys the mode gets to keep]] — twelve, where the mode has one
+- [[#keys-the-mode-gets-to-keep][Keys the mode gets to keep]] — fifteen, where the mode has one
 
 *Making it yours*
 
@@ -676,21 +676,25 @@ not on this list because it wraps — see [[#wrapping-a-selection-in-a-pair][Wra
 *In a mode you write in — code or prose — the letters are DONKEY's.*
 That is the promise, and nothing below bends it.
 
-Elsewhere, in the buffers a program made for you, twelve letters go to
+Elsewhere, in the buffers a program made for you, fifteen letters go to
 the major mode when the mode has a command of its own for them:
 
 #+begin_example
 
-  p  u  o  c  U  P  C  O        a  i  A  I
+  p  u  o  c  U  P  C  O     a  i  A  I     d  x  D
 
 #+end_example
 
-They are the keys whose DONKEY command could not have worked in such a
-buffer anyway. Eight of them only modify — =p= and =P= paste, =u=
-undoes, =U= redoes, =c= changes, =C= comments, =o= and =O= open a line
-— and a buffer you cannot type into refuses every one. The other four
-only turn INSERT state on: =a=, =i=, =A= and =I= used to leave you in a
-state that cannot type, which was a trap rather than a feature.
+They are the keys that mean the same kind of thing on both sides.
+Eight only modify — =p= and =P= paste, =u= undoes, =U= redoes, =c=
+changes, =C= comments, =o= and =O= open a line — and a buffer you
+cannot type into refuses every one. Four only turn INSERT state on:
+=a=, =i=, =A= and =I= used to leave you in a state that cannot type,
+which was a trap rather than a feature. And three delete: =d=, =x= and
+=D= remove text here, and a mode that binds them flags a file, expunges
+an archive member or signals a process. You meant to delete something
+either way, so the mode answering is the expected thing — what was odd
+was =d= doing nothing at all.
 
 What that looks like:
 
@@ -705,17 +709,16 @@ What that looks like:
 =C-h k= tells you which you have: the key really is the mode's command
 in that buffer, not DONKEY's pretending.
 
-** Why these twelve and not others
+** Why these fifteen and not others
 
-Measured across the 310 major modes Emacs ships that can be
-instantiated: none of the twelve is bound by any of them to a command
-that destroys something.
+A key is given away where DONKEY's meaning and the mode's agree in
+kind. That is the whole test, and =k= is the counter-example that
+shows why it is the right one: =k= means *up* here, and a mode that
+binds it means kill — =Man-kill=, =image-kill-buffer=,
+=ibuffer-do-kill-lines=. Those do not agree, so =k= stays where your
+fingers expect it however safe or unsafe the mode's command is.
 
-The delete family is deliberately absent for that reason. =d=, =x= and
-=D= are the keys where a mode's own command removes a buffer, a
-process or a file with no second step — =process-menu-delete-process=,
-=tab-switcher-delete=, =tar-expunge= — and DONKEY's binding is what
-stands in the way. Every motion and selection key is absent too: =h=,
+Every motion and selection key is absent for the same reason: =h=,
 =j=, =k=, =l=, =w=, =b=, =v=, =y=, =G=, =M= and =S= are how you move,
 and they stay yours everywhere.
 
@@ -1680,10 +1683,11 @@ Customize would. =setq= on those needs the refresh call by hand.
     (setopt donkey-excluded-mode-exceptions nil)                 ; default
 
     ;; Keys the major mode keeps where it binds one of its own -- the
-    ;; twelve whose DONKEY command could not have worked there anyway.
+    ;; fifteen that mean the same kind of thing on both sides.
     ;; nil gives every letter back to DONKEY everywhere.
     (setopt donkey-handed-back-keys '(?p ?u ?o ?c ?U ?P ?C ?O
-                                      ?a ?i ?A ?I))              ; default
+                                      ?a ?i ?A ?I
+                                      ?d ?x ?D))                 ; default
 
     ;; What h and l do where a mode has somewhere to go.  j and k need
     ;; no entry: the modes that matter remap next-line already.
@@ -2161,7 +2165,7 @@ and =M-x apropos-command donkey-= finds any of them.
 | Option                             | Default                          | What it does |
 |------------------------------------+----------------------------------+--------------|
 | =donkey-excluded-modes=            | 16 modes, see above              | where DONKEY steps aside completely |
-| =donkey-handed-back-keys=          | 12 keys, see above               | keys the major mode keeps where it binds one |
+| =donkey-handed-back-keys=          | 15 keys, see above               | keys the major mode keeps where it binds one |
 | =donkey-mode-navigation=           | 7 modes, see above               | what =h= and =l= do in those modes |
 | =donkey-excluded-mode-exceptions=  | =nil=                            | modes that stay on under an excluded parent |
 | =donkey-editing-modes=             | 7 broad modes                    | where =RET= does nothing |

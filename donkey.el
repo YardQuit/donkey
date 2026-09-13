@@ -7761,14 +7761,15 @@ with that key rebound.  A variable rather than a constant for that
 reason: what Emacs reads here is per buffer.")
 
 (defcustom donkey-handed-back-keys '(?p ?u ?o ?c ?U ?P ?C ?O
-                                     ?a ?i ?A ?I)
+                                     ?a ?i ?A ?I
+                                     ?d ?x ?D)
   "Keys NORMAL state gives back to a major mode that binds one itself.
 
 A key here answers the major mode\\='s own command in a buffer whose
 mode binds it, and DONKEY\\='s everywhere else.
 
-The twelve that ship are the ones whose DONKEY command could not have
-worked in such a buffer anyway.
+The fifteen that ship are the ones that mean the same kind of thing on
+both sides of the handover.
 
 Eight of them only modify: p and P paste, u undoes, U redoes, c
 changes, C comments, o and O open a line.  A buffer a program made for
@@ -7781,12 +7782,21 @@ state that cannot type, which was a trap rather than a feature.
 modes Emacs ships bind it, and 90 of those mean the previous line, the
 previous page, the previous error or the previous item.
 
-Measured across the 310 major modes Emacs ships that can be
-instantiated, none of the twelve is bound by any of them to a command
-that destroys something.  The delete family is deliberately absent for
-that reason -- \\=`d\\=', \\=`x\\=', \\=`D\\=' are the keys where a
-mode\\='s own command removes a buffer, a process or a file with no
-second step.
+Three of them delete, and are here because deleting is what they mean
+in NORMAL state too.  \\=`d\\=' and \\=`x\\=' remove text and \\=`D\\='
+kills a line; a mode that binds them flags a file, expunges an archive
+member or kills a process.  A reader who presses \\=`d\\=' meant to
+delete something either way, so the mode answering is the expected
+thing rather than a surprise -- what was surprising was \\=`d\\=' doing
+nothing at all, which is what a read-only buffer made of it.
+
+That is the test, and it is a sharper one than counting destruction:
+a key is given away where DONKEY\\='s meaning and the mode\\='s agree in
+kind.  \\=`k\\=' is the counter-example and the reason it is absent.  It
+means UP here, and a mode that binds it means kill -- `Man-kill',
+`image-kill-buffer', `ibuffer-do-kill-lines'.  Those two do not agree,
+so the key stays where a reader\\='s fingers expect it.  Every motion
+and selection key is absent for the same reason.
 
 Not a general escape hatch.  A key is given away only where the mode
 has a command of its own for it; where the mode has none the key stays
