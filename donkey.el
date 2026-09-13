@@ -291,6 +291,7 @@ the pairs are laid over the package, so a section\\='s own \\=`h\\=' wins:
     (image-mode        (?h . image-previous-file) (?l . image-next-file))
     (doc-view-mode     (?h . doc-view-previous-page) (?l . doc-view-next-page))
     (tar-mode          (?l . tar-extract))
+    (archive-mode      (?l . archive-extract))
     (Custom-mode       (?h . Custom-goto-parent))
     (occur-mode        (?l . occur-mode-goto-occurrence))
     (compilation-mode  (?l . compile-goto-error))

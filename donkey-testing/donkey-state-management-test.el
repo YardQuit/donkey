@@ -1088,13 +1088,14 @@ Two of them are here only because the rule misses them:
 `Custom-mode' and `org-agenda-mode' are neither derived from
 `special-mode' nor read-only."
   (let ((table (eval (car (get 'donkey-support-modes 'standard-value)) t)))
-    (should (= (length table) 32))
+    (should (= (length table) 33))
     (should (equal (mapcar #'car table)
                    '(dired-mode ibuffer-mode Man-mode woman-mode
                      help-mode apropos-mode eww-mode shortdoc-mode dictionary-mode
                      messages-buffer-mode debugger-mode vc-annotate-mode
                      log-view-mode image-mode doc-view-mode
-                     tar-mode Custom-mode occur-mode compilation-mode
+                     tar-mode archive-mode Custom-mode occur-mode
+                     compilation-mode
                      package-menu-mode Buffer-menu-mode org-agenda-mode
                      bookmark-bmenu-mode vc-dir-mode proced-mode
                      profiler-report-mode xref--xref-buffer-mode finder-mode
@@ -1116,6 +1117,13 @@ Two of them are here only because the rule misses them:
     ;; a link through the button's own keymap, and L carries the back
     ;; command that l displaced -- the shift of the key that took it.
     (should (equal (cdr (assq 'eww-mode table)) '((?L . eww-back-url))))
+    ;; archive-mode is neither `special-mode' derived nor one of the
+    ;; four deliberately without a section: it reached support state by
+    ;; being read-only and had no section at all, so `l' was
+    ;; forward-char where every other list of entries sends you into
+    ;; the one under point.
+    (should (equal (cdr (assq 'archive-mode table))
+                   '((?l . archive-extract))))
     ;; Info is parked on donkey-excluded-modes, so it has no section
     ;; and DONKEY holds no key there at all -- not even h j k l.
     (should-not (assq 'Info-mode table))
@@ -1123,7 +1131,8 @@ Two of them are here only because the rule misses them:
                                              'standard-value))
                                     t)))
     (dolist (mode '(dired-mode ibuffer-mode image-mode doc-view-mode tar-mode
-                    Custom-mode occur-mode compilation-mode package-menu-mode
+                    archive-mode Custom-mode occur-mode compilation-mode
+                    package-menu-mode
                     Buffer-menu-mode org-agenda-mode bookmark-bmenu-mode
                     vc-dir-mode proced-mode profiler-report-mode finder-mode
                     xref--xref-buffer-mode flymake-diagnostics-buffer-mode
