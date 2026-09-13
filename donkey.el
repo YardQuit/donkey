@@ -222,8 +222,10 @@ in place or not, recomputes on the next call."
         result))))
 
 (defcustom donkey-support-modes
-  '((dired-mode   (?h . dired-up-directory) (?l . dired-find-file))
-    (ibuffer-mode                           (?l . ibuffer-visit-buffer)))
+  '((dired-mode   (?h . dired-up-directory) (?l . dired-find-file)
+                  (?J . dired-goto-file)    (?K . dired-do-kill-lines))
+    (ibuffer-mode                           (?l . ibuffer-visit-buffer)
+                  (?J . ibuffer-jump-to-buffer) (?K . ibuffer-do-kill-lines)))
   "Modes DONKEY supports rather than takes over, and what it keeps there.
 
 A section per mode.  NORMAL state does not run in these buffers: the
@@ -244,6 +246,15 @@ ignored; see `donkey--motion-keys'.
 
 \\=`h\\=' and \\=`l\\=' are `backward-char' and `forward-char' where a
 section does not say otherwise.
+
+A section may name any other key too, and the shipped two do: \\=`J\\='
+and \\=`K\\=' carry the commands \\=`j\\=' and \\=`k\\=' displaced.  Dired
+had `dired-goto-file' and `dired-do-kill-lines' there and Ibuffer
+`ibuffer-jump-to-buffer' and `ibuffer-do-kill-lines', and neither mode
+has another key for any of them -- so the shifted key takes what the
+unshifted one lost.  The other two, `describe-mode' and
+`dired-do-redisplay', are still \\=`C-h m\\=' and \\=`g\\=' and need no
+help.
 
 Nothing here is discovered and there is no rule behind the list.  A
 mode that is not listed is not a support mode, whatever its keymap

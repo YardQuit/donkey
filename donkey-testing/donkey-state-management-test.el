@@ -667,6 +667,15 @@ derived: a mode is a support mode because a section names it."
       (dolist (pair (cdr row))
         (should (characterp (car pair)))
         (should-not (memq (car pair) '(?j ?k)))))
+    ;; and both sections carry what `j' and `k' displaced, on the
+    ;; shifted keys, because neither command had another key
+    (should (equal (cdr (assq 'dired-mode table))
+                   '((?h . dired-up-directory) (?l . dired-find-file)
+                     (?J . dired-goto-file) (?K . dired-do-kill-lines))))
+    (should (equal (cdr (assq 'ibuffer-mode table))
+                   '((?l . ibuffer-visit-buffer)
+                     (?J . ibuffer-jump-to-buffer)
+                     (?K . ibuffer-do-kill-lines))))
     ;; and neither is on the exclusion list any more
     (let ((excluded (eval (car (get 'donkey-excluded-modes 'standard-value)) t)))
       (should-not (memq 'dired-mode excluded))
@@ -710,6 +719,50 @@ support mode -- and the mode answers the rest."
                                    (not (eq (key-binding (vector char)) own)))
                           (push char taken))))
                     (should (equal (sort taken #'<) '(?h ?j ?k ?l)))))
+              (donkey-mode -1))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (delete-directory dir t))))
+
+(ert-deftest donkey-a-section-carries-what-hjkl-displaced ()
+  "`J' and `K' run what `j' and `k' took, and took nothing in turn.
+
+Dired\='s `j' and `k' were `dired-goto-file' and `dired-do-kill-lines',
+and neither has another key in the mode -- so the section names the
+shifted form.  The two keys have to have been free, or the relocation
+would be a displacement of its own."
+  (skip-unless (require 'dired nil t))
+  (let ((dir (make-temp-file "donkey-reloc" t))
+        (buffer nil))
+    (unwind-protect
+        (progn
+          (write-region "x\n" nil (expand-file-name "one.txt" dir))
+          (setq buffer (dired-noselect dir))
+          (with-current-buffer buffer
+            ;; free before DONKEY is anywhere near the buffer
+            (let ((emulation-mode-map-alists nil)
+                  (minor-mode-map-alist nil)
+                  (minor-mode-overriding-map-alist nil))
+              (should (eq (key-binding "J") 'undefined))
+              (should (eq (key-binding "K") 'undefined))
+              ;; and neither command has a key BESIDES the one being
+              ;; taken, which is why the relocation is needed at all
+              (should (eq (key-binding "j") 'dired-goto-file))
+              (should (eq (key-binding "k") 'dired-do-kill-lines))
+              (dolist (command '(dired-goto-file dired-do-kill-lines))
+                (should-not (seq-find
+                             (lambda (c) (eq (key-binding (vector c)) command))
+                             (seq-difference (append (number-sequence ?a ?z)
+                                                     (number-sequence ?A ?Z))
+                                             '(?j ?k))))))
+            (donkey-mode 1)
+            (unwind-protect
+                (progn
+                  (donkey--ensure-default-state)
+                  (should (eq (key-binding "J") 'dired-goto-file))
+                  (should (eq (key-binding "K") 'dired-do-kill-lines))
+                  ;; the four they were displaced from still answer DONKEY
+                  (should (eq (key-binding "j") 'dired-next-line))
+                  (should (eq (key-binding "k") 'dired-previous-line)))
               (donkey-mode -1))))
       (when (buffer-live-p buffer) (kill-buffer buffer))
       (delete-directory dir t))))

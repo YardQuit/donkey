@@ -1035,13 +1035,53 @@ Two modes ship as support modes:
 
 | Mode | =h= | =j= | =k= | =l= |
 |------+-----+-----+-----+-----|
-| =dired-mode= | up a directory | down a line | up a line | open the file |
+| =dired-mode= | up a directory | down a line | up a line | open the file or enter the directory |
 | =ibuffer-mode= | — | down a line | up a line | visit the buffer |
 
 In Dired that means =j= and =k= walk the listing, =l= opens what is
 under the cursor and =h= goes back up — and =d=, =x=, =m=, =g=, =w=,
 =q= and the other forty are Dired's, exactly as they are without
 DONKEY.
+
+** What =hjkl= displace, and where it went
+
+Four keys are taken, so four commands lose their key. Two of them were
+never really lost:
+
+| Mode | Key | Was | Still reachable |
+|------+-----+-----+-----------------|
+| =dired-mode= | =h= | =describe-mode= | yes — =C-h m= |
+| =dired-mode= | =l= | =dired-do-redisplay= | ≈ =g=, which reverts |
+| =ibuffer-mode= | =h= | (unbound) | nothing was there |
+| =ibuffer-mode= | =l= | =ibuffer-redisplay= | =g=, which is the same command |
+
+The other four had no second key, so the section gives them one — the
+shifted form of the key that took them:
+
+| Mode | Key | Runs |
+|------+-----+------|
+| =dired-mode= | =J= | =dired-goto-file= |
+| =dired-mode= | =K= | =dired-do-kill-lines= |
+| =ibuffer-mode= | =J= | =ibuffer-jump-to-buffer= |
+| =ibuffer-mode= | =K= | =ibuffer-do-kill-lines= |
+
+=J= and =K= were unbound in both modes, so nothing was displaced in
+turn. This is the section doing it, not DONKEY editing the mode's
+keymap: what DONKEY does in a buffer is all in one table you can read.
+
+** And in a mode you write in, nothing is displaced at all
+
+Not by care — by measurement. Across every =prog-mode=, =text-mode=
+and =conf-mode= derivative in a stock Emacs, and again across a
+configuration with the usual language and markup packages installed,
+exactly *one* binds a plain letter: =org-mode=, which binds all
+fifty-two to =org-self-insert-command=.
+
+That is typing, and typing is what INSERT state is for. So there is no
+command to relocate in a writing mode, because none of them put one on
+a letter to begin with — they use =C-c= and the modifiers. The promise
+that DONKEY owns the letters where you write costs those modes
+nothing.
 
 ** Nothing here is worked out
 
@@ -1782,11 +1822,16 @@ Customize would. =setq= on those needs the refresh call by hand.
     ;; A section per mode.  DONKEY keeps h j k l; the mode keeps every
     ;; other key it has.  Nothing is discovered: a mode is a support
     ;; mode because a section names it.  j and k are never written
-    ;; down -- they are DONKEY's in every section.
+    ;; down -- they are DONKEY's in every section.  J and K carry what
+    ;; j and k displaced, which had no other key in either mode.
     (setopt donkey-support-modes
             '((dired-mode   (?h . dired-up-directory)
-                            (?l . dired-find-file))
-              (ibuffer-mode (?l . ibuffer-visit-buffer))))       ; default
+                            (?l . dired-find-file)
+                            (?J . dired-goto-file)
+                            (?K . dired-do-kill-lines))
+              (ibuffer-mode (?l . ibuffer-visit-buffer)
+                            (?J . ibuffer-jump-to-buffer)
+                            (?K . ibuffer-do-kill-lines))))      ; default
 
     ;; Keys the major mode keeps where it binds one of its own -- the
     ;; fifteen that mean the same kind of thing on both sides.  h j k l
