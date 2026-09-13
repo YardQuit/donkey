@@ -7805,6 +7805,48 @@ Characters rather than strings: (?p ?n), not the strings."
   :type '(repeat character)
   :group 'donkey)
 
+(defcustom donkey-mode-navigation
+  '((doc-view-mode (?h . doc-view-previous-page) (?l . doc-view-next-page))
+    (help-mode     (?h . help-go-back)           (?l . help-go-forward))
+    (eww-mode      (?h . eww-back-url)           (?l . eww-follow-link))
+    (Man-mode      (?h . Man-previous-section)   (?l . Man-next-section))
+    (image-mode    (?h . image-previous-file)    (?l . image-next-file))
+    (tar-mode                                    (?l . tar-extract))
+    (Custom-mode   (?h . Custom-goto-parent)))
+  "What \\=`h\\=' and \\=`l\\=' do in a mode that has somewhere to go.
+
+Each entry is a major mode and the keys it wants, as (CHARACTER .
+COMMAND).  A mode matches by derivation as well as by name, so a parent
+covers its children, and the first entry a buffer matches is the one
+that answers -- list a specific mode before the general one.
+
+This is a table where `donkey-handed-back-keys' is a rule, and the
+reason is that \\=`h\\=' and \\=`l\\=' have no answer to read out of a
+keymap.  Where a mode binds \\=`h\\=' at all it is nearly always
+`describe-mode', and where it binds \\=`l\\=' it usually means BACK --
+`help-go-back', `eww-back-url' -- which is the opposite of what the key
+means to a reader coming from vi.  So the meaning is chosen here rather
+than discovered, and the choice is a short list rather than a rule that
+would guess wrong.
+
+\\=`j\\=' and \\=`k\\=' are deliberately absent and need no table: Dired,
+Magit and `image-mode' remap `next-line', so NORMAL state\\='s own keys
+already move by their lines.
+
+A command that is not `fboundp' is passed over, so naming a mode from a
+package you do not have costs nothing.  A command that would type is
+refused as everywhere else.
+
+Empty the list and \\=`h\\=' and \\=`l\\=' are `backward-char' and
+`forward-char' in every buffer, as they were.
+
+Nothing here reaches a mode on `donkey-excluded-modes': DONKEY is not
+in those buffers to give a key away.  That is why Dired, Info and Magit
+are not on this list -- the README has the entries to add if you take
+one of them off the excluded list."
+  :type '(repeat (cons symbol (repeat (cons character function))))
+  :group 'donkey)
+
 (defconst donkey--never-handed-back
   '(describe-mode Custom-no-edit undefined ignore)
   "Commands not worth taking a key from NORMAL state for.
@@ -7840,6 +7882,31 @@ anything that is not a command."
          (not (memq own (donkey--mode-list donkey-self-insert-commands)))
          own)))
 
+(defun donkey--navigation-pairs ()
+  "Return the (CHARACTER . COMMAND) pairs `donkey-mode-navigation' wants here.
+
+The first entry this buffer\\='s major mode matches, by name or by
+derivation, and nothing from any later one: a mode listed twice is
+answered by whichever was written first.  A command that is not
+`fboundp' is dropped rather than bound, so an entry for a package that
+is not installed costs nothing."
+  (let* ((table (and (listp donkey-mode-navigation) donkey-mode-navigation))
+         (typing (donkey--mode-list donkey-self-insert-commands))
+         (entry (seq-find
+                 (lambda (row)
+                   (and (consp row)
+                        (symbolp (car row))
+                        (or (eq major-mode (car row))
+                            (provided-mode-derived-p major-mode (car row)))))
+                 table)))
+    (seq-filter (lambda (pair)
+                  (and (consp pair)
+                       (characterp (car pair))
+                       (symbolp (cdr pair))
+                       (fboundp (cdr pair))
+                       (not (memq (cdr pair) typing))))
+                (cdr entry))))
+
 (defun donkey--install-handed-back-keys ()
   "Give this buffer\\='s mode the keys of `donkey-handed-back-keys' it binds.
 
@@ -7848,10 +7915,16 @@ child of `donkey-normal-mode-map' with those keys rebound, so the rest
 of NORMAL state is reached through the parent exactly as before and
 \\=`C-h k\\=' reports what the key really runs.
 
+Both sources go into the one map: the keys `donkey-handed-back-keys'
+finds the mode a command for, and the keys `donkey-mode-navigation'
+names outright.  The table wins where they name the same key, being a
+choice rather than a discovery.
+
 Does nothing where the mode binds none of them, which is most buffers:
 the local variable is killed rather than set, so an ordinary buffer
 reads the same global value it always did."
-  (let ((wanted (cons major-mode donkey-handed-back-keys)))
+  (let ((wanted (list major-mode donkey-handed-back-keys
+                      donkey-mode-navigation)))
     (unless (equal wanted donkey--handed-back-cache)
       (setq donkey--handed-back-cache wanted)
       (let (pairs)
@@ -7860,6 +7933,10 @@ reads the same global value it always did."
                                        donkey-handed-back-keys)))
           (let ((own (donkey--command-the-mode-binds char)))
             (when own (push (cons char own) pairs))))
+        ;; The table is chosen rather than discovered, so it wins over
+        ;; the rule where both name the same key.
+        (dolist (pair (donkey--navigation-pairs))
+          (setq pairs (cons pair (assq-delete-all (car pair) pairs))))
         (if (null pairs)
             (kill-local-variable 'donkey--emulation-mode-map-alist)
           (let ((map (make-sparse-keymap)))

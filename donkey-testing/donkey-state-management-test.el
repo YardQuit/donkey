@@ -683,6 +683,109 @@ fail this, which is what keeps `j' and `w' out of the list."
           (should (eq (key-binding "p") 'donkey-yank)))
       (donkey-mode -1))))
 
+(ert-deftest donkey-the-navigation-table-ships-seven-modes ()
+  "The modes whose `h' and `l' are chosen rather than discovered.
+
+An enumerable fact stated in the README, recounted here.  Dired, Info
+and Magit are deliberately absent: DONKEY is excluded from them, so an
+entry would never be read."
+  (let ((table (eval (car (get 'donkey-mode-navigation 'standard-value)) t)))
+    (should (= (length table) 7))
+    (should (equal (mapcar #'car table)
+                   '(doc-view-mode help-mode eww-mode Man-mode
+                     image-mode tar-mode Custom-mode)))
+    (dolist (mode '(dired-mode Info-mode magit-mode package-menu-mode))
+      (should-not (assq mode table)))
+    ;; and only h and l are ever named
+    (dolist (row table)
+      (dolist (pair (cdr row))
+        (should (memq (car pair) '(?h ?l)))))))
+
+(ert-deftest donkey-a-mode-in-the-navigation-table-gets-h-and-l ()
+  "`help-mode' goes back and forward rather than by character."
+  (require 'help-mode)
+  (with-temp-buffer
+    (help-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (donkey--ensure-default-state)
+          (should (eq (key-binding "h") 'help-go-back))
+          (should (eq (key-binding "l") 'help-go-forward))
+          ;; j and k are not in the table and need not be
+          (should (eq (key-binding "j") 'next-line))
+          (should (eq (key-binding "k") 'previous-line)))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-a-mode-outside-the-navigation-table-keeps-motion ()
+  "Where nothing was chosen, `h' and `l' move by a character."
+  (with-temp-buffer
+    (text-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (donkey--ensure-default-state)
+          (should (eq (key-binding "h") 'backward-char))
+          (should (eq (key-binding "l") 'forward-char)))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-the-navigation-table-matches-by-derivation ()
+  "A parent covers its children, and the first match answers."
+  (require 'help-mode)
+  (with-temp-buffer
+    (let ((donkey-mode-navigation '((help-mode (?h . help-go-back)))))
+      (help-mode)
+      (should (equal (donkey--navigation-pairs) '((?h . help-go-back)))))
+    ;; a derived mode reaches the parent's entry
+    (let ((donkey-mode-navigation '((special-mode (?l . ignore))))
+          (donkey-self-insert-commands nil))
+      (help-mode)
+      (should (provided-mode-derived-p 'help-mode 'special-mode))
+      (should (equal (donkey--navigation-pairs) '((?l . ignore)))))))
+
+(ert-deftest donkey-the-navigation-table-passes-over-what-it-cannot-run ()
+  "A command that is absent, or would type, is dropped rather than bound."
+  (with-temp-buffer
+    (text-mode)
+    (let ((donkey-mode-navigation
+           '((text-mode (?h . donkey-no-such-command-anywhere)
+                        (?l . org-self-insert-command)))))
+      (should-not (fboundp 'donkey-no-such-command-anywhere))
+      (should (memq 'org-self-insert-command
+                    (donkey--mode-list donkey-self-insert-commands)))
+      (should (equal (donkey--navigation-pairs) nil)))))
+
+(ert-deftest donkey-the-navigation-table-wins-over-the-handed-back-rule ()
+  "Where both name a key, the table decides: it is a choice, not a guess."
+  (require 'help-mode)
+  (with-temp-buffer
+    (help-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (let ((donkey-handed-back-keys '(?p))
+              (donkey-mode-navigation '((help-mode (?p . help-go-forward))))
+              (donkey--handed-back-cache nil))
+          (donkey--install-handed-back-keys)
+          ;; the rule would have found help-goto-previous-page
+          (should (eq (donkey--command-the-mode-binds ?p) 'help-goto-previous-page))
+          ;; the table answers instead
+          (should (eq (key-binding "p") 'help-go-forward)))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-an-empty-navigation-table-gives-motion-back ()
+  "Emptying the option puts `h' and `l' back where they were."
+  (require 'help-mode)
+  (with-temp-buffer
+    (help-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (let ((donkey-mode-navigation nil)
+              (donkey--handed-back-cache nil))
+          (donkey--install-handed-back-keys)
+          (should (eq (key-binding "h") 'backward-char))
+          (should (eq (key-binding "l") 'forward-char)))
+      (donkey-mode -1))))
+
 (ert-deftest donkey-the-help-like-modes-are-left-on ()
   "Normal state stays on where the mode binds few letters.
 

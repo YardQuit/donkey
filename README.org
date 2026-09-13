@@ -733,6 +733,57 @@ fifty-two letters, every one to =org-self-insert-command=, and a
 command on =donkey-self-insert-commands= is never handed a key: NORMAL
 state does not type, and this rule cannot lower that floor.
 
+** Where =h= and =l= have somewhere to go
+
+=j= and =k= need no help: Dired, Magit and =image-mode= remap
+=next-line=, so DONKEY's keys already move by their lines. =h= and =l=
+are different — there is no answer to read out of a keymap. Where a
+mode binds =h= at all it is almost always =describe-mode=, and where it
+binds =l= it usually means *back*, which is the opposite of what the
+key means coming from vi.
+
+So those two are chosen rather than discovered, in
+=donkey-mode-navigation=:
+
+| Mode | =h= | =l= |
+|------+-----+-----|
+| =doc-view-mode= | previous page | next page |
+| =help-mode= | back | forward |
+| =eww-mode= | back | follow the link |
+| =Man-mode= | previous section | next section |
+| =image-mode= | previous file | next file |
+| =tar-mode= | — | extract |
+| =Custom-mode= | up to the parent group | — |
+
+Almost nothing is displaced by this. In those modes =h= was
+=describe-mode= — which is =C-h m= — and =j=, =k= and =l= were mostly
+unbound. The two real commands, =help-go-back= and =eww-back-url=, were
+on =l=; they move to =h=, which is where "back" belongs.
+
+Dired, Info and Magit are not in the table, and an entry for them would
+do nothing: DONKEY steps aside in those, so it has no key to give away.
+If you take one off [[#modes-where-donkey-steps-aside][the excluded list]], these are the entries to add:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (setopt donkey-mode-navigation
+            (append '((dired-mode (?h . dired-up-directory)
+                                  (?l . dired-find-file))
+                      (Info-mode  (?h . Info-up)
+                                  (?l . Info-follow-nearest-node))
+                      (magit-mode (?h . magit-dispatch)
+                                  (?l . magit-log)))
+                    donkey-mode-navigation)))
+
+#+end_src
+
+A mode matches by derivation as well as by name, and the first entry it
+matches answers — so list a specific mode before the general one. A
+command you do not have is passed over rather than bound, and one that
+would type is refused as everywhere else. Empty the list and =h= and
+=l= are =backward-char= and =forward-char= again.
+
 ** Turning it off, or changing it
 
 #+begin_src emacs-lisp
@@ -1634,6 +1685,22 @@ Customize would. =setq= on those needs the refresh call by hand.
     (setopt donkey-handed-back-keys '(?p ?u ?o ?c ?U ?P ?C ?O
                                       ?a ?i ?A ?I))              ; default
 
+    ;; What h and l do where a mode has somewhere to go.  j and k need
+    ;; no entry: the modes that matter remap next-line already.
+    (setopt donkey-mode-navigation
+            '((doc-view-mode (?h . doc-view-previous-page)
+                             (?l . doc-view-next-page))
+              (help-mode     (?h . help-go-back)
+                             (?l . help-go-forward))
+              (eww-mode      (?h . eww-back-url)
+                             (?l . eww-follow-link))
+              (Man-mode      (?h . Man-previous-section)
+                             (?l . Man-next-section))
+              (image-mode    (?h . image-previous-file)
+                             (?l . image-next-file))
+              (tar-mode      (?l . tar-extract))
+              (Custom-mode   (?h . Custom-goto-parent))))       ; default
+
     ;;; The Enter key
 
     ;; Where RET does nothing in NORMAL state.  Everywhere else it is
@@ -2095,6 +2162,7 @@ and =M-x apropos-command donkey-= finds any of them.
 |------------------------------------+----------------------------------+--------------|
 | =donkey-excluded-modes=            | 16 modes, see above              | where DONKEY steps aside completely |
 | =donkey-handed-back-keys=          | 12 keys, see above               | keys the major mode keeps where it binds one |
+| =donkey-mode-navigation=           | 7 modes, see above               | what =h= and =l= do in those modes |
 | =donkey-excluded-mode-exceptions=  | =nil=                            | modes that stay on under an excluded parent |
 | =donkey-editing-modes=             | 7 broad modes                    | where =RET= does nothing |
 | =donkey-position-ring-max=         | =10=                             | how far =S= remembers |
