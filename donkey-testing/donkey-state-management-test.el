@@ -913,6 +913,29 @@ the package takes it like any other key."
           (donkey--support-mode-cache nil))
       (should (donkey--enter-key-the-mode-owns-p "RET" (kbd "RET")))
       (should-not (assoc (kbd "RET") (donkey--support-mode-package-keys)))))
+  ;; the package names both spellings and they answer apart: a mode
+  ;; that binds only \=`<enter>\=' keeps that one and gives up \=`RET\='
+  (with-temp-buffer
+    (fundamental-mode)
+    (use-local-map (let ((m (make-sparse-keymap)))
+                     (define-key m (kbd "<enter>") 'forward-sexp) m))
+    (let ((donkey-support-modes '((fundamental-mode prose)))
+          (donkey--support-mode-cache nil))
+      (should (donkey--enter-key-the-mode-owns-p "<enter>" (kbd "<enter>")))
+      (should-not (assoc (kbd "<enter>") (donkey--support-mode-package-keys)))
+      (should-not (donkey--enter-key-the-mode-owns-p "RET" (kbd "RET")))
+      (should (eq (cdr (assoc (kbd "RET") (donkey--support-mode-package-keys)))
+                  'donkey-enter-dwim))))
+  ;; and a mode that binds both gives up neither
+  (with-temp-buffer
+    (fundamental-mode)
+    (use-local-map (let ((m (make-sparse-keymap)))
+                     (define-key m (kbd "RET") 'forward-sexp)
+                     (define-key m (kbd "<enter>") 'forward-sexp) m))
+    (let ((donkey-support-modes '((fundamental-mode prose)))
+          (donkey--support-mode-cache nil))
+      (should (donkey--enter-key-the-mode-owns-p "<enter>" (kbd "<enter>")))
+      (should-not (assoc (kbd "<enter>") (donkey--support-mode-package-keys)))))
   ;; a mode with nothing on it does not
   (with-temp-buffer
     (fundamental-mode)
@@ -1124,6 +1147,13 @@ Two of them are here only because the rule misses them:
     ;; the one under point.
     (should (equal (cdr (assq 'archive-mode table))
                    '((?l . archive-extract))))
+    ;; calendar is a grid rather than a list: `h' and `l' are a day,
+    ;; `j' and `k' stay the week the floor makes them, and `H' carries
+    ;; what `h' displaced.
+    (should (equal (cdr (assq 'calendar-mode table))
+                   '((?h . calendar-backward-day)
+                     (?l . calendar-forward-day)
+                     (?H . calendar-cursor-holidays))))
     ;; Info is parked on donkey-excluded-modes, so it has no section
     ;; and DONKEY holds no key there at all -- not even h j k l.
     (should-not (assq 'Info-mode table))
