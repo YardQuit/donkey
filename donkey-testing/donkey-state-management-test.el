@@ -1075,23 +1075,40 @@ and pressing it left a reader in Insert state in a read-only buffer."
                                          donkey-insert-end-of-line))))
             (donkey-mode -1)))))))
 
-(ert-deftest donkey-the-support-table-ships-eighteen-sections ()
+(ert-deftest donkey-the-support-table-ships-a-section-for-each-mode-named ()
   "The modes a section names, and what DONKEY keeps in each.
 
 An enumerable fact stated in the README, recounted here.  A section is
 not what makes most buffers support modes -- `donkey--program-buffer-p'
 answers for those -- it is what says which command `h' and `l' reach.
-Two of the eighteen are here only because the rule misses them:
+Two of them are here only because the rule misses them:
 `Custom-mode' and `org-agenda-mode' are neither derived from
 `special-mode' nor read-only."
   (let ((table (eval (car (get 'donkey-support-modes 'standard-value)) t)))
-    (should (= (length table) 18))
+    (should (= (length table) 23))
     (should (equal (mapcar #'car table)
                    '(dired-mode ibuffer-mode Info-mode Man-mode woman-mode
-                     help-mode apropos-mode eww-mode image-mode doc-view-mode
+                     help-mode apropos-mode shortdoc-mode dictionary-mode
+                     messages-buffer-mode debugger-mode vc-annotate-mode
+                     log-view-mode image-mode doc-view-mode
                      tar-mode Custom-mode occur-mode compilation-mode
                      package-menu-mode Buffer-menu-mode org-agenda-mode
                      donkey-bindings-mode)))
+    ;; the prose half: text to read and copy, links to follow.  A list
+    ;; of entries is the other kind and names no package.
+    (dolist (mode '(Info-mode Man-mode woman-mode help-mode apropos-mode
+                    shortdoc-mode dictionary-mode messages-buffer-mode
+                    debugger-mode vc-annotate-mode log-view-mode
+                    donkey-bindings-mode))
+      (should (memq 'prose (cdr (assq mode table)))))
+    ;; eww has no section at all: h and l are character motion, RET
+    ;; follows a link through the button's own keymap, and every other
+    ;; key is eww's because nothing takes it.
+    (should-not (assq 'eww-mode table))
+    (dolist (mode '(dired-mode ibuffer-mode image-mode doc-view-mode tar-mode
+                    Custom-mode occur-mode compilation-mode package-menu-mode
+                    Buffer-menu-mode org-agenda-mode))
+      (should-not (memq 'prose (cdr (assq mode table)))))
     ;; a section may name any key but `j' and `k'; a bare symbol in it
     ;; names a package rather than a key
     (dolist (row table)
