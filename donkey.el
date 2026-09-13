@@ -89,7 +89,7 @@
     eat-mode mistty-mode
     slime-repl-mode cider-repl-mode racket-repl-mode
     haskell-interactive-mode
-    magit-mode git-rebase-mode)
+    magit-mode git-rebase-mode Info-mode)
   "Major modes where DONKEY Normal state should be permanently disabled.
 
 In one of these, DONKEY is out of the way completely: every key is
@@ -273,7 +273,6 @@ the pairs are laid over the package, so a section\\='s own \\=`h\\=' wins:
                        (?J . dired-goto-file) (?K . dired-do-kill-lines))
     (ibuffer-mode      (?l . ibuffer-visit-buffer)
                        (?J . ibuffer-jump-to-buffer) (?K . ibuffer-do-kill-lines))
-    (Info-mode         prose (?\; . Info-goto-node))
     (Man-mode          prose
                        (?h . Man-previous-section) (?l . Man-next-section))
     (woman-mode        prose (?l . woman-follow))
@@ -281,6 +280,7 @@ the pairs are laid over the package, so a section\\='s own \\=`h\\=' wins:
                        (?H . help-go-back) (?L . help-go-forward)
                        (?R . revert-buffer))
     (apropos-mode      prose (?l . apropos-follow))
+    (eww-mode          (?L . eww-back-url))
     (shortdoc-mode     prose (?C . shortdoc-copy-function-as-kill))
     (dictionary-mode   prose
                        (?H . dictionary-previous) (?L . dictionary-match-words))
@@ -297,6 +297,20 @@ the pairs are laid over the package, so a section\\='s own \\=`h\\=' wins:
     (package-menu-mode (?l . package-menu-describe-package))
     (Buffer-menu-mode  (?l . Buffer-menu-this-window))
     (org-agenda-mode   (?h . org-agenda-earlier) (?l . org-agenda-later))
+    ;; Lists of entries: j and k walk them, l goes in, and whatever
+    ;; h j k l displaced takes the shift of the key that took it.
+    (bookmark-bmenu-mode (?l . bookmark-bmenu-this-window)
+                       (?L . bookmark-bmenu-load))
+    (vc-dir-mode       (?l . vc-dir-find-file))
+    (proced-mode       (?l . proced-refine))
+    (profiler-report-mode (?l . profiler-report-toggle-entry))
+    (xref--xref-buffer-mode (?l . xref-goto-xref))
+    (finder-mode       (?l . finder-select))
+    (flymake-diagnostics-buffer-mode (?l . flymake-goto-diagnostic))
+    (ert-results-mode  (?J . ert-results-jump-between-summary-and-result))
+    ;; A grid rather than a list: h and l are a day, j and k a week.
+    (calendar-mode     (?h . calendar-backward-day) (?l . calendar-forward-day)
+                       (?H . calendar-cursor-holidays))
     (donkey-bindings-mode prose))
   "Modes DONKEY supports rather than takes over, and what it keeps there.
 

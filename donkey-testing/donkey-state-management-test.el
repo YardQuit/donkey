@@ -302,10 +302,10 @@ without a mode, fails this."
                    eat-mode mistty-mode
                    slime-repl-mode cider-repl-mode racket-repl-mode
                    haskell-interactive-mode
-                   magit-mode git-rebase-mode))))
+                   magit-mode git-rebase-mode Info-mode))))
 
 (ert-deftest donkey-the-excluded-modes-default-has-both-of-its-halves ()
-  "Ten terminals and REPLs, two applications, twelve in all.
+  "Ten terminals and REPLs, three applications, thirteen in all.
 
 The README tabulates the two halves separately, and the docstring
 gives each its own paragraph; this recounts both.  Dired and Ibuffer
@@ -317,18 +317,21 @@ mode keeps every key but `h', `j', `k' and `l' instead of every key."
                       eat-mode mistty-mode
                       slime-repl-mode cider-repl-mode racket-repl-mode
                       haskell-interactive-mode))
-         (applications '(magit-mode git-rebase-mode)))
-    (should (= (length shipped) 12))
+         (applications '(magit-mode git-rebase-mode Info-mode)))
+    (should (= (length shipped) 13))
     (should (= (length terminals) 10))
-    (should (= (length applications) 2))
+    (should (= (length applications) 3))
     (should (equal shipped (append terminals applications)))
     ;; and the two that left are on the other list, not on neither
     (let ((sections (mapcar #'car (eval (car (get 'donkey-support-modes
                                                   'standard-value))
                                         t))))
-      (dolist (mode '(dired-mode ibuffer-mode Info-mode))
+      (dolist (mode '(dired-mode ibuffer-mode))
         (should-not (memq mode shipped))
         (should (memq mode sections)))
+      ;; Info went back on the list: parked, so DONKEY holds no key there
+      (should (memq 'Info-mode shipped))
+      (should-not (memq 'Info-mode sections))
       ;; tabulated-list-mode left too, and is a support mode by the
       ;; rule rather than by a section
       (should-not (memq 'tabulated-list-mode shipped))
@@ -340,13 +343,13 @@ mode keeps every key but `h', `j', `k' and `l' instead of every key."
 Named rather than derived: `magit-mode' and `git-rebase-mode' are not
 loaded in a batch run, and an exact member match does not need them
 to be."
-  (dolist (mode '(magit-mode git-rebase-mode))
+  (dolist (mode '(magit-mode git-rebase-mode Info-mode))
     (with-temp-buffer
       (let ((major-mode mode))
         (should (donkey--excluded-mode-p)))))
   ;; Dired and Ibuffer are supported rather than excluded: Normal state
   ;; is off in both, but DONKEY keeps four keys there.
-  (dolist (mode '(dired-mode ibuffer-mode Info-mode tabulated-list-mode))
+  (dolist (mode '(dired-mode ibuffer-mode tabulated-list-mode))
     (with-temp-buffer
       (let ((major-mode mode))
         (should-not (donkey--excluded-mode-p))
@@ -1085,29 +1088,46 @@ Two of them are here only because the rule misses them:
 `Custom-mode' and `org-agenda-mode' are neither derived from
 `special-mode' nor read-only."
   (let ((table (eval (car (get 'donkey-support-modes 'standard-value)) t)))
-    (should (= (length table) 23))
+    (should (= (length table) 32))
     (should (equal (mapcar #'car table)
-                   '(dired-mode ibuffer-mode Info-mode Man-mode woman-mode
-                     help-mode apropos-mode shortdoc-mode dictionary-mode
+                   '(dired-mode ibuffer-mode Man-mode woman-mode
+                     help-mode apropos-mode eww-mode shortdoc-mode dictionary-mode
                      messages-buffer-mode debugger-mode vc-annotate-mode
                      log-view-mode image-mode doc-view-mode
                      tar-mode Custom-mode occur-mode compilation-mode
                      package-menu-mode Buffer-menu-mode org-agenda-mode
-                     donkey-bindings-mode)))
+                     bookmark-bmenu-mode vc-dir-mode proced-mode
+                     profiler-report-mode xref--xref-buffer-mode finder-mode
+                     flymake-diagnostics-buffer-mode ert-results-mode
+                     calendar-mode donkey-bindings-mode)))
+    ;; Four program modes deliberately have no section: none has a real
+    ;; RET to put on `l', none loses anything to the floor, and grep
+    ;; inherits compilation's.  No section is a finished answer.
+    (dolist (mode '(process-menu-mode tabulated-list-mode special-mode grep-mode))
+      (should-not (assq mode table)))
     ;; the prose half: text to read and copy, links to follow.  A list
     ;; of entries is the other kind and names no package.
-    (dolist (mode '(Info-mode Man-mode woman-mode help-mode apropos-mode
+    (dolist (mode '(Man-mode woman-mode help-mode apropos-mode
                     shortdoc-mode dictionary-mode messages-buffer-mode
                     debugger-mode vc-annotate-mode log-view-mode
                     donkey-bindings-mode))
       (should (memq 'prose (cdr (assq mode table)))))
-    ;; eww has no section at all: h and l are character motion, RET
-    ;; follows a link through the button's own keymap, and every other
-    ;; key is eww's because nothing takes it.
-    (should-not (assq 'eww-mode table))
+    ;; eww takes no package: h and l are character motion, RET follows
+    ;; a link through the button's own keymap, and L carries the back
+    ;; command that l displaced -- the shift of the key that took it.
+    (should (equal (cdr (assq 'eww-mode table)) '((?L . eww-back-url))))
+    ;; Info is parked on donkey-excluded-modes, so it has no section
+    ;; and DONKEY holds no key there at all -- not even h j k l.
+    (should-not (assq 'Info-mode table))
+    (should (memq 'Info-mode (eval (car (get 'donkey-excluded-modes
+                                             'standard-value))
+                                    t)))
     (dolist (mode '(dired-mode ibuffer-mode image-mode doc-view-mode tar-mode
                     Custom-mode occur-mode compilation-mode package-menu-mode
-                    Buffer-menu-mode org-agenda-mode))
+                    Buffer-menu-mode org-agenda-mode bookmark-bmenu-mode
+                    vc-dir-mode proced-mode profiler-report-mode finder-mode
+                    xref--xref-buffer-mode flymake-diagnostics-buffer-mode
+                    ert-results-mode calendar-mode))
       (should-not (memq 'prose (cdr (assq mode table)))))
     ;; a section may name any key but `j' and `k'; a bare symbol in it
     ;; names a package rather than a key
