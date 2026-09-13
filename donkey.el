@@ -2436,13 +2436,17 @@ standing."
 (defvar donkey-normal-mode) ;(donkey--wrap-key-would-run); defined below, in "Donkey Mode Definitions"
 
 (defun donkey--wrap-key-would-run (keys)
-  "Return the command KEYS would run if Normal state were not holding them.
+  "Return the command KEYS would run if DONKEY were not holding them.
 
-Normal state is a minor-mode keymap, so hiding it for the length of
-the lookup asks the maps underneath -- the major mode's, another
-minor mode's, the global one -- what the key means where it is
-pressed.  Returns nil when nothing underneath wants it."
-  (let ((donkey-normal-mode nil))
+Both of DONKEY's maps are hidden for the length of the lookup -- Normal
+state's, and a support mode's in `donkey--emulation-mode-map-alist' --
+so the maps underneath answer what the key means where it is pressed:
+the major mode's, another minor mode's, the global one.  Nil when
+nothing underneath wants it."
+  ;; The support map is keyed on `donkey-mode' rather than on
+  ;; `donkey-normal-mode', so the mode variable alone does not hide it.
+  (let ((donkey-normal-mode nil)
+        (donkey--emulation-mode-map-alist nil))
     (key-binding keys t)))
 
 (defun donkey--wrap-pass-the-key-on ()

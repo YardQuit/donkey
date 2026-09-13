@@ -850,6 +850,52 @@ package and neither of those."
             (donkey-mode -1)))
       (when (buffer-live-p buf) (kill-buffer buf)))))
 
+(ert-deftest donkey-what-a-key-would-run-ignores-donkeys-own-maps ()
+  "The question is what the BUFFER means by a key, not what DONKEY does.
+
+A support mode\\='s keys live in a buffer-local
+`donkey--emulation-mode-map-alist\\=' keyed on `donkey-mode\\', not on
+`donkey-normal-mode\\', so hiding only the latter left that map
+answering and the function reported DONKEY\\='s own command.
+
+`donkey-enter-dwim\\=' is the caller that shows it: with the package
+holding RET it asked what RET would otherwise run, got itself back,
+and its own guard then refused to act -- RET did nothing at all."
+  (skip-unless (require 'help-mode nil t))
+  (with-temp-buffer
+    (help-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (donkey--ensure-default-state)
+          (should (donkey--support-mode-p))
+          ;; the package holds these, and the buffer means something else
+          (dolist (key '("RET" "w" "y" "G"))
+            (let ((truth (let ((emulation-mode-map-alists nil)
+                               (minor-mode-map-alist nil)
+                               (minor-mode-overriding-map-alist nil))
+                           (key-binding (kbd key) t))))
+              (should (eq (donkey--wrap-key-would-run (kbd key)) truth))))
+          ;; and never DONKEY's own command
+          (should-not (eq (donkey--wrap-key-would-run (kbd "RET"))
+                          'donkey-enter-dwim)))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-what-a-key-would-run-still-hides-normal-state ()
+  "The older half of the same promise, where NORMAL state does run."
+  (with-temp-buffer
+    (text-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (donkey--ensure-default-state)
+          (should-not (donkey--support-mode-p))
+          ;; `w' is DONKEY's here, and the buffer would type it
+          (should (eq (key-binding "w") 'forward-word))
+          (should (eq (donkey--wrap-key-would-run "w") 'self-insert-command))
+          (should (eq (donkey--wrap-key-would-run (kbd "RET")) 'newline)))
+      (donkey-mode -1))))
+
 (ert-deftest donkey-a-package-never-takes-enter-from-a-mode-that-uses-it ()
   "Enter is the action key of a program\\='s buffer, so the mode keeps it.
 
