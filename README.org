@@ -32,12 +32,13 @@
 - [[#making-it-yours][Your own keys]] — one key, the leader, giving a key back
 - [[#if-a-key-is-not-doing-what-you-want][If a key is not doing what you want]]
 - [[#modes-where-donkey-steps-aside][Modes where DONKEY steps aside]]
+- [[#modes-donkey-supports-rather-than-takes-over][Modes DONKEY supports rather than takes over]] — =hjkl=, and the mode keeps the rest
 - [[#the-cursor][The cursor]]
 - [[#the-clipboard][The clipboard]]
 - [[#configuring-the-enter-key][Configuring the Enter key]]
 - [[#wrapping-choosing-your-own-pairs][Choosing your own pairs]]
 - [[#keys-a-major-mode-types-with][Keys a major mode types with]]
-- [[#why-those-six-modes-ship-excluded][Why those six modes ship excluded]] — the reasoning, for readers who want it
+- [[#why-those-four-modes-ship-excluded][Why those four modes ship excluded]] — the reasoning, for readers who want it
 - [[#the-digraph-chart][The digraph chart]]
 - [[#a-complete-configuration][A complete configuration]]
 
@@ -799,23 +800,10 @@ Almost nothing is displaced by this. In those modes =h= was
 unbound. The two real commands, =help-go-back= and =eww-back-url=, were
 on =l=; they move to =h=, which is where "back" belongs.
 
-Dired, Info and Magit are not in the table, and an entry for them would
-do nothing: DONKEY steps aside in those, so it has no key to give away.
-If you take one off [[#modes-where-donkey-steps-aside][the excluded list]], these are the entries to add:
-
-#+begin_src emacs-lisp
-
-  (with-eval-after-load 'donkey
-    (setopt donkey-mode-navigation
-            (append '((dired-mode (?h . dired-up-directory)
-                                  (?l . dired-find-file))
-                      (Info-mode  (?h . Info-up)
-                                  (?l . Info-follow-nearest-node))
-                      (magit-mode (?h . magit-dispatch)
-                                  (?l . magit-log)))
-                    donkey-mode-navigation)))
-
-#+end_src
+Dired and Ibuffer are not in this table because they are not this kind
+of buffer: they are [[#modes-donkey-supports-rather-than-takes-over][support modes]], where the mode keeps every key
+but =hjkl=. Info and Magit are excluded, so DONKEY has no key to give
+away in them; a section is how you would change that.
 
 A mode matches by derivation as well as by name, and the first entry it
 matches answers — so list a specific mode before the general one. A
@@ -1023,6 +1011,78 @@ mode has all of its keys back.
 If it is your key rather than the mode's, bind it in
 =donkey-normal-mode-map= as above — that wins everywhere.
 
+* Modes DONKEY Supports Rather Than Takes Over
+:PROPERTIES:
+:CUSTOM_ID: modes-donkey-supports-rather-than-takes-over
+:END:
+
+Dired has its own alphabet. So does Ibuffer, Magit, Info. Those keys
+are the whole of what the mode is, and a modal editor that lands on
+top of them has taken away the thing you opened the buffer to use.
+
+The old answer was to exclude the mode, which gave the keys back but
+took =hjkl= with them. A *support mode* is the middle: DONKEY keeps
+=h=, =j=, =k= and =l=, and the mode keeps everything else.
+
+#+begin_example
+
+  DONKEY[S]     h j k l   are DONKEY's
+                a b c …   are the mode's, all of them
+
+#+end_example
+
+Two modes ship as support modes:
+
+| Mode | =h= | =j= | =k= | =l= |
+|------+-----+-----+-----+-----|
+| =dired-mode= | up a directory | down a line | up a line | open the file |
+| =ibuffer-mode= | — | down a line | up a line | visit the buffer |
+
+In Dired that means =j= and =k= walk the listing, =l= opens what is
+under the cursor and =h= goes back up — and =d=, =x=, =m=, =g=, =w=,
+=q= and the other forty are Dired's, exactly as they are without
+DONKEY.
+
+** Nothing here is worked out
+
+The list is the whole rule. A mode is a support mode because a section
+names it, not because DONKEY looked at its keymap and decided. A key
+belongs to the mode because no section named it. There is nothing to
+discover, nothing to guess, and nothing that changes when a mode
+gains a binding next year.
+
+That is the trade: DONKEY only knows about the modes somebody wrote a
+section for. Adding one is the whole of the fix:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (setopt donkey-support-modes
+            (append '((Info-mode (?h . Info-up)
+                                 (?l . Info-follow-nearest-node))
+                      (magit-mode (?l . magit-visit-thing)))
+                    donkey-support-modes)))
+
+#+end_src
+
+=j= and =k= are never written down — they are DONKEY's in every
+support mode, and a section that names one is ignored. Where a section
+does not name =h= or =l= they are =backward-char= and =forward-char=.
+
+A mode matches by derivation as well as by name, and the first section
+it matches answers, so list a specific mode before the general one. A
+command you do not have is passed over rather than bound.
+
+** =[S]= and =[E]=
+
+Both mean Normal state is off in this buffer. =[E]= is
+[[#modes-where-donkey-steps-aside][the excluded list]] — DONKEY holds no key at all, not even =hjkl=.
+=[S]= is a section — DONKEY holds four.
+
+A mode on both lists is excluded. If you have =dired-mode= in your own
+=donkey-excluded-modes=, that still wins, and you will see =[E]= rather
+than =[S]= until you take it off.
+
 * Modes Where DONKEY Steps Aside
 :PROPERTIES:
 :CUSTOM_ID: modes-where-donkey-steps-aside
@@ -1085,8 +1145,6 @@ them derive from none of the four and had to be named one at a time.
 | Mode                  | What NORMAL state would take                                |
 |-----------------------+-------------------------------------------------------------|
 | =magit-mode=          | commit, log, branch, diff, push, stash. Covers every magit and forge buffer |
-| =dired-mode=          | mark, flag, execute, copy, rename                           |
-| =ibuffer-mode=        | the same mark-and-execute keys                              |
 | =git-rebase-mode=     | pick, reword, drop, exec, break — an interactive rebase cannot be finished without them |
 | =tabulated-list-mode= | the package menu, the buffer menu, and the tabulated UIs other packages build on it |
 | =Info-mode=           | =SPC= to scroll, and =n p l u m i d g= — the whole node vocabulary |
@@ -1109,10 +1167,6 @@ back, two lines each:
     (keymap-set magit-mode-map "j" #'magit-next-line)
     (keymap-set magit-mode-map "k" #'magit-previous-line))
 
-  (with-eval-after-load 'dired
-    (keymap-set dired-mode-map "j" #'dired-next-line)
-    (keymap-set dired-mode-map "k" #'dired-previous-line))
-
 #+end_src
 
 *** Modes that are NOT on the list
@@ -1126,13 +1180,17 @@ the mode.
 Deliberately, because they are buffers you are editing: =wdired-mode=,
 =git-commit-mode=, =diff-mode=.
 
+No longer on it, because they are [[#modes-donkey-supports-rather-than-takes-over][support modes]] now: =dired-mode= and
+=ibuffer-mode=. They keep every key they ever had except =hjkl=, which
+is what excluding them was really for.
+
 Not on it because nobody has asked yet: =eww-mode=, =elfeed-search-mode=,
 =deft-mode=, =vundo-mode=, =ranger-mode=, =pdf-view-mode=, the =docker=
 and =kubernetes= UIs. Add any of them as above — and please open an
 issue so the next person does not have to.
 
 That makes this a list rather than a rule, and it stops where the
-reading stopped. [[#why-those-six-modes-ship-excluded][Why Those Six Modes Ship Excluded]]
+reading stopped. [[#why-those-four-modes-ship-excluded][Why Those Four Modes Ship Excluded]]
 sets out the reasoning and how to undo any of it.
 
 To see the list in force: =M-x eval-expression= =donkey-excluded-modes=.
@@ -1414,9 +1472,9 @@ This is a list and not a rule: a mode with a typing command nobody has
 met yet will type. If you find one, add it and open an issue — then
 the next reader does not have to find it twice.
 
-* Why Those Six Modes Ship Excluded
+* Why Those Four Modes Ship Excluded
 :PROPERTIES:
-:CUSTOM_ID: why-those-six-modes-ship-excluded
+:CUSTOM_ID: why-those-four-modes-ship-excluded
 :END:
 
 For readers who want the reasoning rather than the setting. Nothing
@@ -1511,8 +1569,6 @@ Two wrinkles you may have met and wondered about:
 | Mode                  | Its letters are                        | So NORMAL state answered with       |
 |-----------------------+----------------------------------------+-------------------------------------|
 | =magit-mode=          | commit, log, branch, diff, push, stash | change, forward-char, backward-word |
-| =dired-mode=          | mark, flag, execute, copy, rename      | the whole fourth row above          |
-| =ibuffer-mode=        | the same mark-and-execute keys         | the same                            |
 | =git-rebase-mode=     | pick, reword, drop, exec, break        | yank, delete, change                |
 | =tabulated-list-mode= | mark-install, mark-delete, execute     | insert, delete, delete              |
 | =Info-mode=           | =SPC= to scroll, =n p l u m i d g=     | the leader, forward-char, undo      |
@@ -1548,7 +1604,7 @@ children:
 | =magit-log-mode=    | no           | =magit-mode=          |
 | =shell-mode=        | no           | =comint-mode=         |
 | =package-menu-mode= | no           | =tabulated-list-mode= |
-| =dired-mode=        | yes          | itself                |
+| =magit-mode=        | yes          | itself                |
 
 So =M-x eval-expression= =donkey-excluded-modes= can quite correctly
 fail to mention the mode you are standing in. Rather than work it out,
@@ -1710,7 +1766,7 @@ Customize would. =setq= on those needs the refresh call by hand.
 
     ;;; Where DONKEY steps aside
 
-    ;; Sixteen modes ship on the list: the terminals and REPLs, where
+    ;; Fourteen modes ship on the list: the terminals and REPLs, where
     ;; NORMAL state would break the program on the other end, and the
     ;; applications whose single letters are their commands.  Add yours.
     (dolist (mode '(pdf-view-mode eww-mode elfeed-search-mode))
@@ -1720,6 +1776,17 @@ Customize would. =setq= on those needs the refresh call by hand.
     ;; out from under a listed parent: magit-log-mode is not on the
     ;; list, magit-mode is, so removing it there would do nothing.
     (setopt donkey-excluded-mode-exceptions nil)                 ; default
+
+    ;;; Modes DONKEY supports rather than takes over
+
+    ;; A section per mode.  DONKEY keeps h j k l; the mode keeps every
+    ;; other key it has.  Nothing is discovered: a mode is a support
+    ;; mode because a section names it.  j and k are never written
+    ;; down -- they are DONKEY's in every section.
+    (setopt donkey-support-modes
+            '((dired-mode   (?h . dired-up-directory)
+                            (?l . dired-find-file))
+              (ibuffer-mode (?l . ibuffer-visit-buffer))))       ; default
 
     ;; Keys the major mode keeps where it binds one of its own -- the
     ;; fifteen that mean the same kind of thing on both sides.  h j k l
@@ -2204,7 +2271,8 @@ and =M-x apropos-command donkey-= finds any of them.
 
 | Option                             | Default                          | What it does |
 |------------------------------------+----------------------------------+--------------|
-| =donkey-excluded-modes=            | 16 modes, see above              | where DONKEY steps aside completely |
+| =donkey-excluded-modes=            | 14 modes, see above              | where DONKEY steps aside completely |
+| =donkey-support-modes=             | 2 sections, see above            | where the mode keeps every key but =hjkl= |
 | =donkey-handed-back-keys=          | 15 keys, see above               | keys the major mode keeps where it binds one |
 | =donkey-mode-navigation=           | 7 modes, see above               | what =h= and =l= do in those modes |
 | =donkey-excluded-mode-exceptions=  | =nil=                            | modes that stay on under an excluded parent |

@@ -302,25 +302,34 @@ without a mode, fails this."
                    eat-mode mistty-mode
                    slime-repl-mode cider-repl-mode racket-repl-mode
                    haskell-interactive-mode
-                   magit-mode dired-mode ibuffer-mode git-rebase-mode
+                   magit-mode git-rebase-mode
                    tabulated-list-mode Info-mode))))
 
 (ert-deftest donkey-the-excluded-modes-default-has-both-of-its-halves ()
-  "Ten terminals and REPLs, six applications, sixteen in all.
+  "Ten terminals and REPLs, four applications, fourteen in all.
 
 The README tabulates the two halves separately, and the docstring
-gives each its own paragraph; this recounts both."
+gives each its own paragraph; this recounts both.  Dired and Ibuffer
+were the fifth and sixth applications and are support modes now:
+`donkey-support-modes' keeps four keys there rather than none."
   (let* ((shipped (eval (car (get 'donkey-excluded-modes 'standard-value)) t))
          (terminals '(comint-mode term-mode vterm-mode eshell-mode
                       eat-mode mistty-mode
                       slime-repl-mode cider-repl-mode racket-repl-mode
                       haskell-interactive-mode))
-         (applications '(magit-mode dired-mode ibuffer-mode git-rebase-mode
+         (applications '(magit-mode git-rebase-mode
                          tabulated-list-mode Info-mode)))
-    (should (= (length shipped) 16))
+    (should (= (length shipped) 14))
     (should (= (length terminals) 10))
-    (should (= (length applications) 6))
-    (should (equal shipped (append terminals applications)))))
+    (should (= (length applications) 4))
+    (should (equal shipped (append terminals applications)))
+    ;; and the two that left are on the other list, not on neither
+    (let ((sections (mapcar #'car (eval (car (get 'donkey-support-modes
+                                                  'standard-value))
+                                        t))))
+      (dolist (mode '(dired-mode ibuffer-mode))
+        (should-not (memq mode shipped))
+        (should (memq mode sections))))))
 
 (ert-deftest donkey-every-shipped-application-mode-is-excluded ()
   "Each application mode on the default list answers as excluded.
@@ -328,11 +337,19 @@ gives each its own paragraph; this recounts both."
 Named rather than derived: `magit-mode' and `git-rebase-mode' are not
 loaded in a batch run, and an exact member match does not need them
 to be."
-  (dolist (mode '(magit-mode dired-mode ibuffer-mode git-rebase-mode
+  (dolist (mode '(magit-mode git-rebase-mode
                   tabulated-list-mode Info-mode))
     (with-temp-buffer
       (let ((major-mode mode))
-        (should (donkey--excluded-mode-p))))))
+        (should (donkey--excluded-mode-p)))))
+  ;; Dired and Ibuffer are supported rather than excluded: Normal state
+  ;; is off in both, but DONKEY keeps four keys there.
+  (dolist (mode '(dired-mode ibuffer-mode))
+    (with-temp-buffer
+      (let ((major-mode mode))
+        (should-not (donkey--excluded-mode-p))
+        (should (donkey--support-mode-p))
+        (should (donkey--normal-state-off-p))))))
 
 (ert-deftest donkey-a-tabulated-list-ui-is-excluded-by-derivation ()
   "The package menu and the buffer menu come with `tabulated-list-mode'.
@@ -418,12 +435,14 @@ that gives it back."
       (should-not (bound-and-true-p donkey-insert-mode)))))
 
 (ert-deftest donkey-a-dired-buffer-turned-into-wdired-is-in-normal-state ()
-  "Turning an excluded Dired into wdired leaves NORMAL state behind.
+  "Turning Dired into wdired brings NORMAL state back in the same buffer.
 
-Dired is on the default `donkey-excluded-modes' and `wdired-mode'
-derives from nothing, so the buffer changes from excluded to not while
-staying the same buffer -- the case `donkey--release-forced-insert-state'
-exists for."
+Dired is a support mode, where NORMAL state does not run, and
+`wdired-mode' derives from nothing -- not even from `dired-mode' -- so
+the buffer changes from one where NORMAL state is off to one where it
+is on without a new buffer being made.  The case
+`donkey--release-forced-insert-state' exists for, and it does not care
+which list decided the first half."
   (require 'wdired)
   (let* ((dir (make-temp-file "donkey-wdired" t))
          (buf (progn (write-region "" nil (expand-file-name "a" dir) nil 'silent)
@@ -434,10 +453,11 @@ exists for."
           (unwind-protect
               (progn
                 (donkey--ensure-default-state)
-                (should (donkey--excluded-mode-p))
+                (should (donkey--normal-state-off-p))
+                (should (donkey--support-mode-p))
                 (should (bound-and-true-p donkey-insert-mode))
                 (wdired-change-to-wdired-mode)
-                (should-not (donkey--excluded-mode-p))
+                (should-not (donkey--normal-state-off-p))
                 (should (bound-and-true-p donkey-normal-mode)))
             (when (derived-mode-p 'wdired-mode) (wdired-abort-changes))
             (donkey-mode -1)))
@@ -633,6 +653,168 @@ puts help under a motion key."
     (use-local-map (let ((m (make-sparse-keymap)))
                      (define-key m "p" 'describe-mode) m))
     (should-not (donkey--command-the-mode-binds ?p))))
+
+(ert-deftest donkey-the-support-table-ships-two-sections ()
+  "The modes DONKEY supports rather than takes over, and what it keeps.
+
+An enumerable fact stated in the README, recounted here.  Nothing is
+derived: a mode is a support mode because a section names it."
+  (let ((table (eval (car (get 'donkey-support-modes 'standard-value)) t)))
+    (should (= (length table) 2))
+    (should (equal (mapcar #'car table) '(dired-mode ibuffer-mode)))
+    ;; a section may name any key but `j' and `k'
+    (dolist (row table)
+      (dolist (pair (cdr row))
+        (should (characterp (car pair)))
+        (should-not (memq (car pair) '(?j ?k)))))
+    ;; and neither is on the exclusion list any more
+    (let ((excluded (eval (car (get 'donkey-excluded-modes 'standard-value)) t)))
+      (should-not (memq 'dired-mode excluded))
+      (should-not (memq 'ibuffer-mode excluded)))))
+
+(ert-deftest donkey-a-support-mode-keeps-only-the-keys-its-section-names ()
+  "Every other key is the major mode\\='s, which is what a section means.
+
+Dired binds fifty-two letters.  DONKEY answers four of them -- the
+section\\='s `h' and `l', and `j' and `k', which are DONKEY\\='s in every
+support mode -- and the mode answers the rest."
+  (skip-unless (require 'dired nil t))
+  (let ((dir (make-temp-file "donkey-support" t))
+        (buffer nil))
+    (unwind-protect
+        (progn
+          (write-region "x\n" nil (expand-file-name "one.txt" dir))
+          (setq buffer (dired-noselect dir))
+          (with-current-buffer buffer
+            (donkey-mode 1)
+            (unwind-protect
+                (progn
+                  (donkey--ensure-default-state)
+                  (should (donkey--support-mode-p))
+                  (should (donkey--normal-state-off-p))
+                  (should-not (bound-and-true-p donkey-normal-mode))
+                  ;; the four DONKEY keeps
+                  (should (eq (key-binding "h") 'dired-up-directory))
+                  (should (eq (key-binding "l") 'dired-find-file))
+                  (should (eq (key-binding "j") 'dired-next-line))
+                  (should (eq (key-binding "k") 'dired-previous-line))
+                  ;; every other letter the mode binds is still the mode's
+                  (let ((taken nil))
+                    (dolist (char (append (number-sequence ?a ?z)
+                                          (number-sequence ?A ?Z)))
+                      (let ((own (let ((emulation-mode-map-alists nil)
+                                       (minor-mode-map-alist nil)
+                                       (minor-mode-overriding-map-alist nil))
+                                   (key-binding (vector char)))))
+                        (when (and own (not (eq own 'undefined))
+                                   (not (eq (key-binding (vector char)) own)))
+                          (push char taken))))
+                    (should (equal (sort taken #'<) '(?h ?j ?k ?l)))))
+              (donkey-mode -1))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (delete-directory dir t))))
+
+(ert-deftest donkey-a-support-mode-says-so-in-the-mode-line ()
+  "\\=' DONKEY[S]\\=' where a section decided it, \\=' DONKEY[E]\\=' where the list did."
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes '((fundamental-mode (?l . ignore))))
+          (donkey-excluded-modes nil)
+          (donkey--support-mode-cache nil))
+      (should (equal (donkey--insert-state-lighter) " DONKEY[S]")))
+    (let ((donkey-support-modes nil)
+          (donkey-excluded-modes '(fundamental-mode))
+          (donkey--support-mode-cache nil)
+          (donkey--excluded-mode-cache nil))
+      (should (equal (donkey--insert-state-lighter) " DONKEY[E]")))
+    (let ((donkey-support-modes nil)
+          (donkey-excluded-modes nil)
+          (donkey--support-mode-cache nil)
+          (donkey--excluded-mode-cache nil))
+      (should (equal (donkey--insert-state-lighter) " DONKEY[I]")))))
+
+(ert-deftest donkey-an-excluded-mode-beats-a-section ()
+  "A mode on both lists is excluded: DONKEY holds no key there at all.
+
+`donkey-excluded-modes' is the stronger form, and a reader who put a
+mode on it meant it -- a section DONKEY ships must not take that back."
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes '((fundamental-mode (?l . ignore))))
+          (donkey-excluded-modes '(fundamental-mode))
+          (donkey--support-mode-cache nil)
+          (donkey--excluded-mode-cache nil)
+          (donkey--handed-back-cache nil))
+      (donkey-mode 1)
+      (unwind-protect
+          (progn
+            (donkey--ensure-default-state)
+            (should (donkey--normal-state-off-p))
+            ;; excluded wins, so no support map is installed
+            (should (equal (donkey--insert-state-lighter) " DONKEY[E]"))
+            (should-not (local-variable-p 'donkey--emulation-mode-map-alist)))
+        (donkey-mode -1)))))
+
+(ert-deftest donkey-a-section-cannot-name-j-or-k ()
+  "The floor holds in a support mode too: those two are never the mode\\='s."
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes
+           '((fundamental-mode (?j . forward-sexp) (?k . forward-sexp)
+                               (?l . backward-sexp))))
+          (donkey--support-mode-cache nil))
+      (should (equal (donkey--support-mode-keys) '((?l . backward-sexp)))))))
+
+(ert-deftest donkey-a-section-passes-over-a-command-it-cannot-run ()
+  "A command that is absent is dropped rather than bound.
+
+So a section for a package you do not have costs nothing, which is what
+makes a shipped table safe to grow."
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes
+           '((fundamental-mode (?h . donkey-no-such-command-anywhere)
+                               (?l . forward-sexp))))
+          (donkey--support-mode-cache nil))
+      (should-not (fboundp 'donkey-no-such-command-anywhere))
+      (should (equal (donkey--support-mode-keys) '((?l . forward-sexp)))))))
+
+(ert-deftest donkey-a-support-buffer-says-why-normal-state-is-off ()
+  "The diagnostic names the section, the way it names an exclusion.
+
+A reader in a support buffer asking why Normal state is off gets the
+mode that decided it and the keys DONKEY kept, not silence."
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes '((fundamental-mode (?l . forward-sexp))))
+          (donkey-excluded-modes nil)
+          (donkey--support-mode-cache nil)
+          (donkey--excluded-mode-cache nil))
+      (let ((line (donkey--state-availability-line)))
+        (should line)
+        (should (string-match-p "donkey-support-modes" line))
+        (should (string-match-p "fundamental-mode" line))
+        (should (string-match-p "`l'" line))
+        (should (string-match-p "j and k" line)))))
+  ;; and an ordinary buffer still says nothing
+  (with-temp-buffer
+    (text-mode)
+    (should-not (donkey--state-availability-line))))
+
+(ert-deftest donkey-a-mode-with-no-section-is-untouched ()
+  "A writing mode is not a support mode, and nothing about it changes."
+  (with-temp-buffer
+    (text-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (donkey--ensure-default-state)
+          (should-not (donkey--support-mode-p))
+          (should-not (donkey--normal-state-off-p))
+          (should (bound-and-true-p donkey-normal-mode))
+          (should (eq (key-binding "h") 'backward-char))
+          (should (eq (key-binding "i") 'donkey-insert-here)))
+      (donkey-mode -1))))
 
 (ert-deftest donkey-the-mode-typing-command-is-the-modes-remap ()
   "What a mode types with is read off its remap of `self-insert-command'.

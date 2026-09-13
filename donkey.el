@@ -89,7 +89,7 @@
     eat-mode mistty-mode
     slime-repl-mode cider-repl-mode racket-repl-mode
     haskell-interactive-mode
-    magit-mode dired-mode ibuffer-mode git-rebase-mode
+    magit-mode git-rebase-mode
     tabulated-list-mode Info-mode)
   "Major modes where DONKEY Normal state should be permanently disabled.
 
@@ -116,15 +116,20 @@ Normal state would answer nearly all of them.  Nothing can be damaged
 in one -- they are read-only, so every editing key is refused -- but
 the mode stops being usable for the job it exists to do.  `magit-mode',
 which covers every magit and forge buffer, loses commit, log, branch,
-diff, push and stash; `dired-mode' loses mark, flag and execute;
-`git-rebase-mode' loses pick, reword, drop and exec; `ibuffer-mode'
-and `tabulated-list-mode' (the package menu, the buffer menu, and the
-tabulated UIs other packages build on it) lose their mark-and-execute
-keys;
-`Info-mode' loses \\`SPC' and its whole node vocabulary.  What is given
-up by listing them is motion: `magit-mode' and `dired-mode' remap
-`next-line', so \\`j' and \\`k' move by their own lines while Normal state
-is on, and go back to the mode\\='s own meaning once it is off.
+diff, push and stash; `git-rebase-mode' loses pick, reword, drop and
+exec; `tabulated-list-mode' (the package menu, the buffer menu, and
+the tabulated UIs other packages build on it) loses its
+mark-and-execute keys; `Info-mode' loses \\`SPC' and its whole node
+vocabulary.  What is given up by listing them is motion: `magit-mode'
+remaps `next-line', so \\`j' and \\`k' move by its own lines while
+Normal state is on, and go back to the mode\\='s own meaning once it is
+off.
+
+`donkey-support-modes' is the smaller answer to the same problem and
+is where `dired-mode' and `ibuffer-mode' went: the mode keeps every
+key it ever had except \\`h', \\`j', \\`k' and \\`l'.  Exclusion is for a
+buffer where even those four would be wrong -- a terminal, where they
+are the program's -- or where a reader wants DONKEY gone entirely.
 
 That makes this a list rather than a rule, and it stops where the
 reading stopped.  Not on it, and one line away for a reader who wants
@@ -216,6 +221,51 @@ in place or not, recomputes on the next call."
                              result))
         result))))
 
+(defcustom donkey-support-modes
+  '((dired-mode   (?h . dired-up-directory) (?l . dired-find-file))
+    (ibuffer-mode                           (?l . ibuffer-visit-buffer)))
+  "Modes DONKEY supports rather than takes over, and what it keeps there.
+
+A section per mode.  NORMAL state does not run in these buffers: the
+major mode\\='s own keys answer exactly as they would with DONKEY off,
+and DONKEY holds only the keys the section names, plus \\=`j\\=' and
+\\=`k\\='.  The mode decides everything else.
+
+Each section is a major mode and the keys DONKEY keeps, written as
+\(CHARACTER . COMMAND):
+
+  (dired-mode (?h . dired-up-directory) (?l . dired-find-file))
+
+\\=`j\\=' and \\=`k\\=' are DONKEY\\='s in every section and are not written
+down.  They move down and up a line, and a mode that remaps
+`next-line' -- Dired, Magit, `image-mode' -- is reached through its
+own remap without the key changing hands.  A section that names one is
+ignored; see `donkey--motion-keys'.
+
+\\=`h\\=' and \\=`l\\=' are `backward-char' and `forward-char' where a
+section does not say otherwise.
+
+Nothing here is discovered and there is no rule behind the list.  A
+mode that is not listed is not a support mode, whatever its keymap
+looks like, and a key a section does not name belongs to the mode
+however DONKEY would otherwise have used it.  That is the point of
+writing them out: what happens in a buffer is read off this list
+rather than worked out from the mode.
+
+A mode matches by derivation as well as by name, so a parent covers
+its children, and the first section a buffer matches is the one that
+answers -- list a specific mode before the general one.  A command
+that is not `fboundp' is passed over, so naming a mode from a package
+you do not have costs nothing.
+
+`donkey-excluded-modes' is the stronger form: DONKEY holds no key at
+all there, not even \\=`j\\=' and \\=`k\\='.  A mode on both is excluded."
+  :type '(repeat (cons symbol (repeat (cons character function))))
+  :group 'donkey)
+
+(defvar-local donkey--support-mode-cache nil
+  "Memo for `donkey--support-mode-p'; see `donkey--memo-major-mode-in-p'.")
+
 (defvar-local donkey--excluded-mode-cache nil
   "Memo for `donkey--excluded-mode-p'; see `donkey--memo-major-mode-in-p'.")
 
@@ -236,10 +286,79 @@ exception is paying for on every command."
   "Return non-nil if the current major mode is in `donkey-excluded-modes'.
 
 `donkey-excluded-mode-exceptions' is read first and wins, so a mode
-named there is not excluded however it matched the other list."
+named there is not excluded however it matched the other list.
+
+Says only what this list says.  `donkey--normal-state-off-p' is the
+question the state machinery asks, because a support mode reaches the
+same answer by another route."
   (and (not (donkey--excluded-mode-exception-p))
        (donkey--memo-major-mode-in-p 'donkey--excluded-mode-cache
                                      donkey-excluded-modes)))
+
+(defun donkey--support-mode-section ()
+  "Return this buffer\\='s section of `donkey-support-modes', or nil.
+
+The first section whose mode this buffer\\='s `major-mode' is or derives
+from, so a parent covers its children and a mode listed twice is
+answered by whichever was written first.
+
+Memoized per buffer on the major mode and a copy of the option, the
+way `donkey--memo-major-mode-in-p' is: this runs from
+`post-command-hook' in every buffer, so the sections are read rather
+than searched on all but the first command after a change.
+
+A row that is not a cons whose car is a symbol is skipped, so a
+mis-typed option cannot signal from here."
+  (let ((cache donkey--support-mode-cache))
+    (if (and cache
+             (eq (car (car cache)) major-mode)
+             (equal (cdr (car cache)) donkey-support-modes))
+        (cdr cache)
+      (let ((result
+             (and (proper-list-p donkey-support-modes)
+                  (seq-find (lambda (row)
+                              (and (consp row)
+                                   (symbolp (car row))
+                                   (or (eq major-mode (car row))
+                                       (provided-mode-derived-p major-mode
+                                                                (car row)))))
+                            donkey-support-modes))))
+        (setq donkey--support-mode-cache
+              (cons (cons major-mode (copy-tree donkey-support-modes)) result))
+        result))))
+
+(defun donkey--support-mode-p ()
+  "Return non-nil if this major mode has a section in `donkey-support-modes'.
+
+Nil without the sections ever being searched while the option is empty.
+
+`donkey-excluded-modes' is the stronger form and is read first, so a
+mode on both lists is excluded and this answers nil: a reader who
+excluded a mode meant it, and a section DONKEY ships must not take
+that back."
+  (and donkey-support-modes
+       (not (donkey--excluded-mode-p))
+       (donkey--support-mode-section)
+       t))
+
+(defun donkey--normal-state-off-p ()
+  "Return non-nil if NORMAL state does not run in this buffer.
+
+Two ways to reach that, and the state machinery does not care which:
+`donkey-excluded-modes', where DONKEY holds no key at all, and
+`donkey-support-modes', where it holds only the keys a section names.
+Both sit in Insert state, so the major mode\\='s keys answer.
+
+The predicate every caller wants that has to decide whether to enter
+NORMAL state, leave it, or intercept a quit.  Use `donkey--excluded-mode-p'
+or `donkey--support-mode-p' only where the two have to be told apart,
+which is the mode line and the diagnostics."
+  (or (donkey--excluded-mode-p)
+      ;; `donkey--support-mode-p' asks the same question again, and this
+      ;; runs after every command: the `or' has already answered it.
+      (and donkey-support-modes
+           (donkey--support-mode-section)
+           t)))
 
 (defvar-local donkey--insert-state-was-forced nil
   "Non-nil when Insert state here was forced by an excluded major mode.
@@ -273,7 +392,7 @@ major mode changes to one that is not listed -- Dired to wdired -- or
 `donkey-excluded-modes' itself changes under a buffer that is already
 open."
   (when (and donkey--insert-state-was-forced
-             (not (donkey--excluded-mode-p)))
+             (not (donkey--normal-state-off-p)))
     (setq donkey--insert-state-was-forced nil)
     (donkey-enter-normal)
     t))
@@ -281,10 +400,14 @@ open."
 (defun donkey--insert-state-lighter ()
   "Return the mode-line text for Insert state in the current buffer.
 
-\" DONKEY[E]\" in a `donkey-excluded-modes' buffer, where Normal state
-cannot be reached, \" DONKEY[I]\" everywhere else.  Shared by the
-`donkey-insert-mode' lighter and `donkey-indicator'."
-  (if (donkey--excluded-mode-p) " DONKEY[E]" " DONKEY[I]"))
+\" DONKEY[E]\" in a `donkey-excluded-modes' buffer and \" DONKEY[S]\"
+in a `donkey-support-modes' one -- Normal state is unavailable in
+both, and the letter says which list decided it -- \" DONKEY[I]\"
+everywhere else.  Shared by the `donkey-insert-mode' lighter and
+`donkey-indicator'."
+  (cond ((donkey--support-mode-p) " DONKEY[S]")
+        ((donkey--excluded-mode-p) " DONKEY[E]")
+        (t " DONKEY[I]")))
 
 (defun donkey--handle-non-editing-buffer ()
   "Bounce straight back to Insert state in an excluded major mode.
@@ -294,7 +417,7 @@ donkey-normal-mode', a key binding -- in an excluded buffer is undone
 within the same toggle.  `donkey--ensure-default-state' covers a
 buffer's first activation, and `donkey--check-post-command-non-editing'
 covers anything that sets the variable without the toggle."
-  (when (donkey--excluded-mode-p)
+  (when (donkey--normal-state-off-p)
     (when (bound-and-true-p donkey-normal-mode)
       (donkey--enter-insert-for-excluded))))
 
@@ -320,7 +443,7 @@ everywhere, so the cost in an ordinary buffer is one `and' that fails
 at its first branch."
   (cond
    ((and (bound-and-true-p donkey-normal-mode)
-         (donkey--excluded-mode-p))
+         (donkey--normal-state-off-p))
     (donkey--enter-insert-for-excluded))
    (donkey--insert-state-was-forced
     (donkey--release-forced-insert-state))))
@@ -7588,10 +7711,23 @@ buffer's own major mode: the exclusions ship as a list of parents, so
 `magit-log-mode' is decided by `magit-mode' and `shell-mode' by
 `comint-mode', and a reader who looks for their own mode on the list
 does not find it.  Naming the entry is the difference between a
-modeline saying \" DONKEY[E]\" and a reader knowing why."
+modeline saying \" DONKEY[E]\" and a reader knowing why.
+
+A support mode is named the same way and says what DONKEY kept there:
+the modeline shows \" DONKEY[S]\", and the reason is a section rather
+than a list."
   (let ((excluded (donkey--mode-list-entry-for donkey-excluded-modes))
-        (exempt (donkey--mode-list-entry-for donkey-excluded-mode-exceptions)))
+        (exempt (donkey--mode-list-entry-for donkey-excluded-mode-exceptions))
+        (section (and (donkey--support-mode-p) (donkey--support-mode-section))))
     (cond
+     (section
+      (let ((keys (mapcar #'car (donkey--support-mode-keys))))
+        (format "Normal state is off here: %s is on donkey-support-modes, which keeps %s"
+                (car section)
+                (if keys
+                    (format "%s here, and j and k everywhere"
+                            (mapconcat (lambda (c) (format "`%c'" c)) keys " "))
+                  "j and k here"))))
      ((and excluded exempt)
       (format "Normal state is on here: %s is on donkey-excluded-modes, %s"
               excluded
@@ -7645,7 +7781,7 @@ comes on; see `donkey-report-binding-changes'."
                             (when (> remapped 0)
                               (format "%d key%s this buffer remaps" remapped
                                       (if (= remapped 1) "" "s")))
-                            (when (donkey--excluded-mode-p)
+                            (when (donkey--normal-state-off-p)
                               "Normal state is off in this buffer")))))
     (message
      "DONKEY: %s%s%s"
@@ -8000,6 +8136,46 @@ is not installed costs nothing."
                        (not (memq (cdr pair) typing))))
                 (cdr entry))))
 
+(defun donkey--support-mode-keys ()
+  "Return the (CHARACTER . COMMAND) pairs this buffer\\='s section names.
+
+The first section this buffer\\='s major mode matches, by name or by
+derivation, and nothing from any later one.  A command that is not
+`fboundp' is dropped rather than bound, so a section for a package
+that is not installed costs nothing, and \\=`j\\=' and \\=`k\\=' are dropped
+because they are DONKEY\\='s in every support mode; see
+`donkey--motion-keys'."
+  (seq-filter (lambda (pair)
+                (and (consp pair)
+                     (characterp (car pair))
+                     (not (memq (car pair) donkey--motion-keys))
+                     (symbolp (cdr pair))
+                     (fboundp (cdr pair))))
+              (cdr (donkey--support-mode-section))))
+
+(defun donkey--install-support-mode-keys ()
+  "Give this buffer the keys its `donkey-support-modes' section names.
+
+A map of its own rather than a child of `donkey-normal-mode-map': the
+major mode answers every key this map does not hold, which is the
+whole of what a support mode is.  \\=`j\\=' and \\=`k\\=' are in it always,
+\\=`h\\=' and \\=`l\\=' fall back to `backward-char' and `forward-char'
+where the section does not name them, and the section is written over
+the top.
+
+Keyed on `donkey-mode' rather than on `donkey-normal-mode', because
+NORMAL state does not run here -- a support mode sits in Insert state
+the way an excluded one does, and the map has to answer there."
+  (let ((map (make-sparse-keymap)))
+    (define-key map "j" #'next-line)
+    (define-key map "k" #'previous-line)
+    (define-key map "h" #'backward-char)
+    (define-key map "l" #'forward-char)
+    (pcase-dolist (`(,char . ,command) (donkey--support-mode-keys))
+      (define-key map (vector char) command))
+    (setq-local donkey--emulation-mode-map-alist
+                (list (cons 'donkey-mode map)))))
+
 (defun donkey--install-handed-back-keys ()
   "Give this buffer\\='s mode the keys of `donkey-handed-back-keys' it binds.
 
@@ -8017,9 +8193,13 @@ Does nothing where the mode binds none of them, which is most buffers:
 the local variable is killed rather than set, so an ordinary buffer
 reads the same global value it always did."
   (let ((wanted (list major-mode donkey-handed-back-keys
-                      donkey-mode-navigation)))
+                      donkey-mode-navigation donkey-support-modes)))
     (unless (equal wanted donkey--handed-back-cache)
       (setq donkey--handed-back-cache wanted)
+      (if (donkey--support-mode-p)
+          ;; A support mode is decided by its section, not by a rule:
+          ;; nothing is discovered and nothing is handed back.
+          (donkey--install-support-mode-keys)
       (let ((typing (donkey--mode-typing-command))
             pairs)
         (dolist (char (seq-filter #'characterp
@@ -8041,7 +8221,7 @@ reads the same global value it always did."
             (pcase-dolist (`(,char . ,command) pairs)
               (define-key map (vector char) command))
             (setq-local donkey--emulation-mode-map-alist
-                        (list (cons 'donkey-normal-mode map)))))))))
+                        (list (cons 'donkey-normal-mode map))))))))))
 
 (defun donkey--install-emulation-map ()
   "Put `donkey--emulation-mode-map-alist' on `emulation-mode-map-alists'.
@@ -8531,7 +8711,7 @@ In the minibuffer, in a `donkey-excluded-modes' buffer, or when
   (interactive)
   (if (or (not (bound-and-true-p donkey-insert-mode))
           (minibufferp)
-          (donkey--excluded-mode-p))
+          (donkey--normal-state-off-p))
       (keyboard-quit)
     (donkey--leave-insert)
     ;; After the state change.
@@ -8612,7 +8792,7 @@ minibuffer and an excluded mode."
   (when (and (bound-and-true-p donkey-normal-mode)
              (memq this-command '(nil undefined))
              (not (minibufferp))
-             (not (donkey--excluded-mode-p)))
+             (not (donkey--normal-state-off-p)))
     (let ((keys (this-single-command-keys)))
       (when (and (> (length keys) 1)
                  (eq (aref keys (1- (length keys))) ?\C-g)
@@ -8677,7 +8857,7 @@ function from the hook."
                  (eq this-command 'sp-cancel))
              (not donkey--just-exited-from-insert)
              (not (minibufferp))
-             (not (donkey--excluded-mode-p)))
+             (not (donkey--normal-state-off-p)))
     ;; What the key WOULD have run, before it is replaced: a package
     ;; with something open under the cursor put its own command here.
     (let ((shadowed this-command))
@@ -8740,7 +8920,7 @@ redisplay or a timer reports as its own does not arrive here."
   (if (and (eq (car-safe data) 'quit)
            (bound-and-true-p donkey-insert-mode)
            (not (minibufferp))
-           (not (donkey--excluded-mode-p)))
+           (not (donkey--normal-state-off-p)))
       (condition-case err
           (donkey--exit-insert)
         (error
@@ -8990,7 +9170,7 @@ resweep, and `after-change-major-mode-hook'."
    ((minibufferp) nil)
    (t
     (donkey--install-handed-back-keys)
-    (let ((is-excluded-p (donkey--excluded-mode-p)))
+    (let ((is-excluded-p (donkey--normal-state-off-p)))
       (cond
        (is-excluded-p
         (unless (bound-and-true-p donkey-insert-mode)
