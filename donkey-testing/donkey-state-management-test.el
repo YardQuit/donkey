@@ -670,6 +670,49 @@ puts help under a motion key."
                      (define-key m "p" 'describe-mode) m))
     (should-not (donkey--command-the-mode-binds ?p))))
 
+(ert-deftest donkey-a-buffer-that-becomes-read-only-gets-the-support-map ()
+  "The two caches have to agree, or the buffer gets neither state.
+
+`donkey--normal-state-off-p' reads `buffer-read-only' and switches
+NORMAL state off; the installer has to read it too, or the support map
+is never put in and the buffer is left with no keys at all."
+  (with-temp-buffer
+    (fundamental-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (donkey--ensure-default-state)
+          (should-not (donkey--support-mode-p))
+          (should (eq (key-binding "l") 'forward-char))
+          ;; the flag alone makes this a program buffer
+          (setq buffer-read-only t)
+          (donkey--install-handed-back-keys)
+          (donkey--ensure-default-state)
+          (should (donkey--support-mode-p))
+          (should (local-variable-p 'donkey--emulation-mode-map-alist))
+          (should (eq (key-binding "h") 'backward-char))
+          (should (eq (key-binding "l") 'forward-char))
+          (should (eq (key-binding "j") 'next-line)))
+      (donkey-mode -1))))
+
+(ert-deftest donkey-a-section-may-not-name-a-command-that-types ()
+  "Rule 74 is a floor a section does not get to lower either.
+
+`donkey--navigation-pairs' refused a typing command and
+`donkey--support-mode-keys' did not, so a section naming one bound it."
+  (skip-unless (require 'org nil t))
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes
+           '((fundamental-mode (?l . org-self-insert-command)
+                               (?h . forward-sexp))))
+          (donkey--support-mode-cache nil))
+      (should (fboundp 'org-self-insert-command))
+      (should (memq 'org-self-insert-command
+                    (donkey--mode-list donkey-self-insert-commands)))
+      ;; the typing one is dropped, the other survives
+      (should (equal (donkey--support-mode-keys) '((?h . forward-sexp)))))))
+
 (ert-deftest donkey-a-program-buffer-is-supported-without-being-named ()
   "The rule answers for a buffer a program made, section or no section.
 

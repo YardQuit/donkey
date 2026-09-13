@@ -8163,8 +8163,15 @@ stopped.")
 (defvar-local donkey--handed-back-cache nil
   "What `donkey--install-handed-back-keys' last built here.
 
-The cons (MAJOR-MODE . KEYS) the buffer-local map was made for, so that
-the map is rebuilt when either changes rather than on every pass.
+Everything the answer depends on, so that the map is rebuilt when one
+of them changes rather than on every pass.
+
+It has to be the same set `donkey--normal-state-off-p' reads, and for
+the same buffer: that predicate decides whether NORMAL state runs, this
+one decides whether the support map is installed, and a buffer where
+the two disagree gets neither.  `buffer-read-only' is in it for that
+reason -- `donkey--program-buffer-p' reads it, so a buffer becomes a
+support mode the moment it becomes read-only, with no option changing.
 
 Where the coverage stops: the mode\\='s KEYMAP is not part of the key, and
 `donkey--install-handed-back-keys' runs from
@@ -8260,14 +8267,17 @@ derivation, and nothing from any later one.  A command that is not
 `fboundp' is dropped rather than bound, so a section for a package
 that is not installed costs nothing, and \\=`j\\=' and \\=`k\\=' are dropped
 because they are DONKEY\\='s in every support mode; see
-`donkey--motion-keys'."
-  (seq-filter (lambda (pair)
-                (and (consp pair)
-                     (characterp (car pair))
-                     (not (memq (car pair) donkey--motion-keys))
-                     (symbolp (cdr pair))
-                     (fboundp (cdr pair))))
-              (cdr (donkey--support-mode-section))))
+`donkey--motion-keys'.  A command that would type is dropped as well:
+rule 74 is a floor a section does not get to lower either."
+  (let ((typing (donkey--mode-list donkey-self-insert-commands)))
+    (seq-filter (lambda (pair)
+                  (and (consp pair)
+                       (characterp (car pair))
+                       (not (memq (car pair) donkey--motion-keys))
+                       (symbolp (cdr pair))
+                       (fboundp (cdr pair))
+                       (not (memq (cdr pair) typing))))
+                (cdr (donkey--support-mode-section)))))
 
 (defun donkey--install-support-mode-keys ()
   "Give this buffer the keys its `donkey-support-modes' section names.
@@ -8308,8 +8318,10 @@ choice rather than a discovery.
 Does nothing where the mode binds none of them, which is most buffers:
 the local variable is killed rather than set, so an ordinary buffer
 reads the same global value it always did."
-  (let ((wanted (list major-mode donkey-handed-back-keys
-                      donkey-mode-navigation donkey-support-modes)))
+  (let ((wanted (list major-mode buffer-read-only
+                      donkey-handed-back-keys donkey-mode-navigation
+                      donkey-support-modes donkey-support-mode-exceptions
+                      donkey-excluded-modes donkey-excluded-mode-exceptions)))
     (unless (equal wanted donkey--handed-back-cache)
       (setq donkey--handed-back-cache wanted)
       (if (donkey--support-mode-p)
