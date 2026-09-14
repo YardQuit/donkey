@@ -923,19 +923,26 @@ Dired, help, Man and the rest without being named a second time.
 That =SPC b= now works in every buffer, whichever state it is in.
 
 What the mode had on =SPC= is not carried anywhere, and almost nothing
-is lost by that. Nineteen of them put =scroll-up-command= on =SPC= and
-=scroll-down-command= on =S-SPC=; =C-v= and =M-v= are those two
-commands in every Emacs buffer, and =S-SPC= is left alone, so page up
-still works where it always did. Six put a line motion on =SPC=, which
-is what =j= does. Two leave it unbound. =finder-mode= put
-=finder-select= there, which is already =l=, and =calendar-mode= put
-=scroll-other-window=, which is =C-M-v=.
+is lost by that. Twenty-five of the forty-one put =scroll-up-command=
+on =SPC= and =scroll-down-command= on =S-SPC=; =C-v= and =M-v= are
+those two commands in every Emacs buffer, and =S-SPC= is left alone, so
+page up still works where it always did. =image-mode= and
+=doc-view-mode= are counted among them — the pair is their own rather
+than Emacs's, but =C-v= and =M-v= still do it. Eight put a line motion
+on =SPC=, which is what =j= does. =so-long-mode= binds it to nothing
+but a space.
 
-That leaves two modes losing something with no obvious home:
-=org-agenda-mode=, where =SPC= showed the entry and scrolled it, and
+Three more put a command that already has another key: =speedbar-mode=
+toggles a tree node, which =+=, === and =-= also do; =finder-mode= put
+=finder-select=, which its own section puts on =l=; and =calendar-mode=
+put =scroll-other-window=, which is =C-M-v=.
+
+That leaves four modes losing something with no obvious home:
+=org-agenda-mode=, where =SPC= showed the entry and scrolled it;
 =flymake-diagnostics-buffer-mode=, where it showed the diagnostic
-without leaving the list. A section takes =SPC= back for a mode that
-needs it:
+without leaving the list; and =ebrowse-tree-mode= and
+=ebrowse-member-mode=, where it viewed the class or the member without
+leaving the tree. A section takes =SPC= back for a mode that needs it:
 
 #+begin_src emacs-lisp
 
