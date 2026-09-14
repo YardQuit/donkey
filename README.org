@@ -915,6 +915,46 @@ thinks.
 =hjkl= cannot be fitted around without taking something a reader needs,
 so it is excluded instead and DONKEY holds no key there at all.
 
+*** The leader comes with you
+
+=SPC= is the leader in a support mode exactly as it is in NORMAL state,
+and it is the *same keymap*: whatever you hang under =SPC= reaches
+Dired, help, Man and the rest without being named a second time.
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (define-key (lookup-key donkey-normal-mode-map " ") "b"
+                #'switch-to-buffer))
+
+#+end_src
+
+That =SPC b= now works in every buffer, whichever state it is in.
+
+What the mode had on =SPC= is not carried anywhere, and almost nothing
+is lost by that. Nineteen of them put =scroll-up-command= on =SPC= and
+=scroll-down-command= on =S-SPC=; =C-v= and =M-v= are those two
+commands in every Emacs buffer, and =S-SPC= is left alone, so page up
+still works where it always did. Six put a line motion on =SPC=, which
+is what =j= does. Two leave it unbound. =finder-mode= put
+=finder-select= there, which is already =l=, and =calendar-mode= put
+=scroll-other-window=, which is =C-M-v=.
+
+That leaves two modes losing something with no obvious home:
+=org-agenda-mode=, where =SPC= showed the entry and scrolled it, and
+=flymake-diagnostics-buffer-mode=, where it showed the diagnostic
+without leaving the list. A section takes =SPC= back for a mode that
+needs it:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (setopt donkey-support-modes
+            (cons '(org-agenda-mode (?\s . org-agenda-show-and-scroll-up))
+                  donkey-support-modes)))
+
+#+end_src
+
 *** The keys a section moves rather than takes
 
 Where =h=, =j=, =k= or =l= displaces something the mode had, the section

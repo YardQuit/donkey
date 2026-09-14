@@ -1221,6 +1221,42 @@ support mode -- and the mode answers the rest."
       (when (buffer-live-p buffer) (kill-buffer buffer))
       (delete-directory dir t))))
 
+(ert-deftest donkey-the-leader-reaches-a-support-mode ()
+  "SPC is the leader in a support mode, and it is the same keymap.
+
+Shared rather than copied, so a sequence the user hangs under SPC after
+load is reachable in every support buffer without being named again.
+What the mode had on SPC is not carried anywhere; `S-SPC' is untouched,
+which is where most of these modes keep `scroll-down-command'."
+  (skip-unless (require 'man nil t))
+  (let ((leader (lookup-key donkey-normal-mode-map " ")))
+    (should (keymapp leader))
+    (with-temp-buffer
+      (Man-mode)
+      (let ((donkey--support-mode-cache nil)
+            (donkey--mode-keys-cache nil))
+        (donkey--install-support-mode-keys)
+        (let* ((map (cdr (assq 'donkey-mode donkey--emulation-mode-map-alist)))
+               (here (lookup-key map " ")))
+          ;; the same object, not a copy
+          (should (eq here leader))
+          ;; so something added afterwards is reached here too
+          (define-key leader "\C-q" #'ignore)
+          (unwind-protect
+              (should (eq (lookup-key map (kbd "SPC C-q")) #'ignore))
+            (define-key leader "\C-q" nil))
+          ;; and S-SPC is the mode's, untouched
+          (should-not (lookup-key map (kbd "S-SPC"))))))
+    ;; a section may take SPC back for a mode that needs it
+    (with-temp-buffer
+      (Man-mode)
+      (let ((donkey-support-modes '((Man-mode (?\s . forward-sexp))))
+            (donkey--support-mode-cache nil)
+            (donkey--mode-keys-cache nil))
+        (donkey--install-support-mode-keys)
+        (let ((map (cdr (assq 'donkey-mode donkey--emulation-mode-map-alist))))
+          (should (eq (lookup-key map " ") #'forward-sexp)))))))
+
 (ert-deftest donkey-a-section-carries-what-hjkl-displaced ()
   "`J' and `K' run what `j' and `k' took, and took nothing in turn.
 

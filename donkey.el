@@ -7296,7 +7296,7 @@ what starts over."
 
 ;; Leader
 (defvar donkey-leader-map (make-sparse-keymap)
-  "Keymap under SPC in NORMAL state, for keys of your own.
+  "Keymap under SPC in NORMAL state and in every support mode.
 
 Add to it with `keymap-set'.  A binding written as (NAME . COMMAND)
 carries NAME with it: `donkey-describe-bindings' shows it beside the
@@ -8270,6 +8270,16 @@ whole of what a support mode is.  \\=`j\\=' and \\=`k\\=' are in it always,
 where the section does not name them, and the section is written over
 the top.
 
+\\=`SPC\\=' is the leader here as it is in NORMAL state, and it is the
+same keymap object, so a sequence put under it reaches every support
+mode without having to be named twice.
+
+What the mode had on \\=`SPC\\=' is not carried anywhere.  Almost every
+one of them puts `scroll-up-command' there and \\=`S-SPC\\=' on
+`scroll-down-command', and both are still \\=`C-v\\=' and \\=`M-v\\='
+everywhere; the rest put a line motion there, which \\=`j\\=' does.  A
+section may name \\=`SPC\\=' to take it back for a mode that needs it.
+
 Keyed on `donkey-mode' rather than on `donkey-normal-mode', because
 NORMAL state does not run here -- a support mode sits in Insert state
 the way an excluded one does, and the map has to answer there."
@@ -8278,6 +8288,10 @@ the way an excluded one does, and the map has to answer there."
     (define-key map "k" #'previous-line)
     (define-key map "h" #'backward-char)
     (define-key map "l" #'forward-char)
+    ;; The leader, shared rather than copied, so whatever the user hangs
+    ;; under SPC later is reachable here too.
+    (let ((leader (lookup-key donkey-normal-mode-map " ")))
+      (when (keymapp leader) (define-key map " " (cons "leader" leader))))
     ;; The package first, the section's own pairs over the top, so a
     ;; section that names `h' gets its own rather than the package's.
     (pcase-dolist (`(,key . ,command) (donkey--support-mode-package-keys))
