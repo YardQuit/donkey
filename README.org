@@ -1038,35 +1038,83 @@ That last clause matters: a source file opened read-only is still a
 file you read as a writer, and DONKEY keeps its keys there.
 
 What a *section* adds is what =h= and =l= mean where the mode has
-somewhere to go. Seventeen ship:
+somewhere to go. Thirty-three sections ship; twenty-three of them give
+=h= or =l= a meaning:
 
 | Mode | =h= | =l= |
 |------+-----+-----|
 | =dired-mode= | up a directory | open the file or enter the directory |
 | =ibuffer-mode= | — | visit the buffer |
-| =Info-mode= | up a node | follow the nearest node |
 | =Man-mode= | previous section | next section |
 | =woman-mode= | — | follow |
-| =help-mode= | back | forward |
 | =apropos-mode= | — | follow |
-| =eww-mode= | back | follow the link |
 | =image-mode= | previous file | next file |
 | =doc-view-mode= | previous page | next page |
-| =tar-mode= | — | extract |
+| =tar-mode= | — | extract the entry |
+| =archive-mode= | — | extract the entry |
 | =Custom-mode= | up to the parent group | — |
 | =occur-mode= | — | go to the occurrence |
 | =compilation-mode= | — | go to the error (covers =grep-mode=) |
 | =package-menu-mode= | — | describe the package |
 | =Buffer-menu-mode= | — | visit the buffer |
 | =org-agenda-mode= | a week earlier | a week later |
+| =bookmark-bmenu-mode= | — | jump to the bookmark |
+| =vc-dir-mode= | — | visit the file |
+| =proced-mode= | — | refine by the field at point |
+| =profiler-report-mode= | — | expand or collapse the entry |
+| =xref--xref-buffer-mode= | — | go to the reference |
+| =finder-mode= | — | select |
+| =flymake-diagnostics-buffer-mode= | — | go to the diagnostic |
+| =calendar-mode= | a day earlier | a day later |
 
 Where no section says otherwise, =h= and =l= are =backward-char= and
 =forward-char=, and =j= and =k= always move by a line.
 
-Two of the seventeen are there only because the rule misses them:
-=Custom-mode= and =org-agenda-mode= are neither derived from
-=special-mode= nor read-only, and a section makes a mode a support mode
-whatever the rule thinks.
+Two of them are there only because the rule misses them: =Custom-mode=
+and =org-agenda-mode= are neither derived from =special-mode= nor
+read-only, and a section makes a mode a support mode whatever the rule
+thinks.
+
+=Info-mode= is not in the table. It has an alphabet of its own that
+=hjkl= cannot be fitted around without taking something a reader needs,
+so it is excluded instead and DONKEY holds no key there at all.
+
+*** The keys a section moves rather than takes
+
+Where =h=, =j=, =k= or =l= displaces something the mode had, the section
+usually gives it the shift of the key that took it:
+
+| Mode | Key | Runs |
+|------+-----+------|
+| =dired-mode= | =J= =K= | go to file, kill lines |
+| =ibuffer-mode= | =J= =K= | jump to buffer, kill lines |
+| =help-mode= | =H= =L= =R= | back, forward, revert |
+| =eww-mode= | =L= | back a page |
+| =dictionary-mode= | =H= =L= | previous, match words |
+| =shortdoc-mode= | =C= | copy the function as kill |
+| =log-view-mode= | =T= | toggle the mark on the entry |
+| =bookmark-bmenu-mode= | =L= | load a bookmark file |
+| =ert-results-mode= | =J= | jump between summary and result |
+| =calendar-mode= | =H= | the holidays here |
+
+*** Modes you read rather than drive
+
+Eleven sections name the =prose= package instead of pairs: =Man-mode=,
+=woman-mode=, =help-mode=, =apropos-mode=, =shortdoc-mode=,
+=dictionary-mode=, =messages-buffer-mode=, =debugger-mode=,
+=vc-annotate-mode=, =log-view-mode= and DONKEY's own bindings chart.
+
+A package is a named list of sequences a section can ask for in one
+word, and =prose= is the reading half of NORMAL state: the motions and
+word keys, the =g= jumps and =G=, the selection and mark-run keys, =y=
+to copy, and =?=. These are buffers full of text to read and copy with
+links to follow, and none of it types, so the mode loses nothing it was
+using.
+
+Enter is the exception a package makes: it is never taken from a mode
+that has its own use for it, because in a buffer a program made for you
+that is the action key. Where the mode has nothing on Enter, the package
+takes it like any other key.
 
 In Dired that means =j= and =k= walk the listing, =l= opens what is
 under the cursor and =h= goes back up — and =d=, =x=, =m=, =g=, =w=,
@@ -1136,9 +1184,9 @@ Adding a section is how you change what =h= and =l= do:
 
   (with-eval-after-load 'donkey
     (setopt donkey-support-modes
-            (append '((Info-mode (?h . Info-up)
-                                 (?l . Info-follow-nearest-node))
-                      (magit-mode (?l . magit-visit-thing)))
+            (append '((pdf-view-mode (?h . pdf-view-previous-page)
+                                     (?l . pdf-view-next-page))
+                      (elfeed-search-mode (?l . elfeed-search-show-entry)))
                     donkey-support-modes)))
 
 #+end_src
