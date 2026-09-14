@@ -15,10 +15,13 @@ commits themselves remain the record of why.
 made" by stepping aside altogether: Dired, Ibuffer, Magit and the
 tabulated lists went on =donkey-excluded-modes=, which gave the mode
 its keys back and took =hjkl= with them. This release is the middle
-that was missing. In those buffers DONKEY now keeps =h=, =j=, =k=, =l=
-and =SPC= and hands back everything else, and the modeline says
-=DONKEY[S]=. Thirty-nine modes ship a section saying what =h= and =l=
-mean there.
+that was missing, and it comes in two sizes. In a list or a viewer —
+Dired, Ibuffer, Occur, the menus, twenty-one modes in all — DONKEY
+holds five keys, =h= =j= =k= =l= and =SPC=, and the mode keeps its
+whole alphabet. In the eighteen that are text to read — help, Man,
+apropos, compilation — it holds about two dozen, because there is
+nothing in those buffers to lose. The modeline says =DONKEY[S]= in
+both, and thirty-nine modes ship a section.
 
 *Changed — you will notice these*
 
@@ -44,9 +47,11 @@ mean there.
   =Man-mode=, =help-mode=, =apropos-mode=, =compilation-mode= and the
   rest — because =g g= and =g e= go there. Where =g= was
   =revert-buffer= or =recompile= the section carries it on =R=.
-- =w=, =b=, =y=, =G=, the mark run and =?= work in those eighteen. They
-  are buffers of text to read and copy, so the reading half of NORMAL
-  state is there and nothing that types is.
+- =w=, =b=, =y=, =G=, the mark run and =?= work in those eighteen —
+  about two dozen keys in all, against five in the other twenty-one.
+  They are buffers of text to read and copy, so the reading half of
+  NORMAL state is there and nothing that types is. =C-g= still quits:
+  it delegates to =keyboard-quit= wherever NORMAL state is off.
 - =l= goes to the error in a compilation buffer, into the entry in an
   archive or a tar file, to the occurrence in an Occur buffer, and to
   the reference in an Xref buffer. Twenty-four of the thirty-nine
