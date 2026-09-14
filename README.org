@@ -1141,7 +1141,7 @@ asked for yourself is never taken away by either.
 
 ** What is on the list already
 
-Two kinds of mode, for two different reasons.
+Three kinds of mode, for three different reasons.
 
 *** Terminals and REPLs — NORMAL state would break them
 
@@ -1172,13 +1172,28 @@ Nothing could have been damaged in any of them: they are read-only, so
 every editing key is refused with =Buffer is read-only=. What went
 missing was the mode, not your work.
 
-*** What you give up by excluding magit and dired
+*** A mode whose alphabet would not fit
 
-=j= and =k=. Both modes remap =next-line=, so while NORMAL state is on
-those two keys move by magit sections and dired lines — and with the
-mode excluded they go back to what the mode itself binds, which is
-=magit-delete-thing= and =dired-do-kill-lines=. If you want the motion
-back, two lines each:
+| Mode | Why |
+|------+-----|
+| =Info-mode= | =n=, =p=, =u=, =l=, =m=, =i=, =d=, =t=, =s=, =SPC= and =DEL= are the whole of how you move through a manual |
+
+Info is the one mode where the [[#modes-donkey-supports-rather-than-takes-over][support mode]] answer was tried
+and lost. Four ways of fitting =h j k l= around its alphabet were
+measured, and each cost something a reader needs: the node keys, the
+menu, the history, or the scroll. It is excluded instead, so DONKEY
+holds no key there at all — not even the four.
+
+*** What you give up by excluding magit
+
+=j= and =k=. Magit remaps =next-line=, so while NORMAL state is on
+those two keys move by magit sections — and with the mode excluded they
+go back to what the mode itself binds, which is =magit-delete-thing=.
+If you want the motion back, two lines:
+
+(Dired used to be on this list for the same reason. It is a [[#modes-donkey-supports-rather-than-takes-over][support
+mode]] now, which keeps =j= and =k= walking the listing without taking
+anything else, so nothing has to be put back by hand there.)
 
 #+begin_src emacs-lisp
 
@@ -1190,11 +1205,11 @@ back, two lines each:
 
 *** Modes that are NOT on the list
 
-Deliberately, because the mode binds few letters and NORMAL state's
-motion is the better trade: =help-mode=, =occur-mode=,
-=compilation-mode=, =grep-mode=, =Man-mode=, =org-agenda-mode=. DONKEY
-is on in all of those, and =RET= and the wrap punctuation still reach
-the mode.
+Deliberately, because a [[#modes-donkey-supports-rather-than-takes-over][support mode]] is the better answer
+there: =help-mode=, =occur-mode=, =compilation-mode=, =grep-mode=,
+=Man-mode= and =org-agenda-mode= keep their own alphabet while DONKEY
+keeps the four motion keys and the leader. They were NORMAL state
+until 1.12.0, which is what made excluding them look necessary.
 
 Deliberately, because they are buffers you are editing: =wdired-mode=,
 =git-commit-mode=, =diff-mode=.
@@ -1203,10 +1218,31 @@ No longer on it, because they are [[#modes-donkey-supports-rather-than-takes-ove
 =ibuffer-mode=. They keep every key they ever had except =hjkl=, which
 is what excluding them was really for.
 
-Not on it because nobody has asked yet: =eww-mode=, =elfeed-search-mode=,
-=deft-mode=, =vundo-mode=, =ranger-mode=, =pdf-view-mode=, the =docker=
-and =kubernetes= UIs. Add any of them as above — and please open an
-issue so the next person does not have to.
+Not on it because they do not need to be: =elfeed-search-mode=,
+=deft-mode=, =vundo-mode=, =pdf-view-mode=, the =docker= and
+=kubernetes= UIs. A mode DONKEY has never heard of still gets an
+answer — see below — so excluding one is a choice rather than a
+repair. Add any of them as above if you want DONKEY out of the way
+entirely, and please open an issue so the next person does not have
+to. (=eww-mode= and =ranger-mode= came off this list: both are support
+modes now.)
+
+*** What a mode with no section gets
+
+Nothing has to be on either list for DONKEY to behave. A mode you
+write in — any =prog-mode= or =text-mode= derivative, so =rust-mode=,
+=go-mode=, =markdown-mode=, =yaml-mode= and the rest — is NORMAL
+state, and its letters are DONKEY's. A buffer a program made —
+anything derived from =special-mode=, or read-only — is a support mode
+on the floor alone: =h=, =j=, =k=, =l= and the leader, with every
+other key the mode's. =kubernetes-mode=, =log4e-mode= and
+=tablist-mode= land there today without a line of configuration.
+
+So most packages get support for free. The sections DONKEY ships are
+for stock Emacs, where the maintainer can test them; a section for a
+third-party mode is added on request. If one you use would be better
+with =h= and =l= meaning something, open an issue saying which mode
+and which two commands.
 
 That makes this a list rather than a rule, and it stops where the
 reading stopped. [[#why-those-two-modes-ship-excluded][Why Those Two Modes Ship Excluded]]
