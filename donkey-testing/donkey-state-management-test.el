@@ -1096,9 +1096,10 @@ Two of them are here only because the rule misses them:
 `Custom-mode' and `org-agenda-mode' are neither derived from
 `special-mode' nor read-only."
   (let ((table (eval (car (get 'donkey-support-modes 'standard-value)) t)))
-    (should (= (length table) 40))
+    (should (= (length table) 41))
     (should (equal (mapcar #'car table)
-                   '(dired-mode ibuffer-mode Man-mode woman-mode
+                   '(dired-mode ibuffer-mode speedbar-mode
+                     Man-mode woman-mode
                      help-mode apropos-mode eww-mode shortdoc-mode dictionary-mode
                      messages-buffer-mode debugger-mode vc-annotate-mode
                      log-view-mode
@@ -1175,7 +1176,8 @@ Two of them are here only because the rule misses them:
     (should (memq 'Info-mode (eval (car (get 'donkey-excluded-modes
                                              'standard-value))
                                     t)))
-    (dolist (mode '(dired-mode ibuffer-mode image-mode doc-view-mode tar-mode
+    (dolist (mode '(dired-mode ibuffer-mode speedbar-mode image-mode
+                    doc-view-mode tar-mode
                     archive-mode Custom-mode occur-mode package-menu-mode
                     Buffer-menu-mode org-agenda-mode bookmark-bmenu-mode
                     vc-dir-mode proced-mode profiler-report-mode finder-mode
@@ -1203,6 +1205,14 @@ Two of them are here only because the rule misses them:
                    '((?l . ibuffer-visit-buffer)
                      (?J . ibuffer-jump-to-buffer)
                      (?K . ibuffer-do-kill-lines))))
+    ;; speedbar is the third of that shape: a directory tree, so `h'
+    ;; and `l' mean what they mean in Dired.  Its `K' is there for the
+    ;; other reason -- the buffers display puts `speedbar-buffer-kill-
+    ;; buffer' on `k', and `k' is DONKEY's, so the kill needs a key.
+    (should (equal (cdr (assq 'speedbar-mode table))
+                   '((?h . speedbar-up-directory)
+                     (?l . speedbar-edit-line)
+                     (?K . speedbar-buffer-kill-buffer))))
     ;; and neither is on the exclusion list any more
     (let ((excluded (eval (car (get 'donkey-excluded-modes 'standard-value)) t)))
       (should-not (memq 'dired-mode excluded))

@@ -862,13 +862,14 @@ That last clause matters: a source file opened read-only is still a
 file you read as a writer, and DONKEY keeps its keys there.
 
 What a *section* adds is what =h= and =l= mean where the mode has
-somewhere to go. Forty sections ship; twenty-five of them give =h= or
-=l= a meaning:
+somewhere to go. Forty-one sections ship; twenty-six of them give =h=
+or =l= a meaning:
 
 | Mode | =h= | =l= |
 |------+-----+-----|
 | =dired-mode= | up a directory | open the file or enter the directory |
 | =ibuffer-mode= | — | visit the buffer |
+| =speedbar-mode= | up a directory | open the file or enter the directory |
 | =Man-mode= | previous section | next section |
 | =woman-mode= | — | follow |
 | =apropos-mode= | — | follow |
@@ -954,6 +955,7 @@ usually gives it the shift of the key that took it:
 |------+-----+------|
 | =dired-mode= | =J= =K= | go to file, kill lines |
 | =ibuffer-mode= | =J= =K= | jump to buffer, kill lines |
+| =speedbar-mode= | =K= | kill the buffer on the line |
 | =help-mode= | =H= =L= =R= | back, forward, revert |
 | =eww-mode= | =L= | back a page |
 | =dictionary-mode= | =H= =L= | previous, match words |
@@ -1873,11 +1875,11 @@ Customize would. =setq= on those needs the refresh call by hand.
 
     ;; Every buffer a program made for you is a support mode, decided
     ;; by the rule in donkey--program-buffer-p.  A section adds what h
-    ;; and l mean there; j and k are never written down.  Forty ship --
-    ;; see the chapter above for the whole table.
+    ;; and l mean there; j and k are never written down.  Forty-one
+    ;; ship -- see the chapter above for the whole table.
     ;;
     ;; CONS rather than a literal list: setopt with a list of your own
-    ;; REPLACES the table and takes the other thirty-nine with it.  The
+    ;; REPLACES the table and takes the other forty with it.  The
     ;; first section a mode matches answers, so one written here wins
     ;; over the shipped one -- which is how to disagree with a section
     ;; without excluding the mode.
@@ -2348,7 +2350,7 @@ and =M-x apropos-command donkey-= finds any of them.
 | Option                             | Default                          | What it does |
 |------------------------------------+----------------------------------+--------------|
 | =donkey-excluded-modes=            | 12 modes, see above              | where DONKEY steps aside completely |
-| =donkey-support-modes=             | 40 sections, see above           | what =h= and =l= do in a support mode |
+| =donkey-support-modes=             | 41 sections, see above           | what =h= and =l= do in a support mode |
 | =donkey-support-mode-exceptions=   | =occur-edit-mode=                | program-looking buffers you type in |
 | =donkey-excluded-mode-exceptions=  | =nil=                            | modes that stay on under an excluded parent |
 | =donkey-editing-modes=             | 7 broad modes                    | where =RET= does nothing |

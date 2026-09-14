@@ -273,6 +273,9 @@ the pairs are laid over the package, so a section\\='s own \\=`h\\=' wins:
                        (?J . dired-goto-file) (?K . dired-do-kill-lines))
     (ibuffer-mode      (?l . ibuffer-visit-buffer)
                        (?J . ibuffer-jump-to-buffer) (?K . ibuffer-do-kill-lines))
+    (speedbar-mode     (?h . speedbar-up-directory)
+                       (?l . speedbar-edit-line)
+                       (?K . speedbar-buffer-kill-buffer))
     (Man-mode          prose
                        (?h . Man-previous-section) (?l . Man-next-section))
     (woman-mode        prose (?l . woman-follow))
