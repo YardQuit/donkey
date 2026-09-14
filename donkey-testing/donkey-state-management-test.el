@@ -1086,6 +1086,36 @@ and pressing it left a reader in Insert state in a read-only buffer."
                                          donkey-insert-end-of-line))))
             (donkey-mode -1)))))))
 
+(ert-deftest donkey-every-option-default-matches-its-own-type ()
+  "Each `defcustom' shipped default satisfies the :type declared for it.
+
+`setopt' checks the value against the type and warns when it does not
+fit, so a type the shipped default already fails warns the reader who
+sets the option to anything at all -- including back to that default.
+
+The trap this pins is the `function' widget: it matches only what is
+`functionp' at the moment of the check, and a table that names commands
+from packages nobody has loaded yet cannot satisfy it.  A command names
+a symbol here; whether it is bound is a question for the code that
+reads the table, not for the type."
+  (require 'wid-edit)
+  (require 'cus-edit)
+  (let ((bad nil))
+    (mapatoms
+     (lambda (sym)
+       (let ((name (symbol-name sym)))
+         (when (and (string-prefix-p "donkey-" name)
+                    (get sym 'standard-value)
+                    (get sym 'custom-type))
+           (let ((value (condition-case nil
+                            (eval (car (get sym 'standard-value)) t)
+                          (error 'donkey-test--unevaluable))))
+             (unless (eq value 'donkey-test--unevaluable)
+               (unless (widget-apply (widget-convert (get sym 'custom-type))
+                                     :match value)
+                 (push sym bad))))))))
+    (should-not bad)))
+
 (ert-deftest donkey-the-support-table-ships-a-section-for-each-mode-named ()
   "The modes a section names, and what DONKEY keeps in each.
 

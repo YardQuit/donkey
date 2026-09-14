@@ -376,7 +376,8 @@ you do not have costs nothing.
 
 `donkey-excluded-modes' is the stronger form: DONKEY holds no key at
 all there, not even \\=`j\\=' and \\=`k\\='.  A mode on both is excluded."
-  :type '(repeat (cons symbol (repeat (cons character function))))
+  :type '(repeat (cons symbol
+                       (repeat (choice (cons character symbol) symbol))))
   :group 'donkey)
 
 (defcustom donkey-support-mode-exceptions '(occur-edit-mode)
