@@ -2962,6 +2962,39 @@ anything."
         (should (equal numbers (sort (copy-sequence numbers)
                                      (lambda (a b) (version-list-< b a)))))))))
 
+(defun donkey-test--readme-init-block (heading)
+  "Return the :init form of the `use-package donkey' block under HEADING.
+
+The README carries that block twice, in \"From a clone\" and in \"A
+Complete Configuration\".  Returns nil when the heading has no such
+block, so a caller can tell a missing one from an unequal one."
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name "README.org" donkey-test--source-dir))
+    (goto-char (point-min))
+    (when (search-forward heading nil t)
+      (let ((end (or (save-excursion
+                       (and (re-search-forward "^\\*+ " nil t)
+                            (match-beginning 0)))
+                     (point-max))))
+        (when (search-forward "    :init\n" end t)
+          (let ((start (match-beginning 0)))
+            (when (search-forward "\n    :config" end t)
+              (buffer-substring-no-properties start (match-beginning 0)))))))))
+
+(ert-deftest donkey-the-readme-installs-donkey-the-same-way-twice ()
+  "The install block is written out twice and the two copies agree.
+
+\"From a clone\" is where a reader meets it, \"A Complete Configuration\"
+is where they take it away.  A change made in one and not the other
+hands somebody a block that no longer compiles what it loads.  The two
+are compared rather than cross-referenced, because a reference is the
+thing that drifts."
+  (let ((clone  (donkey-test--readme-init-block "** From a clone"))
+        (config (donkey-test--readme-init-block "* A Complete Configuration")))
+    (should clone)
+    (should config)
+    (should (equal clone config))))
+
 (ert-deftest donkey-readme-fall-through-keys-are-untouched ()
   "Every key the README calls untouched really is.
 

@@ -1234,7 +1234,7 @@ completely: every key is the mode's, NORMAL state cannot be reached by
 any route, =C-g= means what it means in stock Emacs, and the modeline
 says =DONKEY[E]=.
 
-Sixteen modes ship on the list. Add your own like this:
+Thirteen modes ship on the list. Add your own like this:
 
 #+begin_src emacs-lisp
 
@@ -1921,17 +1921,51 @@ have — it is there so you can see the option exists and what shape its
 value takes, not because you need it. Read this as a menu and delete
 what you do not want.
 
-=setopt= rather than =setq= throughout. Five of these options rebuild
-something when they change — the wrap keys, the suppressed commands,
-the =SPC i= keymap — and =setopt= runs the setter that does it, the way
-Customize would. =setq= on those needs the refresh call by hand.
+=setopt= rather than =setq= throughout. Four of these options rebuild
+something through a setter when they change — the two wrap options, the
+pair table and the suppressed commands — and =setopt= runs it the way
+Customize would, where =setq= would leave the keymap as it was.
+
+=donkey-input-methods= looks like a fifth and is not: the =SPC i= keymap
+is rebuilt from a variable watcher, which plain =setq= also trips.
+Using =setopt= for everything means never having to know which is which.
 
 #+begin_src emacs-lisp
 
+  ;; The clone and the compile step, the same block as [[#installing][Installing]].
+  ;; From a package archive instead: drop my-donkey-dir, :load-path
+  ;; and :init, and use :ensure t.
+  (defvar my-donkey-dir (expand-file-name "~/src/donkey"))
+
   (use-package donkey
-    ;; From a clone.  From a package archive instead: drop this line
-    ;; and use :ensure t.
-    :load-path "~/src/donkey"
+    :load-path my-donkey-dir
+
+    :init
+    ;; A package archive byte-compiles what it installs.  A clone does
+    ;; not, and nothing in DONKEY compiles itself, so compile it here --
+    ;; and again whenever donkey.el turns out to be newer than the .elc
+    ;; beside it, which is what a `git pull' leaves behind.
+    (let* ((src (expand-file-name "donkey.el"  my-donkey-dir))
+           (elc (expand-file-name "donkey.elc" my-donkey-dir))
+           (recompiled nil))
+      (if (not (file-exists-p src))
+          (message "DONKEY: no donkey.el under %s -- check my-donkey-dir"
+                   my-donkey-dir)
+        (when (file-newer-than-file-p src elc)
+          (require 'bytecomp)
+          (let ((start (current-time)))
+            (setq recompiled
+                  (and (ignore-errors (byte-compile-file src))
+                       (float-time (time-since start))))))
+        (let ((compiled (and (file-exists-p elc)
+                             (not (file-newer-than-file-p src elc)))))
+          (load (if compiled elc src) nil t)
+          (message "DONKEY %s loaded %s%s"
+                   (donkey-version)
+                   (if compiled "compiled" "from source (interpreted)")
+                   (if recompiled
+                       (format ", recompiled in %.2fs" recompiled)
+                     "")))))
 
     :config
 
@@ -1967,6 +2001,19 @@ Customize would. =setq= on those needs the refresh call by hand.
                                (?l . dired-open-file)
                                (?y . dired-copy-filename-as-kill))
                   donkey-support-modes))
+
+    ;; Where the rule is wrong the other way: a buffer that looks like
+    ;; a program's but is one you type in.  This is NORMAL state, not
+    ;; [E] -- DONKEY holds every letter there again -- so it is the
+    ;; wrong lever for a list you drive.
+    (setopt donkey-support-mode-exceptions '(occur-edit-mode))   ; default
+
+    ;; A bare symbol in a section names a key PACKAGE: the set of keys
+    ;; that package holds, written once and taken by naming it.  One
+    ;; ships, `prose', the reading set of 45 keys.  Your own goes on
+    ;; the front the same way a section does:
+    ;; (setopt donkey-key-packages
+    ;;         (cons '(mine "h" "l" "RET") donkey-key-packages))
 
 
     ;;; The Enter key
@@ -2288,7 +2335,7 @@ four of their key names) do nothing at all.
 
 ** Every command
 
-79 commands. These have no key and are reached with =M-x=:
+80 commands. These have no key and are reached with =M-x=:
 
 | Command                              | Does                                         |
 |--------------------------------------+----------------------------------------------|
@@ -2428,8 +2475,9 @@ and =M-x apropos-command donkey-= finds any of them.
 
 | Option                             | Default                          | What it does |
 |------------------------------------+----------------------------------+--------------|
-| =donkey-excluded-modes=            | 12 modes, see above              | where DONKEY steps aside completely |
+| =donkey-excluded-modes=            | 13 modes, see above              | where DONKEY steps aside completely |
 | =donkey-support-modes=             | 41 sections, see above           | what =h= and =l= do in a support mode |
+| =donkey-key-packages=              | 1 package, =prose=               | the keys a section takes by naming it |
 | =donkey-support-mode-exceptions=   | =occur-edit-mode=                | program-looking buffers you type in |
 | =donkey-excluded-mode-exceptions=  | =nil=                            | modes that stay on under an excluded parent |
 | =donkey-editing-modes=             | 7 broad modes                    | where =RET= does nothing |
