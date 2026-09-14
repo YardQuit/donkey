@@ -8393,6 +8393,36 @@ Set to nil to fall back to global `cursor-type'."
 (defcustom donkey-cursor-insert '(bar . 2)
   "Cursor shape when DONKEY Insert state is active.
 
+A support mode and an excluded mode sit in Insert state too and ask
+for their own shapes; see `donkey-cursor-support' and
+`donkey-cursor-excluded'.
+
+Set to nil to fall back to global `cursor-type'."
+  :type '(choice (const box) (const bar) (const hbar) (const hollow)
+                 (cons symbol integer)
+                 (const :tag "Use Global Default" nil))
+  :group 'donkey)
+
+(defcustom donkey-cursor-support 'box
+  "Cursor shape in a support mode, where the modeline says \\=`[S]\\='.
+
+Normal state's shape by default, because the keys are Normal state's:
+\\=`h\\=', \\=`j\\=', \\=`k\\=' and \\=`l\\=' move, and nothing you press
+becomes text.
+
+Set to nil to fall back to global `cursor-type'."
+  :type '(choice (const box) (const bar) (const hbar) (const hollow)
+                 (cons symbol integer)
+                 (const :tag "Use Global Default" nil))
+  :group 'donkey)
+
+(defcustom donkey-cursor-excluded '(bar . 2)
+  "Cursor shape in an excluded mode, where the modeline says \\=`[E]\\='.
+
+Insert state's shape by default, because most excluded modes are
+terminals and REPLs and what you type there reaches the program on
+the other end.
+
 Set to nil to fall back to global `cursor-type'."
   :type '(choice (const box) (const bar) (const hbar) (const hollow)
                  (cons symbol integer)
@@ -8553,13 +8583,63 @@ otherwise, so the next command in a visible buffer resyncs it through
 (defvar donkey--cursor-last-type nil
   "The `cursor-type' it left behind, to notice one another package set.")
 
+(defvar-local donkey--insert-cursor-cache nil
+  "What `donkey--insert-cursor-setting' last answered here, and from what.
+
+A list of every input to that answer followed by the answer.  Kept
+because the answer is asked once per command, through
+`donkey--update-cursor-passive', and reaching it the long way costs
+`donkey--support-mode-p' -- which walks `donkey-support-modes' and
+compares it whole.")
+
+(defun donkey--insert-cursor-setting ()
+  "Return the shape Insert state asks for in this buffer.
+
+Three kinds of buffer reach Insert state and they do not want the
+same cursor: `donkey-cursor-support' where the modeline says
+\\=`[S]\\=', `donkey-cursor-excluded' where it says \\=`[E]\\=', and
+`donkey-cursor-insert' where it says \\=`[I]\\='.
+
+Asked in the order `donkey--insert-state-lighter' asks it, so the
+cursor and the modeline cannot disagree.
+
+Memoized on every input to the answer: the major mode, the read-only
+flag, the four lists that decide which kind of buffer this is, and
+the three shapes themselves."
+  (let ((c donkey--insert-cursor-cache))
+    (if (and c
+             (eq (nth 0 c) major-mode)
+             (eq (nth 1 c) buffer-read-only)
+             (eq (nth 2 c) donkey-excluded-modes)
+             (eq (nth 3 c) donkey-excluded-mode-exceptions)
+             (eq (nth 4 c) donkey-support-modes)
+             (eq (nth 5 c) donkey-support-mode-exceptions)
+             (eq (nth 6 c) donkey-cursor-support)
+             (eq (nth 7 c) donkey-cursor-excluded)
+             (eq (nth 8 c) donkey-cursor-insert))
+        (nth 9 c)
+      (let ((result (cond ((donkey--support-mode-p) donkey-cursor-support)
+                          ((donkey--excluded-mode-p) donkey-cursor-excluded)
+                          (t donkey-cursor-insert))))
+        (setq donkey--insert-cursor-cache
+              (list major-mode buffer-read-only
+                    donkey-excluded-modes donkey-excluded-mode-exceptions
+                    donkey-support-modes donkey-support-mode-exceptions
+                    donkey-cursor-support donkey-cursor-excluded
+                    donkey-cursor-insert result))
+        result))))
+
 (defun donkey--cursor-setting ()
   "Return the cursor setting the current buffer's DONKEY state asks for.
+
+Insert state answers through `donkey--insert-cursor-setting', which
+tells a support mode and an excluded mode apart from a buffer you
+write in.
 
 The symbol `none' when neither state is active, which is not a
 setting any state asks for and so cannot be mistaken for one."
   (cond ((bound-and-true-p donkey-normal-mode) donkey-cursor-normal)
-        ((bound-and-true-p donkey-insert-mode) donkey-cursor-insert)
+        ((bound-and-true-p donkey-insert-mode) (donkey--insert-cursor-setting))
         (t 'none)))
 
 (defun donkey--update-cursor (&optional passive)
@@ -8579,7 +8659,7 @@ under it."
    ((bound-and-true-p donkey-normal-mode)
     (donkey--apply-cursor-setting donkey-cursor-normal))
    ((bound-and-true-p donkey-insert-mode)
-    (donkey--apply-cursor-setting donkey-cursor-insert))
+    (donkey--apply-cursor-setting (donkey--insert-cursor-setting)))
    ((not passive)
     (donkey--apply-cursor-setting nil))))
 

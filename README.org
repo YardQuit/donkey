@@ -1404,14 +1404,28 @@ one you are in without reading the modeline.
 
 #+begin_src emacs-lisp
 
-  (setq donkey-cursor-normal 'box)        ; NORMAL state
-  (setq donkey-cursor-insert '(bar . 2))  ; INSERT state
+  (setq donkey-cursor-normal 'box)          ; NORMAL state
+  (setq donkey-cursor-insert '(bar . 2))    ; INSERT state
+  (setq donkey-cursor-support 'box)         ; a support mode,  =[S]=
+  (setq donkey-cursor-excluded '(bar . 2))  ; an excluded mode, =[E]=
 
 #+end_src
 
-Either accepts what Emacs's =cursor-type= accepts: =box=, =bar=,
+Any of them accepts what Emacs's =cursor-type= accepts: =box=, =bar=,
 =hbar=, =hollow=, or a cons like =(bar . 2)= for a bar two pixels
 wide. Set one to nil to leave the cursor alone in that state.
+
+The last two are the same shapes as the first two, on purpose. A
+support mode takes NORMAL's box because the keys there are NORMAL's —
+=h=, =j=, =k= and =l= move, and nothing you press becomes text. An
+excluded mode takes INSERT's bar because most of them are terminals
+and REPLs, where what you type goes to the program on the other end.
+
+So out of the box the cursor answers *is this buffer taking my
+letters?* rather than which of the four states you are in, and the
+modeline is still where you read the difference between =[S]=, =[E]=
+and =[I]=. Give either its own shape if you would rather see all
+four.
 
 ** In a terminal
 
@@ -2059,6 +2073,12 @@ Using =setopt= for everything means never having to know which is which.
 
     (setopt donkey-cursor-normal 'box)                           ; default
     (setopt donkey-cursor-insert '(bar . 2))                     ; default
+
+    ;; A support mode takes NORMAL's shape and an excluded mode takes
+    ;; INSERT's, so the cursor says whether the buffer is taking your
+    ;; letters.  Give either its own to tell all four states apart.
+    (setopt donkey-cursor-support 'box)                          ; default
+    (setopt donkey-cursor-excluded '(bar . 2))                   ; default
     (setopt donkey-decscusr-denied-terminals
             '("dumb" "linux"))                                   ; default
 
@@ -2510,6 +2530,8 @@ and =M-x apropos-command donkey-= finds any of them.
 | =donkey-position-ring-max=         | =10=                             | how far =S= remembers |
 | =donkey-cursor-normal=             | =box=                            | cursor in NORMAL state |
 | =donkey-cursor-insert=             | =(bar . 2)=                      | cursor in INSERT state |
+| =donkey-cursor-support=            | =box=                            | cursor in a support mode, =[S]= |
+| =donkey-cursor-excluded=           | =(bar . 2)=                      | cursor in an excluded mode, =[E]= |
 | =donkey-decscusr-denied-terminals= | =("dumb" "linux")=               | terminals that get no cursor escapes |
 | =donkey-mark-pair-delimiters=      | 21 pairs                         | what =m i=/=m a= select and the keys wrap |
 | =donkey-wrap-delimiters=           | =all=                            | which of those pairs get a key |
