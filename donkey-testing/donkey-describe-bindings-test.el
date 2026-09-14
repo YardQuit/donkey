@@ -3135,9 +3135,13 @@ Checked in both directions -- see
   (let (mismatches)
     (with-temp-buffer
       (insert-file-contents (expand-file-name "README.org" donkey-test--source-dir))
+      ;; Two passes: a key is written =k= normally, and ~k~ where the
+      ;; key is itself an `=' -- `===' is not verbatim markup on every
+      ;; renderer the README is read through.
+      (dolist (row '("^| =\\([^=]+\\)= *| =\\(donkey-[a-z0-9---]+\\)= *|"
+                     "^| ~\\([^~]+\\)~ *| =\\(donkey-[a-z0-9---]+\\)= *|"))
       (goto-char (point-min))
-      (while (re-search-forward
-              "^| =\\([^=]+\\)= *| =\\(donkey-[a-z0-9---]+\\)= *|" nil t)
+      (while (re-search-forward row nil t)
         (let* ((key (match-string 1))
                (claimed (intern (match-string 2)))
                (actual (ignore-errors (lookup-key donkey-normal-mode-map (kbd key)))))
@@ -3148,7 +3152,7 @@ Checked in both directions -- see
             (push (format "%s claims %s, but the key is unbound" key claimed) mismatches))
            ((not (eq actual claimed))
             (push (format "%s claims %s, but is bound to %s" key claimed actual)
-                  mismatches))))))
+                  mismatches)))))))
     (should (equal mismatches nil))))
 
 (ert-deftest donkey-every-bound-command-appears-in-the-readme ()

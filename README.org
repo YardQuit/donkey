@@ -933,7 +933,7 @@ on =SPC=, which is what =j= does. =so-long-mode= binds it to nothing
 but a space.
 
 Three more put a command that already has another key: =speedbar-mode=
-toggles a tree node, which =+=, === and =-= also do; =finder-mode= put
+toggles a tree node, which =+=, ~=~ and =-= also do; =finder-mode= put
 =finder-select=, which its own section puts on =l=; and =calendar-mode=
 put =scroll-other-window=, which is =C-M-v=.
 
@@ -2447,7 +2447,7 @@ by the test suite:
 | =+= | =donkey-wrap-region= |
 | =/= | =donkey-wrap-region= |
 | =<= | =donkey-wrap-region= |
-| === | =donkey-wrap-region= |
+| ~=~ | =donkey-wrap-region= |
 | =[= | =donkey-wrap-region= |
 | =\= | =donkey-wrap-region= |
 | =]= | =donkey-wrap-region= |
