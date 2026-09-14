@@ -1094,6 +1094,57 @@ A mode matches by derivation as well as by name, and the first section
 it matches answers, so list a specific mode before the general one. A
 command you do not have is passed over rather than bound.
 
+*** Disagreeing with a section
+
+The support map is an *emulation map*, which Emacs consults before a
+major mode's own keymap. That is what makes the four motion keys
+reliable — and it means a binding you put in the mode's map with
+=:bind (:map dired-mode-map ...)= is silently ignored on any key DONKEY
+holds. In Dired those are =h=, =j=, =k=, =l=, =SPC=, =J= and =K=;
+everything else reaches your binding as normal.
+
+There are three levers, smallest first.
+
+*A section names the key.* Any key but =j= and =k=, including =SPC=:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (setopt donkey-support-modes
+            (cons '(dired-mode (?h . dired-up-directory)
+                               (?l . dired-open-file)
+                               (?y . dired-copy-filename-as-kill))
+                  donkey-support-modes)))
+
+#+end_src
+
+Written before the shipped entry, so it is the one that answers.
+
+*A remap reaches what a section may not name.* =j= and =k= are the
+floor and no section can take them — but a remap of the command they
+run is consulted even from the mode's own map, which is how =j= reaches
+=dired-next-line= in the first place:
+
+#+begin_src emacs-lisp
+
+  (use-package dired
+    :bind (:map dired-mode-map
+           ("<remap> <next-line>"     . my-down)
+           ("<remap> <previous-line>" . my-up)))
+
+#+end_src
+
+Remap the command, not the key. The key stays DONKEY's, which is why
+=C-h k= still tells the truth about it.
+
+*=donkey-support-mode-exceptions= gives the buffer back to NORMAL
+state*, for a buffer that looks like a program's but is one you type
+in. =occur-edit-mode= is the case it ships for.
+
+And =donkey-excluded-modes= turns DONKEY off there altogether. Reach
+for it when none of the above is what you want — not as the first
+answer to one key being wrong.
+
 ** =[S]= and =[E]=
 
 Both mean Normal state is off in this buffer. =[E]= is
