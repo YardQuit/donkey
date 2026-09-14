@@ -1096,14 +1096,14 @@ Two of them are here only because the rule misses them:
 `Custom-mode' and `org-agenda-mode' are neither derived from
 `special-mode' nor read-only."
   (let ((table (eval (car (get 'donkey-support-modes 'standard-value)) t)))
-    (should (= (length table) 39))
+    (should (= (length table) 40))
     (should (equal (mapcar #'car table)
                    '(dired-mode ibuffer-mode Man-mode woman-mode
                      help-mode apropos-mode eww-mode shortdoc-mode dictionary-mode
                      messages-buffer-mode debugger-mode vc-annotate-mode
                      log-view-mode
                      emacs-authors-mode tags-table-mode url-cookie-mode
-                     ebrowse-tree-mode so-long-mode
+                     ebrowse-tree-mode ebrowse-member-mode so-long-mode
                      image-mode doc-view-mode
                      tar-mode archive-mode Custom-mode occur-mode
                      emacs-lisp-compilation-mode compilation-mode
@@ -1135,7 +1135,7 @@ Two of them are here only because the rule misses them:
                     shortdoc-mode dictionary-mode messages-buffer-mode
                     debugger-mode vc-annotate-mode log-view-mode
                     emacs-authors-mode tags-table-mode url-cookie-mode
-                    ebrowse-tree-mode so-long-mode
+                    ebrowse-tree-mode ebrowse-member-mode so-long-mode
                     emacs-lisp-compilation-mode compilation-mode
                     donkey-bindings-mode))
       (should (memq 'prose (cdr (assq mode table)))))
@@ -1146,6 +1146,11 @@ Two of them are here only because the rule misses them:
                     ebrowse-tree-mode))
       (should (equal (cdr (assq mode table)) '(prose (?R . revert-buffer)))))
     (should (equal (cdr (assq 'so-long-mode table)) '(prose)))
+    ;; the ebrowse member buffer is a list as well as text: RET goes to
+    ;; the definition, so `l' carries the same command
+    (should (equal (cdr (assq 'ebrowse-member-mode table))
+                   '(prose (?l . ebrowse-find-member-definition)
+                           (?R . revert-buffer))))
     ;; eww takes no package: h and l are character motion, RET follows
     ;; a link through the button's own keymap, and L carries the back
     ;; command that l displaced -- the shift of the key that took it.

@@ -874,8 +874,8 @@ That last clause matters: a source file opened read-only is still a
 file you read as a writer, and DONKEY keeps its keys there.
 
 What a *section* adds is what =h= and =l= mean where the mode has
-somewhere to go. Thirty-nine sections ship; twenty-four of them give
-=h= or =l= a meaning:
+somewhere to go. Forty sections ship; twenty-five of them give =h= or
+=l= a meaning:
 
 | Mode | =h= | =l= |
 |------+-----+-----|
@@ -902,6 +902,7 @@ somewhere to go. Thirty-nine sections ship; twenty-four of them give
 | =xref--xref-buffer-mode= | — | go to the reference |
 | =finder-mode= | — | select |
 | =flymake-diagnostics-buffer-mode= | — | go to the diagnostic |
+| =ebrowse-member-mode= | — | go to the member definition |
 | =calendar-mode= | a day earlier | a day later |
 
 Where no section says otherwise, =h= and =l= are =backward-char= and
@@ -976,13 +977,13 @@ usually gives it the shift of the key that took it:
 
 *** Modes you read rather than drive
 
-Eighteen sections name the =prose= package instead of pairs:
+Nineteen sections name the =prose= package instead of pairs:
 =Man-mode=, =woman-mode=, =help-mode=, =apropos-mode=, =shortdoc-mode=,
 =dictionary-mode=, =messages-buffer-mode=, =debugger-mode=,
 =vc-annotate-mode=, =log-view-mode=, =emacs-authors-mode=,
 =tags-table-mode=, =url-cookie-mode=, =ebrowse-tree-mode=,
-=so-long-mode=, =compilation-mode= and =emacs-lisp-compilation-mode=,
-and DONKEY's own bindings chart.
+=so-long-mode=, =ebrowse-member-mode=, =compilation-mode= and
+=emacs-lisp-compilation-mode=, and DONKEY's own bindings chart.
 
 A package is a named list of sequences a section can ask for in one
 word, and =prose= is the reading half of NORMAL state: the motions and
@@ -2267,7 +2268,7 @@ and =M-x apropos-command donkey-= finds any of them.
 | Option                             | Default                          | What it does |
 |------------------------------------+----------------------------------+--------------|
 | =donkey-excluded-modes=            | 12 modes, see above              | where DONKEY steps aside completely |
-| =donkey-support-modes=             | 39 sections, see above           | what =h= and =l= do in a support mode |
+| =donkey-support-modes=             | 40 sections, see above           | what =h= and =l= do in a support mode |
 | =donkey-support-mode-exceptions=   | =occur-edit-mode=                | program-looking buffers you type in |
 | =donkey-excluded-mode-exceptions=  | =nil=                            | modes that stay on under an excluded parent |
 | =donkey-editing-modes=             | 7 broad modes                    | where =RET= does nothing |

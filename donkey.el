@@ -294,6 +294,10 @@ the pairs are laid over the package, so a section\\='s own \\=`h\\=' wins:
     (tags-table-mode   prose (?R . revert-buffer))
     (url-cookie-mode   prose (?R . revert-buffer))
     (ebrowse-tree-mode prose (?R . revert-buffer))
+    ;; The member buffer is a list of entries as well as text: RET
+    ;; goes to the definition, so `l' does too.
+    (ebrowse-member-mode prose (?l . ebrowse-find-member-definition)
+                       (?R . revert-buffer))
     ;; so-long binds nothing at all, so there is nothing to carry.
     (so-long-mode      prose)
     (image-mode        (?h . image-previous-file) (?l . image-next-file))
