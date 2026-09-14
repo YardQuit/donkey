@@ -9,6 +9,83 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.12.0 — 2026-09-14
+
+1.11.0 answered "NORMAL state owns the alphabet in a buffer a program
+made" by stepping aside altogether: Dired, Ibuffer, Magit and the
+tabulated lists went on =donkey-excluded-modes=, which gave the mode
+its keys back and took =hjkl= with them. This release is the middle
+that was missing. In those buffers DONKEY now keeps =h=, =j=, =k=, =l=
+and =SPC= and hands back everything else, and the modeline says
+=DONKEY[S]=. Thirty-nine modes ship a section saying what =h= and =l=
+mean there.
+
+*Changed — you will notice these*
+
+- =j= and =k= walk the listing and =l= opens what is under the cursor
+  in Dired, Ibuffer and the tabulated lists. They came off
+  =donkey-excluded-modes= and are support modes instead, so =d=, =m=,
+  =x=, =g= and the rest of the mode's alphabet are exactly as they were
+  in 1.11.0, and the four motion keys work again. =h= goes up a
+  directory in Dired.
+- =d= no longer deletes in =help-mode=, =Man-mode=, =occur-mode=,
+  =compilation-mode=, =grep-mode= and =org-agenda-mode=, and neither do
+  the other editing letters. NORMAL state used to be on in those, which
+  meant DONKEY owned the alphabet; they are support modes now. Nothing
+  was at risk — the buffers are read-only, so every editing key was
+  refused — but the mode's own keys were unreachable, and now they are
+  not.
+- =SPC= is the leader in a support mode as well as in NORMAL state, and
+  it is the same keymap. Anything you have hung under =SPC= reaches
+  Dired, help, Man and the rest without being named a second time. The
+  mode's own =SPC=, usually =scroll-up-command=, is =C-v= as it always
+  was, and =S-SPC= is untouched.
+- =g= is a prefix in the eighteen modes that take the reading keys —
+  =Man-mode=, =help-mode=, =apropos-mode=, =compilation-mode= and the
+  rest — because =g g= and =g e= go there. Where =g= was
+  =revert-buffer= or =recompile= the section carries it on =R=.
+- =w=, =b=, =y=, =G=, the mark run and =?= work in those eighteen. They
+  are buffers of text to read and copy, so the reading half of NORMAL
+  state is there and nothing that types is.
+- =l= goes to the error in a compilation buffer, into the entry in an
+  archive or a tar file, to the occurrence in an Occur buffer, and to
+  the reference in an Xref buffer. Twenty-four of the thirty-nine
+  sections give =h= or =l= a meaning; where none does they are
+  =backward-char= and =forward-char=.
+
+*Added*
+
+- =donkey-support-modes=, the table of sections. A section names the
+  mode, optionally a package, and the =(CHARACTER . COMMAND)= pairs
+  that say what a key means there. A mode matches by derivation as well
+  as by name, and the first section it matches answers, so write a
+  specific mode before the general one it derives from.
+- =donkey-support-mode-exceptions=, for a buffer that looks like a
+  program's but is one you type in. =occur-edit-mode= is the case it
+  ships for.
+- =donkey-key-packages=, a named list of sequences a section can ask
+  for in one word. =prose= is the only one that ships: the reading half
+  of NORMAL state, forty-five sequences.
+
+*Under the hood*
+
+- The rule that handed individual letters back to a major mode was
+  built, measured and then deleted. Every buffer it would have applied
+  to is a support mode, decided by its section, so it found nothing;
+  the options it introduced never appeared in a release.
+- Options read from =post-command-hook= are coerced rather than
+  trusted, a section cannot name a command that types, and the two
+  caches that decide a buffer's state are keyed on the same inputs.
+- 1,475 tests, up from 1,426.
+
+*Upgrading*
+
+Nothing to do. If you put =dired-mode=, =ibuffer-mode= or
+=tabulated-list-mode= on =donkey-excluded-modes= yourself, your setting
+still wins and those buffers stay =DONKEY[E]=; remove them to get the
+four motion keys back. =Info-mode= is still excluded, as it was in
+1.11.0.
+
 * 1.11.0 — 2026-09-12
 
 NORMAL state was on in Magit, Dired, Info and the package menu, and
