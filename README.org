@@ -25,7 +25,6 @@
 - [[#typing-characters-your-keyboard-lacks][Typing characters your keyboard lacks]]
 - [[#other-languages][Other languages]]
 - [[#suppressed-keys][Suppressed keys]]
-- [[#keys-the-mode-gets-to-keep][Keys the mode gets to keep]] — fifteen, where the mode has one
 
 *Making it yours*
 
@@ -668,169 +667,6 @@ They are bound to something harmless rather than left unbound, and
 that is the point: an unbound key falls through to the major mode, and
 some major modes type with punctuation. The rest of the punctuation is
 not on this list because it wraps — see [[#wrapping-a-selection-in-a-pair][Wrapping a selection]].
-
-* Keys the Mode Gets to Keep
-:PROPERTIES:
-:CUSTOM_ID: keys-the-mode-gets-to-keep
-:END:
-
-*In a mode you write in — code or prose — the letters are DONKEY's.*
-That is the promise, and nothing below bends it.
-
-Elsewhere, in the buffers a program made for you, fifteen letters go to
-the major mode when the mode has a command of its own for them:
-
-#+begin_example
-
-  p  u  o  c  U  P  C  O     a  i  A  I     d  x  D
-
-#+end_example
-
-They are the keys that mean the same kind of thing on both sides.
-Eight only modify — =p= and =P= paste, =u= undoes, =U= redoes, =c=
-changes, =C= comments, =o= and =O= open a line — and a buffer you
-cannot type into refuses every one. Four only turn INSERT state on:
-=a=, =i=, =A= and =I= used to leave you in a state that cannot type,
-which was a trap rather than a feature. And three delete: =d=, =x= and
-=D= remove text here, and a mode that binds them flags a file, expunges
-an archive member or signals a process. You meant to delete something
-either way, so the mode answering is the expected thing — what was odd
-was =d= doing nothing at all.
-
-What that looks like:
-
-| Where | what changes |
-|-------+--------------|
-| a file you are editing | nothing at all |
-| a compilation log | =p= is =previous-error-no-select= |
-| a help buffer | =p= previous page, =c= customize, =i= info, =I= the Lisp reference |
-| a man page | =p= previous section, =u= update the page |
-| a PDF in =doc-view= | =p= previous page, =u= unmark, =P= fit page |
-
-=C-h k= tells you which you have: the key really is the mode's command
-in that buffer, not DONKEY's pretending.
-
-** Why these fifteen and not others
-
-A key is given away where DONKEY's meaning and the mode's agree in
-kind. That is the whole test, and =k= is the counter-example that
-shows why it is the right one: =k= means *up* here, and a mode that
-binds it means kill — =Man-kill=, =image-kill-buffer=,
-=ibuffer-do-kill-lines=. Those do not agree, so =k= stays where your
-fingers expect it however safe or unsafe the mode's command is.
-
-Every motion and selection key is absent for the same reason: =h=,
-=j=, =k=, =l=, =w=, =b=, =v=, =y=, =G=, =M= and =S= are how you move,
-and they stay yours everywhere.
-
-** =h=, =j=, =k= and =l= are a floor, not a default
-
-Those four are the ones you have to be able to press without knowing
-what buffer you are in, so nothing gives them away — not a mode, not a
-setting, not a setting you make by mistake.
-
-- A mode that binds one does not get it. NORMAL state's map is an
-  emulation map and answers before the major mode's own, so =k= is
-  *up* in a buffer whose mode binds =k= to kill.
-- Put one on =donkey-handed-back-keys= and nothing happens. The list
-  is filtered rather than trusted, so =(?j)= there is not an override
-  — it is a line with no effect.
-- =donkey-mode-navigation= may not name =j= or =k= either. An entry
-  for one is dropped.
-
-A mode does not need the help. Dired, Magit and =image-mode= remap
-=next-line=, and a remap catches the command whichever key ran it, so
-DONKEY's own =j= arrives at =dired-next-line= without the key changing
-hands at all.
-
-The one thing that *is* settable is =h= and =l= through
-=donkey-mode-navigation=, and that is a different thing: a page, a link
-or a parent directory is a meaning chosen for a mode rather than one
-read out of its keymap. See [[#where-h-and-l-have-somewhere-to-go][Where =h= and =l= have somewhere to go]]. Even
-there the borrow rule never reaches them — only the table you write
-does.
-
-** Why a writing mode is never touched
-
-Two separate things, either of which would be enough.
-
-The editing modes bind no plain letters. Of the ones measured —
-=prog-mode=, =text-mode=, =python-mode=, =emacs-lisp-mode=,
-=outline-mode= and their derivatives — not one binds a letter at all,
-so there is nothing for the rule to take.
-
-And where one does, it binds it to typing. =org-mode= binds all
-fifty-two letters, every one to =org-self-insert-command=, and a
-command that types is never handed a key: NORMAL state does not type,
-and this rule cannot lower that floor.
-
-A mode has two ways to install a typing command, and the rule has to
-know both. One is to bind a key to it directly, which cannot be
-discovered and so is named on [[#keys-a-major-mode-types-with][=donkey-self-insert-commands=]]. The
-other is to remap =self-insert-command=, which is how =org-mode= types
-most keys and how =wdired-mode= — the mode =C-x C-q= puts a Dired
-buffer in so you can rename files by editing them — types all of them.
-That one is read off the mode rather than listed, so a mode nobody
-named is refused too.
-
-** Where =h= and =l= have somewhere to go
-
-=j= and =k= need no help: Dired, Magit and =image-mode= remap
-=next-line=, so DONKEY's keys already move by their lines. =h= and =l=
-are different — there is no answer to read out of a keymap. Where a
-mode binds =h= at all it is almost always =describe-mode=, and where it
-binds =l= it usually means *back*, which is the opposite of what the
-key means coming from vi.
-
-So those two are chosen rather than discovered, in
-=donkey-mode-navigation=:
-
-| Mode | =h= | =l= |
-|------+-----+-----|
-| =doc-view-mode= | previous page | next page |
-| =help-mode= | back | forward |
-| =eww-mode= | back | follow the link |
-| =Man-mode= | previous section | next section |
-| =image-mode= | previous file | next file |
-| =tar-mode= | — | extract |
-| =Custom-mode= | up to the parent group | — |
-
-Almost nothing is displaced by this. In those modes =h= was
-=describe-mode= — which is =C-h m= — and =j=, =k= and =l= were mostly
-unbound. The two real commands, =help-go-back= and =eww-back-url=, were
-on =l=; they move to =h=, which is where "back" belongs.
-
-Dired and Ibuffer are not in this table because they are not this kind
-of buffer: they are [[#modes-donkey-supports-rather-than-takes-over][support modes]], where the mode keeps every key
-but =hjkl=. Info and Magit are excluded, so DONKEY has no key to give
-away in them; a section is how you would change that.
-
-A mode matches by derivation as well as by name, and the first entry it
-matches answers — so list a specific mode before the general one. A
-command you do not have is passed over rather than bound, and one that
-would type is refused as everywhere else. Empty the list and =h= and
-=l= are =backward-char= and =forward-char= again.
-
-** Turning it off, or changing it
-
-#+begin_src emacs-lisp
-
-  ;; every letter is DONKEY's everywhere, as before
-  (setopt donkey-handed-back-keys nil)
-
-  ;; or just the one the rest of Emacs agrees about most
-  (setopt donkey-handed-back-keys '(?p))
-
-  ;; or add one of your own
-  (setopt donkey-handed-back-keys
-          (cons ?S donkey-handed-back-keys))
-
-#+end_src
-
-Characters, not strings. A key you add is given away on the same
-terms: only where the mode binds it, and never where the mode would
-type with it. =h=, =j=, =k= and =l= are the exception — add one and it
-is ignored, because those four are a floor.
 
 * Making it yours
 :PROPERTIES:
@@ -1552,9 +1388,7 @@ especially in a terminal:
 
 NORMAL state suppresses typing by remapping =self-insert-command=,
 which catches every key a mode types through Emacs's normal path — and
-that is most of them, Org included. [[#keys-the-mode-gets-to-keep][The keys the mode gets to keep]]
-read the same remap, so a key is never handed back to the command its
-mode types with.
+that is most of them, Org included.
 
 A mode that binds a key *directly* to an insert command of its own is
 a different matter: =org-mode= puts =org-force-self-insert= on =|=,
@@ -1914,29 +1748,6 @@ Customize would. =setq= on those needs the refresh call by hand.
                             (?J . ibuffer-jump-to-buffer)
                             (?K . ibuffer-do-kill-lines))))      ; default
 
-    ;; Keys the major mode keeps where it binds one of its own -- the
-    ;; fifteen that mean the same kind of thing on both sides.  h j k l
-    ;; are a floor and are ignored here.
-    ;; nil gives every letter back to DONKEY everywhere.
-    (setopt donkey-handed-back-keys '(?p ?u ?o ?c ?U ?P ?C ?O
-                                      ?a ?i ?A ?I
-                                      ?d ?x ?D))                 ; default
-
-    ;; What h and l do where a mode has somewhere to go.  j and k are
-    ;; refused here: the modes that matter remap next-line already.
-    (setopt donkey-mode-navigation
-            '((doc-view-mode (?h . doc-view-previous-page)
-                             (?l . doc-view-next-page))
-              (help-mode     (?h . help-go-back)
-                             (?l . help-go-forward))
-              (eww-mode      (?h . eww-back-url)
-                             (?l . eww-follow-link))
-              (Man-mode      (?h . Man-previous-section)
-                             (?l . Man-next-section))
-              (image-mode    (?h . image-previous-file)
-                             (?l . image-next-file))
-              (tar-mode      (?l . tar-extract))
-              (Custom-mode   (?h . Custom-goto-parent))))       ; default
 
     ;;; The Enter key
 
@@ -2398,10 +2209,8 @@ and =M-x apropos-command donkey-= finds any of them.
 | Option                             | Default                          | What it does |
 |------------------------------------+----------------------------------+--------------|
 | =donkey-excluded-modes=            | 12 modes, see above              | where DONKEY steps aside completely |
-| =donkey-support-modes=             | 17 sections, see above           | what =h= and =l= do in a support mode |
+| =donkey-support-modes=             | 33 sections, see above           | what =h= and =l= do in a support mode |
 | =donkey-support-mode-exceptions=   | =occur-edit-mode=                | program-looking buffers you type in |
-| =donkey-handed-back-keys=          | 15 keys, see above               | keys the major mode keeps where it binds one |
-| =donkey-mode-navigation=           | 7 modes, see above               | what =h= and =l= do in those modes |
 | =donkey-excluded-mode-exceptions=  | =nil=                            | modes that stay on under an excluded parent |
 | =donkey-editing-modes=             | 7 broad modes                    | where =RET= does nothing |
 | =donkey-position-ring-max=         | =10=                             | how far =S= remembers |

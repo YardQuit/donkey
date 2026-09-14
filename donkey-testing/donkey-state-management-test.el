@@ -584,34 +584,6 @@ answer, which must not read as though every key were available."
                         (string-match-p "shell-mode derives from comint-mode" l))
                       said))))
 
-(ert-deftest donkey-p-goes-to-a-mode-that-binds-it ()
-  "A mode with a `p' of its own gets the key; NORMAL state keeps the rest.
-
-The child map carries only the handed-back key, so `j' and `d' are
-reached through its parent exactly as before.
-
-`fundamental-mode' with a map of its own rather than a real mode: every
-buffer a program makes is a support mode now, where nothing is handed
-back at all, so the rule can only be seen in a buffer that is neither
-that nor one you write in."
-  (with-temp-buffer
-    (fundamental-mode)
-    (use-local-map (let ((m (make-sparse-keymap)))
-                     (define-key m "p" 'previous-error-no-select) m))
-    (donkey-mode 1)
-    (unwind-protect
-        ;; The map is installed after the mode, and the installer runs
-        ;; from `after-change-major-mode-hook' -- so its cache is
-        ;; already built for a buffer that had no map.  A real mode
-        ;; builds its map before that hook and needs none of this.
-        (let ((donkey--handed-back-cache nil))
-          (donkey--ensure-default-state)
-          (should-not (donkey--normal-state-off-p))
-          (should (eq (key-binding "p") 'previous-error-no-select))
-          (should (eq (key-binding "j") 'next-line))
-          (should (eq (key-binding "d") 'donkey-delete)))
-      (donkey-mode -1))))
-
 (ert-deftest donkey-p-stays-donkeys-where-the-mode-does-not-bind-it ()
   "An ordinary editing buffer is untouched.
 
@@ -642,36 +614,6 @@ in a read-only buffer."
                                (should (eq (key-binding "p") 'donkey-yank))))
       (donkey-mode -1)
       (kill-buffer a) (kill-buffer b))))
-
-(ert-deftest donkey-a-key-that-would-type-is-never-handed-back ()
-  "NORMAL state does not type, whatever the mode binds the key to.
-
-Org binds every letter to `org-self-insert-command', which is on
-`donkey-self-insert-commands'.  Rule 74 is the floor and this rule does
-not lower it."
-  (with-temp-buffer
-    (text-mode)
-    ;; a mode that binds the key to a typing command
-    (use-local-map (let ((m (make-sparse-keymap)))
-                     (define-key m "p" 'org-self-insert-command)
-                     (define-key m "w" 'ignore)
-                     m))
-    (should (memq 'org-self-insert-command
-                  (donkey--mode-list donkey-self-insert-commands)))
-    (should-not (donkey--command-the-mode-binds ?p))
-    ;; and `ignore' is one of the stubs that are never taken
-    (should-not (donkey--command-the-mode-binds ?w))))
-
-(ert-deftest donkey-describe-mode-never-takes-a-key ()
-  "`special-mode' puts `describe-mode' on a key in most of its children.
-
-It is reachable as a help key, and taking a DONKEY key for it is what
-puts help under a motion key."
-  (with-temp-buffer
-    (text-mode)
-    (use-local-map (let ((m (make-sparse-keymap)))
-                     (define-key m "p" 'describe-mode) m))
-    (should-not (donkey--command-the-mode-binds ?p))))
 
 (ert-deftest donkey-the-prose-package-is-the-reading-half-of-normal-state ()
   "An enumerable fact stated in the README, recounted here.
@@ -990,7 +932,7 @@ is never put in and the buffer is left with no keys at all."
           (should (eq (key-binding "l") 'forward-char))
           ;; the flag alone makes this a program buffer
           (setq buffer-read-only t)
-          (donkey--install-handed-back-keys)
+          (donkey--install-mode-keys)
           (donkey--ensure-default-state)
           (should (donkey--support-mode-p))
           (should (local-variable-p 'donkey--emulation-mode-map-alist))
@@ -1027,19 +969,14 @@ names the mode-specific typing commands only."
            '((fundamental-mode (?l . self-insert-command)
                                (?h . forward-sexp))))
           (donkey--support-mode-cache nil))
-      (should (equal (donkey--support-mode-keys) '((?h . forward-sexp))))))
-  (with-temp-buffer
-    (fundamental-mode)
-    (let ((donkey-mode-navigation
-           '((fundamental-mode (?l . self-insert-command)
-                               (?h . forward-sexp)))))
-      (should (equal (donkey--navigation-pairs) '((?h . forward-sexp)))))))
+      (should (equal (donkey--support-mode-keys) '((?h . forward-sexp)))))))
+
 
 (ert-deftest donkey-a-mis-typed-section-is-skipped-not-walked ()
   "A row whose tail is not a proper list costs nothing and signals nothing.
 
-Every reader of `donkey-support-modes', `donkey-mode-navigation' and
-`donkey-key-packages' walks a tail, and these run from
+Both readers of `donkey-support-modes' and the reader of
+`donkey-key-packages' walk a tail, and these run from
 `post-command-hook', where a signal removes the hook for the session."
   (with-temp-buffer
     (fundamental-mode)
@@ -1049,10 +986,6 @@ Every reader of `donkey-support-modes', `donkey-mode-navigation' and
       (should-not (donkey--support-mode-keys))
       (should-not (donkey--support-mode-package-keys))
       (donkey--install-support-mode-keys)))
-  (with-temp-buffer
-    (fundamental-mode)
-    (let ((donkey-mode-navigation '((fundamental-mode . not-a-list))))
-      (should-not (donkey--navigation-pairs))))
   (with-temp-buffer
     (fundamental-mode)
     (let ((donkey-support-modes '((fundamental-mode prose)))
@@ -1067,6 +1000,7 @@ Every reader of `donkey-support-modes', `donkey-mode-navigation' and
                                   (fundamental-mode (?h . forward-sexp))))
           (donkey--support-mode-cache nil))
       (should (equal (donkey--support-mode-keys) '((?h . forward-sexp)))))))
+
 
 (ert-deftest donkey-a-program-buffer-is-supported-without-being-named ()
   "The rule answers for a buffer a program made, section or no section.
@@ -1361,7 +1295,7 @@ mode on it meant it -- a section DONKEY ships must not take that back."
           (donkey-excluded-modes '(fundamental-mode))
           (donkey--support-mode-cache nil)
           (donkey--excluded-mode-cache nil)
-          (donkey--handed-back-cache nil))
+          (donkey--mode-keys-cache nil))
       (donkey-mode 1)
       (unwind-protect
           (progn
@@ -1433,59 +1367,11 @@ mode that decided it and the keys DONKEY kept, not silence."
           (should (eq (key-binding "i") 'donkey-insert-here)))
       (donkey-mode -1))))
 
-(ert-deftest donkey-the-mode-typing-command-is-the-modes-remap ()
-  "What a mode types with is read off its remap of `self-insert-command'.
-
-Nil where a mode has none, and `undefined' where the mode called
-`suppress-keymap', which installs the same remap to refuse typing
-rather than to redirect it."
-  (with-temp-buffer
-    (text-mode)
-    (should-not (donkey--mode-typing-command)))
-  (with-temp-buffer
-    (org-mode)
-    (should (eq (donkey--mode-typing-command) 'org-self-insert-command)))
-  (with-temp-buffer
-    (fundamental-mode)
-    (use-local-map (let ((m (make-sparse-keymap))) (suppress-keymap m) m))
-    (should (eq (donkey--mode-typing-command) 'undefined))))
-
-(ert-deftest donkey-a-mode-that-types-through-a-remap-is-refused ()
-  "A key is not handed back to the command the mode types with.
-
-`donkey-self-insert-commands' names the typing commands a mode binds to
-a key directly; this one is discovered instead, so a mode nobody listed
-is refused all the same."
-  (with-temp-buffer
-    (fundamental-mode)
-    (use-local-map (let ((m (make-sparse-keymap)))
-                     (define-key m [remap self-insert-command] 'forward-sexp)
-                     (define-key m "p" 'forward-sexp)
-                     (define-key m "u" 'backward-sexp)
-                     m))
-    (should (eq (donkey--mode-typing-command) 'forward-sexp))
-    ;; the key the mode types with is refused
-    (should-not (donkey--command-the-mode-binds ?p))
-    ;; and a key that is not is handed back as before
-    (should (eq (donkey--command-the-mode-binds ?u) 'backward-sexp))))
-
-(ert-deftest donkey-a-suppressed-mode-still-hands-its-own-keys-back ()
-  "`suppress-keymap' remaps to `undefined', which blocks nothing.
-
-The other side of the same check: a read-only mode remaps
-`self-insert-command' too, and its real commands must still reach
-NORMAL state."
-  (with-temp-buffer
-    (compilation-mode)
-    (should (eq (donkey--mode-typing-command) 'undefined))
-    (should (eq (donkey--command-the-mode-binds ?p) 'previous-error-no-select))))
-
 (ert-deftest donkey-wdired-does-not-type-in-normal-state ()
   "Renaming files with `wdired-mode' leaves NORMAL state unable to type.
 
 The mode wdired puts a buffer in is writable and types through a remap
-of `self-insert-command', so every handed-back key reached
-`wdired--self-insert' until the remap was read rather than listed."
+of `self-insert-command', which DONKEY's own remap outranks."
   (skip-unless (and (require 'dired nil t) (require 'wdired nil t)))
   (let* ((dir (make-temp-file "donkey-wdired" t))
          (buffer nil))
@@ -1499,16 +1385,19 @@ of `self-insert-command', so every handed-back key reached
                 (let ((wdired-allow-to-change-permissions nil)
                       (inhibit-message t))
                   (wdired-change-to-wdired-mode)
-                  (setq donkey--handed-back-cache nil)
-                  (donkey--install-handed-back-keys)
+                  (setq donkey--mode-keys-cache nil)
+                  (donkey--install-mode-keys)
                   (donkey--ensure-default-state)
-                  (should (eq (donkey--mode-typing-command) 'wdired--self-insert))
-                  ;; `donkey--mode-list' keeps symbols; these are characters.
-                  (let ((keys (seq-filter #'characterp donkey-handed-back-keys)))
-                    (should (= (length keys) 15))
-                    (dolist (char keys)
-                      (should-not (eq (key-binding (vector char))
-                                      'wdired--self-insert))))
+                  ;; a writing mode, so NORMAL state runs and owns its letters
+                  (should-not (donkey--support-mode-p))
+                  (should-not (donkey--normal-state-off-p))
+                  ;; and Dired's support map went with Dired: a buffer
+                  ;; that stops being one keeps none of it
+                  (should-not (local-variable-p
+                               'donkey--emulation-mode-map-alist))
+                  (dolist (char '(?p ?u ?o ?c ?U ?P ?C ?O ?y ?d ?x ?w ?b ?g ?G))
+                    (should-not (eq (key-binding (vector char))
+                                    'wdired--self-insert)))
                   (should (eq (key-binding "i") 'donkey-insert-here))
                   (should (eq (key-binding "d") 'donkey-delete)))
               (donkey-mode -1))))
@@ -1517,77 +1406,29 @@ of `self-insert-command', so every handed-back key reached
         (kill-buffer buffer))
       (delete-directory dir t))))
 
-(ert-deftest donkey-the-handed-back-keys-default-is-the-fifteen ()
-  "Fifteen keys ship, and the documentation says which.
 
-An enumerable fact stated in the README and the docstring, recounted
-here.  Eight whose DONKEY command only modifies the buffer, four that
-only turn Insert state on, and three that delete -- which is what they
-mean here and what a mode that binds them means too."
-  (let ((shipped (eval (car (get 'donkey-handed-back-keys 'standard-value)) t)))
-    (should (equal shipped '(?p ?u ?o ?c ?U ?P ?C ?O ?a ?i ?A ?I ?d ?x ?D)))
-    (should (= (length shipped) 15))
-    ;; every key NORMAL state needs to move and select with is absent,
-    ;; `k' among them: it means UP here and kill to a mode that binds
-    ;; it, and those do not agree.
-    (dolist (char '(?h ?j ?k ?l ?w ?b ?v ?y ?G ?M ?S))
-      (should-not (memq char shipped)))))
+(ert-deftest donkey-a-mode-key-does-not-take-normal-states ()
+  "A mode binding one of NORMAL state's letters does not get it.
 
-(ert-deftest donkey-no-shipped-handed-back-key-is-a-motion-key ()
-  "Every key that ships means the same kind of thing on both sides.
-
-The test that says why these fifteen and not others.  NORMAL state
-binds each of them to something that changes the buffer or opens Insert
-state -- never to a motion or a selection -- so a mode answering with a
-command of its own is answering the same question.  A motion key would
-fail this, which is what keeps `j', `w' and `k' out."
-  (let ((shipped (eval (car (get 'donkey-handed-back-keys 'standard-value)) t))
-        (modifying '(donkey-yank donkey-yank-rectangle undo donkey-redo
-                     donkey-change donkey-comment-dwim donkey-open-below
-                     donkey-open-above donkey-delete kill-line))
-        (entering '(donkey-insert-after donkey-insert-here
-                    donkey-insert-end-of-line donkey-insert-beginning-of-line)))
-    (dolist (char shipped)
-      (let ((own (donkey--binding-value
-                  (lookup-key donkey-normal-mode-map (vector char)))))
-        (should own)
-        (should (memq own (append modifying entering)))))
-    ;; and the counter-example: `k' means up here, kill to a mode.
-    (should (eq (donkey--binding-value (lookup-key donkey-normal-mode-map "k"))
-                'previous-line))
-    (should-not (memq ?k shipped))))
-
-(ert-deftest donkey-an-empty-handed-back-list-changes-nothing ()
-  "Setting the option to nil puts every key back where it was."
+Nothing is handed back anywhere: in a buffer you write in the DONKEY
+binding owns the key, and a buffer a program made is a support mode,
+where the section says what DONKEY keeps and the mode keeps the rest."
   (with-temp-buffer
     (fundamental-mode)
     (use-local-map (let ((m (make-sparse-keymap)))
-                     (define-key m "p" 'previous-error-no-select) m))
+                     (define-key m "p" 'previous-error-no-select)
+                     (define-key m "u" 'previous-error-no-select) m))
     (donkey-mode 1)
     (unwind-protect
-        (let ((donkey-handed-back-keys nil)
-              (donkey--handed-back-cache nil))
+        (let ((donkey--mode-keys-cache nil))
           (donkey--ensure-default-state)
-          (should (eq (key-binding "p") 'donkey-yank)))
+          (should-not (donkey--normal-state-off-p))
+          (should (eq (key-binding "p") 'donkey-yank))
+          (should (eq (key-binding "u") 'undo))
+          (should (eq (key-binding "d") 'donkey-delete))
+          ;; and no buffer-local map was built for it at all
+          (should-not (local-variable-p 'donkey--emulation-mode-map-alist)))
       (donkey-mode -1))))
-
-(ert-deftest donkey-the-navigation-table-ships-seven-modes ()
-  "The modes whose `h' and `l' are chosen rather than discovered.
-
-An enumerable fact stated in the README, recounted here.  Dired, Info
-and Magit are deliberately absent: DONKEY is excluded from them, so an
-entry would never be read."
-  (let ((table (eval (car (get 'donkey-mode-navigation 'standard-value)) t)))
-    (should (= (length table) 7))
-    (should (equal (mapcar #'car table)
-                   '(doc-view-mode help-mode eww-mode Man-mode
-                     image-mode tar-mode Custom-mode)))
-    (dolist (mode '(dired-mode Info-mode magit-mode package-menu-mode))
-      (should-not (assq mode table)))
-    ;; and only h and l are ever named
-    (dolist (row table)
-      (dolist (pair (cdr row))
-        (should (memq (car pair) '(?h ?l)))))))
 
 (ert-deftest donkey-a-section-may-move-a-mode-key-rather-than-take-it ()
   "`help-mode' keeps DONKEY\='s h and l, and moves its own up to H and L.
@@ -1622,80 +1463,26 @@ history, so the history goes to two keys that were free."
           (should (eq (key-binding "l") 'forward-char)))
       (donkey-mode -1))))
 
-(ert-deftest donkey-the-navigation-table-matches-by-derivation ()
-  "A parent covers its children, and the first match answers."
-  (require 'help-mode)
-  (with-temp-buffer
-    (let ((donkey-mode-navigation '((help-mode (?h . help-go-back)))))
-      (help-mode)
-      (should (equal (donkey--navigation-pairs) '((?h . help-go-back)))))
-    ;; a derived mode reaches the parent's entry
-    (let ((donkey-mode-navigation '((special-mode (?l . ignore))))
-          (donkey-self-insert-commands nil))
-      (help-mode)
-      (should (provided-mode-derived-p 'help-mode 'special-mode))
-      (should (equal (donkey--navigation-pairs) '((?l . ignore)))))))
-
-(ert-deftest donkey-the-navigation-table-passes-over-what-it-cannot-run ()
-  "A command that is absent, or would type, is dropped rather than bound."
-  (with-temp-buffer
-    (text-mode)
-    (let ((donkey-mode-navigation
-           '((text-mode (?h . donkey-no-such-command-anywhere)
-                        (?l . org-self-insert-command)))))
-      (should-not (fboundp 'donkey-no-such-command-anywhere))
-      (should (memq 'org-self-insert-command
-                    (donkey--mode-list donkey-self-insert-commands)))
-      (should (equal (donkey--navigation-pairs) nil)))))
-
-(ert-deftest donkey-the-navigation-table-wins-over-the-handed-back-rule ()
-  "Where both name a key, the table decides: it is a choice, not a guess."
-  (with-temp-buffer
-    (fundamental-mode)
-    (use-local-map (let ((m (make-sparse-keymap)))
-                     (define-key m "p" 'backward-sexp) m))
-    (donkey-mode 1)
-    (unwind-protect
-        (let ((donkey-handed-back-keys '(?p))
-              (donkey-mode-navigation '((fundamental-mode (?p . forward-sexp))))
-              (donkey--handed-back-cache nil))
-          (donkey--install-handed-back-keys)
-          ;; the rule would have found the mode's own command
-          (should (eq (donkey--command-the-mode-binds ?p) 'backward-sexp))
-          ;; the table answers instead
-          (should (eq (key-binding "p") 'forward-sexp)))
-      (donkey-mode -1))))
-
-(ert-deftest donkey-an-empty-navigation-table-gives-motion-back ()
-  "Emptying the option puts `h' and `l' back where they were."
-  (with-temp-buffer
-    (fundamental-mode)
-    (donkey-mode 1)
-    (unwind-protect
-        (let ((donkey-mode-navigation
-               '((fundamental-mode (?h . forward-sexp) (?l . backward-sexp))))
-              (donkey--handed-back-cache nil))
-          (donkey--install-handed-back-keys)
-          (should (eq (key-binding "h") 'forward-sexp))
-          (setq donkey-mode-navigation nil donkey--handed-back-cache nil)
-          (donkey--install-handed-back-keys)
-          (should (eq (key-binding "h") 'backward-char))
-          (should (eq (key-binding "l") 'forward-char)))
-      (donkey-mode -1))))
-
-(ert-deftest donkey-the-navigation-keys-are-four-and-two-may-not-be-named ()
-  "The floor is four keys, and no per-mode entry may name two of them.
+(ert-deftest donkey-the-motion-keys-are-two-and-may-not-be-named ()
+  "The floor is four keys, and no section may name two of them.
 
 An enumerable fact the docstrings state, recounted here.  `h' and `l'
-are outside `donkey--motion-keys' on purpose: the table chooses a
-meaning for them where a mode has somewhere to go."
-  (should (equal donkey--navigation-keys '(?h ?j ?k ?l)))
+are outside `donkey--motion-keys' on purpose: a section chooses a
+meaning for them where the mode has somewhere to go."
   (should (equal donkey--motion-keys '(?j ?k)))
-  (dolist (char donkey--motion-keys)
-    (should (memq char donkey--navigation-keys)))
+  ;; all four are DONKEY's in a support mode, whatever the section says
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes
+           '((fundamental-mode (?h . forward-sexp) (?j . forward-sexp)
+                               (?k . forward-sexp) (?l . forward-sexp))))
+          (donkey--support-mode-cache nil))
+      ;; j and k are dropped; h and l are the section's to choose
+      (should (equal (donkey--support-mode-keys)
+                     '((?h . forward-sexp) (?l . forward-sexp))))))
   (dolist (char '(?h ?l))
-    (should (memq char donkey--navigation-keys))
     (should-not (memq char donkey--motion-keys))))
+
 
 (ert-deftest donkey-a-mode-that-binds-hjkl-does-not-get-them ()
   "The four keys move, in a buffer whose mode binds all four itself.
@@ -1718,78 +1505,6 @@ mode\\='s own, so a mode acquires nothing by binding them."
           (should (eq (key-binding "j") 'next-line))
           (should (eq (key-binding "k") 'previous-line))
           (should (eq (key-binding "l") 'forward-char)))
-      (donkey-mode -1))))
-
-(ert-deftest donkey-the-handed-back-rule-cannot-give-away-hjkl ()
-  "Putting a navigation key on the option does nothing at all.
-
-The rule is filtered against `donkey--navigation-keys' rather than
-trusted, so the four hold whatever the option says -- including in a
-buffer whose mode has a command of its own for every one of them,
-which is the only case where the rule would otherwise fire."
-  (with-temp-buffer
-    (text-mode)
-    (use-local-map (let ((m (make-sparse-keymap)))
-                     (define-key m "h" 'forward-sexp)
-                     (define-key m "j" 'forward-sexp)
-                     (define-key m "k" 'forward-sexp)
-                     (define-key m "l" 'forward-sexp)
-                     m))
-    (donkey-mode 1)
-    (unwind-protect
-        (let ((donkey-handed-back-keys '(?h ?j ?k ?l))
-              (donkey--handed-back-cache nil))
-          ;; the rule does find the mode's command: it is the filter,
-          ;; not a missing binding, that keeps the key.
-          (dolist (char '(?h ?j ?k ?l))
-            (should (eq (donkey--command-the-mode-binds char) 'forward-sexp)))
-          (donkey--install-handed-back-keys)
-          (should (eq (key-binding "h") 'backward-char))
-          (should (eq (key-binding "j") 'next-line))
-          (should (eq (key-binding "k") 'previous-line))
-          (should (eq (key-binding "l") 'forward-char)))
-      (donkey-mode -1))))
-
-(ert-deftest donkey-the-navigation-table-cannot-name-j-or-k ()
-  "An entry for `j' or `k' is dropped rather than bound.
-
-A mode with lines is served by its own remap of `next-line', so the
-table has nothing to add and is not allowed to try."
-  (with-temp-buffer
-    (text-mode)
-    (let ((donkey-mode-navigation
-           '((text-mode (?j . forward-sexp) (?k . forward-sexp)))))
-      (should (fboundp 'forward-sexp))
-      (should (equal (donkey--navigation-pairs) nil)))
-    (donkey-mode 1)
-    (unwind-protect
-        (let ((donkey-mode-navigation
-               '((text-mode (?j . forward-sexp) (?k . forward-sexp))))
-              (donkey--handed-back-cache nil))
-          (donkey--install-handed-back-keys)
-          (should (eq (key-binding "j") 'next-line))
-          (should (eq (key-binding "k") 'previous-line)))
-      (donkey-mode -1))))
-
-(ert-deftest donkey-the-navigation-table-may-still-name-h-and-l ()
-  "The floor stops at `j' and `k': the table still chooses `h' and `l'.
-
-The other side of the filter.  Widen it to all four and a mode with
-somewhere to go loses the entries that shipped for it."
-  (with-temp-buffer
-    (text-mode)
-    (let ((donkey-mode-navigation
-           '((text-mode (?h . forward-sexp) (?l . backward-sexp)))))
-      (should (equal (donkey--navigation-pairs)
-                     '((?h . forward-sexp) (?l . backward-sexp)))))
-    (donkey-mode 1)
-    (unwind-protect
-        (let ((donkey-mode-navigation
-               '((text-mode (?h . forward-sexp) (?l . backward-sexp))))
-              (donkey--handed-back-cache nil))
-          (donkey--install-handed-back-keys)
-          (should (eq (key-binding "h") 'forward-sexp))
-          (should (eq (key-binding "l") 'backward-sexp)))
       (donkey-mode -1))))
 
 (ert-deftest donkey-the-help-like-modes-are-left-on ()

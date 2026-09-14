@@ -7477,9 +7477,7 @@ are prefixes on a key of their own.")
 `suppress-keymap' installs one entry, a remap of
 `self-insert-command', and DONKEY's copy of it outranks a major
 mode's: a mode that types through a remap of its own -- which is how
-`org-mode' types most keys -- is answered by it.  So is a key handed
-back by `donkey-handed-back-keys', which reads the same remap rather
-than going around it.
+`org-mode' types most keys -- is answered by it.
 
 A mode that binds a key DIRECTLY to an insert command of its own is a
 different matter, and those are what this list is for: `org-mode' puts
@@ -8146,166 +8144,29 @@ than letting the first win.  Nothing is reached differently;
 `donkey--shadowed-normal-bindings' is where that shows, and it passes
 over it.
 
-Set buffer-locally by `donkey--install-handed-back-keys' where a major
-mode wants one of `donkey-handed-back-keys', to a child of the same map
-with that key rebound.  A variable rather than a constant for that
+Set buffer-locally by `donkey--install-mode-keys' in a support mode,
+to the map that mode's section names -- a map of its own rather than a
+child of this one, because there the major mode answers every key the
+section did not name.  A variable rather than a constant for that
 reason: what Emacs reads here is per buffer.")
 
-(defcustom donkey-handed-back-keys '(?p ?u ?o ?c ?U ?P ?C ?O
-                                     ?a ?i ?A ?I
-                                     ?d ?x ?D)
-  "Keys NORMAL state gives back to a major mode that binds one itself.
-
-A key here answers the major mode\\='s own command in a buffer whose
-mode binds it, and DONKEY\\='s everywhere else.
-
-The fifteen that ship are the ones that mean the same kind of thing on
-both sides of the handover.
-
-Eight of them only modify: p and P paste, u undoes, U redoes, c
-changes, C comments, o and O open a line.  A buffer a program made for
-you refuses every one.
-
-Four only turn Insert state on: a, i, A and I leave a reader in a
-state that cannot type, which was a trap rather than a feature.
-
-\\=`p\\=' is the one the rest of Emacs agrees about most: 93 of the major
-modes Emacs ships bind it, and 90 of those mean the previous line, the
-previous page, the previous error or the previous item.
-
-Three of them delete, and are here because deleting is what they mean
-in NORMAL state too.  \\=`d\\=' and \\=`x\\=' remove text and \\=`D\\='
-kills a line; a mode that binds them flags a file, expunges an archive
-member or kills a process.  A reader who presses \\=`d\\=' meant to
-delete something either way, so the mode answering is the expected
-thing rather than a surprise -- what was surprising was \\=`d\\=' doing
-nothing at all, which is what a read-only buffer made of it.
-
-That is the test, and it is a sharper one than counting destruction:
-a key is given away where DONKEY\\='s meaning and the mode\\='s agree in
-kind.  \\=`k\\=' is the counter-example and the reason it is absent.  It
-means UP here, and a mode that binds it means kill -- `Man-kill',
-`image-kill-buffer', `ibuffer-do-kill-lines'.  Those two do not agree,
-so the key stays where a reader\\='s fingers expect it.  Every motion
-and selection key is absent for the same reason.
-
-\\=`h\\=', \\=`j\\=', \\=`k\\=' and \\=`l\\=' are never given away, whatever
-is put here: they are how a reader moves and the rule passes over them.
-See `donkey--navigation-keys'.
-
-Not a general escape hatch.  A key is given away only where the mode
-has a command of its own for it; where the mode has none the key stays
-DONKEY\\='s, so nothing changes in a mode you write in.  Programming and
-prose modes are protected twice over: of the editing modes measured
-none binds a plain letter at all, and `org-mode', which binds all
-fifty-two, binds them to a command that types.
-
-Three kinds of binding are passed over rather than taken.  A command
-that types, because NORMAL state does not: the ones a mode binds to a
-key directly are named on `donkey-self-insert-commands', and the one it
-remaps `self-insert-command' to is read off the mode, so `wdired-mode'
-is refused without being named.  `describe-mode', which is
-\\=`C-h m\\=' and which `special-mode' puts on a key in most of its
-children.  And the stubs a mode uses to say that its buffer cannot be
-edited.
-
-Characters rather than strings: (?p ?n), not the strings."
-  :type '(repeat character)
-  :group 'donkey)
-
-(defcustom donkey-mode-navigation
-  '((doc-view-mode (?h . doc-view-previous-page) (?l . doc-view-next-page))
-    (help-mode     (?h . help-go-back)           (?l . help-go-forward))
-    (eww-mode      (?h . eww-back-url)           (?l . eww-follow-link))
-    (Man-mode      (?h . Man-previous-section)   (?l . Man-next-section))
-    (image-mode    (?h . image-previous-file)    (?l . image-next-file))
-    (tar-mode                                    (?l . tar-extract))
-    (Custom-mode   (?h . Custom-goto-parent)))
-  "What \\=`h\\=' and \\=`l\\=' do in a mode that has somewhere to go.
-
-Each entry is a major mode and the keys it wants, as (CHARACTER .
-COMMAND).  A mode matches by derivation as well as by name, so a parent
-covers its children, and the first entry a buffer matches is the one
-that answers -- list a specific mode before the general one.
-
-This is a table where `donkey-handed-back-keys' is a rule, and the
-reason is that \\=`h\\=' and \\=`l\\=' have no answer to read out of a
-keymap.  Where a mode binds \\=`h\\=' at all it is nearly always
-`describe-mode', and where it binds \\=`l\\=' it usually means BACK --
-`help-go-back', `eww-back-url' -- which is the opposite of what the key
-means to a reader coming from vi.  So the meaning is chosen here rather
-than discovered, and the choice is a short list rather than a rule that
-would guess wrong.
-
-\\=`j\\=' and \\=`k\\=' are deliberately absent and need no table: Dired,
-Magit and `image-mode' remap `next-line', so NORMAL state\\='s own keys
-already move by their lines.
-
-An entry for \\=`j\\=' or \\=`k\\=' is dropped: those move, and a mode
-with lines already reaches its own through its remap of `next-line'.
-A command that is not `fboundp' is passed over, so naming a mode from a
-package you do not have costs nothing, and a command that would type is
-refused as everywhere else.
-
-Empty the list and \\=`h\\=' and \\=`l\\=' are `backward-char' and
-`forward-char' in every buffer, as they were.
-
-Nothing here reaches a mode on `donkey-excluded-modes': DONKEY is not
-in those buffers to give a key away.  That is why Dired, Info and Magit
-are not on this list -- the README has the entries to add if you take
-one of them off the excluded list."
-  :type '(repeat (cons symbol (repeat (cons character function))))
-  :group 'donkey)
-
-(defconst donkey--navigation-keys '(?h ?j ?k ?l)
-  "The four keys NORMAL state never gives to a major mode.
-
-A reader has to be able to move without knowing what buffer they are
-in, so these four are a floor rather than a default.  Three things
-cannot reach them:
-
-A mode that binds one cannot take it.  NORMAL state\\='s map is an
-emulation map and answers before the mode\\='s own, so \\=`k\\=' is
-`previous-line' in a buffer whose mode binds \\=`k\\=' to kill.
-
-`donkey-handed-back-keys' cannot give one away.  The rule is filtered
-against this list rather than trusted, so putting \\=`j\\=' there does
-nothing at all.
-
-`donkey-mode-navigation' cannot name \\=`j\\=' or \\=`k\\='; see
-`donkey--motion-keys' for why \\=`h\\=' and \\=`l\\=' are its to choose.
-
-A mode that means well is covered without any of this.  Dired, Magit
-and `image-mode' remap `next-line', and a remap catches the command
-whichever key ran it, so NORMAL state\\='s own \\=`j\\=' arrives at
-`dired-next-line' with the key never changing hands.")
-
 (defconst donkey--motion-keys '(?j ?k)
-  "The two of `donkey--navigation-keys' no per-mode entry may name.
+  "The two keys no support-mode section may name.
 
 \\=`j\\=' and \\=`k\\=' move down and up a line, and there is no buffer
 where that is the wrong thing for them to do: a mode with lines is
 served by its own remap of `next-line', and a mode without them has
-nothing better to offer.  `donkey-mode-navigation' is filtered against
-this list, so an entry for either is dropped.
+nothing better to offer.  `donkey--support-mode-keys' filters a section
+against this list, so a pair naming either is dropped.
 
-\\=`h\\=' and \\=`l\\=' are missing from it deliberately.  Nothing
-discovers a meaning for them either -- the borrow rule passes over all
-four -- but a page, a link or a parent directory is a choice made for a
-mode rather than something read out of its keymap, so the table may
-name one and this list does not stand in its way.")
+\\=`h\\=' and \\=`l\\=' are missing from it deliberately.  A page, a
+link or a parent directory is a choice made for a mode rather than
+something read out of its keymap, so a section may name one and this
+list does not stand in its way; where none does they are
+`backward-char' and `forward-char'.")
 
-(defconst donkey--never-handed-back
-  '(describe-mode Custom-no-edit undefined ignore)
-  "Commands not worth taking a key from NORMAL state for.
-
-`describe-mode' is \\=`C-h m\\=', and `special-mode' puts it on a key in
-most of its children; the rest exist only to say that the buffer cannot
-be edited.  A list rather than a rule, and it stops where the reading
-stopped.")
-
-(defvar-local donkey--handed-back-cache nil
-  "What `donkey--install-handed-back-keys' last built here.
+(defvar-local donkey--mode-keys-cache nil
+  "What `donkey--install-mode-keys' last built here.
 
 Everything the answer depends on, so that the map is rebuilt when one
 of them changes rather than on every pass.
@@ -8318,95 +8179,13 @@ reason -- `donkey--program-buffer-p' reads it, so a buffer becomes a
 support mode the moment it becomes read-only, with no option changing.
 
 Where the coverage stops: the mode\\='s KEYMAP is not part of the key, and
-`donkey--install-handed-back-keys' runs from
+`donkey--install-mode-keys' runs from
 `after-change-major-mode-hook'.  A binding a mode or a reader adds to
 the map after that point is not seen until something else invalidates
 this -- another major mode, or a change to one of the options.  Every
 mode builds its map before the hook runs, so this costs nothing in
 practice; `donkey-refresh-suppressed-commands' is the way to ask by
 hand.")
-
-(defun donkey--mode-typing-command ()
-  "Return the command this buffer\\='s major mode types with, or nil.
-
-The mode\\='s own remap of `self-insert-command', read with NORMAL
-state hidden.  That remap is how a mode says \"typing means something
-else here\": `wdired-mode' returns `wdired--self-insert' and
-`org-mode' returns `org-self-insert-command'.
-
-Nil where the mode has no remap, and `undefined' where the mode used
-`suppress-keymap', which is not a typing command and is refused
-elsewhere anyway."
-  (let ((emulation-mode-map-alists nil)
-        (minor-mode-map-alist nil)
-        (minor-mode-overriding-map-alist nil))
-    (let ((remap (key-binding [remap self-insert-command])))
-      (and (symbolp remap) remap))))
-
-(defun donkey--command-the-mode-binds (char &optional typing)
-  "Return the major mode\\='s own command for CHAR, or nil.
-
-NORMAL state\\='s maps are hidden for the question, so the answer is what
-the key would mean with DONKEY out of the way.  Nil for a command that
-would type, for the stubs in `donkey--never-handed-back', and for
-anything that is not a command.
-
-A typing command is recognized two ways, because a mode has two ways
-to install one.  `donkey-self-insert-commands' names the ones bound to
-a key directly, which cannot be discovered.  The mode\\='s remap of
-`self-insert-command' is discovered instead, through
-`donkey--mode-typing-command', so a mode that types through a remap is
-refused without being named -- NORMAL state does not type, and handing
-a key back is not a reason to start.
-
-TYPING is that command, for a caller asking about several keys in the
-one buffer: the answer is the same every time, so passing it saves a
-lookup per key.  Omit it and the function reads it itself."
-  (let* ((key (vector char))
-         (typing (or typing (donkey--mode-typing-command)))
-         (own (let ((emulation-mode-map-alists nil)
-                    (minor-mode-map-alist nil)
-                    (minor-mode-overriding-map-alist nil))
-                (key-binding key))))
-    (and own
-         (symbolp own)
-         (commandp own)
-         (not (memq own donkey--never-handed-back))
-         (not (eq own 'self-insert-command))
-         (not (eq own typing))
-         (not (memq own (donkey--mode-list donkey-self-insert-commands)))
-         own)))
-
-(defun donkey--navigation-pairs ()
-  "Return the (CHARACTER . COMMAND) pairs `donkey-mode-navigation' wants here.
-
-The first entry this buffer\\='s major mode matches, by name or by
-derivation, and nothing from any later one: a mode listed twice is
-answered by whichever was written first.  A command that is not
-`fboundp' is dropped rather than bound, so an entry for a package that
-is not installed costs nothing, and a command that would type is
-dropped whatever key names it.  An entry whose tail is not a proper
-list is skipped rather than walked."
-  (let* ((table (and (proper-list-p donkey-mode-navigation)
-                     donkey-mode-navigation))
-         (typing (cons 'self-insert-command
-                       (donkey--mode-list donkey-self-insert-commands)))
-         (entry (seq-find
-                 (lambda (row)
-                   (and (consp row)
-                        (symbolp (car row))
-                        (proper-list-p (cdr row))
-                        (or (eq major-mode (car row))
-                            (provided-mode-derived-p major-mode (car row)))))
-                 table)))
-    (seq-filter (lambda (pair)
-                  (and (consp pair)
-                       (characterp (car pair))
-                       (not (memq (car pair) donkey--motion-keys))
-                       (symbolp (cdr pair))
-                       (fboundp (cdr pair))
-                       (not (memq (cdr pair) typing))))
-                (cdr entry))))
 
 (defun donkey--enter-key-the-mode-owns-p (seq key)
   "Return non-nil if SEQ is an Enter key this major mode has its own use for.
@@ -8508,55 +8287,27 @@ the way an excluded one does, and the map has to answer there."
     (setq-local donkey--emulation-mode-map-alist
                 (list (cons 'donkey-mode map)))))
 
-(defun donkey--install-handed-back-keys ()
-  "Give this buffer\\='s mode the keys of `donkey-handed-back-keys' it binds.
+(defun donkey--install-mode-keys ()
+  "Give this buffer the support-mode map, or no map at all.
 
-Installs a buffer-local `donkey--emulation-mode-map-alist' holding a
-child of `donkey-normal-mode-map' with those keys rebound, so the rest
-of NORMAL state is reached through the parent exactly as before and
-\\=`C-h k\\=' reports what the key really runs.
+A support mode gets the map its section names, built by
+`donkey--install-support-mode-keys'.  Every other buffer gets no map:
+the buffer-local `donkey--emulation-mode-map-alist' is killed rather
+than set, so an ordinary buffer reads the same global value it always
+did and NORMAL state is reached through `donkey-normal-mode-map' alone.
 
-Both sources go into the one map: the keys `donkey-handed-back-keys'
-finds the mode a command for, and the keys `donkey-mode-navigation'
-names outright.  The table wins where they name the same key, being a
-choice rather than a discovery.
-
-Does nothing where the mode binds none of them, which is most buffers:
-the local variable is killed rather than set, so an ordinary buffer
-reads the same global value it always did."
+Runs from `donkey--ensure-default-state', the one address every major
+mode change already reaches, and does nothing while
+`donkey--mode-keys-cache' says no input to the answer has changed."
   (let ((wanted (list major-mode buffer-read-only
-                      donkey-handed-back-keys donkey-mode-navigation
                       donkey-support-modes donkey-support-mode-exceptions
                       donkey-key-packages
                       donkey-excluded-modes donkey-excluded-mode-exceptions)))
-    (unless (equal wanted donkey--handed-back-cache)
-      (setq donkey--handed-back-cache wanted)
+    (unless (equal wanted donkey--mode-keys-cache)
+      (setq donkey--mode-keys-cache wanted)
       (if (donkey--support-mode-p)
-          ;; A support mode is decided by its section, not by a rule:
-          ;; nothing is discovered and nothing is handed back.
           (donkey--install-support-mode-keys)
-      (let ((typing (donkey--mode-typing-command))
-            pairs)
-        (dolist (char (seq-filter #'characterp
-                                  (and (listp donkey-handed-back-keys)
-                                       donkey-handed-back-keys)))
-          ;; The floor: a reader moves with these wherever they are, so
-          ;; the option does not get to hand one over.
-          (unless (memq char donkey--navigation-keys)
-            (let ((own (donkey--command-the-mode-binds char typing)))
-              (when own (push (cons char own) pairs)))))
-        ;; The table is chosen rather than discovered, so it wins over
-        ;; the rule where both name the same key.
-        (dolist (pair (donkey--navigation-pairs))
-          (setq pairs (cons pair (assq-delete-all (car pair) pairs))))
-        (if (null pairs)
-            (kill-local-variable 'donkey--emulation-mode-map-alist)
-          (let ((map (make-sparse-keymap)))
-            (set-keymap-parent map donkey-normal-mode-map)
-            (pcase-dolist (`(,char . ,command) pairs)
-              (define-key map (vector char) command))
-            (setq-local donkey--emulation-mode-map-alist
-                        (list (cons 'donkey-normal-mode map))))))))))
+        (kill-local-variable 'donkey--emulation-mode-map-alist)))))
 
 (defun donkey--install-emulation-map ()
   "Put `donkey--emulation-mode-map-alist' on `emulation-mode-map-alists'.
@@ -9495,7 +9246,7 @@ excluded -- Dired turned into wdired, or the option itself edited.  A
 minibuffer gets no state at all.  Returns non-nil if a state was
 enabled.
 
-`donkey--install-handed-back-keys' runs from here as well, this being
+`donkey--install-mode-keys' runs from here as well, this being
 the one address every major mode change already reaches.
 
 Every sweep that enables DONKEY in a buffer goes through this
@@ -9504,7 +9255,7 @@ resweep, and `after-change-major-mode-hook'."
   (cond
    ((minibufferp) nil)
    (t
-    (donkey--install-handed-back-keys)
+    (donkey--install-mode-keys)
     (let ((is-excluded-p (donkey--normal-state-off-p)))
       (cond
        (is-excluded-p
