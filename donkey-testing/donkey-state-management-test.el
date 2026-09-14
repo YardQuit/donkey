@@ -1096,31 +1096,56 @@ Two of them are here only because the rule misses them:
 `Custom-mode' and `org-agenda-mode' are neither derived from
 `special-mode' nor read-only."
   (let ((table (eval (car (get 'donkey-support-modes 'standard-value)) t)))
-    (should (= (length table) 33))
+    (should (= (length table) 39))
     (should (equal (mapcar #'car table)
                    '(dired-mode ibuffer-mode Man-mode woman-mode
                      help-mode apropos-mode eww-mode shortdoc-mode dictionary-mode
                      messages-buffer-mode debugger-mode vc-annotate-mode
-                     log-view-mode image-mode doc-view-mode
+                     log-view-mode
+                     emacs-authors-mode tags-table-mode url-cookie-mode
+                     ebrowse-tree-mode so-long-mode
+                     image-mode doc-view-mode
                      tar-mode archive-mode Custom-mode occur-mode
-                     compilation-mode
+                     emacs-lisp-compilation-mode compilation-mode
                      package-menu-mode Buffer-menu-mode org-agenda-mode
                      bookmark-bmenu-mode vc-dir-mode proced-mode
                      profiler-report-mode xref--xref-buffer-mode finder-mode
                      flymake-diagnostics-buffer-mode ert-results-mode
                      calendar-mode donkey-bindings-mode)))
-    ;; Four program modes deliberately have no section: none has a real
-    ;; RET to put on `l', none loses anything to the floor, and grep
-    ;; inherits compilation's.  No section is a finished answer.
+    ;; Four program modes deliberately have no section.  `grep-mode'
+    ;; inherits compilation's, and the other three are parents: a
+    ;; section on any of them would be a default for a whole family
+    ;; rather than an answer for one mode.
     (dolist (mode '(process-menu-mode tabulated-list-mode special-mode grep-mode))
       (should-not (assq mode table)))
+    ;; grep still answers, through the family it derives from
+    (should (equal (cdr (assq 'compilation-mode table))
+                   '(prose (?l . compile-goto-error) (?R . recompile))))
+    ;; and the specific mode is written BEFORE the general one, because
+    ;; a section answers with nothing from any later one: the elisp
+    ;; compilation buffer carries its own `l' or loses it
+    (should (< (seq-position (mapcar #'car table) 'emacs-lisp-compilation-mode)
+               (seq-position (mapcar #'car table) 'compilation-mode)))
+    (should (equal (cdr (assq 'emacs-lisp-compilation-mode table))
+                   '(prose (?l . compile-goto-error)
+                           (?R . emacs-lisp-compilation-recompile))))
     ;; the prose half: text to read and copy, links to follow.  A list
     ;; of entries is the other kind and names no package.
     (dolist (mode '(Man-mode woman-mode help-mode apropos-mode
                     shortdoc-mode dictionary-mode messages-buffer-mode
                     debugger-mode vc-annotate-mode log-view-mode
+                    emacs-authors-mode tags-table-mode url-cookie-mode
+                    ebrowse-tree-mode so-long-mode
+                    emacs-lisp-compilation-mode compilation-mode
                     donkey-bindings-mode))
       (should (memq 'prose (cdr (assq mode table)))))
+    ;; `g' becomes a prefix wherever the package goes, so a mode whose
+    ;; `g' was revert or recompile carries it on `R' instead.  so-long
+    ;; binds nothing of its own and carries nothing.
+    (dolist (mode '(emacs-authors-mode tags-table-mode url-cookie-mode
+                    ebrowse-tree-mode))
+      (should (equal (cdr (assq mode table)) '(prose (?R . revert-buffer)))))
+    (should (equal (cdr (assq 'so-long-mode table)) '(prose)))
     ;; eww takes no package: h and l are character motion, RET follows
     ;; a link through the button's own keymap, and L carries the back
     ;; command that l displaced -- the shift of the key that took it.
@@ -1146,8 +1171,7 @@ Two of them are here only because the rule misses them:
                                              'standard-value))
                                     t)))
     (dolist (mode '(dired-mode ibuffer-mode image-mode doc-view-mode tar-mode
-                    archive-mode Custom-mode occur-mode compilation-mode
-                    package-menu-mode
+                    archive-mode Custom-mode occur-mode package-menu-mode
                     Buffer-menu-mode org-agenda-mode bookmark-bmenu-mode
                     vc-dir-mode proced-mode profiler-report-mode finder-mode
                     xref--xref-buffer-mode flymake-diagnostics-buffer-mode

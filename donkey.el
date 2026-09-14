@@ -288,13 +288,24 @@ the pairs are laid over the package, so a section\\='s own \\=`h\\=' wins:
     (debugger-mode     prose)
     (vc-annotate-mode  prose)
     (log-view-mode     prose (?T . log-view-toggle-mark-entry))
+    ;; Text to read with nothing of their own but `g': the package,
+    ;; and `R' carries the revert that `g' becomes a prefix over.
+    (emacs-authors-mode prose (?R . revert-buffer))
+    (tags-table-mode   prose (?R . revert-buffer))
+    (url-cookie-mode   prose (?R . revert-buffer))
+    (ebrowse-tree-mode prose (?R . revert-buffer))
+    ;; so-long binds nothing at all, so there is nothing to carry.
+    (so-long-mode      prose)
     (image-mode        (?h . image-previous-file) (?l . image-next-file))
     (doc-view-mode     (?h . doc-view-previous-page) (?l . doc-view-next-page))
     (tar-mode          (?l . tar-extract))
     (archive-mode      (?l . archive-extract))
     (Custom-mode       (?h . Custom-goto-parent))
     (occur-mode        (?l . occur-mode-goto-occurrence))
-    (compilation-mode  (?l . compile-goto-error))
+    (emacs-lisp-compilation-mode
+                       prose (?l . compile-goto-error)
+                       (?R . emacs-lisp-compilation-recompile))
+    (compilation-mode  prose (?l . compile-goto-error) (?R . recompile))
     (package-menu-mode (?l . package-menu-describe-package))
     (Buffer-menu-mode  (?l . Buffer-menu-this-window))
     (org-agenda-mode   (?h . org-agenda-earlier) (?l . org-agenda-later))

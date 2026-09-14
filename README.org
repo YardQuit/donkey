@@ -874,7 +874,7 @@ That last clause matters: a source file opened read-only is still a
 file you read as a writer, and DONKEY keeps its keys there.
 
 What a *section* adds is what =h= and =l= mean where the mode has
-somewhere to go. Thirty-three sections ship; twenty-three of them give
+somewhere to go. Thirty-nine sections ship; twenty-four of them give
 =h= or =l= a meaning:
 
 | Mode | =h= | =l= |
@@ -891,6 +891,7 @@ somewhere to go. Thirty-three sections ship; twenty-three of them give
 | =Custom-mode= | up to the parent group | — |
 | =occur-mode= | — | go to the occurrence |
 | =compilation-mode= | — | go to the error (covers =grep-mode=) |
+| =emacs-lisp-compilation-mode= | — | go to the error |
 | =package-menu-mode= | — | describe the package |
 | =Buffer-menu-mode= | — | visit the buffer |
 | =org-agenda-mode= | a week earlier | a week later |
@@ -975,10 +976,13 @@ usually gives it the shift of the key that took it:
 
 *** Modes you read rather than drive
 
-Eleven sections name the =prose= package instead of pairs: =Man-mode=,
-=woman-mode=, =help-mode=, =apropos-mode=, =shortdoc-mode=,
+Eighteen sections name the =prose= package instead of pairs:
+=Man-mode=, =woman-mode=, =help-mode=, =apropos-mode=, =shortdoc-mode=,
 =dictionary-mode=, =messages-buffer-mode=, =debugger-mode=,
-=vc-annotate-mode=, =log-view-mode= and DONKEY's own bindings chart.
+=vc-annotate-mode=, =log-view-mode=, =emacs-authors-mode=,
+=tags-table-mode=, =url-cookie-mode=, =ebrowse-tree-mode=,
+=so-long-mode=, =compilation-mode= and =emacs-lisp-compilation-mode=,
+and DONKEY's own bindings chart.
 
 A package is a named list of sequences a section can ask for in one
 word, and =prose= is the reading half of NORMAL state: the motions and
@@ -986,6 +990,20 @@ word keys, the =g= jumps and =G=, the selection and mark-run keys, =y=
 to copy, and =?=. These are buffers full of text to read and copy with
 links to follow, and none of it types, so the mode loses nothing it was
 using.
+
+One key it does cost. =prose= puts =g g=, =g e=, =g h= and =g l= under
+=g=, which makes =g= a prefix — and =g= is =revert-buffer= or
+=recompile= in most of these buffers. Where that matters the section
+carries it on =R=: =R= reverts in =help-mode= and the four reading
+modes, and recompiles in a compilation buffer. =so-long-mode= binds
+nothing of its own, so it carries nothing.
+
+A compilation buffer takes the package because there is little else in
+it: =n= and =p= still walk the errors, =l= and =RET= still go to one,
+and only =g= moved. =grep-mode= and =emacs-lisp-compilation-mode= are
+the same buffer with a different producer — the elisp one is written
+before =compilation-mode= in the table, because a section answers with
+nothing from any later one and it has to carry its own =l=.
 
 Enter is the exception a package makes: it is never taken from a mode
 that has its own use for it, because in a buffer a program made for you
@@ -2249,7 +2267,7 @@ and =M-x apropos-command donkey-= finds any of them.
 | Option                             | Default                          | What it does |
 |------------------------------------+----------------------------------+--------------|
 | =donkey-excluded-modes=            | 12 modes, see above              | where DONKEY steps aside completely |
-| =donkey-support-modes=             | 33 sections, see above           | what =h= and =l= do in a support mode |
+| =donkey-support-modes=             | 39 sections, see above           | what =h= and =l= do in a support mode |
 | =donkey-support-mode-exceptions=   | =occur-edit-mode=                | program-looking buffers you type in |
 | =donkey-excluded-mode-exceptions=  | =nil=                            | modes that stay on under an excluded parent |
 | =donkey-editing-modes=             | 7 broad modes                    | where =RET= does nothing |
