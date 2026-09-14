@@ -941,10 +941,17 @@ needs it:
 
   (with-eval-after-load 'donkey
     (setopt donkey-support-modes
-            (cons '(org-agenda-mode (?\s . org-agenda-show-and-scroll-up))
+            (cons '(org-agenda-mode (?\s . org-agenda-show-and-scroll-up)
+                                    (?h . org-agenda-earlier)
+                                    (?l . org-agenda-later))
                   donkey-support-modes)))
 
 #+end_src
+
+=h= and =l= are written out again because this section replaces the
+shipped one rather than adding to it, and a section answers with
+nothing from any later one. Leaving them out would take the agenda's
+week-earlier and week-later keys away while giving =SPC= back.
 
 *** The keys a section moves rather than takes
 
@@ -1108,7 +1115,9 @@ the =(donkey-mode 1)= from [[#installing][Installing]]:
   (setopt donkey-support-modes
           (cons '(dired-mode (?h . dired-up-directory)
                              (?l . dired-open-file)
-                             (?y . dired-copy-filename-as-kill))
+                             (?y . dired-copy-filename-as-kill)
+                             (?J . dired-goto-file)
+                             (?K . dired-do-kill-lines))
                 donkey-support-modes))
 
 #+end_src
@@ -1123,7 +1132,9 @@ or in Dired's own block:
       (setopt donkey-support-modes
               (cons '(dired-mode (?h . dired-up-directory)
                                  (?l . dired-open-file)
-                                 (?y . dired-copy-filename-as-kill))
+                                 (?y . dired-copy-filename-as-kill)
+                                 (?J . dired-goto-file)
+                                 (?K . dired-do-kill-lines))
                     donkey-support-modes))))
 
 #+end_src
@@ -1131,6 +1142,12 @@ or in Dired's own block:
 =cons=, never a literal list: =setopt= with a list of your own replaces
 the table and takes the other forty sections with it. Yours is written
 before the shipped entry, so it is the one that answers.
+
+And because it is the one that answers, it answers with *nothing* from
+the shipped one — so carry every pair you still want. That is why =J=
+and =K= are written out above: Dired's section puts =dired-goto-file=
+and =dired-do-kill-lines= there, and a replacement that left them out
+would take away the only keys those two have.
 
 **** A remap reaches what a section may not name
 
@@ -1999,7 +2016,9 @@ Using =setopt= for everything means never having to know which is which.
     (setopt donkey-support-modes
             (cons '(dired-mode (?h . dired-up-directory)
                                (?l . dired-open-file)
-                               (?y . dired-copy-filename-as-kill))
+                               (?y . dired-copy-filename-as-kill)
+                               (?J . dired-goto-file)
+                               (?K . dired-do-kill-lines))
                   donkey-support-modes))
 
     ;; Where the rule is wrong the other way: a buffer that looks like

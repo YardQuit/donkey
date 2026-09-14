@@ -2995,6 +2995,41 @@ thing that drifts."
     (should config)
     (should (equal clone config))))
 
+(ert-deftest donkey-readme-section-examples-keep-the-shipped-keys ()
+  "A section the README shows keeps every key the shipped one names.
+
+A section answers with nothing from any later one, so an example that
+replaces a shipped section and leaves a pair out takes that key away
+from the reader who pastes it -- silently, because a key nobody bound
+is simply the floor again.  The Dired examples have to carry `J' and
+`K', which are the only keys `dired-goto-file' and
+`dired-do-kill-lines' have, and the agenda example that takes `SPC'
+back has to carry `h' and `l' with it."
+  (let ((shipped (eval (car (get 'donkey-support-modes 'standard-value)) t))
+        (examples 0)
+        (lost nil))
+    (with-temp-buffer
+      (insert-file-contents (expand-file-name "README.org" donkey-test--source-dir))
+      (goto-char (point-min))
+      (while (re-search-forward "(cons .\\((\\([a-zA-Z0-9-]+-mode\\)\\)" nil t)
+        (let ((line (line-number-at-pos (match-beginning 0)))
+              (mode (intern (match-string 2))))
+          (goto-char (match-beginning 1))
+          (let* ((form (read (current-buffer)))
+                 (keys (lambda (section)
+                         (delq nil (mapcar (lambda (item)
+                                             (and (consp item) (car item)))
+                                           section))))
+                 (mine (funcall keys (cdr form)))
+                 (ship (funcall keys (cdr (assq mode shipped))))
+                 (missing (seq-difference ship mine)))
+            (setq examples (1+ examples))
+            (when missing
+              (push (list line mode (mapcar #'char-to-string missing)) lost))))))
+    ;; the examples are the point of the test; none of them is optional
+    (should (> examples 3))
+    (should (equal lost nil))))
+
 (ert-deftest donkey-readme-fall-through-keys-are-untouched ()
   "Every key the README calls untouched really is.
 
