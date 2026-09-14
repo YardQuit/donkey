@@ -115,16 +115,7 @@ see [[#modes-where-donkey-steps-aside][Modes Where DONKEY Steps Aside]].
 
 DONKEY is one file with no dependencies beyond Emacs 29.1.
 
-** With use-package and a clone
-
-#+begin_src emacs-lisp
-
-  (use-package donkey
-    :load-path "~/src/donkey"          ; where you cloned it
-    :config
-    (donkey-mode 1))
-
-#+end_src
+** From a clone
 
 #+begin_src sh
 
@@ -132,86 +123,83 @@ DONKEY is one file with no dependencies beyond Emacs 29.1.
 
 #+end_src
 
-*** A clone runs from source
-
-=:load-path= adds the directory and nothing more, so =require= reads
-=donkey.el= itself. Installing from a package archive byte-compiles;
-cloning does not, and nothing in the package compiles itself.
-
-It works perfectly well either way — if you would rather run compiled
-code, compile it when the source is newer, before the =use-package=
-block that loads it:
-
 #+begin_src emacs-lisp
 
-  (let* ((src (expand-file-name "~/src/donkey/donkey.el"))
-         (elc (concat src "c")))
-    (when (file-newer-than-file-p src elc)
-      (require 'bytecomp)
-      (let ((load-path (cons (file-name-directory src) load-path)))
-        (unless (byte-compile-file src)
-          ;; it did not compile: drop the stale .elc so the source loads
-          (when (file-exists-p elc) (delete-file elc))))))
+  ;; Where the clone lives.  One place, read by both `:load-path' and
+  ;; the `:init' block under it.
+  (defvar my-donkey-dir (expand-file-name "~/src/donkey"))
+
+  (use-package donkey
+    :load-path my-donkey-dir
+
+    :init
+    ;; A package archive byte-compiles what it installs.  A clone does
+    ;; not, and nothing in DONKEY compiles itself, so compile it here --
+    ;; and again whenever donkey.el turns out to be newer than the .elc
+    ;; beside it, which is what a `git pull' leaves behind.
+    (let* ((src (expand-file-name "donkey.el"  my-donkey-dir))
+           (elc (expand-file-name "donkey.elc" my-donkey-dir))
+           (recompiled nil))
+      (if (not (file-exists-p src))
+          (message "DONKEY: no donkey.el under %s -- check my-donkey-dir"
+                   my-donkey-dir)
+        (when (file-newer-than-file-p src elc)
+          (require 'bytecomp)
+          (let ((start (current-time)))
+            (setq recompiled
+                  (and (ignore-errors (byte-compile-file src))
+                       (float-time (time-since start))))))
+        (let ((compiled (and (file-exists-p elc)
+                             (not (file-newer-than-file-p src elc)))))
+          (load (if compiled elc src) nil t)
+          (message "DONKEY %s loaded %s%s"
+                   (donkey-version)
+                   (if compiled "compiled" "from source (interpreted)")
+                   (if recompiled
+                       (format ", recompiled in %.2fs" recompiled)
+                     "")))))
+
+    :config
+    ;; Whatever DONKEY does not bind is yours; see "Making it yours".
+    (keymap-set donkey-normal-mode-map "F" #'delete-other-windows)
+    (keymap-set donkey-leader-map "b" '("switch buffer" . switch-to-buffer))
+    (donkey-mode 1))
 
 #+end_src
+
+*** What the block is doing
+
+=:load-path= on its own would be enough to load DONKEY: =use-package=
+ends with =(require 'donkey)=, and =require= would find =donkey.el=
+there. It would also run *interpreted*, and DONKEY works from
+=post-command-hook=, so that cost is paid on every keystroke.
+
+So =:init= picks the file instead of leaving the choice to =require=.
+That is what the =load= call is for. Emacs prefers =donkey.elc= to
+=donkey.el= whenever both are on the path, which makes a stale =.elc=
+the copy =require= takes — and a later =(load "donkey.el")= cannot undo
+it. Choosing explicitly sidesteps that, and by the time =use-package=
+runs its own =require=, =donkey= is already in =features= and the
+=require= does nothing.
+
+Both halves read =my-donkey-dir=, so there is one path to edit and no
+way for the two to drift apart. Pointing =:load-path= at one directory
+and the compile step at another is the mistake this arrangement exists
+to prevent: DONKEY would still load, from the =:load-path= copy and
+interpreted, behind a warning about the other.
+
+The echo area says which copy you got — =loaded compiled=, or =loaded
+from source (interpreted)= — with the version, and the time the
+recompile took when there was one.
+
+If the compile fails, DONKEY loads from source and says so. That is
+deliberate: a file that will not compile must not stop Emacs from
+starting. It also means the reason is not shown, so run =M-x
+byte-compile-file= on =donkey.el= when you want to see it.
 
 One thing to know if you run the test suite over a clone: four tests
 mock =forward-char=, =forward-line= and =delete-region=, which
 byte-code open-codes, so delete =donkey.elc= before running them.
-
-** By hand
-
-Put =donkey.el= somewhere on your =load-path= and:
-
-#+begin_src emacs-lisp
-
-  (require 'donkey)
-  (donkey-mode 1)
-
-#+end_src
-
-** With straight.el
-
-#+begin_src emacs-lisp
-
-  (use-package donkey
-    :straight (donkey :type git :host github :repo "yardquit/donkey")
-    :config
-    (donkey-mode 1))
-
-#+end_src
-
-** With quelpa
-
-#+begin_src emacs-lisp
-
-  (use-package donkey
-    :quelpa (donkey :fetcher github :repo "yardquit/donkey")
-    :config
-    (donkey-mode 1))
-
-#+end_src
-
-** Byte-compiling a manual install
-
-Worth doing — it is several times faster per keystroke. The catch is
-that Emacs prefers =donkey.elc= to =donkey.el=, so a stale =.elc= is
-the copy that loads and a later =(load "donkey.el")= cannot undo it.
-Compile *before* the =require=:
-
-#+begin_src emacs-lisp
-
-  (let ((src (expand-file-name "~/src/donkey/donkey.el"))
-        (elc (expand-file-name "~/src/donkey/donkey.elc")))
-    (when (file-newer-than-file-p src elc)
-      (require 'bytecomp)
-      (unless (byte-compile-file src)
-        ;; compilation failed: drop the stale .elc so the source loads
-        (when (file-exists-p elc) (delete-file elc)))))
-  (require 'donkey)
-  (donkey-mode 1)
-
-#+end_src
 
 ** Turning it on and off
 
