@@ -1810,7 +1810,7 @@ open an issue so the next reader does not have to.
 
 #+begin_src emacs-lisp
 
-  ;; NORMAL state back in Info, everything else left alone
+  ;; NORMAL state back in Magit, everything else left alone
   (with-eval-after-load 'donkey
     (setopt donkey-excluded-modes (remq 'magit-mode donkey-excluded-modes)))
 
@@ -1868,10 +1868,12 @@ Customize would. =setq= on those needs the refresh call by hand.
 
     ;;; Where DONKEY steps aside
 
-    ;; Twelve modes ship on the list: the terminals and REPLs, where
-    ;; NORMAL state would break the program on the other end, and the
-    ;; applications whose single letters are their commands.  Add yours.
-    (dolist (mode '(pdf-view-mode eww-mode elfeed-search-mode))
+    ;; Thirteen modes ship on the list: the terminals and REPLs, where
+    ;; NORMAL state would break the program on the other end, the
+    ;; applications whose single letters are their commands, and Info,
+    ;; whose alphabet would not fit around h j k l.  Add yours -- this
+    ;; adds to the list rather than replacing it.
+    (dolist (mode '(pdf-view-mode elfeed-search-mode))
       (add-to-list 'donkey-excluded-modes mode))
 
     ;; An exception is read first and wins, which is how a child comes
@@ -1883,16 +1885,19 @@ Customize would. =setq= on those needs the refresh call by hand.
 
     ;; Every buffer a program made for you is a support mode, decided
     ;; by the rule in donkey--program-buffer-p.  A section adds what h
-    ;; and l mean there; j and k are never written down.  Seventeen
-    ;; ship -- see the chapter above for the whole table.
+    ;; and l mean there; j and k are never written down.  Forty ship --
+    ;; see the chapter above for the whole table.
+    ;;
+    ;; CONS rather than a literal list: setopt with a list of your own
+    ;; REPLACES the table and takes the other thirty-nine with it.  The
+    ;; first section a mode matches answers, so one written here wins
+    ;; over the shipped one -- which is how to disagree with a section
+    ;; without excluding the mode.
     (setopt donkey-support-modes
-            '((dired-mode   (?h . dired-up-directory)
-                            (?l . dired-find-file)
-                            (?J . dired-goto-file)
-                            (?K . dired-do-kill-lines))
-              (ibuffer-mode (?l . ibuffer-visit-buffer)
-                            (?J . ibuffer-jump-to-buffer)
-                            (?K . ibuffer-do-kill-lines))))      ; default
+            (cons '(dired-mode (?h . dired-up-directory)
+                               (?l . dired-open-file)
+                               (?y . dired-copy-filename-as-kill))
+                  donkey-support-modes))
 
 
     ;;; The Enter key
