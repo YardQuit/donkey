@@ -598,6 +598,44 @@ open."
     (donkey-enter-normal)
     t))
 
+(defvar-local donkey--insert-kind-cache nil
+  "What `donkey--insert-state-kind' last answered here, and from what.
+
+The six inputs to that answer followed by the answer.  Kept because
+the question is asked twice for every command -- once by the mode
+line, which is a `:eval' form, and once by the cursor -- and reaching
+it the long way runs `donkey--support-mode-p', whose own memo
+compares `donkey-support-modes' whole.")
+
+(defun donkey--insert-state-kind ()
+  "Return which kind of buffer this is: `support', `excluded' or `insert'.
+
+Insert state is reached by all three and they do not want the same
+mode-line letter or the same cursor, so both read the answer here
+rather than working it out apart.  `donkey--support-mode-p' is asked
+first, as it is the one that already excludes an excluded mode.
+
+Memoized on every input to the answer: the major mode, the read-only
+flag the rule reads, and the four lists that decide the kind."
+  (let ((c donkey--insert-kind-cache))
+    (if (and c
+             (eq (nth 0 c) major-mode)
+             (eq (nth 1 c) buffer-read-only)
+             (eq (nth 2 c) donkey-excluded-modes)
+             (eq (nth 3 c) donkey-excluded-mode-exceptions)
+             (eq (nth 4 c) donkey-support-modes)
+             (eq (nth 5 c) donkey-support-mode-exceptions))
+        (nth 6 c)
+      (let ((result (cond ((donkey--support-mode-p) 'support)
+                          ((donkey--excluded-mode-p) 'excluded)
+                          (t 'insert))))
+        (setq donkey--insert-kind-cache
+              (list major-mode buffer-read-only
+                    donkey-excluded-modes donkey-excluded-mode-exceptions
+                    donkey-support-modes donkey-support-mode-exceptions
+                    result))
+        result))))
+
 (defun donkey--insert-state-lighter ()
   "Return the mode-line text for Insert state in the current buffer.
 
@@ -605,10 +643,14 @@ open."
 in a `donkey-support-modes' one -- Normal state is unavailable in
 both, and the letter says which list decided it -- \" DONKEY[I]\"
 everywhere else.  Shared by the `donkey-insert-mode' lighter and
-`donkey-indicator'."
-  (cond ((donkey--support-mode-p) " DONKEY[S]")
-        ((donkey--excluded-mode-p) " DONKEY[E]")
-        (t " DONKEY[I]")))
+`donkey-indicator'.
+
+The lighter is a `:eval' form, so this runs on redisplay; the kind it
+asks for is memoized by `donkey--insert-state-kind'."
+  (pcase (donkey--insert-state-kind)
+    ('support " DONKEY[S]")
+    ('excluded " DONKEY[E]")
+    (_ " DONKEY[I]")))
 
 (defun donkey--handle-non-editing-buffer ()
   "Bounce straight back to Insert state in an excluded major mode.
@@ -8583,51 +8625,22 @@ otherwise, so the next command in a visible buffer resyncs it through
 (defvar donkey--cursor-last-type nil
   "The `cursor-type' it left behind, to notice one another package set.")
 
-(defvar-local donkey--insert-cursor-cache nil
-  "What `donkey--insert-cursor-setting' last answered here, and from what.
-
-A list of every input to that answer followed by the answer.  Kept
-because the answer is asked once per command, through
-`donkey--update-cursor-passive', and reaching it the long way costs
-`donkey--support-mode-p' -- which walks `donkey-support-modes' and
-compares it whole.")
-
 (defun donkey--insert-cursor-setting ()
   "Return the shape Insert state asks for in this buffer.
 
 Three kinds of buffer reach Insert state and they do not want the
-same cursor: `donkey-cursor-support' where the modeline says
+same cursor: `donkey-cursor-support' where the mode line says
 \\=`[S]\\=', `donkey-cursor-excluded' where it says \\=`[E]\\=', and
 `donkey-cursor-insert' where it says \\=`[I]\\='.
 
-Asked in the order `donkey--insert-state-lighter' asks it, so the
-cursor and the modeline cannot disagree.
-
-Memoized on every input to the answer: the major mode, the read-only
-flag, the four lists that decide which kind of buffer this is, and
-the three shapes themselves."
-  (let ((c donkey--insert-cursor-cache))
-    (if (and c
-             (eq (nth 0 c) major-mode)
-             (eq (nth 1 c) buffer-read-only)
-             (eq (nth 2 c) donkey-excluded-modes)
-             (eq (nth 3 c) donkey-excluded-mode-exceptions)
-             (eq (nth 4 c) donkey-support-modes)
-             (eq (nth 5 c) donkey-support-mode-exceptions)
-             (eq (nth 6 c) donkey-cursor-support)
-             (eq (nth 7 c) donkey-cursor-excluded)
-             (eq (nth 8 c) donkey-cursor-insert))
-        (nth 9 c)
-      (let ((result (cond ((donkey--support-mode-p) donkey-cursor-support)
-                          ((donkey--excluded-mode-p) donkey-cursor-excluded)
-                          (t donkey-cursor-insert))))
-        (setq donkey--insert-cursor-cache
-              (list major-mode buffer-read-only
-                    donkey-excluded-modes donkey-excluded-mode-exceptions
-                    donkey-support-modes donkey-support-mode-exceptions
-                    donkey-cursor-support donkey-cursor-excluded
-                    donkey-cursor-insert result))
-        result))))
+The kind comes from `donkey--insert-state-kind', which the mode line
+reads for its letter, so the cursor and the letter cannot disagree.
+The shape is read fresh from the option, so changing one takes effect
+at the next command without anything to invalidate."
+  (pcase (donkey--insert-state-kind)
+    ('support donkey-cursor-support)
+    ('excluded donkey-cursor-excluded)
+    (_ donkey-cursor-insert)))
 
 (defun donkey--cursor-setting ()
   "Return the cursor setting the current buffer's DONKEY state asks for.

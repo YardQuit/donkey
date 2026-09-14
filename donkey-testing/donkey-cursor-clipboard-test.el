@@ -1048,7 +1048,7 @@ would have actually been lost for real at that point."
 
 All three sit in Insert state, so before there were three shapes there
 was one: every buffer DONKEY did not hold Normal state in showed the
-Insert cursor, and `[S]\=', `[E]\=' and `[I]\=' were told apart by the
+Insert cursor, and `[S]', `[E]' and `[I]' were told apart by the
 modeline alone.
 
 The cursor is read beside the lighter in each, because the two answer
@@ -1081,12 +1081,36 @@ call it a bug."
         (should (equal (donkey--insert-cursor-setting) '(hbar . 1)))
         (should (equal (donkey--insert-state-lighter) " DONKEY[I]"))))))
 
+(ert-deftest donkey-the-lighter-and-the-cursor-read-the-same-kind ()
+  "The mode-line letter and the cursor shape cannot disagree.
+
+Both are chosen from `donkey--insert-state-kind', so a buffer showing
+`[S]' shows the support cursor by construction rather than because
+two `cond' forms happen to be written in the same order.  Pinned
+across all three kinds, and with shapes that tell them apart."
+  (let ((donkey-cursor-support 'box)
+        (donkey-cursor-excluded 'hbar)
+        (donkey-cursor-insert 'bar)
+        (donkey-excluded-mode-exceptions nil)
+        (donkey-support-mode-exceptions nil))
+    (dolist (case '((support  " DONKEY[S]" box  nil          ((text-mode)))
+                    (excluded " DONKEY[E]" hbar (text-mode)  ((text-mode)))
+                    (insert   " DONKEY[I]" bar  nil          nil)))
+      (pcase-let ((`(,kind ,letter ,shape ,excluded ,sections) case))
+        (let ((donkey-excluded-modes excluded)
+              (donkey-support-modes sections))
+          (with-temp-buffer
+            (text-mode)
+            (should (eq (donkey--insert-state-kind) kind))
+            (should (equal (donkey--insert-state-lighter) letter))
+            (should (eq (donkey--insert-cursor-setting) shape))))))))
+
 (ert-deftest donkey-the-shipped-cursor-shapes-are-the-four-intended ()
   "Normal and a support mode share a shape; Insert and an excluded one share theirs.
 
-A support mode takes Normal state\='s box because the keys there are
-Normal state\='s: `h\=', `j\=', `k\=' and `l\=' move and nothing typed
-becomes text.  An excluded mode takes Insert state\='s bar because most
+A support mode takes Normal state's box because the keys there are
+Normal state's: `h', `j', `k' and `l' move and nothing typed
+becomes text.  An excluded mode takes Insert state's bar because most
 of them are terminals and REPLs, where what you type reaches the
 program on the other end -- so nothing about that buffer changed when
 the option was added."
@@ -1096,45 +1120,55 @@ the option was added."
     (should (equal (funcall shipped 'donkey-cursor-insert) '(bar . 2)))
     (should (equal (funcall shipped 'donkey-cursor-excluded) '(bar . 2)))))
 
-(ert-deftest donkey-the-insert-cursor-memo-is-keyed-on-every-input ()
+(ert-deftest donkey-the-insert-kind-memo-is-keyed-on-every-input ()
   "Changing any one input changes the answer rather than a stale one.
 
-The answer is asked once per command, so it is memoized; a memo that
-misses an input returns yesterday\\='s cursor after the reader changes
-an option.  Each input is moved on its own, over a warm cache."
-  (let ((donkey-cursor-support 'box)
-        (donkey-cursor-excluded 'hbar)
-        (donkey-cursor-insert 'bar)
-        (donkey-excluded-modes nil)
+The kind is asked twice for every command -- by the mode line, which
+is a `:eval' form, and by the cursor -- so it is memoized, and a memo
+that misses an input answers with yesterday's letter after the reader
+changes an option.
+
+Each input is moved over a cache warmed immediately before, and each
+case expects an answer the stale one is not: a step that invalidated
+the cache for the next step, or an expected value a stale answer also
+satisfies, would let the case pass without testing anything.
+
+`major-mode' is in the key and is not moved here, because every way of
+changing it runs `kill-all-local-variables', which takes the cache
+with it -- there is no reachable state for that key to catch."
+  (let ((donkey-excluded-modes nil)
         (donkey-excluded-mode-exceptions nil)
         (donkey-support-modes '((text-mode)))
         (donkey-support-mode-exceptions nil))
     (with-temp-buffer
       (text-mode)
-      (should (eq (donkey--insert-cursor-setting) 'box))      ; warms it
-      ;; the shape for this kind of buffer
-      (let ((donkey-cursor-support 'hollow))
-        (should (eq (donkey--insert-cursor-setting) 'hollow)))
-      ;; the shapes for the other two kinds, which this buffer is not
-      (should (eq (donkey--insert-cursor-setting) 'box))
-      ;; the list that makes it a support mode
+      ;; the section that makes it a support mode
+      (should (eq (donkey--insert-state-kind) 'support))
       (let ((donkey-support-modes nil))
-        (should (eq (donkey--insert-cursor-setting) 'bar)))
-      ;; the exception list that takes it back out
+        (should (eq (donkey--insert-state-kind) 'insert)))
+      ;; the exception that takes it back out of its section
+      (should (eq (donkey--insert-state-kind) 'support))
       (let ((donkey-support-mode-exceptions '(text-mode)))
-        (should (eq (donkey--insert-cursor-setting) 'bar)))
+        (should (eq (donkey--insert-state-kind) 'insert)))
       ;; the excluded list, which wins over the section
+      (should (eq (donkey--insert-state-kind) 'support))
       (let ((donkey-excluded-modes '(text-mode)))
-        (should (eq (donkey--insert-cursor-setting) 'hbar)))
-      ;; and the exception that takes it back out of that
-      (let ((donkey-excluded-modes '(text-mode))
-            (donkey-excluded-mode-exceptions '(text-mode)))
-        (should (eq (donkey--insert-cursor-setting) 'box)))
-      ;; the major mode, and the read-only flag the rule reads
-      (fundamental-mode)
-      (should (eq (donkey--insert-cursor-setting) 'bar))
-      (setq buffer-read-only t)
-      (should (eq (donkey--insert-cursor-setting) 'box)))))
+        (should (eq (donkey--insert-state-kind) 'excluded))))
+    ;; the exception that takes it back out of the excluded list, warmed
+    ;; as `excluded' so a stale answer is not the one expected
+    (let ((donkey-excluded-modes '(text-mode)))
+      (with-temp-buffer
+        (text-mode)
+        (should (eq (donkey--insert-state-kind) 'excluded))
+        (let ((donkey-excluded-mode-exceptions '(text-mode)))
+          (should (eq (donkey--insert-state-kind) 'support)))))
+    ;; the read-only flag, which the rule reads when no section matches
+    (let ((donkey-support-modes nil))
+      (with-temp-buffer
+        (fundamental-mode)
+        (should (eq (donkey--insert-state-kind) 'insert))
+        (setq buffer-read-only t)
+        (should (eq (donkey--insert-state-kind) 'support))))))
 
 (provide 'donkey-cursor-clipboard-test)
 
