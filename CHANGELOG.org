@@ -9,6 +9,80 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.13.0 — 2026-09-14
+
+Two more modes get a section, and the two states that are not NORMAL
+stop borrowing INSERT's cursor. =speedbar-mode= takes Dired's shape —
+=h= up a directory, =l= into what is under the cursor — and the
+=ebrowse= member buffer gets its =l=. The rest is the documentation
+catching up with 1.12.0: the install chapter is one method instead of
+five, and the chapter on disagreeing with a section had two examples
+that quietly took keys away from anyone who pasted them.
+
+*Changed — you will notice these*
+
+- =h= goes up a directory and =l= opens the file or enters the
+  directory in a speedbar tree, the pair Dired has. =K= kills the
+  buffer on the line, which is where =k= went when DONKEY took it.
+  =j= and =k= are plain line motion there: speedbar binds =n= and =p=
+  directly instead of remapping =next-line=, so nothing of its own
+  reaches =j=. What that costs is the description speedbar echoes as
+  you move and the cursor resting on the button glyph — no command
+  depends on either, and =I= still asks for the description.
+- =l= goes to the member definition in an =ebrowse= member buffer,
+  which is what =RET= does there. Forty-one sections ship now, and
+  twenty-six of them give =h= or =l= a meaning.
+- The cursor in a support mode is a box, where it was INSERT's bar.
+  The keys in an =[S]= buffer are NORMAL state's — =h j k l= move and
+  nothing you press becomes text — so it looks like NORMAL state
+  rather than like typing. =donkey-cursor-support= is the option.
+- =donkey-cursor-excluded= sets the cursor in an =[E]= buffer and
+  ships as the bar such a buffer already showed, so nothing changes
+  there unless you had set =donkey-cursor-insert= yourself. The two
+  are independent options: an excluded buffer keeps the shipped bar
+  until you set this one to match yours.
+
+*Fixed — you will notice these*
+
+- =setopt donkey-support-modes= no longer warns. The option described
+  its commands with a type that only matches what is loaded at that
+  moment, and the table names commands from forty packages, so setting
+  the option to anything — including back to its own shipped value —
+  printed a type warning at every start.
+- The README's examples for disagreeing with a section no longer take
+  keys away. A section answers with nothing from any later one, so the
+  Dired examples, which left out =J= and =K=, left =dired-goto-file=
+  and =dired-do-kill-lines= with no key at all for anyone who pasted
+  one. The agenda example that takes =SPC= back left out =h= and =l=
+  the same way.
+- The ~=~ key's row in the binding tables renders as a key again on
+  the repository page, and the test that checks those tables against
+  the keymap now reads that row, which it never could before.
+
+*Under the hood*
+
+- Installing from a clone is one =use-package= block, which compiles
+  the file whenever it is newer than the =.elc= beside it and says in
+  the echo area which copy it loaded. The by-hand, straight.el and
+  quelpa blocks are gone, along with a third copy of the compile
+  recipe.
+- What =SPC= costs a support mode was remeasured across all forty-one
+  sections rather than the thirty-one the text described: twenty-five
+  carry the pager pair, eight a line motion, three put something that
+  has another key, and four lose something with no other home, where
+  it said two.
+- The cursor a buffer asks for is memoized on every input to the
+  answer, because it is asked once per command.
+- 1,481 tests, up from 1,475.
+
+*Upgrading*
+
+Nothing to do. If you had set =donkey-cursor-insert= yourself and want
+an excluded buffer to match it, set =donkey-cursor-excluded= to the
+same shape. If you would rather tell all four states apart, give
+=donkey-cursor-support= and =donkey-cursor-excluded= shapes of their
+own.
+
 * 1.12.0 — 2026-09-14
 
 1.11.0 answered "NORMAL state owns the alphabet in a buffer a program
