@@ -2172,7 +2172,9 @@ the keys that used to."
             (should (equal (buffer-substring-no-properties
                             (region-beginning) (region-end))
                            "word"))))
-      (keymap-unset donkey-normal-mode-map "&")
+      ;; REMOVE, so `donkey--normal-state-floor' answers the key again
+      ;; rather than a nil in the map shadowing it.
+      (keymap-unset donkey-normal-mode-map "&" t)
       (keymap-set donkey-input-method-map "&"
                   (cons "digraph" (or leader-entry #'donkey-insert-digraph))))
     (should (equal (key-description (donkey--mark-pair-digraph-keys)) "SPC i &"))))

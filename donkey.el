@@ -76,7 +76,8 @@
   (declare-function markdown-wiki-link-p "markdown-mode")         ;(donkey--markdown-enter-handler)
   (declare-function markdown-follow-thing-at-point "markdown-mode") ;(donkey--markdown-enter-handler)
   (defvar donkey-normal-mode-map nil)
-  (defvar donkey-insert-mode-map nil))
+  (defvar donkey-insert-mode-map nil)
+  (defvar donkey--normal-state-floor nil))
 
 (defvar this-command)                          ;(donkey--intercept-quit-in-insert)
 
@@ -5741,6 +5742,26 @@ PREFIX is the accumulated key sequence string for the current path."
      map)
     (nreverse acc)))
 
+(defun donkey--desc-bindings-own-leaves (map)
+  "Return MAP's own leaf bindings, without the ones it gets from the floor.
+
+`donkey-normal-mode-map' inherits `donkey--normal-state-floor', whose
+`undefined' answers every printable key nothing else binds.  That is
+the floor under the whole state rather than a binding made for a key,
+and a chart that listed it would bury what DONKEY does under fifty
+rows saying a key does nothing.
+
+The keys DONKEY blocks in the map ITSELF -- `,', `-' and `;' -- are
+its own and still appear, which is the distinction a reader wants:
+those three were taken away from something, the rest were never
+anything."
+  (let ((floored (eq (keymap-parent map) donkey--normal-state-floor)))
+    (unwind-protect
+        (progn
+          (when floored (set-keymap-parent map nil))
+          (donkey--desc-bindings-collect-leaves map ""))
+      (when floored (set-keymap-parent map donkey--normal-state-floor)))))
+
 (defun donkey--desc-bindings-group (full-key)
   "Return the prefix group FULL-KEY belongs to, or \"single\".
 
@@ -5770,7 +5791,7 @@ Single keys lead, the prefix groups follow in alphabetical order, and
 keys sort within their group.  Each group gets a header, and command
 names are clickable buttons."
   (let ((sorted-raw
-         (sort (donkey--desc-bindings-collect-leaves map "")
+         (sort (donkey--desc-bindings-own-leaves map)
                (lambda (a b)
                  (let ((ga (donkey--desc-bindings-group (car a)))
                        (gb (donkey--desc-bindings-group (car b))))
@@ -7635,6 +7656,59 @@ Customize never hears about."
            (length donkey--suppressed-insert-commands)
            (if (= (length donkey--suppressed-insert-commands) 1) "" "s")))
 
+(defvar donkey--normal-state-floor nil
+  "The `undefined' under every printable key Normal state does not bind.
+
+The parent of `donkey-normal-mode-map', rebuilt by
+`donkey--seal-normal-state'.  A parent rather than bindings in the map
+itself so that the map stays as DONKEY wrote it: a key nobody has
+bound is still absent from it, which is what `keymap-set' needs to
+make that key a prefix, what the binding report reads to tell a
+reader's change from DONKEY's own, and what `donkey--claim-wrap-keys'
+restores a key to when a wrap is let go of.")
+
+(when (null donkey--normal-state-floor)
+  (setq donkey--normal-state-floor (make-sparse-keymap)))
+
+(defun donkey--seal-normal-state ()
+  "Answer every printable key Normal state does not bind, with `undefined'.
+
+Normal state answers for every key it holds, and until this ran it did
+not hold them all: thirty-two printable keys were unbound, and an
+unbound key is the one kind that falls through to the major mode.
+
+Most of what they reached was a mode's own typing command, which
+`donkey-self-insert-commands' remaps away by name.  A name cannot
+reach an anonymous one: `idlwave-mode' binds `&' to a lambda, and
+`&' typed an ampersand in Normal state whatever that list said.  A
+list of names was never going to close this, however long it grew.
+
+`undefined' rather than a command of DONKEY's own, because it is what
+`suppress-keymap' and the remaps already produce, and what
+`donkey--wrap-key-free-p' already reads as a key that does nothing --
+so a pair added later still takes its key.
+
+The bindings go in `donkey--normal-state-floor', the map's parent,
+rather than in the map: a reader who binds `s d' needs `s' itself to
+be free to become a prefix, and a key answered from the parent still
+is.  A key the reader binds in the map, whether one key or a whole prefix,
+shadows the floor as any binding shadows an inherited one.
+
+Rebuilt from scratch each time, so a key bound since the last run is
+no longer answered here, and the floor the last run installed is taken
+off first so that its own bindings do not read as keys already taken.
+Run before the wrap keys are claimed and before the defaults are
+captured."
+  (when (eq (keymap-parent donkey-normal-mode-map) donkey--normal-state-floor)
+    (set-keymap-parent donkey-normal-mode-map nil))
+  (let ((floor-map (make-sparse-keymap)))
+    (dolist (char (number-sequence ?! ?~))
+      (unless (lookup-key donkey-normal-mode-map (vector char))
+        (define-key floor-map (vector char) #'undefined)))
+    (set-keymap-parent floor-map (keymap-parent donkey-normal-mode-map))
+    (setq donkey--normal-state-floor floor-map)
+    (set-keymap-parent donkey-normal-mode-map floor-map)))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Which Keys Wrap
 ;;; ---------------------------------------------------------------------------
@@ -7683,9 +7757,10 @@ exactly the shape a reader gets by typing one bracket too few."
 (defvar donkey--wrap-keys-taken nil
   "What each wrap key held before `donkey--claim-wrap-keys' took it.
 
-An alist of (CHAR . BINDING), BINDING nil where the key was unbound.
-Read when a key is let go of again, so it goes back to what it was
-rather than to nothing.")
+An alist of (CHAR . BINDING), BINDING nil where the MAP held nothing
+-- whether the key was unbound or `donkey--normal-state-floor' was
+answering it.  Read when a key is let go of again, so it goes back to
+what it was rather than to nothing.")
 
 (defun donkey--claim-wrap-keys ()
   "Bind the keys `donkey-wrap-delimiters' asks for, and let go of the rest.
@@ -7696,13 +7771,13 @@ key is free -- see `donkey--wrap-key-free-p'.  A key no longer asked
 for is let go of, and only while it still runs the wrap DONKEY put
 there: whoever took it since keeps it.
 
-A key let go of gets back what it held when the wrap took it -- the
-`undefined' that answers a blocked key, the `ignore' that silences a
-delete key -- and is unbound only if it was unbound then.  Unbinding
-it flatly would be a different thing entirely: an unbound key is the
-one kind that falls through to the major mode, so a reader who added a
-pair and thought better of it would have opened a key rather than
-closed one.
+A key let go of gets back what the MAP held when the wrap took it --
+the `undefined' that answers a blocked key, the `ignore' that silences
+a delete key.  A key `donkey--normal-state-floor' was answering held
+nothing of its own, and its binding is REMOVED rather than set to nil,
+so the floor answers it again: a nil left in the map would shadow the
+floor as any binding shadows an inherited one, and an unbound key is
+the one kind that falls through to the major mode.
 
 Called at load and again whenever `donkey-wrap-delimiters' or
 `donkey-mark-pair-delimiters' is set through Customize, and once more
@@ -7726,13 +7801,20 @@ at the first idle moment after `donkey-mode' comes on;
                  (assq-delete-all event donkey--wrap-keys-taken))
            (if was
                (keymap-set donkey-normal-mode-map key was)
-             (keymap-unset donkey-normal-mode-map key)))))
+             (keymap-unset donkey-normal-mode-map key t)))))
      donkey-normal-mode-map)
     (dolist (ch (nreverse wanted))
       (when (donkey--wrap-key-free-p ch)
-        (let ((was (donkey--binding-value
-                    (lookup-key donkey-normal-mode-map (vector ch)))))
-          (unless (eq was 'donkey-wrap-region)
+        (let* ((now (donkey--binding-value
+                     (lookup-key donkey-normal-mode-map (vector ch))))
+               ;; Recorded only where the MAP held it.  A key the floor
+               ;; answers held nothing of its own, and writing the
+               ;; floor's `undefined' into the map when the wrap is let
+               ;; go of would leave the key in the chart for good.
+               (was (unless (eq now (lookup-key donkey--normal-state-floor
+                                                (vector ch)))
+                      now)))
+          (unless (eq now 'donkey-wrap-region)
             (setf (alist-get ch donkey--wrap-keys-taken) was)))
         (keymap-set donkey-normal-mode-map (key-description (vector ch))
                     #'donkey-wrap-region)))))
@@ -7815,10 +7897,26 @@ so nothing under it is a default to defend."
      map)
     found))
 
+(defun donkey--map-own-bindings (map)
+  "Return MAP's own bindings, without the ones it inherits from the floor.
+
+`donkey--normal-state-floor' answers every printable key Normal state
+does not bind, and `map-keymap' walks a parent as if it were the map.
+Read through it, a key DONKEY never bound would go into the defaults
+holding `undefined' -- and a reader who then bound one of those, which
+is what `donkey-normal-mode-map' is FOR, would be told at every
+session start that a key of DONKEY's had been taken."
+  (let ((floored (eq (keymap-parent map) donkey--normal-state-floor)))
+    (unwind-protect
+        (progn
+          (when floored (set-keymap-parent map nil))
+          (donkey--map-bindings map))
+      (when floored (set-keymap-parent map donkey--normal-state-floor)))))
+
 (defun donkey--capture-default-normal-bindings ()
   "Record `donkey-normal-mode-map' as it stands at the end of the load."
   (setq donkey--default-normal-bindings
-        (donkey--map-bindings donkey-normal-mode-map)))
+        (donkey--map-own-bindings donkey-normal-mode-map)))
 
 (defun donkey--binding-changes ()
   "Return the DONKEY keys whose binding has changed, as (KEYS DEFAULT NOW).
@@ -7866,7 +7964,8 @@ shipped them and not for anything a reader has done since."
   "Return the wrap delimiters whose key is not `donkey-wrap-region'.
 
 Both halves of each pair, since both are keys DONKEY binds.  Answers
-as (CHAR BINDING), BINDING nil where the key is not bound at all.  The
+as (CHAR BINDING), BINDING the `undefined' of
+`donkey--normal-state-floor' where nothing else binds the key.  The
 characters are read through `donkey--wrap-delimiter-characters', which
 understands `all' and drops whatever is not a character.
 
@@ -7979,7 +8078,7 @@ is what a reader asking by hand wants."
             lines))
     (pcase-dolist (`(,char ,now) delimiters)
       (push
-       (if now
+       (if (not (donkey--wrap-key-free-p char))
            (let ((other (donkey--wrap-delimiter-other-half char)))
              (format "the wrap delimiter %s is %s, so it does not wrap%s"
                      (single-key-description char)
@@ -7988,9 +8087,12 @@ is what a reader asking by hand wants."
                          (format "; press %s instead"
                                  (single-key-description other))
                        "")))
-         ;; Its KEY is unbound, which under `all' means one thing: the
-         ;; pair was added after the keys were claimed.  Say the thing
-         ;; that fixes it rather than the thing that is true.
+         ;; Its key is still free -- unbound, or the `undefined' the
+         ;; floor answers with -- which under `all' means one thing:
+         ;; the pair was added after the keys were claimed.  Asked of
+         ;; `donkey--wrap-key-free-p', the predicate the claim itself
+         ;; reads, so the advice and the claim cannot disagree.  Say
+         ;; the thing that fixes it rather than the thing that is true.
          ;; Substituted BEFORE the character is put in, not after: a
          ;; delimiter is a reader's to choose, and a description
          ;; landing next to a `\\=\\[' would otherwise be read as a
@@ -9684,6 +9786,7 @@ load time."
 ;; the map is DONKEY's alone at exactly this point, and a reader's own
 ;; bindings arrive after it.
 (donkey--suppress-insert-commands)
+(donkey--seal-normal-state)
 (donkey--claim-wrap-keys)
 (donkey--capture-default-normal-bindings)
 

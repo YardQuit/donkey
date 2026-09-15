@@ -4559,11 +4559,21 @@ package loads.  BODY runs once the keys have."
     ;; RET does nothing in an editing mode, so the probe never ran.
     (should (string= (buffer-string) "alpha"))))
 
-(ert-deftest donkey-normal-state-leaves-a-key-it-does-not-bind-to-the-mode ()
-  "A key Normal state does not bind still reaches the mode that binds it."
-  (donkey-precedence-test--in-front "*donkey-precedence-free*" "q"
-    (should (eq (key-binding (kbd "q")) #'donkey-precedence-test--probe))
-    (should (string= (buffer-string) "PROBEalpha"))))
+(ert-deftest donkey-normal-state-answers-a-key-it-does-not-bind ()
+  "A key Normal state does not bind is answered by its floor, not the mode.
+
+`q' is the case a reader asks about first, since it quits a buffer
+nearly everywhere.  A buffer a reader QUITS is a support mode or an
+excluded one, and Normal state is not on in either; where it is on,
+the buffer is one being written in and `q' types a letter there.
+
+The press is wrapped because `undefined' rings the bell, and a bell
+ends a keyboard macro in a terminal frame though not in batch.  What
+is pinned either way is that the mode's command did not run."
+  (donkey-precedence-test--in-front "*donkey-precedence-free*" ""
+    (should (eq (key-binding (kbd "q")) 'undefined))
+    (condition-case nil (execute-kbd-macro (kbd "q")) (error nil) (quit nil))
+    (should (string= (buffer-string) "alpha"))))
 
 (ert-deftest donkey-hiding-normal-state-hides-its-emulation-map-as-well ()
   "Binding `donkey-normal-mode' to nil hides Normal state's map entirely.

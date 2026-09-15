@@ -656,6 +656,25 @@ that is the point: an unbound key falls through to the major mode, and
 some major modes type with punctuation. The rest of the punctuation is
 not on this list because it wraps — see [[#wrapping-a-selection-in-a-pair][Wrapping a selection]].
 
+** Every other printable key is refused as well
+
+NORMAL state answers for every key from =!= to =~=. One DONKEY does not
+bind, and has not lent to a wrap pair, is refused with "is undefined"
+rather than reaching the major mode.
+
+That is what lets a key mean one thing everywhere. Thirty-two printable
+keys used to fall through, and what they did depended on the mode: the
+suppression is a remap of =self-insert-command= and the commands like
+it, which catches a mode that types with a NAMED command and cannot
+catch one that does not. =idlwave-mode= binds =&= to an anonymous
+command that inserts an ampersand, and =&= typed into a buffer you were
+navigating, whatever that list said.
+
+The two rows above are listed separately because those keys are bound
+in DONKEY's own keymap. The rest are answered from underneath it, which
+is why =?= does not list them: they are not keys DONKEY chose to do
+something with, they are what is left.
+
 * Making it yours
 :PROPERTIES:
 :CUSTOM_ID: making-it-yours
@@ -786,6 +805,21 @@ to whatever the major mode has:
 
   (with-eval-after-load 'donkey
     (keymap-unset donkey-normal-mode-map ";"))   ; ; is the mode's again
+
+#+end_src
+
+That works for any printable key, not only the ones DONKEY binds:
+=keymap-unset= leaves a nil in DONKEY's map, and a nil there shadows
+what answers the key underneath.
+
+Its =REMOVE= argument does the opposite, and is worth knowing so you do
+not reach for it by mistake. It takes the binding out rather than
+nilling it, so the key goes back to being refused:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (keymap-unset donkey-normal-mode-map ";" t))  ; ; is refused again
 
 #+end_src
 
@@ -1714,7 +1748,7 @@ rather than a guess.
 Dired is the clearest case, because its keymap is the biggest. Press a
 key there with NORMAL state on and one of four things happens.
 
-*** It reaches Dired, because DONKEY does not bind it
+*** It is refused, because NORMAL state answers every key
 
 #+begin_example
 
@@ -1722,8 +1756,14 @@ key there with NORMAL state on and one of four things happens.
 
 #+end_example
 
-Suppression is done by remapping =self-insert-command=, not by claiming
-every letter, so a key DONKEY leaves alone is simply the mode's.
+These are the keys Dired binds that DONKEY's keymap does not. They used
+to reach Dired; NORMAL state now answers every printable key itself, so
+they are refused with "is undefined" instead — see [[#suppressed-keys][Suppressed keys]].
+
+It makes the argument below stronger rather than weaker. The mode's own
+keys are one more thing NORMAL state costs in a buffer a program made,
+not one fewer, which is the whole reason such buffers are not in NORMAL
+state to begin with.
 
 *** It reaches Dired through Dired's own remap
 

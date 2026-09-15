@@ -1931,14 +1931,16 @@ left with `,' reaching whatever the mode puts there."
           (setq donkey-mark-pair-delimiters was)
           (donkey--claim-wrap-keys)
           (should (eq (keymap-lookup donkey-normal-mode-map ",") #'undefined))
-          ;; and a key that really was unbound is unbound again
+          ;; and a key that was never a pair's goes back to the seal:
+          ;; since Normal state answers every printable key,
+          ;; there is no longer a tier of keys that fall through
           (setq donkey-mark-pair-delimiters (cons (cons ?# ?#) was))
           (donkey--claim-wrap-keys)
           (should (eq (keymap-lookup donkey-normal-mode-map "#")
                       #'donkey-wrap-region))
           (setq donkey-mark-pair-delimiters was)
           (donkey--claim-wrap-keys)
-          (should-not (keymap-lookup donkey-normal-mode-map "#")))
+          (should (eq (keymap-lookup donkey-normal-mode-map "#") 'undefined)))
       (setq donkey-mark-pair-delimiters was)
       (donkey--claim-wrap-keys))))
 
@@ -2047,7 +2049,7 @@ is no licence to unbind somebody else's key."
     (donkey--claim-wrap-keys)
     (should (eq (keymap-lookup donkey-normal-mode-map "#") #'donkey-wrap-region)))
   (donkey--claim-wrap-keys)
-  (should-not (keymap-lookup donkey-normal-mode-map "#"))
+  (should (eq (keymap-lookup donkey-normal-mode-map "#") 'undefined))
   ;; somebody else's key, named in the list and then dropped from it
   (unwind-protect
       (let ((donkey-wrap-delimiters (append (donkey--wrap-delimiter-characters) '(?#))))
@@ -2057,7 +2059,7 @@ is no licence to unbind somebody else's key."
         (donkey--claim-wrap-keys)
         (should (eq (keymap-lookup donkey-normal-mode-map "#")
                     #'ignore-preserving-kill-region)))
-    (keymap-unset donkey-normal-mode-map "#")
+    (keymap-unset donkey-normal-mode-map "#" t)
     (donkey--claim-wrap-keys)))
 
 (ert-deftest donkey-the-wrap-keys-follow-the-variable-being-set ()
@@ -2074,7 +2076,7 @@ for."
                                   (append (donkey--wrap-delimiter-characters) '(?#)))
           (should (eq (keymap-lookup donkey-normal-mode-map "#") #'donkey-wrap-region)))
       (customize-set-variable 'donkey-wrap-delimiters was)
-      (should-not (keymap-lookup donkey-normal-mode-map "#")))))
+      (should (eq (keymap-lookup donkey-normal-mode-map "#") 'undefined)))))
 
 (ert-deftest donkey-claiming-wrap-keys-does-not-trust-the-list ()
   "Anything in `donkey-wrap-delimiters' that is not a character is skipped.
