@@ -9,6 +9,62 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.14.0 — 2026-09-15
+
+NORMAL state answers every printable key. Thirty-two of them used to
+fall through to the major mode, and what they did there depended on
+which buffer you were in; a key DONKEY does not bind now does nothing
+instead of running whatever the mode put on it. The case that found
+it: =idlwave-mode= binds =&= to an anonymous command that types an
+ampersand, so =&= typed a character into a buffer you were navigating.
+
+*Changed — you will notice these*
+
+- A key a major mode bound that DONKEY does not now does nothing in
+  NORMAL state, and says "is undefined" when you press it. Suppression
+  had worked by remapping the typing commands by NAME, and a name
+  cannot reach a command that has none, so the guarantee was only ever
+  as good as the list. It is answered from under the keymap now rather
+  than from a list, so it holds for every printable key and in every
+  mode, including the ones nobody has installed.
+- To hand a key back to the buffer, unbind it, exactly as before:
+  =(keymap-unset donkey-normal-mode-map ";")=. That now works for any
+  printable key rather than only the ones DONKEY had bound.
+- =M-x donkey-debug-platform= says which kind of buffer the report
+  came from — =Insert [S]=, =Insert [E]= or =Insert [I]= — and, where
+  something decided it, what decided it. In a Dired buffer it used to
+  say "State here: Insert", which is true and tells a bug report
+  nothing.
+
+*Under the hood*
+
+- The modeline asks which kind of buffer this is once and remembers
+  the answer, where it worked it out on every redisplay. Byte-compiled
+  in a Dired buffer the lighter goes from 1.50 µs to 0.38, and in a
+  graphical frame from 1.47 to 0.23. The letter and the cursor shape
+  come from that one answer now, so the two cannot disagree.
+- The test suite's docstrings are held to the package's own spelling
+  rules by a guard that renders them. A hundred and one lines were
+  wrong in a way that showed only in the rendered text, and nothing
+  had ever rendered them.
+
+*Upgrading*
+
+Nothing to do, unless you had come to rely on a major mode's key
+reaching through NORMAL state in a buffer you write in. If you had,
+name it and unbind it:
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'donkey
+    (keymap-unset donkey-normal-mode-map "&"))   ; & is the mode's again
+
+#+end_src
+
+Your own bindings are untouched, including a prefix hung on a key
+DONKEY does not bind: =(keymap-set donkey-normal-mode-map "s d" ...)=
+works as it always did.
+
 * 1.13.0 — 2026-09-14
 
 Two more modes get a section, and the two states that are not NORMAL
