@@ -1556,17 +1556,35 @@ two places to read it."
                                    'donkey-wrap-region))
                              halves))
          (findings (donkey--binding-report-lines t t)))
-    (append
+    (delq
+     nil
+     (append
      (list (format "Version:        %s" (or (bound-and-true-p donkey-version)
                                             "(unknown)"))
            (format "donkey-mode:    %s" (if (bound-and-true-p donkey-mode) "on" "off"))
+           ;; The letter the modeline is showing, not just the state.
+           ;; A support mode and an excluded mode are both Insert state,
+           ;; so a report from Dired used to read like an ordinary
+           ;; buffer you type in -- hiding the one fact that matters
+           ;; most about it.
            (format "State here:     %s"
                    (cond ((bound-and-true-p donkey-normal-mode) "Normal")
-                         ((bound-and-true-p donkey-insert-mode) "Insert")
+                         ((bound-and-true-p donkey-insert-mode)
+                          (format "Insert %s"
+                                  (string-trim
+                                   (replace-regexp-in-string
+                                    "DONKEY" "" (donkey--insert-state-lighter)))))
                          (t "neither")))
            (format "Buffer:         %s (%s)%s"
                    (buffer-name) major-mode
                    (if buffer-read-only ", read-only" ""))
+           ;; Which entry decided it, from the same function
+           ;; \\[donkey-check-bindings] uses -- one body of logic, two
+           ;; places to read it.  The entry need not be this buffer's
+           ;; own mode: the lists ship parents, so `magit-log-mode' is
+           ;; decided by `magit-mode'.
+           (let ((why (donkey--state-availability-line)))
+             (and why (format "                %s" why)))
            (format "Wrap engine:    %s" donkey-wrap-region-engine)
            (format "Wrap keys:      %d of %d claimed (%s)"
                    claimed (length halves)
@@ -1577,7 +1595,7 @@ two places to read it."
            "")
      (if findings
          (cons "Bindings:" (mapcar (lambda (l) (concat "  " l)) findings))
-       (list "Bindings:" "  every key is as DONKEY left it")))))
+       (list "Bindings:" "  every key is as DONKEY left it"))))))
 
 (defun donkey-debug-platform ()
   "Display detailed platform information for troubleshooting.

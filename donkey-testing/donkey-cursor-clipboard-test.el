@@ -953,6 +953,50 @@ the bindings look like are the first questions anybody asks."
     (when (get-buffer "*DONKEY Platform Debug*")
       (kill-buffer "*DONKEY Platform Debug*"))))
 
+(ert-deftest donkey-debug-platform-says-which-kind-of-buffer-and-why ()
+  "A support or excluded buffer says so, and says what decided it.
+
+Both sit in Insert state, so a report from Dired used to read
+\"State here: Insert\" -- indistinguishable from a buffer you type in,
+and hiding the one fact that matters most in a bug report about a key
+that did nothing.  The letter is the modeline\='s, and the reason is
+`donkey--state-availability-line\=', the same sentence
+\\[donkey-check-bindings] prints: the entry that decided need not be
+this buffer\='s own mode, since the lists ship parents."
+  (let ((donkey-excluded-mode-exceptions nil)
+        (donkey-support-mode-exceptions nil))
+    ;; a support mode names its section
+    (let ((donkey-excluded-modes nil)
+          (donkey-support-modes '((text-mode))))
+      (with-temp-buffer
+        (text-mode)
+        (donkey-insert-mode 1)
+        (let ((lines (string-join (donkey--debug-donkey-lines) "\n")))
+          (should (string-match-p "State here: *Insert \\[S\\]" lines))
+          (should (string-match-p "donkey-support-modes" lines)))))
+    ;; an excluded mode names the list, and wins over a section
+    (let ((donkey-excluded-modes '(text-mode))
+          (donkey-support-modes '((text-mode))))
+      (with-temp-buffer
+        (text-mode)
+        (donkey-insert-mode 1)
+        (let ((lines (string-join (donkey--debug-donkey-lines) "\n")))
+          (should (string-match-p "State here: *Insert \\[E\\]" lines))
+          (should (string-match-p "donkey-excluded-modes" lines)))))
+    ;; and a buffer you write in says neither, with no stray blank line
+    (let ((donkey-excluded-modes nil)
+          (donkey-support-modes nil))
+      (with-temp-buffer
+        (prog-mode)
+        (donkey-insert-mode 1)
+        (let ((lines (donkey--debug-donkey-lines)))
+          (should (string-match-p "State here: *Insert \\[I\\]"
+                                  (string-join lines "\n")))
+          (should-not (string-match-p "donkey-support-modes\\|donkey-excluded-modes"
+                                      (string-join lines "\n")))
+          ;; the optional reason line is absent, not empty
+          (should-not (memq nil lines)))))))
+
 (ert-deftest donkey-debug-platform-answers-for-the-buffer-you-ran-it-from ()
   "The buffer-specific half is about YOUR buffer, not the report buffer.
 
