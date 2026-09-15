@@ -5703,6 +5703,18 @@ PREFIX is the accumulated key sequence string for the current path."
                               def (concat full-key " ")))
                  (push leaf acc)))
               ((and (consp def) (keymapp (cdr def)))
+               ;; A prefix written as (NAME . KEYMAP) keeps its name: the
+               ;; reader chose it, and the leaves below say what the keys
+               ;; do without ever saying what the group is for.  DONKEY's
+               ;; own `SPC i' was equally silent about being the input
+               ;; methods.  Marked rather than pushed as a binding,
+               ;; because a prefix runs nothing.
+               ;; Only a NESTED prefix gets a row.  A top-level one --
+               ;; `SPC' itself, named "leader" -- already has the group
+               ;; header above its keys saying so, and a row for it would
+               ;; sit outside that group and repeat it.
+               (when (and (stringp (car def)) (not (string-empty-p prefix)))
+                 (push (cons full-key (cons 'donkey--prefix (car def))) acc))
                (dolist (leaf (donkey--desc-bindings-collect-leaves
                               (cdr def) (concat full-key " ")))
                  (push leaf acc)))
@@ -5770,14 +5782,24 @@ names are clickable buttons."
                               'face 'font-lock-variable-name-face))
           ;; Command name as clickable button; a (NAME . COMMAND)
           ;; binding is its command, with NAME beside it.
-          (let* ((name (and (consp def) (stringp (car def)) (cdr def) (car def)))
+          (let* ((prefix-name (and (consp def) (eq (car def) 'donkey--prefix)
+                                   (cdr def)))
+                 (name (and (not prefix-name)
+                            (consp def) (stringp (car def)) (cdr def) (car def)))
                  (def (if name (cdr def) def)))
-            (if (symbolp def)
-                (insert-text-button (symbol-name def)
-                                    'action (lambda (_) (describe-function def))
-                                    'follow-link t
-                                    'help-echo (format "Describe %s" def))
-              (insert "[complex]"))
+            (cond
+             (prefix-name
+              ;; No button: there is no command to describe.  The plus is
+              ;; which-key's mark for a prefix, so the row cannot be read
+              ;; as a key that runs something called "open/apps".
+              (insert (propertize (format "+%s" prefix-name)
+                                  'face 'font-lock-comment-face)))
+             ((symbolp def)
+              (insert-text-button (symbol-name def)
+                                  'action (lambda (_) (describe-function def))
+                                  'follow-link t
+                                  'help-echo (format "Describe %s" def)))
+             (t (insert "[complex]")))
             (when name
               (insert (propertize (format "  %s" name) 'face 'font-lock-comment-face))))
           (insert "\n")

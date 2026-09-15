@@ -712,6 +712,22 @@ A prefix with no name shows as =+prefix= in which-key, which tells a
 reader nothing. Name it the same way a leaf is named — by binding its
 keymap as =("name" . keymap)=.
 
+The name reaches both readers of the keymap. which-key shows it in its
+popup, and =?= gives it a row of its own above the keys it holds:
+
+#+begin_example
+
+  SPC o          +open/apps
+  SPC o g        magit-status  magit
+  SPC o m        ement-connect  ement
+
+#+end_example
+
+The plus is which-key's mark for a prefix, and the row has no command
+button because a prefix runs nothing. A prefix you did not name gets
+no row — there is nothing to say about it — and its keys are still
+listed.
+
 Either define the prefix whole and name it as you bind it:
 
 #+begin_src emacs-lisp

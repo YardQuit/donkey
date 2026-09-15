@@ -3030,6 +3030,38 @@ back has to carry `h' and `l' with it."
     (should (> examples 3))
     (should (equal lost nil))))
 
+(ert-deftest donkey-the-chart-names-a-nested-prefix ()
+  "A prefix written as (NAME . KEYMAP) gets a row saying what it is.
+
+The leaves below a prefix say what each key does and never say what
+the group is for, so a reader who named one saw the name only in
+which-key -- and DONKEY's own `SPC i' was as silent about being the
+input methods.  The row carries which-key's plus and no button,
+because a prefix runs nothing there is a command to describe.
+
+An UNNAMED prefix gets no row: there is nothing to say.  Nor does a
+top-level one, which already has the group header above its keys."
+  (let* ((inner (make-sparse-keymap))
+         (map (make-sparse-keymap)))
+    (keymap-set inner "e" '("eshell" . eshell))
+    (keymap-set map "SPC" (cons "leader" (let ((l (make-sparse-keymap)))
+                                           (keymap-set l "o" (cons "open/apps" inner))
+                                           (keymap-set l "x" inner)
+                                           (keymap-set l "b" '("buf" . switch-to-buffer))
+                                           l)))
+    (let ((rows (donkey--desc-bindings-collect-leaves map "")))
+      (let ((by-key (lambda (k) (cdr (assoc k rows)))))
+        ;; the named nested prefix is there, marked as a prefix
+        (should (equal (funcall by-key "SPC o") '(donkey--prefix . "open/apps")))
+        ;; the unnamed one is not
+        (should-not (funcall by-key "SPC x"))
+        ;; nor is the top-level leader, which has a group header already
+        (should-not (funcall by-key "SPC"))
+        ;; and the leaves are untouched, under both
+        (should (equal (funcall by-key "SPC o e") '("eshell" . eshell)))
+        (should (equal (funcall by-key "SPC x e") '("eshell" . eshell)))
+        (should (equal (funcall by-key "SPC b") '("buf" . switch-to-buffer)))))))
+
 (ert-deftest donkey-readme-fall-through-keys-are-untouched ()
   "Every key the README calls untouched really is.
 
