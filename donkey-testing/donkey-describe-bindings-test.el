@@ -3030,17 +3030,13 @@ back has to carry `h' and `l' with it."
     (should (> examples 3))
     (should (equal lost nil))))
 
-(ert-deftest donkey-the-chart-names-a-nested-prefix ()
-  "A prefix written as (NAME . KEYMAP) gets a row saying what it is.
+(ert-deftest donkey-the-chart-gives-a-prefix-no-row-of-its-own ()
+  "A prefix gets no row in the chart, named or not; its leaves do.
 
-The leaves below a prefix say what each key does and never say what
-the group is for, so a reader who named one saw the name only in
-which-key -- and DONKEY's own `SPC i' was as silent about being the
-input methods.  The row carries which-key's plus and no button,
-because a prefix runs nothing there is a command to describe.
-
-An UNNAMED prefix gets no row: there is nothing to say.  Nor does a
-top-level one, which already has the group header above its keys."
+A name bound into the keymap is the only kind the chart could show,
+and which-key's replacement table -- the way a reader names a prefix --
+cannot be read from here.  Showing the one kind and not the other
+would name `SPC i' and nothing a reader had named."
   (let* ((inner (make-sparse-keymap))
          (map (make-sparse-keymap)))
     (keymap-set inner "e" '("eshell" . eshell))
@@ -3051,13 +3047,11 @@ top-level one, which already has the group header above its keys."
                                            l)))
     (let ((rows (donkey--desc-bindings-collect-leaves map "")))
       (let ((by-key (lambda (k) (cdr (assoc k rows)))))
-        ;; the named nested prefix is there, marked as a prefix
-        (should (equal (funcall by-key "SPC o") '(donkey--prefix . "open/apps")))
-        ;; the unnamed one is not
+        ;; no row for a prefix: named, unnamed or top-level
+        (should-not (funcall by-key "SPC o"))
         (should-not (funcall by-key "SPC x"))
-        ;; nor is the top-level leader, which has a group header already
         (should-not (funcall by-key "SPC"))
-        ;; and the leaves are untouched, under both
+        ;; and the leaves are reached through every one of them
         (should (equal (funcall by-key "SPC o e") '("eshell" . eshell)))
         (should (equal (funcall by-key "SPC x e") '("eshell" . eshell)))
         (should (equal (funcall by-key "SPC b") '("buf" . switch-to-buffer)))))))

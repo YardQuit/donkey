@@ -727,25 +727,9 @@ something added later.
 
 *** Naming a prefix of your own
 
-A prefix with no name shows as =+prefix= in which-key, which tells a
-reader nothing. Name it the same way a leaf is named — by binding its
-keymap as =("name" . keymap)=.
-
-The name reaches both readers of the keymap. which-key shows it in its
-popup, and =?= gives it a row of its own above the keys it holds:
-
-#+begin_example
-
-  SPC o          +open/apps
-  SPC o g        magit-status  magit
-  SPC o m        ement-connect  ement
-
-#+end_example
-
-The plus is which-key's mark for a prefix, and the row has no command
-button because a prefix runs nothing. A prefix you did not name gets
-no row — there is nothing to say about it — and its keys are still
-listed.
+A prefix with no name shows as =+prefix= in the which-key popup, which
+tells a reader nothing. Name it the same way a leaf is named — by
+binding its keymap as =("name" . keymap)=.
 
 Either define the prefix whole and name it as you bind it:
 
@@ -774,13 +758,12 @@ afterwards:
 
 #+end_src
 
-Either way which-key then shows =+open/apps= and =+toggle= where it
+Either way the popup then shows =+open/apps= and =+toggle= where it
 would otherwise show =+prefix=. Keys added under the prefix afterwards
-keep the name, and naming it a second time renames it.
-
-The name travels in the binding rather than in another package's
-table, which is why none of this needs which-key installed: DONKEY's
-own =SPC i= is named this way and shows as =+input-method=.
+keep the name, and naming it a second time renames it. The name
+travels in the binding rather than in another package's table, which
+is why none of this needs which-key installed: DONKEY's own =SPC i= is
+named this way and shows as =+input-method=.
 
 To name a prefix you did *not* bind — one belonging to another package
 — which-key's own table is the way, and it is the only way:
@@ -793,26 +776,32 @@ To name a prefix you did *not* bind — one belonging to another package
 
 #+end_src
 
-*** The two places are not the same place
+Name a prefix both ways and the table wins: it rewrites the name the
+keymap offered, so the one in the binding is the one you stop seeing.
+Nothing warns you, which is reason enough to pick one place and keep
+every prefix there. DONKEY's own =SPC i= is no exception —
 
-A name in the binding reaches both readers. A name in which-key's
-table reaches which-key alone, and wins there if you use both:
+#+begin_src emacs-lisp
 
-| Named in          | which-key shows | =?= shows     |
-|-------------------+-----------------+---------------|
-| the binding       | your name       | your name     |
-| which-key's table | your name       | nothing       |
-| both              | which-key's     | the binding's |
-| neither           | =+prefix=       | nothing       |
+  (with-eval-after-load 'donkey
+    (which-key-add-key-based-replacements "SPC i" "input/information"))
 
-So name a prefix of your own where you bind it. =?= reads the keymap
-and nothing else, so a name that lives in which-key's table is
-invisible there — the prefix's keys are still listed, and the prefix
-simply has no row. Put a different name in each place and the two
-displays disagree with no warning that they do.
+#+end_src
 
-That is the whole reason to reach for the table: a prefix belonging to
-another package, which you did not bind and so cannot name in place.
+— renames it in the popup, and the keys under it go on doing what they
+did.
+
+*** =?= does not name a prefix
+
+Whichever way you set it, a prefix name is for the popup. The =?=
+chart lists every key under a prefix, each with its own name, and
+gives the prefix itself no row.
+
+That is a deliberate silence rather than a gap. =?= reads the keymap,
+so the only name it could ever show is one bound into it — and a chart
+that named the prefixes you bound while saying nothing about the ones
+you named in which-key's table would be telling half the story, in a
+way that reads as a bug rather than a rule. The popup has all of them.
 
 ** Giving a key back to the buffer
 
