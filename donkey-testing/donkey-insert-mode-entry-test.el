@@ -1883,9 +1883,9 @@ separately -- `<' can wrap while `>' goes on indenting."
         ;; and the ones it could not take are named
         (should (equal (mapcar #'car (donkey--delimiters-that-cannot-wrap))
                        '(?: ?> ?x))))
-    ;; Outside the `let\=', so the claim that puts the keys back is made
+    ;; Outside the `let', so the claim that puts the keys back is made
     ;; against the list as it really is.  Inside it, the cleanup claimed
-    ;; the test\='s own delimiters all over again and left them bound --
+    ;; the test's own delimiters all over again and left them bound --
     ;; found by the shuffle seeds, not by this file.
     (donkey--claim-wrap-keys)))
 
@@ -2501,7 +2501,7 @@ way the delimiter keys read a count."
 (defmacro donkey-entry-test (text keys &rest body)
   "Type KEYS into a DONKEY buffer of TEXT, then run BODY.
 
-A thin skin over `donkey-test-keys--harness\=', which carries the
+A thin skin over `donkey-test-keys--harness', which carries the
 rationale for the displayed buffer and the real keys: selection state
 is settled by the command loop rather than by the command, so a
 directly called entry command reports a selection still active no
@@ -2528,9 +2528,9 @@ replaces."
   "A drawn rectangle is dropped, not block-inserted into.
 
 The one place these keys could plausibly do something clever and do not:
-vi\\='s `I\\=' over a visual block inserts on every row.  DONKEY has no
-block insert, and `donkey-change\\=' is the key that acts on a rectangle
--- it replaces every row via `string-rectangle\\='.  So the two sit
+vi\\='s `I' over a visual block inserts on every row.  DONKEY has no
+block insert, and `donkey-change' is the key that acts on a rectangle
+-- it replaces every row via `string-rectangle'.  So the two sit
 beside each other answering differently, which is why the docstrings now
 say so and why this pins it.
 
@@ -2550,9 +2550,9 @@ otherwise look alike from the state flags."
                      (list key nil t))))))
 
 (ert-deftest donkey-insert-entry-keys-leave-a-bank-standing ()
-  "Banked lines survive entering INSERT, as they survive `donkey-change\\='.
+  "Banked lines survive entering INSERT, as they survive `donkey-change'.
 
-`donkey-copy\\=', `donkey-delete\\=' and `donkey-yank\\=' spend a bank.
+`donkey-copy', `donkey-delete' and `donkey-yank' spend a bank.
 Entering INSERT is not an operation on a selection, so there is nothing
 for a bank to mean here and it is left alone -- which nothing asserted
 until now, in either direction."
@@ -2563,9 +2563,9 @@ until now, in either direction."
                      (list key 1 t))))))
 
 (ert-deftest donkey-insert-after-at-end-of-buffer-still-enters-insert ()
-  "`a\\=' at the very end of the buffer starts typing instead of refusing.
+  "`a' at the very end of the buffer starts typing instead of refusing.
 
-There is no character to step over there, so the `forward-char\\=' would
+There is no character to step over there, so the `forward-char' would
 signal and abort before the state change -- leaving Normal state active
 with only an end-of-buffer message to explain it.  Guarded in the source,
 and asserted here alongside the ordinary case so the guard cannot be

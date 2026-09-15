@@ -776,7 +776,7 @@ the \\=`KEY\\=' markup, which carries the same face."
 A cross-reference by name is the kind of claim that rots quietly: rename
 the section and the intro sends the reader nowhere.  The HEADING is what
 is matched here, not the bare phrase -- matching the phrase finds the
-intro\='s own quoted mention of it and proves nothing, which is how the
+intro's own quoted mention of it and proves nothing, which is how the
 first version of this test passed against a deliberately renamed
 section."
   (unwind-protect
@@ -866,8 +866,8 @@ must be one the tutor and README already name.
 
 DEL and <deletechar> joined the list when the BACKSPACE/DELETE block was
 extended to cover the terminal key names as well as the graphical ones.
-They are the two entries this test can actually catch: `key-binding\='
-applies no `function-key-map\=' translation, so <backspace> and <delete>
+They are the two entries this test can actually catch: `key-binding'
+applies no `function-key-map' translation, so <backspace> and <delete>
 resolve to nil in a vanilla buffer and slip through the filter -- they
 are listed for completeness and checked by name in the test above.  This
 test earned its keep on that change, failing the moment the keymap grew
@@ -1675,7 +1675,7 @@ and the wrap -- so the exercise is run rather than read."
 (ert-deftest donkey-tutor-banking-paste-over-a-selection-works ()
   "The banking exercise replaces the marker line rather than pushing it down.
 
-The `V\=' step is what makes the exercise teach two things at once: the
+The `V' step is what makes the exercise teach two things at once: the
 banked lines arrive together, AND a paste replaces whatever is selected.
 Without it the marker line survives underneath the pasted pair, which is
 tidier to read about than to look at."
@@ -1703,12 +1703,12 @@ tidier to read about than to look at."
 (ert-deftest donkey-tutor-lessons-are-in-dependency-order ()
   "No lesson uses a key that a later lesson introduces.
 
-Three forward references were found by checking this mechanically: `y\='
-and `p\=' were both used in exercises before copy-and-paste was taught,
-and `v\=' was used in an exercise having never been taught at all.  The
+Three forward references were found by checking this mechanically: `y'
+and `p' were both used in exercises before copy-and-paste was taught,
+and `v' was used in an exercise having never been taught at all.  The
 fix was to move copy-and-paste ahead of banking -- banking is ABOUT
 copying several things at once, so it cannot be demonstrated first --
-and to give `v\=' its own place in the selecting lesson."
+and to give `v' its own place in the selecting lesson."
   (unwind-protect
       (progn
         (donkey-tutor)
@@ -1736,7 +1736,7 @@ and to give `v\=' its own place in the selecting lesson."
 (ert-deftest donkey-tutor-lesson-2-tells-the-truth-about-bare-digits ()
   "A bare digit drops the count and runs the motion once.
 
-The lesson first said `3 j\=' \"moves nowhere\", which is wrong and the
+The lesson first said `3 j' \"moves nowhere\", which is wrong and the
 comfortable half of the truth.  Running it shows the digit is rejected
 with a message and the motion then runs on its own, so the reader moves
 ONE line while believing they asked for three -- a silently wrong result
@@ -1900,7 +1900,7 @@ characters, which is what the counted `c' in Lesson 4 required."
                   "alpha beta"))))
 
 (ert-deftest donkey-tutor-lesson-5-teaches-v-before-it-is-used ()
-  "`v\=' has its own explanation and exercise, not just a passing mention."
+  "`v' has its own explanation and exercise, not just a passing mention."
   (donkey-tutor-test--live
    (donkey-tutor-test--goline "---> Select part of this line by hand")
    (search-forward "---> ")
@@ -3454,7 +3454,7 @@ the two selection toggles that still ignore one."
 (ert-deftest donkey-tutor-reopened-with-donkey-off-turns-it-back-on ()
   "Returning to a tutor whose DONKEY was switched off makes it work again.
 
-`donkey-tutor\\=' keeps an existing buffer rather than rebuilding it, so a
+`donkey-tutor' keeps an existing buffer rather than rebuilding it, so a
 buried lesson survives -- but it used to return that buffer exactly as
 found, DONKEY included.  With DONKEY off there, a reader came back to a
 document about keys where none of the keys worked: \\=`j\\=' typed a
@@ -3528,7 +3528,7 @@ no way back to a clean lesson."
 
 Walked from the keymap rather than from a written list, so a command
 added to the map without being added here fails this instead of
-quietly not appearing.  `ignore\\=' is excluded: those bindings exist to
+quietly not appearing.  `ignore' is excluded: those bindings exist to
 suppress keys, and there is nothing to tell a reader about them."
   (unwind-protect
       (let (missing)
@@ -3578,9 +3578,9 @@ the map held the first time they asked."
     (when (get-buffer "*DONKEY Bindings*") (kill-buffer "*DONKEY Bindings*"))))
 
 (ert-deftest donkey-describe-bindings-works-where-donkey-was-never-enabled ()
-  "`?\\=' is reachable by name from any buffer, so it must not assume its own mode.
+  "`?' is reachable by name from any buffer, so it must not assume its own mode.
 
-`donkey-describe-bindings\\=' reads a keymap variable rather than the
+`donkey-describe-bindings' reads a keymap variable rather than the
 current buffer, and a reader can call it through
 \\\\[execute-extended-command] from anywhere -- including a buffer DONKEY
 has never touched."

@@ -1415,13 +1415,13 @@ is no delimiter -- and the harness lets one end the test."
     (when (get-buffer "*donkey-pair-test*") (kill-buffer "*donkey-pair-test*"))))
 
 (ert-deftest donkey-a-pair-mark-alone-never-edits-the-buffer ()
-  "\=`m i' selects and does nothing else; the key after it is the reader's.
+  "`m i' selects and does nothing else; the key after it is the reader's.
 
 `m i' and `m a' read their delimiter from the character at point when
 point is on one, and are then finished.  What they must not do is edit
 -- that is the sentence a fuzzer drove over 7,840 sequences, of which
 52 broke it, every one of them a delimiter typed as the third key of
-\=`m i ('.
+`m i ('.
 
 That press is no longer swallowed: with the wrap keys DONKEY's own it
 puts a pair on or takes one off, which is a defined thing a reader can
@@ -1443,10 +1443,10 @@ commands themselves are what this pins."
                        (list text keys expected)))))))
 
 (ert-deftest donkey-the-delimiter-after-a-pair-mark-acts-at-once ()
-  "The delimiter typed after \=`m i' or \=`m a' wraps or unwraps straight away.
+  "The delimiter typed after `m i' or `m a' wraps or unwraps straight away.
 
-Four spellings, and each does what the selection says: \=`m i' selects
-what a pair holds, so the press takes that pair off; \=`m a' selects the
+Four spellings, and each does what the selection says: `m i' selects
+what a pair holds, so the press takes that pair off; `m a' selects the
 pair as well, so the press puts another round it.  Where the delimiter
 had to be typed at the prompt, the press after it is the one that
 acts."
@@ -1462,7 +1462,7 @@ acts."
                        (list pos keys expected)))))))
 
 (ert-deftest donkey-a-pair-mark-repeats-with-a-delimiter-in-between ()
-  "\=`m i m i' grows a level, and a delimiter pressed between still acts.
+  "`m i m i' grows a level, and a delimiter pressed between still acts.
 
 The repeat reads no delimiter of its own -- it reuses the one it
 resolved -- and a press between two of them is the reader's, so it
@@ -3983,7 +3983,7 @@ Point is walked back into the pair first: from the line's end, where
   "A count past the outermost pair blames the count, not the delimiter.
 
 Regression: the scan ran out of enclosing pairs and signalled a bare
-`error' reading \"No \='(\=' found near cursor\" -- which contradicts a
+`error' reading \"No '(' found near cursor\" -- which contradicts a
 screen plainly showing several, reads like the delimiter was mistyped
 rather than the count overshot, and pops the debugger for anyone running
 with `debug-on-error' on.  Bare \\[universal-argument] means FOUR, so
@@ -6967,15 +6967,15 @@ test."
 
 The promise for a mistype is a beep rather than the selection, and it
 held for a single unbound key only.  Emacs runs `undefined' for that
-one -- which is why \\`Q\=' is inert -- but a SEQUENCE that dies in a
+one -- which is why \\`Q' is inert -- but a SEQUENCE that dies in a
 prefix map reaches no command at all: `this-command' is nil, and nil
 is not in any list.
 
-The single key used to be \\`~\=', which every pair in
+The single key used to be \\`~', which every pair in
 `donkey-mark-pair-delimiters' now has a wrap key for: pressed in a run
 it wraps what the run has marked, which is a command and not a
 mistype.  A key that is still nothing had to be found for the
-sentence, and \\`Q\=' is one.
+sentence, and \\`Q' is one.
 
 It cost the run twice over.  `donkey--mark-run-mode-keep-p' saw a
 command that was not a family member and let the mode lapse, and the

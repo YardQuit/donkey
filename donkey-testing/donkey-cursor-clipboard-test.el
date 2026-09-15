@@ -861,7 +861,7 @@ paste expensive."
 (ert-deftest donkey-platform-info-native-comp-asks-the-question ()
   "The :native-comp field reports availability, not the predicate's existence.
 
-It used to be (fboundp \='native-comp-available-p), which is t on every
+It used to be (fboundp 'native-comp-available-p), which is t on every
 Emacs this package runs on whether or not native compilation is
 available -- so the one field meant to distinguish the two builds
 answered yes for both.  Stubbing the predicate to say no simulates a
@@ -959,10 +959,10 @@ the bindings look like are the first questions anybody asks."
 Both sit in Insert state, so a report from Dired used to read
 \"State here: Insert\" -- indistinguishable from a buffer you type in,
 and hiding the one fact that matters most in a bug report about a key
-that did nothing.  The letter is the modeline\='s, and the reason is
-`donkey--state-availability-line\=', the same sentence
+that did nothing.  The letter is the modeline's, and the reason is
+`donkey--state-availability-line', the same sentence
 \\[donkey-check-bindings] prints: the entry that decided need not be
-this buffer\='s own mode, since the lists ship parents."
+this buffer's own mode, since the lists ship parents."
   (let ((donkey-excluded-mode-exceptions nil)
         (donkey-support-mode-exceptions nil))
     ;; a support mode names its section

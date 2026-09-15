@@ -799,11 +799,11 @@ package and neither of those."
   "The question is what the BUFFER means by a key, not what DONKEY does.
 
 A support mode\\='s keys live in a buffer-local
-`donkey--emulation-mode-map-alist\\=' keyed on `donkey-mode\\', not on
-`donkey-normal-mode\\', so hiding only the latter left that map
+`donkey--emulation-mode-map-alist' keyed on `donkey-mode', not on
+`donkey-normal-mode', so hiding only the latter left that map
 answering and the function reported DONKEY\\='s own command.
 
-`donkey-enter-dwim\\=' is the caller that shows it: with the package
+`donkey-enter-dwim' is the caller that shows it: with the package
 holding RET it asked what RET would otherwise run, got itself back,
 and its own guard then refused to act -- RET did nothing at all."
   (skip-unless (require 'help-mode nil t))
@@ -844,7 +844,7 @@ and its own guard then refused to act -- RET did nothing at all."
 (ert-deftest donkey-a-package-never-takes-enter-from-a-mode-that-uses-it ()
   "Enter is the action key of a program\\='s buffer, so the mode keeps it.
 
-Where the mode has nothing on it -- `newline\\=' from the global map --
+Where the mode has nothing on it -- `newline' from the global map --
 the package takes it like any other key."
   ;; a mode with a real Enter keeps it
   (with-temp-buffer
@@ -856,7 +856,7 @@ the package takes it like any other key."
       (should (donkey--enter-key-the-mode-owns-p "RET" (kbd "RET")))
       (should-not (assoc (kbd "RET") (donkey--support-mode-package-keys)))))
   ;; the package names both spellings and they answer apart: a mode
-  ;; that binds only \=`<enter>\=' keeps that one and gives up \=`RET\='
+  ;; that binds only `<enter>' keeps that one and gives up `RET'
   (with-temp-buffer
     (fundamental-mode)
     (use-local-map (let ((m (make-sparse-keymap)))
@@ -1005,7 +1005,7 @@ Both readers of `donkey-support-modes' and the reader of
 (ert-deftest donkey-a-program-buffer-is-supported-without-being-named ()
   "The rule answers for a buffer a program made, section or no section.
 
-`special-mode' is Emacs\=' own word for it, and read-only catches Dired,
+`special-mode' is Emacs' own word for it, and read-only catches Dired,
 which derives from nothing."
   (dolist (mode '(help-mode Man-mode occur-mode tar-mode special-mode))
     (when (fboundp mode)
@@ -1068,7 +1068,7 @@ rule would never fire here."
 (ert-deftest donkey-i-never-enters-a-state-that-cannot-type ()
   "Rule 74, in the buffers that used to break it.
 
-Every one of these was a borrowed-key buffer where `i' was DONKEY\='s,
+Every one of these was a borrowed-key buffer where `i' was DONKEY's,
 and pressing it left a reader in Insert state in a read-only buffer."
   (dolist (mode '(Man-mode occur-mode tar-mode compilation-mode grep-mode
                   apropos-mode help-mode special-mode))
@@ -1329,7 +1329,7 @@ which is where most of these modes keep `scroll-down-command'."
 (ert-deftest donkey-a-section-carries-what-hjkl-displaced ()
   "`J' and `K' run what `j' and `k' took, and took nothing in turn.
 
-Dired\='s `j' and `k' were `dired-goto-file' and `dired-do-kill-lines',
+Dired's `j' and `k' were `dired-goto-file' and `dired-do-kill-lines',
 and neither has another key in the mode -- so the section names the
 shifted form.  The two keys have to have been free, or the relocation
 would be a displacement of its own."
@@ -1536,7 +1536,7 @@ where the section says what DONKEY keeps and the mode keeps the rest."
       (donkey-mode -1))))
 
 (ert-deftest donkey-a-section-may-move-a-mode-key-rather-than-take-it ()
-  "`help-mode' keeps DONKEY\='s h and l, and moves its own up to H and L.
+  "`help-mode' keeps DONKEY's h and l, and moves its own up to H and L.
 
 A section is free to put the mode's command anywhere, not only on the
 key it displaced.  Here h and l are worth more as motion than as help
@@ -3058,16 +3058,16 @@ it."
   "Strategy 3 deletes a Smartparens overlay it is not tracking.
 
 The other half of the strategy from
-`donkey-clear-overlays-removes-tracked-pair-overlay-from-sp-list\=': an
+`donkey-clear-overlays-removes-tracked-pair-overlay-from-sp-list': an
 overlay carrying the Smartparens keymap but absent from
-`sp-pair-overlay-list\=' goes through a plain `delete-overlay\=', since
+`sp-pair-overlay-list' goes through a plain `delete-overlay', since
 there is no Smartparens bookkeeping to unwind.
 
-This used to gate on `sp-overlay-keymap\=', which does not exist -- not
+This used to gate on `sp-overlay-keymap', which does not exist -- not
 in the version CI pins, and nowhere in Smartparens 1.11.0, where the
-keymap is `sp-pair-overlay-keymap\='.  So it skipped unconditionally,
+keymap is `sp-pair-overlay-keymap'.  So it skipped unconditionally,
 including in the job built to run exactly these tests, and the branch it
-was written for went uncovered.  The source keeps a `boundp\='-guarded
+was written for went uncovered.  The source keeps a `boundp'-guarded
 arm for the other name in case some version has it; what it cannot do is
 be tested through a symbol that is never bound."
   (skip-unless (boundp 'sp-pair-overlay-keymap))
@@ -3413,13 +3413,13 @@ filing system, and a later enable starts recording again."
       (kill-buffer buf))))
 
 (defun donkey-test--cancel-stray-resweep-timers ()
-  "Cancel every pending `donkey--startup-resweep\\=' timer.
+  "Cancel every pending `donkey--startup-resweep' timer.
 
 Calling the resweep DIRECTLY -- as several tests below do -- clears
 the tracking variable while the enable-time timer object stays
 pending, which the disable path then cannot see.  A test that does so
 must sweep the orphan out by function identity afterward, or it leaks
-into whichever test asserts `timer-idle-list\\=' contents next.  Found
+into whichever test asserts `timer-idle-list' contents next.  Found
 by the shuffle runner, seeds 1 and 20260822: in alphabetical order the
 asserting tests happen to run first, so only a shuffled order ever put
 the leak in front of them."
@@ -4337,7 +4337,7 @@ interception is the backup for when something else has taken the key."
 Insert state is the truthful answer there -- keys really do pass
 through -- but it is a misleading one, because NORMAL state cannot be
 reached from those buffers by any key.  A lighter that says Insert
-invites the reader to press `C-g\=' and conclude the key is broken."
+invites the reader to press `C-g' and conclude the key is broken."
   (unwind-protect
       (progn
         (donkey-mode 1)
@@ -4360,10 +4360,10 @@ invites the reader to press `C-g\=' and conclude the key is broken."
     (donkey-mode -1)))
 
 (ert-deftest donkey-insert-lighter-is-computed-not-stored ()
-  "The lighter is an `:eval\=' form, so it follows a mode change.
+  "The lighter is an `:eval' form, so it follows a mode change.
 
 A buffer can become excluded without any DONKEY transition firing --
-`M-x `eshell-mode'\=' in an ordinary buffer does it -- so a lighter fixed
+`M-x `eshell-mode'' in an ordinary buffer does it -- so a lighter fixed
 at the moment Insert state was entered would then be wrong with nothing
 to correct it."
   (unwind-protect
@@ -4383,10 +4383,10 @@ to correct it."
     (donkey-mode -1)))
 
 (ert-deftest donkey-indicator-says-E-for-a-derived-excluded-mode ()
-  "Derivation counts: a mode derived from `comint-mode\=' reports E too.
+  "Derivation counts: a mode derived from `comint-mode' reports E too.
 
-`donkey--excluded-mode-p\=' uses `derived-mode-p\=', which is why listing
-`comint-mode\=' alone covers its dozens of derivatives."
+`donkey--excluded-mode-p' uses `derived-mode-p', which is why listing
+`comint-mode' alone covers its dozens of derivatives."
   (unwind-protect
       (progn
         (require 'comint)
@@ -4400,12 +4400,12 @@ to correct it."
     (donkey-mode -1)))
 
 (ert-deftest donkey-c-g-in-insert-stops-a-recording-macro ()
-  "Leaving Insert state aborts a keyboard macro, as `keyboard-quit\=' does.
+  "Leaving Insert state aborts a keyboard macro, as `keyboard-quit' does.
 
-Regression: `C-g\=' looked like it had abandoned the recording -- Normal
+Regression: `C-g' looked like it had abandoned the recording -- Normal
 state, box cursor, nothing to suggest otherwise -- while every later
 keystroke was still being recorded.  The only signal was
-`kmacro-start-macro\=' refusing later with \"Already defining keyboard
+`kmacro-start-macro' refusing later with \"Already defining keyboard
 macro\"."
   (unwind-protect
       (with-temp-buffer
@@ -4424,8 +4424,8 @@ macro\"."
   "A signal from the macro cleanup must not strand the user in Insert.
 
 It runs AFTER the transition and is caught, for the same reason the rest
-of this path is: it is reached from `pre-command-hook\=', where a signal
-costs the user the whole `C-g\=' interception for the session.  No macro
+of this path is: it is reached from `pre-command-hook', where a signal
+costs the user the whole `C-g' interception for the session.  No macro
 is worth that."
   (unwind-protect
       (with-temp-buffer
@@ -4481,7 +4481,7 @@ BACKSPACE and DELETE arrive under different names depending on the
 frame: a GUI sends <backspace> and <delete>, a terminal sends DEL
 \(ASCII 127) and <deletechar>.  Only the first two were bound, so the
 block worked on a GUI and did nothing in a terminal -- absent for the
-users most likely to be running `emacs -nw\='."
+users most likely to be running `emacs -nw'."
   (unwind-protect
       (with-temp-buffer
         (text-mode)
@@ -4492,9 +4492,9 @@ users most likely to be running `emacs -nw\='."
     (donkey-mode -1)))
 
 (ert-deftest donkey-blocking-DEL-leaves-the-bank-clear-binding-alone ()
-  "`m DEL\=' still clears the bank under all three of its key names.
+  "`m DEL' still clears the bank under all three of its key names.
 
-`m\=' is a prefix, so `m DEL\=' is a different key sequence from `DEL\=' --
+`m' is a prefix, so `m DEL' is a different key sequence from `DEL' --
 but it is the obvious thing for this change to have broken."
   (unwind-protect
       (with-temp-buffer

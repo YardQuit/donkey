@@ -2338,7 +2338,7 @@ same reason."
                  ;; Inside a WORD.  A docstring may legitimately end a
                  ;; symbol reference next to a quote, and
                  ;; `donkey-wrap-region' names the apostrophe character
-                 ;; itself as `\='\=' -- both of which a bare
+                 ;; itself as `'' -- both of which a bare
                  ;; two-apostrophe search reports.  What no English word
                  ;; wants is a run of them between two letters.
                  (when (string-match-p "[[:alnum:]]'+'[[:alnum:]]" line)
@@ -2368,6 +2368,33 @@ macros and each has to clean up after itself."
     (should overriding-terminal-local-map))
   (should-not overriding-terminal-local-map))
 
+(defun donkey-docstring-test--unpaired-lines (doc)
+  "Return the lines of DOC whose quotes do not pair.
+
+DOC is RENDERED text, not source: the rendering is what a reader sees,
+and the source has more than one right spelling -- a reference closes
+with a bare quote, a literal-grave example carries the escape on both
+ends.  Three shapes, none of them visible to the byte compiler or to
+checkdoc: a curly opener closed by a straight quote, that same opener
+left standing before a possessive, and the stray \"=\" a lone
+backslash-equals leaves when the Lisp reader drops its backslash."
+  (let (bad)
+    (dolist (line (split-string doc "\n"))
+      ;; A curly opener closed by a straight quote, where the straight
+      ;; quote is neither the start of a quoted expression --
+      ;; `(thing-at-point \='sentence)' -- nor the apostrophe character
+      ;; itself named as `\=''.  The second pattern is the same opener
+      ;; left standing before a possessive: "‘donkey-mode's".  The
+      ;; third is the stray "=" a lone \= leaves behind, whatever stands
+      ;; before it -- an example indented in a docstring puts a space
+      ;; there, and the pattern used to ask for an alphanumeric and miss
+      ;; it.
+      (when (or (string-match-p "‘[^‘’]*'\\(?:[^[:alnum:]’]\\|$\\)" line)
+                (string-match-p "‘[^‘’ ]+'s\\b" line)
+                (string-match-p "=[‘’]" line))
+        (push line bad)))
+    (nreverse bad)))
+
 (ert-deftest donkey-docstrings-render-with-matched-quotes ()
   "Every docstring in donkey.el renders with its quotes paired.
 
@@ -2383,15 +2410,13 @@ such as Emacs\\='s, an expression prefix such as \\='bar.  Harmless to
 the code and invisible to the byte compiler and checkdoc alike, which
 is how the two shapes accumulated over three weeks of commits.
 
-Checked on the RENDERED text rather than the source, because the
-rendering is what `C-h f' shows and because the source has more than
-one right spelling: a reference closes with a bare quote, a
-literal-grave example with the escape on both ends.  The style is
-bound to curve explicitly -- --batch under a C locale renders grave
-style, where the escaped closer is indistinguishable from a bare one
-and the defect is invisible.  Scoped to donkey.el the way
-donkey-docstrings-carry-no-repeated-apostrophes is, and for the same
-reason."
+Checked on the RENDERED text rather than the source: the rendering is
+what `C-h f' shows, and the shapes are told apart by
+`donkey-docstring-test--unpaired-lines'.  The style is bound to curve
+explicitly -- --batch under a C locale renders grave style, where the
+escaped closer is indistinguishable from a bare one and the defect is
+invisible.  Scoped to donkey.el; the test files are
+`donkey-test-docstrings-render-with-matched-quotes's."
   (let ((package (expand-file-name "donkey.el"
                                    (file-name-directory
                                     (or (symbol-file 'donkey-copy 'defun)
@@ -2411,23 +2436,49 @@ reason."
                  (file (cdr entry)))
              (when (and (stringp doc) file
                         (equal (expand-file-name file) package))
-               (dolist (line (split-string doc "\n"))
-                 ;; A curly opener closed by a straight quote, where the
-                 ;; straight quote is neither the start of a quoted
-                 ;; expression -- `(thing-at-point \\='sentence)' -- nor
-                 ;; the apostrophe character itself named as `\\=''.
-                 ;; The second pattern is the same opener left standing
-                 ;; before a possessive: "‘donkey-mode's".  The third is
-                 ;; the stray "=" a lone \\= leaves behind, whatever
-                 ;; stands before it -- an example indented in a
-                 ;; docstring puts a space there, and the pattern used
-                 ;; to ask for an alphanumeric and miss it.
-                 (when (or (string-match-p
-                            "‘[^‘’]*'\\(?:[^[:alnum:]’]\\|$\\)" line)
-                           (string-match-p "‘[^‘’ ]+'s\\b" line)
-                           (string-match-p "=[‘’]" line))
-                   (push (format "%s: %s" (symbol-name sym) line)
-                         offenders)))))))))
+               (dolist (line (donkey-docstring-test--unpaired-lines doc))
+                 (push (format "%s: %s" (symbol-name sym) line)
+                       offenders))))))))
+    (should-not offenders)))
+
+(ert-deftest donkey-test-docstrings-render-with-matched-quotes ()
+  "Every docstring in the test files renders with its quotes paired.
+
+The shapes `donkey-docstrings-render-with-matched-quotes' refuses in
+the package, refused in the files that were never checked.  A hundred
+and one lines had collected there, because nothing rendered them: the
+package guard is scoped to donkey.el, and the byte compiler and
+checkdoc are as blind here as they are there.
+
+A test docstring is read -- in the ERT report, and by whoever is
+working out why a test exists -- and it is rendered the way `C-h f'
+text is, so it is held to the same spelling.  The helpers beside the
+tests are checked with them.
+
+Two tests are exempt, and they are the two that describe the defect by
+exhibiting it."
+  (let ((text-quoting-style 'curve)
+        (exempt '(donkey-docstrings-render-with-matched-quotes
+                  donkey-docstrings-carry-no-repeated-apostrophes))
+        offenders)
+    (dolist (test (ert-select-tests t t))
+      (let ((name (ert-test-name test))
+            (doc (ert-test-documentation test)))
+        (when (and (stringp doc)
+                   (string-prefix-p "donkey" (symbol-name name))
+                   (not (memq name exempt)))
+          (dolist (line (donkey-docstring-test--unpaired-lines
+                         (substitute-command-keys doc)))
+            (push (format "%s: %s" name line) offenders)))))
+    (mapatoms
+     (lambda (sym)
+       (when (and (fboundp sym) (string-prefix-p "donkey" (symbol-name sym)))
+         (let ((file (symbol-file sym 'defun))
+               (doc (ignore-errors (documentation sym))))
+           (when (and (stringp doc) file
+                      (string-match-p "/donkey-testing/" file))
+             (dolist (line (donkey-docstring-test--unpaired-lines doc))
+               (push (format "%s: %s" sym line) offenders)))))))
     (should-not offenders)))
 
 (ert-deftest donkey-editing-commands-honor-a-count ()
@@ -3544,11 +3595,11 @@ The inconsistency was the actual defect; this pins the single rule."
    (should (= (length (donkey--banked-spans)) 0))))
 
 (ert-deftest donkey-join-line-on-the-last-line-keeps-the-final-newline ()
-  "`g j\=' on the last line does nothing, rather than eating the EOF newline.
+  "`g j' on the last line does nothing, rather than eating the EOF newline.
 
-Regression, found by a live audit: `join-line\=' pulls up the empty
+Regression, found by a live audit: `join-line' pulls up the empty
 position after the final newline, which removes it.  Nothing visible
-changes -- the screen is identical and point sits at `point-max\=' either
+changes -- the screen is identical and point sits at `point-max' either
 way -- so the first sign is a diff reporting \"\\ No newline at end of
 file\".  Checked in both buffer shapes, since the last line is a
 different place depending on whether the buffer ends in a newline."
@@ -3564,7 +3615,7 @@ different place depending on whether the buffer ends in a newline."
 (ert-deftest donkey-join-line-count-past-the-end-keeps-the-final-newline ()
   "A count that overshoots stops at the last line instead of eating it.
 
-The same defect on the last iteration: `C-u 99 g j\=' joined everything
+The same defect on the last iteration: `C-u 99 g j' joined everything
 and then took the newline as well."
   (with-temp-buffer
     (insert "a\nb\nc\n")
@@ -3744,9 +3795,9 @@ still counts that line; a region inside one line is one line."
       (should (= (count-between 10 1) 3)))))
 
 (ert-deftest donkey-whole-line-commands-all-keep-the-final-newline ()
-  "Every whole-line command leaves the buffer\='s last newline alone.
+  "Every whole-line command leaves the buffer's last newline alone.
 
-`g j\=' was the only one that did not, which is what made it stand out.
+`g j' was the only one that did not, which is what made it stand out.
 Pinned as a family so the next one added is measured against them."
   (dolist (act (list (lambda () (donkey-visual-line-toggle) (donkey-delete 1))
                      (lambda () (donkey-visual-line-toggle) (donkey-copy 1))
@@ -3943,9 +3994,9 @@ and the single press is what the key already meant."
   "Type KEYS into a DONKEY buffer of TEXT holding STORED, then run BODY.
 
 The harness -- displayed buffer, real keys, prefix and clipboard
-isolation, message capture -- is `donkey-test-keys--harness\=', which
+isolation, message capture -- is `donkey-test-keys--harness', which
 carries the shared rationale.  What this wrapper adds is STORED, loaded
-into `killed-rectangle\=' so that \"left alone\" and \"overwritten\"
+into `killed-rectangle' so that \"left alone\" and \"overwritten\"
 can be told apart: an empty store answers the same for both, which is
 how the no-width overwrite went unnoticed."
   (declare (indent 3))

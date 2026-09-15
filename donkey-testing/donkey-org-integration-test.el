@@ -351,14 +351,14 @@ installed and only user-added rules exist."
 (ert-deftest donkey-org-todo-leaves-a-headline-with-no-keyword-alone ()
   "A headline with no keyword is not given one.
 
-This test used to assert the opposite -- that `donkey-org-todo\=' added
+This test used to assert the opposite -- that `donkey-org-todo' added
 TODO to a plain headline -- and passed for as long as it existed, while
 no keypress could reach that branch.  The rule registering the command
 is (headline :todo-type donkey-org-todo), so a nil :todo-type never
 matches and the command is not called on a plain heading at all.  Green
 for a reason unrelated to anything a reader can do.
 
-`org-todo\=' is stubbed rather than removed, so \"was not called\" is
+`org-todo' is stubbed rather than removed, so \"was not called\" is
 distinguishable from \"was called and did nothing\"."
   (let (called-with)
     (cl-letf (((symbol-function 'org-element-at-point)
@@ -1035,14 +1035,14 @@ bindings buffer, where `special-mode' runs before `use-local-map'."
 (defmacro donkey-org-key-test (text keys &rest body)
   "Type KEYS into a DISPLAYED `org-mode' buffer of TEXT, then run BODY.
 
-Every other test in this file stubs `org-element-at-point\=' and checks
+Every other test in this file stubs `org-element-at-point' and checks
 which command the dispatch picked.  That is worth having, and it is
-also how a discrepancy survived: `donkey-org-todo\=' claimed to add
+also how a discrepancy survived: `donkey-org-todo' claimed to add
 TODO to a plain heading, a stubbed test asserted it, and no keypress
 could reach the branch.  These press the key instead, through
-`donkey-test-keys--harness\=', which carries the displayed-buffer
-rationale.  `org-todo-keywords\=' is bound so the cycle does not depend
-on the developer\='s own Org configuration."
+`donkey-test-keys--harness', which carries the displayed-buffer
+rationale.  `org-todo-keywords' is bound so the cycle does not depend
+on the developer's own Org configuration."
   (declare (indent 2))
   `(donkey-test-keys--harness "*donkey-org-key-test*" #'org-mode
        ((org-todo-keywords '((sequence "TODO" "DONE"))))
@@ -1077,7 +1077,7 @@ and then cycled it would look identical after one press."
 
 The case that DOES fire, kept beside the one that does not.
 
-Note what these two do NOT pin: the rule\='s :todo-type gate.  Dropping
+Note what these two do NOT pin: the rule's :todo-type gate.  Dropping
 it -- registering the command for every headline -- changes no behavior
 and fails no test, because the command now does nothing on a nil
 :todo-type either.  The gate and the absent branch are two independent
@@ -1105,9 +1105,9 @@ otherwise."
 (ert-deftest donkey-org-ret-follows-a-link-from-anywhere-on-it ()
   "RET opens a link whichever part of it point sits on.
 
-Only `browse-url\\=' is stubbed -- the outermost effect -- so the dispatch
-inside DONKEY runs unaltered.  Stubbing `org-open-at-point\\=' instead
-makes the dispatch fall through to `browse-url-at-point\\=', which then
+Only `browse-url' is stubbed -- the outermost effect -- so the dispatch
+inside DONKEY runs unaltered.  Stubbing `org-open-at-point' instead
+makes the dispatch fall through to `browse-url-at-point', which then
 reports \"No URL found\" on a bracket link: a failure produced entirely
 by the stub, and one I mistook for a defect while sweeping this family
 until I re-ran it without."
