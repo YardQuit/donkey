@@ -793,8 +793,26 @@ To name a prefix you did *not* bind — one belonging to another package
 
 #+end_src
 
-=?= lists everything under a prefix with each leaf's own name; the
-prefix's own name is shown by which-key rather than by =?=.
+*** The two places are not the same place
+
+A name in the binding reaches both readers. A name in which-key's
+table reaches which-key alone, and wins there if you use both:
+
+| Named in          | which-key shows | =?= shows     |
+|-------------------+-----------------+---------------|
+| the binding       | your name       | your name     |
+| which-key's table | your name       | nothing       |
+| both              | which-key's     | the binding's |
+| neither           | =+prefix=       | nothing       |
+
+So name a prefix of your own where you bind it. =?= reads the keymap
+and nothing else, so a name that lives in which-key's table is
+invisible there — the prefix's keys are still listed, and the prefix
+simply has no row. Put a different name in each place and the two
+displays disagree with no warning that they do.
+
+That is the whole reason to reach for the table: a prefix belonging to
+another package, which you did not bind and so cannot name in place.
 
 ** Giving a key back to the buffer
 
