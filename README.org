@@ -451,7 +451,7 @@ Inside a run:
 | Keys                 | Do                                                  |
 |----------------------+-----------------------------------------------------|
 | =w W b B s S=        | mark and grow, as the =m= versions do               |
-| =m w=, =m p=, =m P=… | still work, and continue the run — paragraphs are reached this way |
+| =m w=, =m p=, =m P= … | still work, and continue the run — paragraphs are reached this way |
 | =h j k l=, =g h=, =g l=, =g g=, =g e=, =J=, =K= | continue a visible run by character, line and buffer |
 | =u=, =U=            | step back and forward through the *run's* history    |
 | =.=                  | repeat                                              |
@@ -2537,7 +2537,7 @@ by the test suite:
 | =_= | =donkey-wrap-region= |
 | =`= | =donkey-wrap-region= |
 | ={= | =donkey-wrap-region= |
-| =|= | =donkey-wrap-region= |
+| \vert | =donkey-wrap-region= |
 | =}= | =donkey-wrap-region= |
 | =~= | =donkey-wrap-region= |
 | =«= | =donkey-wrap-region= |

@@ -3328,6 +3328,12 @@ Checked in both directions -- see
   (let (mismatches)
     (with-temp-buffer
       (insert-file-contents (expand-file-name "README.org" donkey-test--source-dir))
+      ;; A `|' cannot sit in a table cell literally -- it would end the
+      ;; cell -- so the README writes that key as the \\vert entity.
+      ;; Put it back, so the row is checked like any other.
+      (goto-char (point-min))
+      (while (re-search-forward "^| \\\\vert |" nil t)
+        (replace-match "| =|= |" t t))
       ;; Two passes: a key is written =k= normally, and ~k~ where the
       ;; key is itself an `=' -- `===' is not verbatim markup on every
       ;; renderer the README is read through.
