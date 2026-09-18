@@ -5600,7 +5600,12 @@ own; adjacent spans are merged at use time."
         (let ((ov (make-overlay (car line-span) (cdr line-span) nil nil t)))
           (overlay-put ov 'face 'donkey-banked-selection)
           (overlay-put ov 'donkey-banked t)
-          (overlay-put ov 'priority -50)
+          ;; Above `hl-line-overlay-priority', which is -50: at equal
+          ;; priority neither overlay is nested in the other, so which
+          ;; of the two shows is arbitrary.  Below the region, which
+          ;; redisplay draws at a nil primary priority, so a line that
+          ;; is banked and selected still shows the selection.
+          (overlay-put ov 'priority -25)
           ;; Evaporate, so an emptied buffer does not regrow the bank
           ;; over whatever replaces the line.
           (overlay-put ov 'evaporate t)

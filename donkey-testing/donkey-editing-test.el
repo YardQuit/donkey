@@ -1347,6 +1347,47 @@ lookup must not bank, unbank or count a line for a stranger's overlay."
       (should (= 0 (donkey--banked-line-count)))
       (should (overlay-buffer foreign)))))
 
+(ert-deftest donkey-the-current-line-band-does-not-hide-a-bank ()
+  "A banked line stays visible while `hl-line-mode' is on.
+
+Both overlays cover the whole line, so the higher priority is the one
+that shows; `hl-line-overlay-priority' is -50 and a bank sits above
+it.  Either order of the two -- the band drawn first, the bank made
+first -- shows the bank."
+  (require 'hl-line)
+  (dolist (band-first '(t nil))
+    (with-temp-buffer
+      (donkey--test-lines-buffer 3)
+      (forward-line 1)
+      (hl-line-mode 1)
+      (if band-first
+          (progn (hl-line-highlight) (donkey-bank-selection))
+        (progn (donkey-bank-selection) (hl-line-highlight)))
+      (should (eq 'donkey-banked-selection
+                  (get-char-property (line-beginning-position) 'face))))))
+
+(ert-deftest donkey-a-bank-does-not-hide-the-live-selection ()
+  "The region still shows over a line that is also banked.
+
+Redisplay draws the region at nil, which outranks a bank, so banking
+a line and then selecting it again shows the selection rather than
+the bank."
+  (let ((buffer (get-buffer-create "*donkey-bank-region*")))
+    (unwind-protect
+        (with-current-buffer buffer
+          (erase-buffer)
+          (switch-to-buffer buffer)
+          (donkey--test-lines-buffer 3)
+          (forward-line 1)
+          (donkey-bank-selection)
+          (set-mark (line-beginning-position))
+          (goto-char (line-end-position))
+          (activate-mark)
+          (redisplay--update-region-highlight (selected-window))
+          (should (eq 'region
+                      (get-char-property (line-beginning-position) 'face))))
+      (kill-buffer buffer))))
+
 (ert-deftest donkey-a-bank-joined-onto-the-line-above-covers-that-line ()
   "Joining a banked line onto the line above banks the line they make.
 
