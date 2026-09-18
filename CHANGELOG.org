@@ -9,6 +9,37 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.14.1 — 2026-09-18
+
+Banked lines stay visible under =hl-line-mode=. The bank's highlight
+and the current-line band covered the same line at the same overlay
+priority, and Emacs makes no promise about which of two such overlays
+shows — so about half the time the band took the line and the bank you
+had just made was invisible.
+
+*Fixed — you will notice these*
+
+- =m l= : a banked line shows its own highlight while =hl-line-mode=
+  or =global-hl-line-mode= is on. It used to be a coin flip rather
+  than a rule: measured over 200 banks, the band hid the bank 116
+  times, and in one real configuration 55 times in 100. Nothing else
+  about banking changed — the keys, the counts, the messages and what
+  =y=, =d= and =p= spend are all as they were — and a line that is
+  both banked and selected still shows the selection.
+
+*Under the hood*
+
+- A bank now sits at overlay priority -25, between the current-line
+  band at -50 and the region. Two other highlights that sit in that
+  band are drawn under a bank as a result: the current line =gud= draws
+  while debugging, which is off unless you set
+  =gud-highlight-current-line=, and the =next-error= message
+  highlight, which is transient.
+
+*Upgrading*
+
+Nothing to do.
+
 * 1.14.0 — 2026-09-15
 
 NORMAL state answers every printable key. Thirty-two of them used to
