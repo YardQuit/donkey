@@ -1920,6 +1920,24 @@ list above is what SHIPS, and =safe= only ever removes from it. The
 Under =all= the bottom row comes back, so a colon typed in prose gives
 you two of them and an apostrophe fires in the middle of "don't".
 
+Every =no= above is a setting rather than a rule. The thirteen
+characters those rows name are =donkey-pair-safe-exclusions=, and you
+add to it when a pair you put in the table is one you never want to
+TYPE. A letter is the case that matters: add =(?X . ?X)= so that =m i
+X= can select between two of them, and =X= would otherwise close
+itself, so typing =faX= would give you =faXX=.
+
+#+begin_src emacs-lisp
+
+  (setopt donkey-pair-safe-exclusions
+          (cons ?X donkey-pair-safe-exclusions))
+
+#+end_src
+
+=X= stays in the table and stays a wrap key. It simply stops pairing
+as you type. To drop a delimiter in one major mode rather than
+everywhere, that is =donkey-pair-delimiter-exceptions= instead.
+
 *** When you change the table with =setq=
 
 DONKEY's own pairing reads both variables at every press, so a change
@@ -2469,6 +2487,13 @@ Using =setopt= for everything means never having to know which is which.
     ;; (setopt donkey-pair-delimiters 'all)
     ;; (setopt donkey-pair-delimiters '(?\( ?\[ ?\{ ?\"))
 
+    ;; What `safe' leaves out: characters that are ordinary text far
+    ;; more often than they are delimiters.  Add to it when a pair you
+    ;; put in the table is one you never want to type -- a letter, say,
+    ;; added so that m i can select between two of them.
+    (setopt donkey-pair-safe-exclusions
+            '(?< ?\' ?\` ?= ?* ?~ ?\| ?\\ ?/ ?: ?+ ?_ ?$))       ; default
+
     ;; Modes where typing does not pair, DONKEY's own list.
     (setopt donkey-pair-excluded-modes nil)                      ; default
 
@@ -2930,6 +2955,7 @@ and =M-x apropos-command donkey-= finds any of them.
 | =donkey-wrap-region-engine=        | =donkey=                         | who puts the pair on: DONKEY or your pairing package |
 | =donkey-pair-mode=                 | =nil=                            | close a delimiter as you type it; opt-in |
 | =donkey-pair-delimiters=           | =safe=                           | which delimiters close themselves as you type |
+| =donkey-pair-safe-exclusions=      | 13 characters                    | what =safe= leaves out of the typing set |
 | =donkey-pair-excluded-modes=       | =nil=                            | modes where typing does not pair |
 | =donkey-pair-delimiter-exceptions= | 4 modes                          | one delimiter dropped in one mode |
 | =donkey-pair-stand-down=           | =t=                              | stay out of smartparens' way |

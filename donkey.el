@@ -2707,20 +2707,39 @@ keyboard."
 ;;; Pair Delimiters While Typing
 ;;; ---------------------------------------------------------------------------
 
-(defconst donkey--pair-typing-punctuation
+(defcustom donkey-pair-safe-exclusions
   '(?< ?\' ?\` ?= ?* ?~ ?\| ?\\ ?/ ?: ?+ ?_ ?$)
-  "Table characters that `safe' leaves out of the typing set.
+  "Characters `safe' leaves out of the typing set.
 
-Every one of them is ordinary text far more often than it is a
+Every one shipped here is ordinary text far more often than it is a
 delimiter.  A colon, an underscore or a slash typed in prose is just
 that; the less-than sign is less-than; and the apostrophe is the one
 in a contraction and the quote in Lisp, which is why no pairing
 package pairs it by default either.
 
-A list, and it says where it stops: it names what SHIPS in
-`donkey-mark-pair-delimiters', and a pair a reader adds is theirs to
-judge.  Naming characters in `donkey-pair-delimiters' passes this by
-entirely.")
+The shipped list names what SHIPS in `donkey-mark-pair-delimiters'.
+A pair you add is yours to judge, and this is where you say so: a
+letter added to the table so that \\[donkey-mark-inner] can select
+between two of them would otherwise pair as you type, and typing it
+would give you two.
+
+  (setopt donkey-pair-safe-exclusions
+          (cons ?X donkey-pair-safe-exclusions))
+
+Read only for `safe'.  `all' means the whole table whatever this
+says, and a list of characters in `donkey-pair-delimiters' is taken
+exactly as it stands.  To drop a delimiter in ONE major mode rather
+than everywhere, see `donkey-pair-delimiter-exceptions'.
+
+Anything here that is not a character is ignored, and a value that is
+not a list reads as the empty list: this is read from
+`post-self-insert-hook', where a signal would abort your own typing."
+  :type '(repeat character)
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (when (fboundp 'donkey--pair-supply-electric-pair)
+           (donkey--pair-supply-electric-pair)))
+  :group 'donkey)
 
 (defcustom donkey-pair-delimiters 'safe
   "Delimiters that close themselves as you type, under `donkey-pair-mode'.
@@ -2730,7 +2749,7 @@ point left between the two.  Type a closing half where that character
 already stands and point steps over it rather than doubling it.
 
 `safe', the default, means every pair `donkey-mark-pair-delimiters'
-knows except the ones `donkey--pair-typing-punctuation' names -- so a
+knows except the ones `donkey-pair-safe-exclusions' names -- so a
 pair YOU add to the table, `(?# . ?#)' say, is a pair you can type,
 with nothing to say twice.  What it leaves out is the punctuation that
 is ordinary text far more often than it is a delimiter: under `all' a
@@ -2839,7 +2858,7 @@ Cleared by `donkey--pair-reset' before each command.")
 
 `donkey-pair-delimiters' taken as it stands when it is a list; every
 OPEN character of `donkey-mark-pair-delimiters' under `all'; and that
-table less `donkey--pair-typing-punctuation' under `safe', which is
+table less `donkey-pair-safe-exclusions' under `safe', which is
 what any other value reads as.
 
 Both variables are defcustoms and hold whatever they were given, so
@@ -2854,10 +2873,10 @@ the shape a reader gets from one bracket too few."
                       ;; `safe' and anything else: the table less the
                       ;; punctuation that is text far more often than it
                       ;; is a delimiter.
-                      (t (seq-remove
-                          (lambda (char)
-                            (memq char donkey--pair-typing-punctuation))
-                          (mapcar #'car pairs))))))
+                      (t (let ((out (and (listp donkey-pair-safe-exclusions)
+                                         donkey-pair-safe-exclusions)))
+                           (seq-remove (lambda (char) (memq char out))
+                                       (mapcar #'car pairs)))))))
     (seq-filter (lambda (char)
                   (and (characterp char)
                        (characterp (cdr (assq char pairs)))))

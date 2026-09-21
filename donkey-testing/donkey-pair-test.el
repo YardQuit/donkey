@@ -108,11 +108,11 @@ two hooks, so it is turned off again whatever BODY does."
     (should (equal (buffer-string) "<>"))))
 
 (ert-deftest donkey-pair-safe-leaves-the-ordinary-punctuation-alone ()
-  "`safe', the default, drops what `donkey--pair-typing-punctuation' names.
+  "`safe', the default, drops what `donkey-pair-safe-exclusions' names.
 
 Every one of those characters is text far more often than it is a
 delimiter, and each of them IS in the table, so `all' would pair it."
-  (dolist (char donkey--pair-typing-punctuation)
+  (dolist (char donkey-pair-safe-exclusions)
     (should (assq char donkey-mark-pair-delimiters))
     (should-not (memq char (donkey--pair-characters)))))
 
@@ -121,7 +121,7 @@ delimiter, and each of them IS in the table, so `all' would pair it."
 
 It is the table a reader checks before wondering why a key did
 nothing, so every cell is read back out of README.org and asked of
-`donkey--pair-characters' and `donkey--pair-typing-punctuation',
+`donkey--pair-characters' and `donkey-pair-safe-exclusions',
 rule 30.
 
 The vertical bar cannot sit in an Org table cell, so the README
@@ -158,7 +158,7 @@ tables."
             ;; And "no" must mean it is on the punctuation list, not
             ;; merely absent for some other reason.
             (when (and (not want)
-                       (not (memq char donkey--pair-typing-punctuation)))
+                       (not (memq char donkey-pair-safe-exclusions)))
               (push (format "%c is marked no but is not on the punctuation list" char)
                     wrong))))
         (forward-line 1)))
@@ -171,7 +171,7 @@ tables."
 The README says so, and says that where `<' does close itself -- Org
 and HTML -- it is Emacs doing it and not DONKEY.  Less-than is
 less-than in most buffers, so `<' is on
-`donkey--pair-typing-punctuation'."
+`donkey-pair-safe-exclusions'."
   (dolist (mode '(org-mode text-mode emacs-lisp-mode python-mode html-mode))
     (donkey-pair-test--typing "*donkey-pair-angle*" mode () "" "i <"
       (should (equal (buffer-string) "<")))))
@@ -219,7 +219,7 @@ A mode that will not load is skipped rather than failed."
 (ert-deftest donkey-readme-configuration-defaults-are-the-real-ones ()
   "Every value the worked configuration marks \"; default\" is one.
 
-The section shows sixteen options set to the value they already have,
+The section shows nineteen options set to the value they already have,
 so a reader can see the shipped answer beside the knob.  A default
 that moves leaves those lines quietly wrong, which is the worst kind
 of wrong in a configuration people copy (rule 30).
@@ -230,22 +230,37 @@ drift."
     (with-temp-buffer
       (insert-file-contents
        (expand-file-name "README.org" donkey-pair-test--source-dir))
+      (emacs-lisp-mode)
       (goto-char (point-min))
-      (while (re-search-forward
-              "^ *(setopt \\(donkey-[a-z0-9-]+\\) \\(.*?\\)) *; *default *$" nil t)
-        (let* ((symbol (intern (match-string 1)))
-               (text (match-string 2))
-               (said (car (read-from-string text)))
-               (said (if (and (consp said) (eq (car said) 'quote)) (cadr said) said)))
-          (setq checked (1+ checked))
-          (cond
-           ((not (boundp symbol))
-            (push (format "%s is named but does not exist" symbol) wrong))
-           ((not (equal said (default-value symbol)))
-            (push (format "%s: README says %S, the default is %S"
-                          symbol said (default-value symbol))
-                  wrong))))))
-    (should (> checked 10))
+      ;; Read the whole `setopt' form with `forward-sexp' rather than
+      ;; matching one line: a value long enough to wrap would otherwise
+      ;; be skipped in silence, which is the failure this test exists
+      ;; to prevent.
+      (while (re-search-forward "^ *(setopt \\(donkey-[a-z0-9-]+\\)\\_>" nil t)
+        (let ((symbol (intern (match-string 1)))
+              (start (progn (goto-char (match-beginning 0))
+                            (skip-chars-forward " ")
+                            (point))))
+          (forward-sexp)
+          (when (looking-at " *; *default *$")
+            (let* ((form (car (read-from-string
+                               (buffer-substring start (point)))))
+                   (said (nth 2 form))
+                   (said (if (and (consp said) (eq (car said) 'quote))
+                             (cadr said)
+                           said)))
+              (setq checked (1+ checked))
+              (cond
+               ((not (boundp symbol))
+                (push (format "%s is named but does not exist" symbol) wrong))
+               ((not (equal said (default-value symbol)))
+                (push (format "%s: README says %S, the default is %S"
+                              symbol said (default-value symbol))
+                      wrong))))))))
+    ;; An exact count, not a floor: dropping the "; default" marker
+    ;; from a line takes that line out of the scan, and a floor cannot
+    ;; tell that from a section that never had it.
+    (should (= checked 19))
     (should (equal wrong nil))))
 
 (ert-deftest donkey-readme-configuration-names-every-option ()
@@ -272,6 +287,37 @@ the file rather than against a list kept here."
                   (not (string-match-p (regexp-quote (symbol-name symbol)) section)))
          (push (symbol-name symbol) missing))))
     (should (equal (sort missing #'string<) nil))))
+
+(ert-deftest donkey-readme-option-table-counts-are-the-real-ones ()
+  "Every option the table sizes by a number is that size.
+
+Four cells say how big a default is rather than printing it, as 21
+pairs or 13 characters, and a default that grows leaves the number
+behind.  Read out of README.org so the two cannot drift."
+  (let (wrong (checked 0))
+    (with-temp-buffer
+      (insert-file-contents
+       (expand-file-name "README.org" donkey-pair-test--source-dir))
+      (goto-char (point-min))
+      (while (re-search-forward
+              "^| =\\(donkey-[a-z0-9-]+\\)= *| *\\([0-9]+\\) +[a-z]+ *|" nil t)
+        ;; Both groups before anything else matches: `string-to-number'
+        ;; is safe, but a later search would clobber the match data.
+        (let ((symbol (intern (match-string 1)))
+              (said (string-to-number (match-string 2))))
+          (setq checked (1+ checked))
+          (cond
+           ((not (boundp symbol))
+            (push (format "%s is named but does not exist" symbol) wrong))
+           ((not (listp (default-value symbol)))
+            (push (format "%s is sized by a number but is not a list" symbol)
+                  wrong))
+           ((not (= said (length (default-value symbol))))
+            (push (format "%s: README says %d, the default holds %d"
+                          symbol said (length (default-value symbol)))
+                  wrong))))))
+    (should (= checked 4))
+    (should (equal wrong nil))))
 
 (ert-deftest donkey-readme-syntax-class-table-is-true ()
   "Every cell of the README table of syntax classes is what Emacs says.
@@ -349,6 +395,46 @@ A mode that will not load is skipped rather than failed."
             (self-insert-command 1 char))
           (> (buffer-size) 1))
       (kill-buffer buffer))))
+
+(ert-deftest donkey-a-delimiter-can-be-kept-out-of-the-typing-set ()
+  "`donkey-pair-safe-exclusions' drops one delimiter from `safe'.
+
+A pair added to the table so that \\\\[donkey-mark-inner] can select
+between two of them is a pair `safe' will also type, and for a letter
+that is never wanted: typing it would give you two.  Naming it here
+keeps it markable and wrappable and stops it pairing."
+  (donkey-pair-test--typing "*donkey-pair-excl-x*" #'text-mode
+      ((donkey-mark-pair-delimiters (cons '(?X . ?X) donkey-mark-pair-delimiters)))
+      "" "i f a X"
+    (should (equal (buffer-string) "faXX")))
+  (donkey-pair-test--typing "*donkey-pair-excl-x2*" #'text-mode
+      ((donkey-mark-pair-delimiters (cons '(?X . ?X) donkey-mark-pair-delimiters))
+       (donkey-pair-safe-exclusions (cons ?X donkey-pair-safe-exclusions)))
+      "" "i f a X"
+    (should (equal (buffer-string) "faX")))
+  ;; and it is still a pair for everything else the table feeds
+  (let ((donkey-mark-pair-delimiters (cons '(?X . ?X) donkey-mark-pair-delimiters))
+        (donkey-pair-safe-exclusions (cons ?X donkey-pair-safe-exclusions)))
+    (should (assq ?X donkey-mark-pair-delimiters))
+    (should (memq ?X (donkey--wrap-delimiter-characters)))
+    (should-not (memq ?X (donkey--pair-characters)))))
+
+(ert-deftest donkey-the-exclusion-list-is-read-and-not-trusted ()
+  "No value of `donkey-pair-safe-exclusions' makes typing signal.
+
+It is a user option now rather than a constant, and it is read from
+`post-self-insert-hook', so it is coerced like the rest: a value that
+is not a list reads as the empty list, and anything in it that is not
+a character is ignored (rules 3 and 81)."
+  (dolist (value '(42 "nonsense" nope (?\( "x" nil 3.5)))
+    (donkey-pair-test--typing "*donkey-pair-excl-junk*" #'text-mode
+        ((donkey-pair-safe-exclusions value)) "" ""
+      (execute-kbd-macro (kbd "i ( a"))
+      (should (stringp (buffer-string)))))
+  ;; a non-list means nothing is excluded, so `safe' is the whole table
+  (let ((donkey-pair-safe-exclusions 42))
+    (should (equal (donkey--pair-characters)
+                   (mapcar #'car (seq-filter #'consp (donkey--pair-table)))))))
 
 (ert-deftest donkey-pair-safe-takes-a-pair-you-added-to-the-table ()
   "A pair added to the table is one you can type, with nothing said twice.
@@ -799,6 +885,35 @@ over -- the same reason that `:set' already claims the wrap keys."
                   (cons '(?@ . ?@) donkey-mark-pair-delimiters))
           (should (member '(?@ . ?@) (default-value 'electric-pair-pairs))))
       (donkey-pair-mode -1)
+      (set-default 'donkey-mark-pair-delimiters table)
+      (set-default 'electric-pair-pairs before))))
+
+(ert-deftest donkey-pair-setopt-on-the-exclusions-reaches-electric-pair ()
+  "A delimiter excluded with `setopt' stops pairing there and then.
+
+Emacs has to be TOLD the set rather than reading it, so excluding a
+character has to hand the smaller set over at once.  Without the
+option\\='s own `:set' the delimiter would go on pairing until something
+else refreshed, which is the whole point of excluding it."
+  (require 'elec-pair)
+  (let ((before (copy-sequence (default-value 'electric-pair-pairs)))
+        (table (default-value 'donkey-mark-pair-delimiters))
+        (out (default-value 'donkey-pair-safe-exclusions)))
+    (unwind-protect
+        (progn
+          (donkey-pair-mode 1)
+          (setopt donkey-mark-pair-delimiters
+                  (cons '(?@ . ?@) donkey-mark-pair-delimiters))
+          (should (member '(?@ . ?@) (default-value 'electric-pair-pairs)))
+          (setopt donkey-pair-safe-exclusions
+                  (cons ?@ donkey-pair-safe-exclusions))
+          (should-not (member '(?@ . ?@) (default-value 'electric-pair-pairs)))
+          ;; And back again: the option is a knob, not a one-way door.
+          (setopt donkey-pair-safe-exclusions
+                  (delq ?@ (copy-sequence donkey-pair-safe-exclusions)))
+          (should (member '(?@ . ?@) (default-value 'electric-pair-pairs))))
+      (donkey-pair-mode -1)
+      (set-default 'donkey-pair-safe-exclusions out)
       (set-default 'donkey-mark-pair-delimiters table)
       (set-default 'electric-pair-pairs before))))
 
