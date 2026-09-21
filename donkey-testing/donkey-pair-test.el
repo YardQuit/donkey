@@ -116,23 +116,54 @@ delimiter, and each of them IS in the table, so `all' would pair it."
     (should (assq char donkey-mark-pair-delimiters))
     (should-not (memq char (donkey--pair-characters)))))
 
-(ert-deftest donkey-readme-counts-the-punctuation-safe-leaves-out ()
-  "The README\\='s count of what `safe' excludes is the list\\='s own count.
+(ert-deftest donkey-readme-safe-table-says-what-safe-does ()
+  "The README table of what `safe' types matches the code.
 
-A number written into prose goes stale the moment the list changes,
-and nothing disagrees until a reader counts (rule 30)."
-  (let ((readme (with-temp-buffer
-                  (insert-file-contents
-                   (expand-file-name "README.org" donkey-pair-test--source-dir))
-                  (buffer-string)))
-        (all (length donkey--pair-typing-punctuation))
-        (symmetric (length (seq-remove
-                            (lambda (char) (memq char '(?< ?\' ?\`)))
-                            donkey--pair-typing-punctuation))))
-    (should (= all 13))
-    (should (= symmetric 10))
-    (should (string-match-p "leaves out thirteen characters" readme))
-    (should (string-match-p "the ten symmetric punctuation marks" readme))))
+It is the table a reader checks before wondering why a key did
+nothing, so every cell is read back out of README.org and asked of
+`donkey--pair-characters' and `donkey--pair-typing-punctuation',
+rule 30.
+
+The vertical bar cannot sit in an Org table cell, so the README
+spells it with the \\vert entity and it is put back before the row is
+scanned -- the same trick, and the same reason, as the binding
+tables."
+  (let (wrong (rows 0))
+    (with-temp-buffer
+      (insert-file-contents
+       (expand-file-name "README.org" donkey-pair-test--source-dir))
+      (goto-char (point-min))
+      (while (re-search-forward "\\\\vert" nil t) (replace-match "=|=" t t))
+      (goto-char (point-min))
+      (should (re-search-forward "^| Opener +| =safe= +| Why" nil t))
+      (forward-line 2)
+      (while (looking-at "^| \\(.+?\\) +| \\(yes\\|no\\) +|")
+        ;; Both captures read BEFORE the helper runs: it matches, and
+        ;; matching clobbers the match data the second one needs.
+        (let* ((openers (match-string 1))
+               (want (equal (match-string 2) "yes"))
+               (chars (donkey-pair-test--chars-named openers)))
+          (should chars)
+          (setq rows (1+ rows))
+          (dolist (char chars)
+            ;; Every character the table names ships in the pair table.
+            (unless (assq char donkey-mark-pair-delimiters)
+              (push (format "%c is in the README table but not in the pair table" char)
+                    wrong))
+            (let ((typed (and (memq char (donkey--pair-characters)) t)))
+              (unless (eq typed want)
+                (push (format "%c: README says %s, safe says %s"
+                              char (if want "yes" "no") (if typed "yes" "no"))
+                      wrong)))
+            ;; And "no" must mean it is on the punctuation list, not
+            ;; merely absent for some other reason.
+            (when (and (not want)
+                       (not (memq char donkey--pair-typing-punctuation)))
+              (push (format "%c is marked no but is not on the punctuation list" char)
+                    wrong))))
+        (forward-line 1)))
+    (should (> rows 5))
+    (should (equal wrong nil))))
 
 (ert-deftest donkey-pair-never-pairs-the-angle-bracket ()
   "DONKEY\\='s own pairing leaves `<' alone in every mode.
@@ -184,6 +215,63 @@ A mode that will not load is skipped rather than failed."
           (forward-line 1))))
     (should (> rows 4))
     (should (equal wrong nil))))
+
+(ert-deftest donkey-readme-configuration-defaults-are-the-real-ones ()
+  "Every value the worked configuration marks \"; default\" is one.
+
+The section shows sixteen options set to the value they already have,
+so a reader can see the shipped answer beside the knob.  A default
+that moves leaves those lines quietly wrong, which is the worst kind
+of wrong in a configuration people copy (rule 30).
+
+Read out of README.org rather than repeated here, so the two cannot
+drift."
+  (let (wrong (checked 0))
+    (with-temp-buffer
+      (insert-file-contents
+       (expand-file-name "README.org" donkey-pair-test--source-dir))
+      (goto-char (point-min))
+      (while (re-search-forward
+              "^ *(setopt \\(donkey-[a-z0-9-]+\\) \\(.*?\\)) *; *default *$" nil t)
+        (let* ((symbol (intern (match-string 1)))
+               (text (match-string 2))
+               (said (car (read-from-string text)))
+               (said (if (and (consp said) (eq (car said) 'quote)) (cadr said) said)))
+          (setq checked (1+ checked))
+          (cond
+           ((not (boundp symbol))
+            (push (format "%s is named but does not exist" symbol) wrong))
+           ((not (equal said (default-value symbol)))
+            (push (format "%s: README says %S, the default is %S"
+                          symbol said (default-value symbol))
+                  wrong))))))
+    (should (> checked 10))
+    (should (equal wrong nil))))
+
+(ert-deftest donkey-readme-configuration-names-every-option ()
+  "The worked configuration names every user option the package has.
+
+An option nobody documents is one nobody finds.  The section is the
+one place a reader meets them all together, so it is checked against
+the file rather than against a list kept here."
+  (let ((section
+         (with-temp-buffer
+           (insert-file-contents
+            (expand-file-name "README.org" donkey-pair-test--source-dir))
+           (goto-char (point-min))
+           (let ((start (progn (re-search-forward "^\\* A Complete Configuration")
+                               (point)))
+                 (end (progn (re-search-forward "^\\* When Something Is Not Right")
+                             (point))))
+             (buffer-substring start end))))
+        missing)
+    (mapatoms
+     (lambda (symbol)
+       (when (and (custom-variable-p symbol)
+                  (string-prefix-p "donkey-" (symbol-name symbol))
+                  (not (string-match-p (regexp-quote (symbol-name symbol)) section)))
+         (push (symbol-name symbol) missing))))
+    (should (equal (sort missing #'string<) nil))))
 
 (ert-deftest donkey-readme-syntax-class-table-is-true ()
   "Every cell of the README table of syntax classes is what Emacs says.

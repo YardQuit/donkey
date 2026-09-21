@@ -1866,13 +1866,45 @@ Now =#= closes itself. There is no second list to keep in step.
 | a list         | exactly those characters                          |
 | =nil=          | nothing pairs, with the mode still on             |
 
-=safe= leaves out thirteen characters that are ordinary text far more
-often than they are delimiters: the less-than sign, the apostrophe,
-the backquote, and the ten symmetric punctuation marks in the table
-(equals, asterisk, tilde, vertical bar, backslash, slash, colon,
-plus, underscore and dollar). Under =all= a colon typed in prose
-gives you two of them, and an apostrophe would fire in the middle of
-"don't". Nothing else is excluded, so a pair you added is in.
+#+begin_src emacs-lisp
+
+  ;; the default: the table, less the ordinary punctuation
+  (setopt donkey-pair-delimiters 'safe)
+
+  ;; everything the table knows, punctuation included
+  (setopt donkey-pair-delimiters 'all)
+
+  ;; exactly these and nothing else
+  (setopt donkey-pair-delimiters '(?\( ?\[ ?\{ ?\"))
+
+  ;; the mode on, and nothing pairing
+  (setopt donkey-pair-delimiters nil)
+
+#+end_src
+
+A list replaces the set rather than adding to it, so name every
+character you want, not only the extra one.
+
+Here is the whole shipped table under =safe=, so you can see at a
+glance what will close itself and what will not:
+
+| Opener                              | =safe= | Why                               |
+|-------------------------------------+--------+-----------------------------------|
+| =(= =[= ={=                         | yes    | brackets, and nothing else        |
+| ="=                                 | yes    | the string quote                  |
+| =‘= =“=                             | yes    | typographic quotes, typed on purpose |
+| =«= =‹=                             | yes    | guillemets, typed on purpose      |
+| =<=                                 | no     | less-than, far more often         |
+| ='=                                 | no     | the apostrophe in "don't"         |
+| =`=                                 | no     | the quote in Lisp                 |
+| ~=~ =*= =~= \vert =\= =/= =:= =+= =_= =$= | no     | ordinary punctuation       |
+
+Any pair you add to =donkey-mark-pair-delimiters= yourself is in: the
+list above is what SHIPS, and =safe= only ever removes from it. The
+=#= in the worked configuration below pairs for exactly that reason.
+
+Under =all= the bottom row comes back, so a colon typed in prose gives
+you two of them and an apostrophe fires in the middle of "don't".
 
 *** When you change the table with =setq=
 
@@ -2408,12 +2440,36 @@ Using =setopt= for everything means never having to know which is which.
     ;; electric-pair-mode.
     (setopt donkey-wrap-region-engine 'donkey)                   ; default
 
-    ;; Close a delimiter as you type it.  Off unless asked for.  With
-    ;; electric-pair-mode on, Emacs goes on doing the pairing and this
-    ;; just hands it the delimiters; with smartparens on, DONKEY does
-    ;; nothing at all.
+    ;;; Closing a delimiter as you type
+
+    ;; Off unless asked for.  With electric-pair-mode on, Emacs goes on
+    ;; doing the pairing and DONKEY only hands it the delimiters; with
+    ;; smartparens on, DONKEY does nothing at all; with neither, DONKEY
+    ;; pairs.  M-x donkey-debug-platform says which you have.
     ;; (donkey-pair-mode 1)
+
+    ;; How much of the pair table types: `safe' is that table less the
+    ;; ordinary punctuation, `all' is every pair in it, and a list is
+    ;; exactly those characters and no others.
     (setopt donkey-pair-delimiters 'safe)                        ; default
+    ;; (setopt donkey-pair-delimiters 'all)
+    ;; (setopt donkey-pair-delimiters '(?\( ?\[ ?\{ ?\"))
+
+    ;; Modes where typing does not pair, DONKEY's own list.
+    (setopt donkey-pair-excluded-modes nil)                      ; default
+
+    ;; One delimiter dropped in one mode.  The shipped entries keep the
+    ;; Lisp quote characters and # from pairing in Lisp buffers.
+    ;; (setopt donkey-pair-delimiter-exceptions
+    ;;         '((emacs-lisp-mode ?\' ?\` ?#)))
+
+    ;; Stay out of smartparens' way where it is on.
+    (setopt donkey-pair-stand-down t)                            ; default
+
+    ;; DONKEY's own pairing reads both variables at every press.  Emacs
+    ;; is TOLD the set instead, so after a plain setq or add-to-list on
+    ;; either of them, hand it over again:
+    ;; M-x donkey-pair-refresh
 
     ;; How far S remembers.
     (setopt donkey-position-ring-max 10)                         ; default
@@ -2472,7 +2528,8 @@ Using =setopt= for everything means never having to know which is which.
               (lambda () (hl-line-mode (if donkey-normal-mode 1 -1))))
 
     ;; donkey-mode-hook runs when the global mode itself is toggled,
-    ;; for setup that needs DONKEY to be there already.
+    ;; for setup that needs DONKEY to be there already, and
+    ;; donkey-pair-mode-hook when the pairing is switched on or off.
 
     ;;; And on
 
