@@ -9,6 +9,99 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.15.0 — 2026-09-21
+
+DONKEY can close a delimiter while you type, if you ask it to. Type
+={= and you get ={}= with the cursor between the halves; type the
+closing half where one already stands and the cursor steps over it
+rather than doubling it. It is off by default and stays off until you
+turn it on, because INSERT state is otherwise entirely Emacs's and a
+package that changed how you type on upgrade would be taking a
+liberty.
+
+The delimiters come from =donkey-mark-pair-delimiters=, the same table
+=m i= selects from and the wrap keys use, so a pair you add is one you
+can type as well as select and wrap, with no second list to keep in
+step.
+
+*Added*
+
+- =donkey-pair-mode=, a global minor mode, off by default. With it on,
+  an opening delimiter writes its closing half; the closing half typed
+  where that character already stands steps over it; =DEL= between the
+  halves of an empty pair takes both, and =DEL= anywhere else is still
+  your major mode's; and a count types and pairs nothing, so =C-u 3 (=
+  gives you three brackets.
+- =donkey-pair-delimiters= decides how much of the table is used.
+  =safe=, the default, is the brackets and the quotes — eight of them.
+  =all= is every pair in the table, twenty-one. A list is exactly those
+  characters. =nil= leaves the mode on with nothing pairing.
+- =donkey-pair-safe-exclusions= is what =safe= holds back: thirteen
+  characters that are ordinary text far more often than they are
+  delimiters, the apostrophe in "don't" and the colon in prose among
+  them. Add to it when a pair you put in the table is one you never
+  want to type.
+- =donkey-pair-delimiter-exceptions= drops one delimiter in one major
+  mode. It ships with the quote, the backquote and the hash held back
+  in Lisp buffers, where =#'= is a function quote.
+- =donkey-pair-delimiter-inclusions= is the opposite, and HTML is what
+  it is for: the less-than sign is punctuation in prose, which is why
+  =safe= leaves it out, but almost every line of an HTML buffer sits
+  between one and its closer. One row naming =sgml-mode= covers
+  =html-mode= and =mhtml-mode= as well.
+- =donkey-pair-excluded-modes= turns the pairing off by major mode
+  while NORMAL state stays on.
+- Where =electric-pair-mode= is on, Emacs keeps the job and DONKEY
+  hands it the delimiters instead of pairing anything itself, so a pair
+  Emacs had no way to know about — =(?# . ?#)= say — is one it pairs
+  now. =M-x donkey-pair-refresh= hands them over again after a plain
+  =setq=; =setopt= needs no help.
+- Where =smartparens-mode= is on, DONKEY stays out of its way
+  entirely. That is =donkey-pair-stand-down=, and you can set it to nil
+  to pair regardless.
+- =M-x donkey-debug-platform= names whoever has the job in the buffer
+  you ran it from, and how many delimiters pair there.
+
+*Fixed — you will notice these*
+
+- =C-h f= on six commands showed a key reference as brackets round a
+  symbol — "press =[donkey-refresh-wrap-keys]=" — rather than the key
+  itself. Four of the six are in the wrapping code and have read that
+  way since wrapping shipped. A lone backslash before the bracket is
+  dropped by the Lisp reader as an unknown escape, and neither the byte
+  compiler nor checkdoc says anything about it.
+
+*Under the hood*
+
+- Every option the typing hook reads is coerced where it is used
+  rather than trusted. A signal raised from =post-self-insert-hook=
+  takes the hook off for the session, so one mis-typed character in an
+  init file would have turned the pairing off silently and for good;
+  now a value of the wrong shape is skipped and your typing continues.
+- The delimiter prompt reads the pair table after the prompt rather
+  than before it, so a pair added while it waits is one it accepts.
+- The pairing hook runs ahead of the pairing packages and at most once
+  per press, because a package that writes its own closing half runs
+  the whole hook again with a character nobody typed.
+- The README's tables of what pairs where are read out of the file by
+  the test suite and checked against the running Emacs, so a table that
+  drifts from the code fails the build rather than misleading a reader.
+
+*Upgrading*
+
+Nothing to do. The mode is off until you turn it on, and nothing about
+typing changes until you do:
+
+#+begin_src emacs-lisp
+
+  (donkey-pair-mode 1)
+
+#+end_src
+
+If you already use =electric-pair-mode= or Smartparens, turning it on
+is still safe: DONKEY works out who should do the job and gets out of
+the way. =M-x donkey-debug-platform= says who has it.
+
 * 1.14.1 — 2026-09-18
 
 Banked lines stay visible under =hl-line-mode=. The bank's highlight
