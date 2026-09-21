@@ -2273,9 +2273,9 @@ ones a reader named, `all' being quiet about the two the table
 carries.  A character can still be a delimiter for `m i' and `m a'
 without being a wrap key; that is `donkey-mark-pair-delimiters'.
 
-Set with \[customize-variable] or `setopt' and the keys follow at
+Set with \\[customize-variable] or `setopt' and the keys follow at
 once; after a plain `setq' or `add-to-list', run
-\[donkey-refresh-wrap-keys]."
+\\[donkey-refresh-wrap-keys]."
   :type '(choice (const :tag "Every pair donkey-mark-pair-delimiters knows" all)
                  (repeat character))
   :set (lambda (symbol value)
@@ -2764,7 +2764,7 @@ A character naming no pair in the table is dropped, as is anything
 that is not a character.  Read at each press, so a change takes effect
 on the next one -- except where `electric-pair-mode' is doing the
 pairing, which is told the set when the mode goes on and again from
-\[donkey-pair-refresh].
+\\[donkey-pair-refresh].
 
 `donkey-pair-delimiter-exceptions' drops one delimiter in one major
 mode.  Which delimiters wrap a SELECTION is a separate question, asked
@@ -3176,7 +3176,7 @@ mode being turned off."
 every press by DONKEY\\='s own pairing, so nothing has to be refreshed
 for it.  Emacs\\='s pairing is told the set instead of asking for it, so
 a plain `setq' or `add-to-list' on either variable does not reach it
-until this runs.  \[customize-variable] and `setopt' need no help."
+until this runs.  \\[customize-variable] and `setopt' need no help."
   (interactive)
   (donkey--pair-supply-electric-pair)
   (message "DONKEY: %d delimiter%s handed to electric-pair-mode"
@@ -3653,10 +3653,10 @@ it.
 
 The wrap keys are read from here too, `donkey-wrap-delimiters' being
 `all' by default, so a pair added here is a key you can press.  Set
-with \[customize-variable] or `setopt' and the keys follow at once;
+with \\[customize-variable] or `setopt' and the keys follow at once;
 after a plain `setq' or `add-to-list' they follow at the first idle
 moment after `donkey-mode' comes on, which is after your init file has
-finished.  \[donkey-refresh-wrap-keys] asks for them there and then."
+finished.  \\[donkey-refresh-wrap-keys] asks for them there and then."
   :type '(alist :key-type (character :tag "Open")
                 :value-type (character :tag "Close"))
   :set (lambda (symbol value)

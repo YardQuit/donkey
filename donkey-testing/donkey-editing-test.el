@@ -2482,6 +2482,44 @@ invisible.  Scoped to donkey.el; the test files are
                        offenders))))))))
     (should-not offenders)))
 
+(ert-deftest donkey-key-references-carry-both-backslashes ()
+  "No docstring in donkey.el names a command with a lone backslash.
+
+A key reference is written \\[command] -- two backslashes in the
+source, one in the string -- and `substitute-command-keys' turns it
+into the key, or into the command name where there is no key.  Written
+with ONE backslash the Lisp reader drops it as an unknown escape, and
+the help text shows the brackets and the symbol verbatim: a reader
+told to press [donkey-pair-refresh].
+
+Six said that.  Harmless to the code and invisible to the byte
+compiler and to checkdoc, which is how they lasted, and the same
+family as the escaped closers `donkey-docstrings-render-with-matched-quotes'
+pins.  Read from the SOURCE, because the Lisp reader has already
+eaten the evidence by the time a docstring is a string.
+
+A character literal such as ?\\[ is not a reference and is passed
+over: what follows the bracket has to be a letter."
+  (let ((package (expand-file-name "donkey.el"
+                                   (file-name-directory
+                                    (or (symbol-file 'donkey-copy 'defun)
+                                        default-directory))))
+        lone)
+    (with-temp-buffer
+      (insert-file-contents package)
+      (goto-char (point-min))
+      ;; The two characters backslash and open-bracket, found literally:
+      ;; a regex for "not preceded by a backslash" is the very escape
+      ;; this test exists to get right, so it is not used.
+      (while (search-forward "\\[" nil t)
+        (when (and (not (eq (char-before (- (point) 2)) ?\\))
+                   (looking-at-p "[a-zA-Z]"))
+          (push (format "line %d: %s"
+                        (line-number-at-pos)
+                        (string-trim (thing-at-point 'line t)))
+                lone))))
+    (should-not (nreverse lone))))
+
 (ert-deftest donkey-test-docstrings-render-with-matched-quotes ()
   "Every docstring in the test files renders with its quotes paired.
 
