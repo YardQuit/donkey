@@ -20,6 +20,7 @@
 - [[#editing][Editing]]
 - [[#selecting][Selecting]] — objects, rectangles, banks, the mark run
 - [[#wrapping-a-selection-in-a-pair][Wrapping a selection in a pair]]
+- [[#pairing-as-you-type][Pairing as you type]] — closing a delimiter for you
 - [[#the-enter-key][The Enter key]]
 - [[#search-and-replace][Search and replace]]
 - [[#typing-characters-your-keyboard-lacks][Typing characters your keyboard lacks]]
@@ -36,6 +37,7 @@
 - [[#the-clipboard][The clipboard]]
 - [[#configuring-the-enter-key][Configuring the Enter key]]
 - [[#wrapping-choosing-your-own-pairs][Choosing your own pairs]]
+- [[#pairing-every-setting][Pairing: every setting]] — per mode, per delimiter, and who does it
 - [[#keys-a-major-mode-types-with][Keys a major mode types with]]
 - [[#why-those-two-modes-ship-excluded][Why those two modes ship excluded]] — the reasoning, for readers who want it
 - [[#the-digraph-chart][The digraph chart]]
@@ -568,6 +570,127 @@ and the second goes on working in every mode.
 When you do want your package's answer, including its escaping, =M-x
 donkey-toggle-wrap-engine= is the short way: flip, press the delimiter,
 flip back, without leaving NORMAL state.
+
+* Pairing as you type
+:PROPERTIES:
+:CUSTOM_ID: pairing-as-you-type
+:END:
+
+DONKEY can close a delimiter for you while you type, so that pressing
+={= gives you ={}= with the cursor between the halves. It is off, and
+stays off unless you ask for it:
+
+#+begin_src emacs-lisp
+
+  (donkey-pair-mode 1)
+
+#+end_src
+
+That is deliberate. INSERT state is otherwise entirely Emacs's — =C-g=
+is the only key DONKEY holds there — and a package that started
+changing how you type on upgrade would be taking a liberty.
+
+With it on, as you type:
+
+- an opening delimiter writes its closing half and leaves the cursor
+  between the two;
+- the closing half, typed where that character already stands, steps
+  over it rather than doubling it;
+- =DEL= between the halves of an empty pair takes both, and =DEL=
+  anywhere else is whatever your major mode bound it to;
+- a count types and pairs nothing: =C-u 3 (= gives you three of them.
+
+The last two are DONKEY's own answers. Where =electric-pair-mode= is
+doing the pairing, =DEL= and counts are Emacs's, and it pairs once
+under a count rather than not at all. [[#pairing-every-setting][Pairing: every setting]] says
+who does the job when, and what each one does differently.
+
+** Which delimiters pair
+
+
+They come out of =donkey-mark-pair-delimiters=, the same table =m i=
+selects from and the wrap keys use. Add a pair there and you can type
+it as well as select and wrap it:
+
+#+begin_src emacs-lisp
+
+  (setopt donkey-mark-pair-delimiters
+          (cons '(?# . ?#) donkey-mark-pair-delimiters))
+
+#+end_src
+
+Now =#= closes itself. There is no second list to keep in step.
+
+=donkey-pair-delimiters= decides how much of that table is used:
+
+| Value          | Means                                             |
+|----------------+---------------------------------------------------|
+| =safe=         | the table, less the ordinary punctuation (default) |
+| =all=          | every pair in the table                           |
+| a list         | exactly those characters                          |
+| =nil=          | nothing pairs, with the mode still on             |
+
+#+begin_src emacs-lisp
+
+  ;; the default: the table, less the ordinary punctuation
+  (setopt donkey-pair-delimiters 'safe)
+
+  ;; everything the table knows, punctuation included
+  (setopt donkey-pair-delimiters 'all)
+
+  ;; exactly these and nothing else
+  (setopt donkey-pair-delimiters '(?\( ?\[ ?\{ ?\"))
+
+  ;; the mode on, and nothing pairing
+  (setopt donkey-pair-delimiters nil)
+
+#+end_src
+
+A list replaces the set rather than adding to it, so name every
+character you want, not only the extra one.
+
+Here is the whole shipped table under =safe=, so you can see at a
+glance what will close itself and what will not:
+
+| Opener                              | =safe= | Why                               |
+|-------------------------------------+--------+-----------------------------------|
+| =(= =[= ={=                         | yes    | brackets, and nothing else        |
+| ="=                                 | yes    | the string quote                  |
+| =‘= =“=                             | yes    | typographic quotes, typed on purpose |
+| =«= =‹=                             | yes    | guillemets, typed on purpose      |
+| =<=                                 | no     | less-than, far more often         |
+| ='=                                 | no     | the apostrophe in "don't"         |
+| =`=                                 | no     | the quote in Lisp                 |
+| ~=~ =*= =~= \vert =\= =/= =:= =+= =_= =$= | no     | ordinary punctuation       |
+
+Any pair you add to =donkey-mark-pair-delimiters= yourself is in: the
+list above is what SHIPS, and =safe= only ever removes from it. The
+=#= in the worked configuration below pairs for exactly that reason.
+
+Under =all= the bottom row comes back, so a colon typed in prose gives
+you two of them and an apostrophe fires in the middle of "don't".
+
+** If you already use a pairing package
+
+You do not have to choose, and you do not have to configure
+anything. DONKEY works out who should do the job.
+
+| What is on           | Who does the pairing    |
+|----------------------+-------------------------|
+| neither              | DONKEY                  |
+| =electric-pair-mode= | Emacs, as it did before |
+| =smartparens-mode=   | Smartparens             |
+
+Where Emacs is doing it, DONKEY hands Emacs the delimiters, so a
+pair you added to the table is one Emacs pairs too. Where
+Smartparens is on, DONKEY stays out of the way entirely.
+
+To see who has the job in the buffer you are in, run =M-x
+donkey-debug-platform= and read its pairing line.
+
+That is the whole of everyday use. [[#pairing-every-setting][Pairing: every setting]] has the
+rest: holding one character back from =safe=, turning one on or off
+in a single major mode, and what each package does differently.
 
 * The Enter key
 :PROPERTIES:
@@ -1679,37 +1802,15 @@ pressing the same delimiter again takes the pair off. =M-x
 donkey-toggle-wrap-engine= flips between the two so you can feel the
 difference.
 
-** Pairing as you type
+* Pairing: every setting
+:PROPERTIES:
+:CUSTOM_ID: pairing-every-setting
+:END:
 
-DONKEY can close a delimiter for you while you type, so that pressing
-={= gives you ={}= with the cursor between the halves. It is off, and
-stays off unless you ask for it:
+Everyday use is [[#pairing-as-you-type][Pairing as you type]]: turn the mode on, and
+choose the delimiters. This is everything else it can be told.
 
-#+begin_src emacs-lisp
-
-  (donkey-pair-mode 1)
-
-#+end_src
-
-That is deliberate. INSERT state is otherwise entirely Emacs's — =C-g=
-is the only key DONKEY holds there — and a package that started
-changing how you type on upgrade would be taking a liberty.
-
-With it on, as you type:
-
-- an opening delimiter writes its closing half and leaves the cursor
-  between the two;
-- the closing half, typed where that character already stands, steps
-  over it rather than doubling it;
-- =DEL= between the halves of an empty pair takes both, and =DEL=
-  anywhere else is whatever your major mode bound it to;
-- a count types and pairs nothing: =C-u 3 (= gives you three of them.
-
-The last two are DONKEY's own answers. Where =electric-pair-mode= is
-doing the pairing — see below — =DEL= and counts are Emacs's, and it
-pairs once under a count rather than not at all.
-
-*** Who actually does the pairing
+** Who actually does the pairing
 
 This is the part worth reading, because DONKEY is usually not the one
 doing it. Emacs comes first:
@@ -1737,7 +1838,7 @@ the same way it does about wrapping.
 
 #+end_example
 
-*** What Emacs already does, and what DONKEY adds
+** What Emacs already does, and what DONKEY adds
 
 Worth knowing before you turn anything on: =electric-pair-mode= on its
 own already closes the common brackets nearly everywhere.
@@ -1755,7 +1856,7 @@ So what DONKEY adds is not the brackets. It is the pairs Emacs has no
 way to know about: =#=, the guillemets, and whatever else you put in
 =donkey-mark-pair-delimiters=.
 
-*** What pairs where is Emacs's answer, not one answer
+** What pairs where is Emacs's answer, not one answer
 
 Look at the =<= column above. It closes itself in Org and in HTML and
 in nothing else — and that is nothing to do with DONKEY, which never
@@ -1776,7 +1877,7 @@ and in a letter, which is what DONKEY's wrap keys already do.
 Neither is wrong. They are different promises, and which you get
 depends on what else is on.
 
-*** Why a delimiter pairs in one mode and not another
+** Why a delimiter pairs in one mode and not another
 
 Emacs asks two questions, in this order.
 
@@ -1823,7 +1924,7 @@ which is what makes its own pairing identical in a Lisp file and a
 letter, and precisely what it gives up when it hands the delimiters to
 Emacs instead.
 
-*** Choosing which one you get
+** Choosing which one you get
 
 Turning DONKEY's mode on is the same line whichever you want. What
 decides the arrangement is which other pairing mode is running.
@@ -1856,72 +1957,11 @@ whether or not =donkey-pair-mode= is enabled.
 =M-x donkey-debug-platform= says which of the three you ended up with,
 for the buffer you ran it from.
 
-*** Which delimiters
+** What =safe= holds back, and putting one back
 
-They come out of =donkey-mark-pair-delimiters=, the same table =m i=
-selects from and the wrap keys use. Add a pair there and you can type
-it as well as select and wrap it:
-
-#+begin_src emacs-lisp
-
-  (setopt donkey-mark-pair-delimiters
-          (cons '(?# . ?#) donkey-mark-pair-delimiters))
-
-#+end_src
-
-Now =#= closes itself. There is no second list to keep in step.
-
-=donkey-pair-delimiters= decides how much of that table is used:
-
-| Value          | Means                                             |
-|----------------+---------------------------------------------------|
-| =safe=         | the table, less the ordinary punctuation (default) |
-| =all=          | every pair in the table                           |
-| a list         | exactly those characters                          |
-| =nil=          | nothing pairs, with the mode still on             |
-
-#+begin_src emacs-lisp
-
-  ;; the default: the table, less the ordinary punctuation
-  (setopt donkey-pair-delimiters 'safe)
-
-  ;; everything the table knows, punctuation included
-  (setopt donkey-pair-delimiters 'all)
-
-  ;; exactly these and nothing else
-  (setopt donkey-pair-delimiters '(?\( ?\[ ?\{ ?\"))
-
-  ;; the mode on, and nothing pairing
-  (setopt donkey-pair-delimiters nil)
-
-#+end_src
-
-A list replaces the set rather than adding to it, so name every
-character you want, not only the extra one.
-
-Here is the whole shipped table under =safe=, so you can see at a
-glance what will close itself and what will not:
-
-| Opener                              | =safe= | Why                               |
-|-------------------------------------+--------+-----------------------------------|
-| =(= =[= ={=                         | yes    | brackets, and nothing else        |
-| ="=                                 | yes    | the string quote                  |
-| =‘= =“=                             | yes    | typographic quotes, typed on purpose |
-| =«= =‹=                             | yes    | guillemets, typed on purpose      |
-| =<=                                 | no     | less-than, far more often         |
-| ='=                                 | no     | the apostrophe in "don't"         |
-| =`=                                 | no     | the quote in Lisp                 |
-| ~=~ =*= =~= \vert =\= =/= =:= =+= =_= =$= | no     | ordinary punctuation       |
-
-Any pair you add to =donkey-mark-pair-delimiters= yourself is in: the
-list above is what SHIPS, and =safe= only ever removes from it. The
-=#= in the worked configuration below pairs for exactly that reason.
-
-Under =all= the bottom row comes back, so a colon typed in prose gives
-you two of them and an apostrophe fires in the middle of "don't".
-
-Every =no= above is a setting rather than a rule. The thirteen
-characters those rows name are =donkey-pair-safe-exclusions=, and you
+Every =no= in the =safe= table under [[#pairing-as-you-type][Pairing as you type]] is a setting
+rather than a rule. The thirteen characters those rows name are
+=donkey-pair-safe-exclusions=, and you
 add to it when a pair you put in the table is one you never want to
 TYPE. A letter is the case that matters: add =(?X . ?X)= so that =m i
 X= can select between two of them, and =X= would otherwise close
@@ -1938,7 +1978,7 @@ itself, so typing =faX= would give you =faXX=.
 as you type. To drop a delimiter in one major mode rather than
 everywhere, that is =donkey-pair-delimiter-exceptions= instead.
 
-*** When you change the table with =setq=
+** When you change the table with =setq=
 
 DONKEY's own pairing reads both variables at every press, so a change
 is live at once. Emacs's pairing is *told* the set rather than asking
@@ -1949,7 +1989,7 @@ help.
 Turning the mode off gives Emacs back exactly the pairs DONKEY added,
 and leaves alone any you put in =electric-pair-pairs= yourself.
 
-*** Turning it off in some buffers
+** Turning it off in some buffers
 
 =donkey-pair-excluded-modes= is its own list, so a mode can keep NORMAL
 state and stop pairing:
@@ -1979,7 +2019,7 @@ work it is handed the delimiters and decides the rest itself; if you
 want a delimiter inhibited there, =electric-pair-inhibit-predicate= is
 Emacs's own way to say so.
 
-*** Turning one on in one mode
+** Turning one on in one mode
 
 =donkey-pair-delimiter-inclusions= is the other direction, and HTML is
 what it is for. The less-than sign is less-than in prose, which is why
@@ -2011,7 +2051,7 @@ in every buffer, rather than from the mode's syntax table. Modes whose
 syntax table does NOT say it, =nxml-mode= among them, want the line
 just as much.
 
-*** Where it stops
+** Where it stops
 
 Nothing pairs in NORMAL state, because nothing types there: a delimiter
 key wraps the selection instead, which is the section above.
