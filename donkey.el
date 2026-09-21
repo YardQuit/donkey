@@ -1572,7 +1572,7 @@ names whoever has the job."
      ((and donkey-pair-stand-down (bound-and-true-p smartparens-mode))
       "on, standing down here (smartparens-mode is pairing)")
      ((donkey--pair-off-here-p) "on, not in this buffer")
-     (t (let ((here (length (donkey--pair-characters-here))))
+     (t (let ((here (donkey--pair-count-here)))
           (format "on, DONKEY pairs (%d delimiter%s)"
                   here (if (= here 1) "" "s")))))))
 
@@ -2996,6 +2996,24 @@ Coerced at every level it is walked (rules 3 and 81), exactly as
                          (and (characterp char)
                               (characterp (cdr (assq char pairs)))))
                        (cdr row))))))
+
+(defun donkey--pair-count-here ()
+  "Return how many delimiters actually pair in this buffer.
+
+`donkey--pair-characters-here' answers with the list BEFORE the
+per-mode exceptions come off it: the typing hook asks about those
+separately, for the one character in hand, and never needs the
+subtraction done.  A report has to COUNT, so it does it here -- and
+drops a character named twice, because a delimiter included in a mode
+that already had it is one delimiter and not two.
+
+Without both, the platform report claims delimiters the buffer will
+not pair: nine in a Lisp buffer that pairs eight, where the hash is in
+`donkey-mark-pair-delimiters' and `donkey-pair-delimiter-exceptions'
+takes it back."
+  (length (seq-remove #'donkey--pair-exception-p
+                      (delete-dups (copy-sequence
+                                    (donkey--pair-characters-here))))))
 
 (defun donkey--pair-characters-here ()
   "Return the OPEN characters that pair in THIS buffer.

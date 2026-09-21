@@ -721,6 +721,49 @@ adds one is a mode the number follows."
                            "on, DONKEY pairs (8 delimiters)")))))
     (donkey-pair-mode -1)))
 
+(ert-deftest donkey-pair-the-platform-line-counts-only-what-pairs ()
+  "The report never claims a delimiter the buffer will not pair.
+
+Three ways it did.  A per-mode EXCEPTION is taken off the press and
+not off the list, so a Lisp buffer that pairs eight said nine while
+the hash sat in the table.  An INCLUSION naming a character the list
+already had counted it twice.  An inclusion and an exception naming
+one character counted it and then refused it."
+  (unwind-protect
+      (progn
+        (donkey-pair-mode 1)
+        ;; An exception in force: the shipped Lisp rows take the hash.
+        (let ((donkey-mark-pair-delimiters
+               (cons '(?# . ?#) donkey-mark-pair-delimiters)))
+          (with-temp-buffer
+            (text-mode)
+            (should (equal (donkey--debug-pair-line)
+                           "on, DONKEY pairs (9 delimiters)")))
+          (with-temp-buffer
+            (emacs-lisp-mode)
+            (should (equal (donkey--debug-pair-line)
+                           "on, DONKEY pairs (8 delimiters)"))))
+        ;; An inclusion of a character the list already carries.
+        (let ((donkey-pair-delimiter-inclusions '((text-mode ?\())))
+          (with-temp-buffer
+            (text-mode)
+            (should (equal (donkey--debug-pair-line)
+                           "on, DONKEY pairs (8 delimiters)"))))
+        ;; Included and excepted at once: the exception wins, and counts.
+        (let ((donkey-pair-delimiter-inclusions '((html-mode ?<)))
+              (donkey-pair-delimiter-exceptions '((html-mode ?<))))
+          (with-temp-buffer
+            (html-mode)
+            (should (equal (donkey--debug-pair-line)
+                           "on, DONKEY pairs (8 delimiters)"))))
+        ;; And an inclusion that really does add one still says nine.
+        (let ((donkey-pair-delimiter-inclusions '((html-mode ?<))))
+          (with-temp-buffer
+            (html-mode)
+            (should (equal (donkey--debug-pair-line)
+                           "on, DONKEY pairs (9 delimiters)")))))
+    (donkey-pair-mode -1)))
+
 (ert-deftest donkey-the-inclusion-list-is-read-and-not-trusted ()
   "No value of `donkey-pair-delimiter-inclusions' makes typing signal."
   (dolist (value (list 'junk 42 "text" '(bad) '((html-mode . 5))
