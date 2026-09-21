@@ -1572,8 +1572,9 @@ names whoever has the job."
      ((and donkey-pair-stand-down (bound-and-true-p smartparens-mode))
       "on, standing down here (smartparens-mode is pairing)")
      ((donkey--pair-off-here-p) "on, not in this buffer")
-     (t (format "on, DONKEY pairs (%d delimiter%s)"
-                count (if (= count 1) "" "s"))))))
+     (t (let ((here (length (donkey--pair-characters-here))))
+          (format "on, DONKEY pairs (%d delimiter%s)"
+                  here (if (= here 1) "" "s")))))))
 
 (defun donkey--debug-donkey-lines ()
   "Return what to say about DONKEY itself in the platform report.
@@ -2820,6 +2821,43 @@ anything in its tail that is not a character."
                 :value-type (repeat character))
   :group 'donkey)
 
+(defcustom donkey-pair-delimiter-inclusions nil
+  "Delimiters that pair in a given major mode and nowhere else.
+
+Each entry is (MODE CHAR...).  In MODE, and in the modes deriving from
+it, each CHAR closes itself even though the list in force leaves it
+out.  The first entry whose mode the buffer matches is the whole
+answer, so a specific mode is written before the general one it
+derives from.
+
+The mode that asks for this is the one where a character is punctuation
+everywhere else and a delimiter here.  HTML is the case: the less-than
+sign is less-than in prose, which is why `safe' leaves it out, but
+almost every line of an HTML buffer sits between one and its closer.
+
+  (setopt donkey-pair-delimiter-inclusions \\='((html-mode ?<)))
+
+This is the opposite of `donkey-pair-delimiter-exceptions', and where
+both name the same character in the same mode the exception wins.
+
+It adds to the list in force; it does not replace it.  Brackets and
+quotes go on pairing in the mode, and the character named here pairs
+in no other buffer.
+
+A character `donkey-mark-pair-delimiters' does not carry, or carries
+with no closing half, is not something any list can add, so naming one
+here does nothing.
+
+This does NOT reach `electric-pair-mode'.  Where Emacs is doing the
+pairing it is handed one set for every buffer and decides the rest
+itself, so a mode named here applies to DONKEY\\='s own pairing only.
+
+A row that is not a cons whose car is a symbol is skipped, and so is
+anything in its tail that is not a character."
+  :type '(alist :key-type (symbol :tag "Major mode")
+                :value-type (repeat character))
+  :group 'donkey)
+
 (defcustom donkey-pair-stand-down t
   "Whether `donkey-pair-mode' yields to Smartparens in the buffer.
 
@@ -2932,6 +2970,50 @@ dot too many -- passes `consp' and would otherwise signal here."
                             donkey-pair-delimiter-exceptions))))
     (and row (memq char (seq-filter #'characterp (cdr row))) t)))
 
+(defun donkey--pair-inclusions-here ()
+  "Return the characters this major mode pairs over and above the list.
+
+Reads `donkey-pair-delimiter-inclusions', first matching row only, and
+keeps only what `donkey-mark-pair-delimiters' carries with a character
+closing half -- the same filter `donkey--pair-characters' applies, and
+for the same reason: the closing half is written into the buffer, so a
+row naming a character the table has no closer for would signal from
+`post-self-insert-hook'.
+
+Coerced at every level it is walked (rules 3 and 81), exactly as
+`donkey--pair-exception-p' is."
+  (let ((row (and (listp donkey-pair-delimiter-inclusions)
+                  (seq-find (lambda (entry)
+                              (and (consp entry)
+                                   (symbolp (car entry))
+                                   (car entry)
+                                   (proper-list-p (cdr entry))
+                                   (derived-mode-p (car entry))))
+                            donkey-pair-delimiter-inclusions))))
+    (and row
+         (let ((pairs (donkey--pair-table)))
+           (seq-filter (lambda (char)
+                         (and (characterp char)
+                              (characterp (cdr (assq char pairs)))))
+                       (cdr row))))))
+
+(defun donkey--pair-characters-here ()
+  "Return the OPEN characters that pair in THIS buffer.
+
+`donkey--pair-characters' answers the same in every buffer; this is
+that list plus whatever `donkey-pair-delimiter-inclusions' adds for
+the major mode.
+
+Every reader that decides about a pair IN a buffer wants this one --
+the typing hook, \\`DEL', and the platform report alike -- or they
+disagree about what a pair is and \\`DEL' leaves half of one behind.
+What is handed to `electric-pair-mode' is the other list: that one is
+written once for every buffer, so a mode can say nothing in it."
+  (let ((extra (donkey--pair-inclusions-here)))
+    (if extra
+        (append extra (donkey--pair-characters))
+      (donkey--pair-characters))))
+
 (defun donkey--pair-off-here-p ()
   "Return non-nil when DONKEY itself should not pair in this buffer.
 
@@ -2994,7 +3076,7 @@ in, and at most once per command."
                    (or (assq char table) (rassq char table)))
                  (not (donkey--pair-off-here-p))
                  (not (donkey--pair-exception-p char)))
-        (let ((chars (donkey--pair-characters)))
+        (let ((chars (donkey--pair-characters-here)))
           (cond
            ;; The same character already stands after point: step over
            ;; it.  For a symmetric pair this is the whole decision --
@@ -3096,7 +3178,7 @@ use this to tell a pair from two ordinary characters."
          after
          ;; Asked before the table is, so that a delimiter the reader
          ;; never asked for cannot reach `donkey--pair-close-for'.
-         (memq before (donkey--pair-characters))
+         (memq before (donkey--pair-characters-here))
          (eq after (donkey--pair-close-for before))
          (not (donkey--pair-exception-p before)))))
 

@@ -6,6 +6,7 @@
 (require 'cl-lib)
 (require 'donkey)
 (require 'donkey-test-keys)
+(require 'sgml-mode)   ; html-mode, the worked case for inclusions
 
 ;; Declared so a `let' over them in a test is DYNAMIC.  Neither package
 ;; is loaded in the suite, and in a lexical-binding file a `let' over an
@@ -219,7 +220,7 @@ A mode that will not load is skipped rather than failed."
 (ert-deftest donkey-readme-configuration-defaults-are-the-real-ones ()
   "Every value the worked configuration marks \"; default\" is one.
 
-The section shows nineteen options set to the value they already have,
+The section shows twenty options set to the value they already have,
 so a reader can see the shipped answer beside the knob.  A default
 that moves leaves those lines quietly wrong, which is the worst kind
 of wrong in a configuration people copy (rule 30).
@@ -260,7 +261,7 @@ drift."
     ;; An exact count, not a floor: dropping the "; default" marker
     ;; from a line takes that line out of the scan, and a floor cannot
     ;; tell that from a section that never had it.
-    (should (= checked 19))
+    (should (= checked 20))
     (should (equal wrong nil))))
 
 (ert-deftest donkey-readme-configuration-names-every-option ()
@@ -612,6 +613,123 @@ is about Smartparens and does not reach this."
       "" "i ( \""
     (should (equal (buffer-string) "(\")"))))
 
+(ert-deftest donkey-pair-includes-a-delimiter-in-one-mode-only ()
+  "A delimiter named in `donkey-pair-delimiter-inclusions' pairs there.
+
+The list in force leaves the less-than sign out, and the mode
+`html-mode' asks for it back; no other buffer gets it."
+  (donkey-pair-test--typing "*donkey-pair-incl*" #'html-mode
+      ((donkey-pair-delimiter-inclusions '((html-mode ?<))))
+      "" "i < s c r i p t"
+    (should (equal (buffer-string) "<script>")))
+  (donkey-pair-test--typing "*donkey-pair-incl-other*" #'text-mode
+      ((donkey-pair-delimiter-inclusions '((html-mode ?<))))
+      "" "i <"
+    (should (equal (buffer-string) "<"))))
+
+(ert-deftest donkey-pair-an-inclusion-reaches-a-derived-mode ()
+  "A mode deriving from the one named gets the inclusion too.
+
+`mhtml-mode' derives from `html-mode' and is not named itself."
+  (skip-unless (fboundp 'mhtml-mode))
+  (donkey-pair-test--typing "*donkey-pair-incl-derived*" #'mhtml-mode
+      ((donkey-pair-delimiter-inclusions '((html-mode ?<))))
+      "" "i <"
+    (should (equal (buffer-string) "<>"))))
+
+(ert-deftest donkey-pair-an-inclusion-adds-rather-than-replaces ()
+  "The rest of the list goes on pairing in the mode that names one."
+  (donkey-pair-test--typing "*donkey-pair-incl-adds*" #'html-mode
+      ((donkey-pair-delimiter-inclusions '((html-mode ?<))))
+      "" "i ( ["
+    (should (equal (buffer-string) "([])"))))
+
+(ert-deftest donkey-pair-an-inclusion-steps-over-its-own-closer ()
+  "Typing the closing half where it already stands steps over it."
+  (donkey-pair-test--typing "*donkey-pair-incl-skip*" #'html-mode
+      ((donkey-pair-delimiter-inclusions '((html-mode ?<))))
+      "" "i < >"
+    (should (equal (buffer-string) "<>"))
+    (should (= (point) 3))))
+
+(ert-deftest donkey-pair-an-exception-beats-an-inclusion ()
+  "Named in both for one mode, the character types as itself.
+
+The exception is asked first and answers for the press, so the two
+options cannot disagree about a buffer."
+  (donkey-pair-test--typing "*donkey-pair-incl-vs*" #'html-mode
+      ((donkey-pair-delimiter-inclusions '((html-mode ?<)))
+       (donkey-pair-delimiter-exceptions '((html-mode ?<))))
+      "" "i <"
+    (should (equal (buffer-string) "<"))))
+
+(ert-deftest donkey-pair-an-inclusion-does-not-reach-an-excluded-mode ()
+  "A mode where pairing is off pairs nothing, inclusion or not."
+  (donkey-pair-test--typing "*donkey-pair-incl-off*" #'html-mode
+      ((donkey-pair-delimiter-inclusions '((html-mode ?<)))
+       (donkey-pair-excluded-modes '(html-mode)))
+      "" "i <"
+    (should (equal (buffer-string) "<"))))
+
+(ert-deftest donkey-pair-an-inclusion-names-only-what-the-table-carries ()
+  "A character the pair table has no closing half for is ignored.
+
+`donkey--pair-close-for' would answer nil and the closing half is
+written into the buffer, so this is the guard that keeps a signal out
+of `post-self-insert-hook'."
+  (donkey-pair-test--typing "*donkey-pair-incl-nocloser*" #'html-mode
+      ((donkey-pair-delimiter-inclusions '((html-mode ?Z))))
+      "" "i Z"
+    (should (equal (buffer-string) "Z")))
+  (with-temp-buffer
+    (html-mode)
+    (let ((donkey-pair-delimiter-inclusions '((html-mode ?Z ?< ?\s))))
+      (should (equal (donkey--pair-inclusions-here) '(?<))))))
+
+(ert-deftest donkey-pair-del-takes-both-halves-of-an-included-pair ()
+  "\\[donkey-pair-delete-pair] knows the pair the mode asked for.
+
+The typing hook and \\`DEL' read one list between them, so a pair one
+of them writes is a pair the other takes back.  Read the global list
+instead and \\`DEL' leaves the closing half standing."
+  (donkey-pair-test--typing "*donkey-pair-incl-del*" #'html-mode
+      ((donkey-pair-delimiter-inclusions '((html-mode ?<))))
+      "" "i < DEL"
+    (should (equal (buffer-string) "")))
+  ;; Not in a mode that never asked: there DEL is the major mode's.
+  (donkey-pair-test--typing "*donkey-pair-incl-del-other*" #'text-mode
+      ((donkey-pair-delimiter-inclusions '((html-mode ?<))))
+      "" "i < >"
+    (should (equal (buffer-string) "<>"))))
+
+(ert-deftest donkey-pair-the-platform-line-counts-this-buffer ()
+  "The report says how many delimiters pair HERE, not everywhere.
+
+Its own docstring promises the answer for THIS buffer, so a mode that
+adds one is a mode the number follows."
+  (unwind-protect
+      (progn
+        (donkey-pair-mode 1)
+        (let ((donkey-pair-delimiter-inclusions '((html-mode ?<))))
+          (with-temp-buffer
+            (html-mode)
+            (should (equal (donkey--debug-pair-line)
+                           "on, DONKEY pairs (9 delimiters)")))
+          (with-temp-buffer
+            (text-mode)
+            (should (equal (donkey--debug-pair-line)
+                           "on, DONKEY pairs (8 delimiters)")))))
+    (donkey-pair-mode -1)))
+
+(ert-deftest donkey-the-inclusion-list-is-read-and-not-trusted ()
+  "No value of `donkey-pair-delimiter-inclusions' makes typing signal."
+  (dolist (value (list 'junk 42 "text" '(bad) '((html-mode . 5))
+                       '(("string" ?<)) '((nil ?<)) '((html-mode "x" nil ?<))))
+    (donkey-pair-test--typing "*donkey-pair-incl-junk*" #'html-mode
+        ((donkey-pair-delimiter-inclusions value))
+        "" "i ("
+      (should (equal (buffer-string) "()")))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; The guard against a package's second turn
 ;;; ---------------------------------------------------------------------------
@@ -721,7 +839,10 @@ coercion a row like (?# . \"hash\") would type the word."
     ("an exception row is dotted"     donkey-pair-delimiter-exceptions ((text-mode . 5)))
     ("the exception rows are junk"    donkey-pair-delimiter-exceptions (1 "x" (nil ?a) (text-mode . 5)))
     ("the excluded list is junk"      donkey-pair-excluded-modes (1 "x" nil))
-    ("the excluded list is a number"  donkey-pair-excluded-modes 7))
+    ("the excluded list is a number"  donkey-pair-excluded-modes 7)
+    ("the inclusions are not a list"  donkey-pair-delimiter-inclusions 9)
+    ("an inclusion row is dotted"     donkey-pair-delimiter-inclusions ((text-mode . 5)))
+    ("the inclusion rows are junk"    donkey-pair-delimiter-inclusions (1 "x" (nil ?a) (text-mode . 5))))
   "Ways a reader can mis-type one of the pairing options.
 
 Every one is a shape a reader reaches by hand: a dot too many, a
@@ -740,9 +861,14 @@ written around: it passes `consp' and its tail is not a list."
           (symbol (cadr case))
           (value (nth 2 case)))
       (donkey-pair-test--typing "*donkey-pair-junk*" #'text-mode
+          ;; One binding per option the table can name: `set' below
+          ;; writes the value for real, so an option missing from here
+          ;; keeps its rubbish for the rest of the run (rule 15).
           ((donkey-mark-pair-delimiters donkey-mark-pair-delimiters)
            (donkey-pair-delimiters donkey-pair-delimiters)
+           (donkey-pair-safe-exclusions donkey-pair-safe-exclusions)
            (donkey-pair-delimiter-exceptions donkey-pair-delimiter-exceptions)
+           (donkey-pair-delimiter-inclusions donkey-pair-delimiter-inclusions)
            (donkey-pair-excluded-modes donkey-pair-excluded-modes))
           "" ""
         (set symbol value)

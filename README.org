@@ -1979,6 +1979,38 @@ work it is handed the delimiters and decides the rest itself; if you
 want a delimiter inhibited there, =electric-pair-inhibit-predicate= is
 Emacs's own way to say so.
 
+*** Turning one on in one mode
+
+=donkey-pair-delimiter-inclusions= is the other direction, and HTML is
+what it is for. The less-than sign is less-than in prose, which is why
+=safe= leaves it out, but almost every line of an HTML buffer sits
+between one and its closer:
+
+#+begin_src emacs-lisp
+
+  (setopt donkey-pair-delimiter-inclusions '((html-mode ?<)))
+
+#+end_src
+
+Typing =<= then =script= now gives you =<script>=, and typing =>= where
+one already stands steps over it. The character pairs in that mode and
+in the modes deriving from it, =mhtml-mode= among them, and in no other
+buffer.
+
+It adds to the list in force rather than replacing it, so brackets and
+quotes go on pairing there. Where a mode is named in both lists for the
+same character the exception wins, and a character
+=donkey-mark-pair-delimiters= does not carry is not something any list
+can add.
+
+Emacs does not need telling this, because =html-mode= gives =<= the
+syntax of an opening bracket and =>= that of a closing one. That is why
+=electric-pair-mode= pairs them there with no configuration, and why
+DONKEY needs the line: DONKEY pairs from your lists, which are the same
+in every buffer, rather than from the mode's syntax table. Modes whose
+syntax table does NOT say it, =nxml-mode= among them, want the line
+just as much.
+
 *** Where it stops
 
 Nothing pairs in NORMAL state, because nothing types there: a delimiter
@@ -2502,6 +2534,12 @@ Using =setopt= for everything means never having to know which is which.
     ;; (setopt donkey-pair-delimiter-exceptions
     ;;         '((emacs-lisp-mode ?\' ?\` ?#)))
 
+    ;; One delimiter added in one mode, the other direction.  < is
+    ;; punctuation in prose, which is why `safe' leaves it out, and a
+    ;; delimiter in HTML.
+    (setopt donkey-pair-delimiter-inclusions nil)                ; default
+    ;; (setopt donkey-pair-delimiter-inclusions '((html-mode ?<)))
+
     ;; Stay out of smartparens' way where it is on.
     (setopt donkey-pair-stand-down t)                            ; default
 
@@ -2958,6 +2996,7 @@ and =M-x apropos-command donkey-= finds any of them.
 | =donkey-pair-safe-exclusions=      | 13 characters                    | what =safe= leaves out of the typing set |
 | =donkey-pair-excluded-modes=       | =nil=                            | modes where typing does not pair |
 | =donkey-pair-delimiter-exceptions= | 4 modes                          | one delimiter dropped in one mode |
+| =donkey-pair-delimiter-inclusions= | =nil=                            | one delimiter added in one mode |
 | =donkey-pair-stand-down=           | =t=                              | stay out of smartparens' way |
 | =donkey-self-insert-commands=      | 21 commands                      | mode commands that type, refused in NORMAL state |
 | =donkey-input-methods=             | =nil=                            | your input methods under =SPC i= |
