@@ -666,6 +666,76 @@ written around: it passes `consp' and its tail is not a list."
         (should (stringp (buffer-string)))
         (ignore label)))))
 
+(ert-deftest donkey-every-reader-of-the-pair-table-survives-a-mistyped-one ()
+  "No subsystem signals on a `donkey-mark-pair-delimiters' that is not a list.
+
+The option is a defcustom and holds whatever it was given.  `assq',
+`rassq', `seq-filter' and `length' all signal on a non-list, and five
+subsystems read it: the mark commands, the wrap engine, the chart of
+which keys wrap, the platform report, and the typing hook.  Each used
+to signal in its own way at a reader who typed one bracket too few,
+which is rules 3 and 10.
+
+Driven through the functions rather than through keys because `m i'
+prompts, and a batch run that reaches `read-char' hangs rather than
+fails."
+  (dolist (value '(42 "nonsense" nope))
+    (let ((donkey-mark-pair-delimiters value))
+      (should (equal (donkey--pair-table) nil))
+      ;; the mark commands
+      (should (eq (donkey--mark-pair-open-for ?\() ?\())
+      ;; the wrap engine, which answers a symmetric delimiter with
+      ;; itself by design rather than with nil
+      (should (characterp (donkey--wrap-close-char ?\()))
+      ;; the chart, and which keys wrap
+      (should (equal (donkey--wrap-delimiter-characters) nil))
+      ;; the platform report
+      (should (donkey--debug-donkey-lines))
+      ;; the typing hook
+      (should (equal (donkey--pair-characters) nil))
+      (should-not (donkey--pair-close-for ?\())
+      (should-not (donkey--pair-open-for ?\)))
+      (should-not (donkey--pair-exception-p ?\()))))
+
+(ert-deftest donkey-the-delimiter-prompt-refuses-a-mistyped-table ()
+  "`m i' answers a mistyped pair table with its own refusal.
+
+`donkey--mark-pair-read-delimiter' resolves the character at point,
+or the one it reads, against the table.  With the option set to
+something that is not a list it used to signal `wrong-type-argument'
+from `assq' before reaching any refusal of its own.
+
+The read is stubbed rather than driven, because a batch run that
+reaches `read-char' hangs rather than fails -- and it is stubbed on a
+function this file has already loaded (rule 35).  What is asserted is
+the KIND of error: a `user-error' naming the option is the refusal
+working, and anything else is the crash coming back."
+  (cl-letf (((symbol-function 'donkey--mark-pair-read-delimiter-char)
+             (lambda (&rest _) ?\()))
+    (dolist (value '(42 "nonsense"))
+      (let ((donkey-mark-pair-delimiters value))
+        (with-temp-buffer
+          (text-mode)
+          (insert "alpha")
+          (goto-char 2)
+          (should-error (donkey--mark-pair-read-delimiter) :type 'user-error))))))
+
+(ert-deftest donkey-a-mistyped-pair-table-refuses-rather-than-crashes ()
+  "With no usable table, the delimiter prompt refuses by name.
+
+`m i' and `m a' answer a delimiter they cannot place with a
+`user-error' naming the option (rule 5).  An empty table makes every
+delimiter one of those, which is the refusal working rather than a
+new failure."
+  (let ((donkey-mark-pair-delimiters 42))
+    (should-error (donkey--mark-pair-unsupported-error ?\() :type 'user-error)
+    (with-temp-buffer
+      (text-mode)
+      (insert "(alpha)")
+      (goto-char 3)
+      ;; What the prompt would do with the character it read.
+      (should (eq (donkey--mark-pair-open-for ?\() ?\()))))
+
 (ert-deftest donkey-pair-table-coercion-has-one-address ()
   "Every reader of the pair table goes through `donkey--pair-table'.
 

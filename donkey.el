@@ -1536,6 +1536,22 @@ availability.  Useful for debugging platform-specific issues."
 (defvar donkey-mode) ;(donkey-debug-platform); defined below, in "Donkey Mode Definitions"
 (defvar donkey-insert-mode) ;(donkey-debug-platform); defined below, in "Donkey Mode Definitions"
 
+(defun donkey--pair-table ()
+  "Return `donkey-mark-pair-delimiters' when it is a list, else nil.
+
+One address for the question every reader of that option asks first.
+It is a defcustom and holds whatever it was given, and `assq',
+`rassq', `seq-filter' and `length' all signal on a value that is not a
+list -- so `m i', a wrap key, the `?' chart, the platform report and
+the typing hook would each signal in their own way at a reader who
+typed one bracket too few (rules 3 and 10).
+
+Where that signal lands decides how bad it is rather than whether it
+is wrong: from `post-self-insert-hook' it aborts the reader\\='s own
+typing, from a key it is an ordinary command error.  Every reader goes
+through here either way."
+  (and (listp donkey-mark-pair-delimiters) donkey-mark-pair-delimiters))
+
 (defun donkey--debug-pair-line ()
   "Return the platform report\\='s line about `donkey-pair-mode'.
 
@@ -1618,7 +1634,7 @@ two places to read it."
                    (if (listp donkey-wrap-delimiters)
                        "a list of characters"
                      "all of donkey-mark-pair-delimiters"))
-           (format "Pair table:     %d pairs" (length donkey-mark-pair-delimiters))
+           (format "Pair table:     %d pairs" (length (donkey--pair-table)))
            (format "Pair typing:    %s" (donkey--debug-pair-line))
            "")
      (if findings
@@ -2370,7 +2386,7 @@ table is a defcustom and holds whatever it was given: left unchecked,
 a close of \"}\" signals from `string' at the moment of the press, and
 a close outside the character range inserts whatever that number
 happens to name."
-  (let ((close (cdr (assq open-char donkey-mark-pair-delimiters))))
+  (let ((close (cdr (assq open-char (donkey--pair-table)))))
     (if (characterp close) close open-char)))
 
 (defun donkey--wrap-open-close (char)
@@ -2817,16 +2833,6 @@ Holds ((MAJOR-MODE . SNAPSHOT) . RESULT); see
 pairing package that writes its closing half with `self-insert-command'
 runs the whole hook again, with a character the reader never typed.
 Cleared by `donkey--pair-reset' before each command.")
-
-(defun donkey--pair-table ()
-  "Return `donkey-mark-pair-delimiters' when it is a list, else nil.
-
-One address for the question every reader of that option asks first.
-It is a defcustom and holds whatever it was given: `assq', `rassq' and
-`seq-filter' all signal on a value that is not a list, and this runs
-from `post-self-insert-hook', where a signal aborts the reader\\='s own
-typing (rules 3 and 81)."
-  (and (listp donkey-mark-pair-delimiters) donkey-mark-pair-delimiters))
 
 (defun donkey--pair-characters ()
   "Return the OPEN characters that pair while typing, as a list.
@@ -3583,10 +3589,10 @@ CHAR itself when it opens a pair, and the opener when it closes one,
 so the prompt takes \\=`)\\=' for \\=`(\\='.  A symmetric delimiter
 answers itself.  Anything else comes back unchanged, for the caller to
 reject by name."
-  (cond ((assq char donkey-mark-pair-delimiters) char)
-        ((rassq char donkey-mark-pair-delimiters)
-         (car (rassq char donkey-mark-pair-delimiters)))
-        (t char)))
+  (let ((table (donkey--pair-table)))
+    (cond ((assq char table) char)
+          ((rassq char table) (car (rassq char table)))
+          (t char))))
 
 (defun donkey--mark-pair-read-delimiter ()
   "Return (OPEN-CHAR CLOSE-CHAR ON-OPENER AUTO) for the char pair to mark.
@@ -3602,16 +3608,17 @@ path instead of assuming point is the opener.
 
 AUTO is non-nil when the delimiter was read from the buffer rather
 than from a key."
-  (let* ((default-char (char-after))
-         (on-opener (and default-char (assq default-char donkey-mark-pair-delimiters)))
+  (let* ((table (donkey--pair-table))
+         (default-char (char-after))
+         (on-opener (and default-char (assq default-char table)))
          (on-closer (and default-char (not on-opener)
-                          (rassq default-char donkey-mark-pair-delimiters)))
+                          (rassq default-char table)))
          (open-char (cond
                      (on-opener default-char)
                      (on-closer (car on-closer))
                      (t (donkey--mark-pair-open-for
                          (donkey--mark-pair-read-delimiter-char)))))
-         (close-char (or (cdr (assq open-char donkey-mark-pair-delimiters))
+         (close-char (or (cdr (assq open-char table))
                          (donkey--mark-pair-unsupported-error open-char))))
     (list open-char close-char on-opener (and (or on-opener on-closer) t))))
 
@@ -8275,7 +8282,7 @@ exactly the shape a reader gets by typing one bracket too few."
                     ((eq donkey-wrap-region-engine 'pairing-package)
                      donkey--wrap-delegated-delimiters)
                     (t (mapcar #'car
-                               (seq-filter #'consp donkey-mark-pair-delimiters))))))
+                               (seq-filter #'consp (donkey--pair-table)))))))
 
 (defvar donkey--wrap-keys-taken nil
   "What each wrap key held before `donkey--claim-wrap-keys' took it.
