@@ -620,6 +620,147 @@ coercion a row like (?# . \"hash\") would type the word."
     (should (equal (buffer-string) "(()"))))
 
 ;;; ---------------------------------------------------------------------------
+;;; A mis-typed option never signals from the hook
+;;; ---------------------------------------------------------------------------
+
+(defconst donkey-pair-test--mistyped-options
+  '(("the table is not a list"        donkey-mark-pair-delimiters 42)
+    ("the table is a string"          donkey-mark-pair-delimiters "nonsense")
+    ("the table is a symbol"          donkey-mark-pair-delimiters nope)
+    ("the table has junk rows"        donkey-mark-pair-delimiters ((?a . ?b) 7 "x"))
+    ("the delimiters are a symbol"    donkey-pair-delimiters nonsense)
+    ("the delimiters are a number"    donkey-pair-delimiters 7)
+    ("the delimiters are a junk list" donkey-pair-delimiters ("(" 3.5 nil x))
+    ("the exceptions are not a list"  donkey-pair-delimiter-exceptions 9)
+    ("an exception row is dotted"     donkey-pair-delimiter-exceptions ((text-mode . 5)))
+    ("the exception rows are junk"    donkey-pair-delimiter-exceptions (1 "x" (nil ?a) (text-mode . 5)))
+    ("the excluded list is junk"      donkey-pair-excluded-modes (1 "x" nil))
+    ("the excluded list is a number"  donkey-pair-excluded-modes 7))
+  "Ways a reader can mis-type one of the pairing options.
+
+Every one is a shape a reader reaches by hand: a dot too many, a
+bracket too few, a symbol where a list belongs.")
+
+(ert-deftest donkey-pair-a-mistyped-option-never-signals-from-the-hook ()
+  "No value of any pairing option makes typing signal.
+
+These options are read from `post-self-insert-hook'.  A signal there
+aborts the reader\\='s own typing -- every delimiter they press, until
+they find the mistake -- so each option is coerced at every level it
+is walked (rules 3 and 81).  The dotted row is the case rule 81 was
+written around: it passes `consp' and its tail is not a list."
+  (dolist (case donkey-pair-test--mistyped-options)
+    (let ((label (car case))
+          (symbol (cadr case))
+          (value (nth 2 case)))
+      (donkey-pair-test--typing "*donkey-pair-junk*" #'text-mode
+          ((donkey-mark-pair-delimiters donkey-mark-pair-delimiters)
+           (donkey-pair-delimiters donkey-pair-delimiters)
+           (donkey-pair-delimiter-exceptions donkey-pair-delimiter-exceptions)
+           (donkey-pair-excluded-modes donkey-pair-excluded-modes))
+          "" ""
+        (set symbol value)
+        ;; No `should-not-error': what is asserted is that the keys
+        ;; run at all, so an escaping signal fails the test by itself.
+        (execute-kbd-macro (kbd "i ( a"))
+        (should (stringp (buffer-string)))
+        (ignore label)))))
+
+(ert-deftest donkey-pair-table-coercion-has-one-address ()
+  "Every reader of the pair table goes through `donkey--pair-table'.
+
+A second reader that walks the option itself is the way this defect
+comes back: it was the fast path in `donkey--pair-post-self-insert'
+that still signalled after the first three sites were fixed."
+  (dolist (value '(42 "nonsense" nope))
+    (let ((donkey-mark-pair-delimiters value))
+      (should (equal (donkey--pair-table) nil))
+      (should (equal (donkey--pair-characters) nil))
+      (should-not (donkey--pair-close-for ?\())
+      (should-not (donkey--pair-open-for ?\)))
+      (should-not (donkey--pair-exception-p ?\()))))
+
+;;; ---------------------------------------------------------------------------
+;;; setopt on the table reaches Emacs
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-pair-setopt-on-the-table-reaches-electric-pair ()
+  "A pair added with `setopt' is handed to Emacs there and then.
+
+The README teaches adding a pair that way, and Emacs has to be TOLD
+the set rather than reading it, so the table\\='s own `:set' hands it
+over -- the same reason that `:set' already claims the wrap keys."
+  (require 'elec-pair)
+  (let ((before (copy-sequence (default-value 'electric-pair-pairs)))
+        (table (default-value 'donkey-mark-pair-delimiters)))
+    (unwind-protect
+        (progn
+          (donkey-pair-mode 1)
+          (should-not (member '(?@ . ?@) (default-value 'electric-pair-pairs)))
+          (setopt donkey-mark-pair-delimiters
+                  (cons '(?@ . ?@) donkey-mark-pair-delimiters))
+          (should (member '(?@ . ?@) (default-value 'electric-pair-pairs))))
+      (donkey-pair-mode -1)
+      (set-default 'donkey-mark-pair-delimiters table)
+      (set-default 'electric-pair-pairs before))))
+
+;;; ---------------------------------------------------------------------------
+;;; The delete command refuses rather than eating two characters
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-pair-delete-pair-refuses-where-there-is-no-pair ()
+  "\\\\[donkey-pair-delete-pair] takes a pair or nothing.
+
+The `:filter' guards the KEY.  The command is interactive, so a
+reader can reach it by name anywhere, and it used to delete the two
+characters it happened to be standing between (rule 5)."
+  (unwind-protect
+      (progn
+        (donkey-pair-mode 1)
+        (with-temp-buffer
+          (text-mode)
+          (insert "alpha")
+          (goto-char 3)
+          (should-error (donkey-pair-delete-pair) :type 'user-error)
+          (should (equal (buffer-string) "alpha"))
+          (erase-buffer)
+          (should-error (donkey-pair-delete-pair) :type 'user-error)
+          (insert "()")
+          (goto-char 2)
+          (donkey-pair-delete-pair)
+          (should (equal (buffer-string) ""))))
+    (donkey-pair-mode -1)))
+
+;;; ---------------------------------------------------------------------------
+;;; The library is loaded only where something is written
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-pair-does-not-load-elec-pair-with-the-mode-off ()
+  "Setting an option with the mode off pulls in no library.
+
+`elec-pair' is loaded where `electric-pair-pairs' is about to be
+written, and nowhere else: a reader who has not asked for the pairing
+has not asked for the library either."
+  ;; The second call SUPPLIES for real, so what it wrote is taken back
+  ;; again: a test that leaves rows in `electric-pair-pairs' makes the
+  ;; next reader of that variable fail for reasons of its own.
+  (require 'elec-pair)
+  (let ((loaded nil)
+        (before (copy-sequence (default-value 'electric-pair-pairs)))
+        (supplied donkey--pair-supplied))
+    (unwind-protect
+        (cl-letf (((symbol-function 'require)
+                   (lambda (feature &rest _) (push feature loaded) nil)))
+          (let ((donkey-pair-mode nil))
+            (donkey--pair-supply-electric-pair))
+          (should-not (memq 'elec-pair loaded))
+          (let ((donkey-pair-mode t))
+            (donkey--pair-supply-electric-pair))
+          (should (memq 'elec-pair loaded)))
+      (setq donkey--pair-supplied supplied)
+      (set-default 'electric-pair-pairs before))))
+
+;;; ---------------------------------------------------------------------------
 ;;; Setup and teardown
 ;;; ---------------------------------------------------------------------------
 

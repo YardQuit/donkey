@@ -1695,6 +1695,20 @@ That is deliberate. INSERT state is otherwise entirely Emacs's — =C-g=
 is the only key DONKEY holds there — and a package that started
 changing how you type on upgrade would be taking a liberty.
 
+With it on, as you type:
+
+- an opening delimiter writes its closing half and leaves the cursor
+  between the two;
+- the closing half, typed where that character already stands, steps
+  over it rather than doubling it;
+- =DEL= between the halves of an empty pair takes both, and =DEL=
+  anywhere else is whatever your major mode bound it to;
+- a count types and pairs nothing: =C-u 3 (= gives you three of them.
+
+The last two are DONKEY's own answers. Where =electric-pair-mode= is
+doing the pairing — see below — =DEL= and counts are Emacs's, and it
+pairs once under a count rather than not at all.
+
 *** Who actually does the pairing
 
 This is the part worth reading, because DONKEY is usually not the one

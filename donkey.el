@@ -2818,6 +2818,16 @@ pairing package that writes its closing half with `self-insert-command'
 runs the whole hook again, with a character the reader never typed.
 Cleared by `donkey--pair-reset' before each command.")
 
+(defun donkey--pair-table ()
+  "Return `donkey-mark-pair-delimiters' when it is a list, else nil.
+
+One address for the question every reader of that option asks first.
+It is a defcustom and holds whatever it was given: `assq', `rassq' and
+`seq-filter' all signal on a value that is not a list, and this runs
+from `post-self-insert-hook', where a signal aborts the reader\\='s own
+typing (rules 3 and 81)."
+  (and (listp donkey-mark-pair-delimiters) donkey-mark-pair-delimiters))
+
 (defun donkey--pair-characters ()
   "Return the OPEN characters that pair while typing, as a list.
 
@@ -2829,9 +2839,10 @@ what any other value reads as.
 Both variables are defcustoms and hold whatever they were given, so
 this is where the coercion happens: a character naming no pair in the
 table is dropped, and so is anything that is not a character.  The
-table is read through `consp' rather than `car', an entry that is not
-a pair at all being the shape a reader gets from one bracket too few."
-  (let* ((pairs (seq-filter #'consp donkey-mark-pair-delimiters))
+table comes through `donkey--pair-table' and is then read through
+`consp' rather than `car', an entry that is not a pair at all being
+the shape a reader gets from one bracket too few."
+  (let* ((pairs (seq-filter #'consp (donkey--pair-table)))
          (asked (cond ((listp donkey-pair-delimiters) donkey-pair-delimiters)
                       ((eq donkey-pair-delimiters 'all) (mapcar #'car pairs))
                       ;; `safe' and anything else: the table less the
@@ -2853,7 +2864,7 @@ A plain lookup: `assq' passes over a table row that is not a cons, and
 every caller has already put OPEN through `donkey--pair-characters',
 which is where a row holding something that is not a character is
 refused."
-  (cdr (assq open donkey-mark-pair-delimiters)))
+  (cdr (assq open (donkey--pair-table))))
 
 (defun donkey--pair-open-for (close)
   "Return the opening half of the pair CLOSE closes, or nil.
@@ -2862,7 +2873,7 @@ A symmetric delimiter answers itself.  Nil when CLOSE closes no pair.
 A plain lookup, for the reason `donkey--pair-close-for' gives: what
 comes back is only ever used to ask `memq' of a list
 `donkey--pair-characters' has already coerced."
-  (car (rassq close donkey-mark-pair-delimiters)))
+  (car (rassq close (donkey--pair-table))))
 
 (defun donkey--pair-excluded-mode-p ()
   "Return non-nil when this buffer\\='s major mode is excluded from pairing.
@@ -2877,15 +2888,23 @@ there would be the one thing it still did."
 (defun donkey--pair-exception-p (char)
   "Return non-nil if CHAR is excepted from pairing in this major mode.
 
-Reads `donkey-pair-delimiter-exceptions', first matching row only.  A
-row that is not a cons whose car is a symbol is skipped, so a
-mis-typed option cannot signal from the hook this runs on."
-  (let ((row (seq-find (lambda (entry)
-                         (and (consp entry)
-                              (symbolp (car entry))
-                              (car entry)
-                              (derived-mode-p (car entry))))
-                       donkey-pair-delimiter-exceptions)))
+Reads `donkey-pair-delimiter-exceptions', first matching row only.
+
+Coerced at every level it is walked, because this runs from
+`post-self-insert-hook' and a signal there aborts the reader\\='s own
+typing (rules 3 and 81): the option is walked only when it is a list,
+a row is read only when it is a cons whose car is a symbol, and its
+tail only when that tail is a proper list.  A row whose tail is a
+single value -- `(text-mode . 5)', the shape a reader gets from one
+dot too many -- passes `consp' and would otherwise signal here."
+  (let ((row (and (listp donkey-pair-delimiter-exceptions)
+                  (seq-find (lambda (entry)
+                              (and (consp entry)
+                                   (symbolp (car entry))
+                                   (car entry)
+                                   (proper-list-p (cdr entry))
+                                   (derived-mode-p (car entry))))
+                            donkey-pair-delimiter-exceptions))))
     (and row (memq char (seq-filter #'characterp (cdr row))) t)))
 
 (defun donkey--pair-off-here-p ()
@@ -2946,8 +2965,8 @@ in, and at most once per command."
                  ;; typed is a letter, which is in neither half of the
                  ;; table.  Asking that first keeps the list-building
                  ;; and the two buffer questions off the common press.
-                 (or (assq char donkey-mark-pair-delimiters)
-                     (rassq char donkey-mark-pair-delimiters))
+                 (let ((table (donkey--pair-table)))
+                   (or (assq char table) (rassq char table)))
                  (not (donkey--pair-off-here-p))
                  (not (donkey--pair-exception-p char)))
         (let ((chars (donkey--pair-characters)))
@@ -2990,15 +3009,16 @@ last time is taken out first, and `donkey--pair-supplied' remembers
 the difference so that turning the mode off gives back exactly what
 was taken (rule 67).
 
-Loads `elec-pair' first, and does nothing if `electric-pair-pairs'
-is still unbound afterwards.  Written before that library has
+Loads `elec-pair' when the mode is on and there is something to
+write, and does nothing if `electric-pair-pairs' is still unbound
+afterwards.  Written before that library has
 loaded, the value would leave the variable's `defcustom' nothing to
 do and Emacs\\='s own three pairs would be lost."
-  ;; Loaded rather than waited for: `elec-pair' is stock Emacs and
-  ;; costs nothing to have, and the variable has to EXIST before
-  ;; anything is put in it.  The load and the write that depends on
-  ;; it sit together, so no caller has to remember the order.
-  (require 'elec-pair nil t)
+  ;; Loaded on the path that WRITES, and only there: the variable has
+  ;; to exist before anything is put in it, but a reader who sets an
+  ;; option with the mode off has not asked for the library.
+  (when (bound-and-true-p donkey-pair-mode)
+    (require 'elec-pair nil t))
   (when (boundp 'electric-pair-pairs)
     (donkey--pair-withdraw-electric-pair)
     (when (bound-and-true-p donkey-pair-mode)
@@ -3038,12 +3058,13 @@ until this runs.  \[customize-variable] and `setopt' need no help."
            (length donkey--pair-supplied)
            (if (= (length donkey--pair-supplied) 1) "" "s")))
 
-(defun donkey--pair-empty-pair-here-p ()
+(defun donkey--pair-between-halves-p ()
   "Return non-nil when point sits between the two halves of an empty pair.
 
-The pair has to be one `donkey-pair-delimiters' asks for, in a buffer
-`donkey--pair-off-here-p' leaves to DONKEY, so \\`DEL' goes back to
-the major mode everywhere else."
+The pair has to be one `donkey-pair-delimiters' asks for.  Asks
+nothing about WHO owns \\`DEL' in this buffer -- that is
+`donkey--pair-empty-pair-here-p' -- so a caller reached by name can
+use this to tell a pair from two ordinary characters."
   (let ((before (char-before))
         (after (char-after)))
     (and before
@@ -3052,8 +3073,16 @@ the major mode everywhere else."
          ;; never asked for cannot reach `donkey--pair-close-for'.
          (memq before (donkey--pair-characters))
          (eq after (donkey--pair-close-for before))
-         (not (donkey--pair-off-here-p))
          (not (donkey--pair-exception-p before)))))
+
+(defun donkey--pair-empty-pair-here-p ()
+  "Return non-nil when \\`DEL' here should take a whole empty pair.
+
+`donkey--pair-between-halves-p' and a buffer
+`donkey--pair-off-here-p' leaves to DONKEY, so \\`DEL' goes back to
+the major mode everywhere else."
+  (and (donkey--pair-between-halves-p)
+       (not (donkey--pair-off-here-p))))
 
 (defun donkey--pair-delete-filter (command)
   "Return COMMAND where \\`DEL' should take a whole empty pair, else nil.
@@ -3074,11 +3103,17 @@ shown the major mode\\='s command."
 (defun donkey-pair-delete-pair ()
   "Delete the empty pair point sits between, both halves in one press.
 
-Reached from \\`DEL' under `donkey-pair-mode', and only where point is
-between the two halves of an empty pair DONKEY would have written; see
-`donkey--pair-delete-filter'.  Neither half goes to the kill ring,
-single characters being typo fixes rather than cuts."
+Reached from \\`DEL' under `donkey-pair-mode', where
+`donkey--pair-delete-filter' offers the key only between the halves
+of a pair.  Reached BY NAME it asks the same question itself and
+refuses with a `user-error' anywhere else, rather than taking the two
+characters it happens to be standing between.
+
+Neither half goes to the kill ring, single characters being typo
+fixes rather than cuts."
   (interactive)
+  (unless (donkey--pair-between-halves-p)
+    (user-error "Point is not between the halves of an empty pair"))
   (delete-char 1)
   (delete-char -1))
 
@@ -3502,7 +3537,12 @@ finished.  \[donkey-refresh-wrap-keys] asks for them there and then."
   :set (lambda (symbol value)
          (set-default symbol value)
          (when (fboundp 'donkey--claim-wrap-keys)
-           (donkey--claim-wrap-keys)))
+           (donkey--claim-wrap-keys))
+         ;; And hand the set to Emacs again, for the same reason the
+         ;; wrap keys are claimed again: a pair added here is one
+         ;; `electric-pair-mode' has to be TOLD about.
+         (when (fboundp 'donkey--pair-supply-electric-pair)
+           (donkey--pair-supply-electric-pair)))
   :group 'donkey)
 
 (defun donkey--mark-pair-digraph-keys ()
