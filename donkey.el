@@ -1530,8 +1530,34 @@ availability.  Useful for debugging platform-specific issues."
 (defvar donkey-wrap-region-engine) ;(donkey-debug-platform); defined below, in "Wrap Region Commands"
 (defvar donkey-wrap-delimiters) ;(donkey-debug-platform); defined below, in "Wrap Region Commands"
 (defvar donkey-mark-pair-delimiters) ;(donkey-debug-platform); defined below, in "Mark and Text Object Selection Commands"
+(defvar donkey-pair-mode) ;(donkey-debug-platform); defined below, in "Pair Delimiters While Typing"
+(defvar donkey-pair-stand-down) ;(donkey-debug-platform); defined below, in "Pair Delimiters While Typing"
+(defvar donkey--pair-supplied) ;(donkey-debug-platform); defined below, in "Pair Delimiters While Typing"
 (defvar donkey-mode) ;(donkey-debug-platform); defined below, in "Donkey Mode Definitions"
 (defvar donkey-insert-mode) ;(donkey-debug-platform); defined below, in "Donkey Mode Definitions"
+
+(defun donkey--debug-pair-line ()
+  "Return the platform report\\='s line about `donkey-pair-mode'.
+
+Whether the mode is on, and in THIS buffer WHO is doing the pairing.
+A reader who has turned it on inside `electric-pair-mode' or
+Smartparens is looking at a mode that is on and writing nothing
+itself, which is the setting working rather than failing, so the line
+names whoever has the job."
+  (let ((count (length (donkey--pair-characters))))
+    (cond
+     ((not (bound-and-true-p donkey-pair-mode)) "off")
+     ((or (bound-and-true-p electric-pair-local-mode)
+          (bound-and-true-p electric-pair-mode))
+      ;; Both numbers, because they differ and the difference is not a
+      ;; fault: what was handed over is what Emacs did not have already.
+      (format "on, electric-pair-mode pairs (%d delimiter%s, %d handed to it)"
+              count (if (= count 1) "" "s") (length donkey--pair-supplied)))
+     ((and donkey-pair-stand-down (bound-and-true-p smartparens-mode))
+      "on, standing down here (smartparens-mode is pairing)")
+     ((donkey--pair-off-here-p) "on, not in this buffer")
+     (t (format "on, DONKEY pairs (%d delimiter%s)"
+                count (if (= count 1) "" "s"))))))
 
 (defun donkey--debug-donkey-lines ()
   "Return what to say about DONKEY itself in the platform report.
@@ -1593,6 +1619,7 @@ two places to read it."
                        "a list of characters"
                      "all of donkey-mark-pair-delimiters"))
            (format "Pair table:     %d pairs" (length donkey-mark-pair-delimiters))
+           (format "Pair typing:    %s" (donkey--debug-pair-line))
            "")
      (if findings
          (cons "Bindings:" (mapcar (lambda (l) (concat "  " l)) findings))
@@ -2659,6 +2686,468 @@ keyboard."
         (donkey--wrap-delegate open))))
    (t
     (donkey--wrap-selection last-command-event))))
+
+;;; ---------------------------------------------------------------------------
+;;; Pair Delimiters While Typing
+;;; ---------------------------------------------------------------------------
+
+(defconst donkey--pair-typing-punctuation
+  '(?< ?\' ?\` ?= ?* ?~ ?\| ?\\ ?/ ?: ?+ ?_ ?$)
+  "Table characters that `safe' leaves out of the typing set.
+
+Every one of them is ordinary text far more often than it is a
+delimiter.  A colon, an underscore or a slash typed in prose is just
+that; the less-than sign is less-than; and the apostrophe is the one
+in a contraction and the quote in Lisp, which is why no pairing
+package pairs it by default either.
+
+A list, and it says where it stops: it names what SHIPS in
+`donkey-mark-pair-delimiters', and a pair a reader adds is theirs to
+judge.  Naming characters in `donkey-pair-delimiters' passes this by
+entirely.")
+
+(defcustom donkey-pair-delimiters 'safe
+  "Delimiters that close themselves as you type, under `donkey-pair-mode'.
+
+Type an OPEN character and its closing half is put after point, with
+point left between the two.  Type a closing half where that character
+already stands and point steps over it rather than doubling it.
+
+`safe', the default, means every pair `donkey-mark-pair-delimiters'
+knows except the ones `donkey--pair-typing-punctuation' names -- so a
+pair YOU add to the table, `(?# . ?#)' say, is a pair you can type,
+with nothing to say twice.  What it leaves out is the punctuation that
+is ordinary text far more often than it is a delimiter: under `all' a
+colon typed in prose gives you two of them.
+
+`all' is that whole table, punctuation included.  A list of characters
+is taken exactly as it stands, and an empty list turns the pairing off
+while leaving the mode on.
+
+A character naming no pair in the table is dropped, as is anything
+that is not a character.  Read at each press, so a change takes effect
+on the next one -- except where `electric-pair-mode' is doing the
+pairing, which is told the set when the mode goes on and again from
+\[donkey-pair-refresh].
+
+`donkey-pair-delimiter-exceptions' drops one delimiter in one major
+mode.  Which delimiters wrap a SELECTION is a separate question, asked
+of `donkey-wrap-delimiters'."
+  :type '(choice (const :tag "The table, less ordinary punctuation" safe)
+                 (const :tag "Every pair donkey-mark-pair-delimiters knows" all)
+                 (repeat character))
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (when (fboundp 'donkey--pair-supply-electric-pair)
+           (donkey--pair-supply-electric-pair)))
+  :group 'donkey)
+
+(defcustom donkey-pair-excluded-modes nil
+  "Major modes where `donkey-pair-mode' does not pair.
+
+Derived modes are caught by `derived-mode-p', so naming a parent
+covers its children.
+
+The list ADDS to what is skipped already and cannot subtract from it:
+a `donkey-excluded-modes' buffer is a terminal or a REPL, where DONKEY
+stays out of the way entirely and nothing pairs whatever this says.
+It is a list of its own rather than that one, so a mode can keep
+Normal state and stop pairing, or stop pairing and keep Normal state."
+  :type '(repeat symbol)
+  :group 'donkey)
+
+(defcustom donkey-pair-delimiter-exceptions
+  '((emacs-lisp-mode ?\' ?\` ?#)
+    (lisp-data-mode ?\' ?\` ?#)
+    (lisp-mode ?\' ?\` ?#)
+    (scheme-mode ?\' ?\` ?#))
+  "Delimiters that do not pair in a given major mode.
+
+Each entry is (MODE CHAR...).  In MODE, and in the modes deriving from
+it, each CHAR types as itself however `donkey-pair-delimiters' is set.
+The first entry whose mode the buffer matches is the whole answer, so
+a specific mode is written before the general one it derives from.
+
+The shipped entries are the characters a Lisp buffer spends on
+something other than a pair: the quote, the backquote, and the hash
+that opens a function quote or a vector.  The first two are left out
+of the typing set anyway; the hash is there because a reader who adds
+that pair to the table gets it under `safe', and a hash that closed
+itself would be in the way of every function quote.
+
+This does NOT reach `electric-pair-mode'.  Where Emacs is doing the
+pairing it is handed the delimiters and decides the rest itself, so an
+exception named here applies to DONKEY\\='s own pairing only.
+
+A row that is not a cons whose car is a symbol is skipped, and so is
+anything in its tail that is not a character."
+  :type '(alist :key-type (symbol :tag "Major mode")
+                :value-type (repeat character))
+  :group 'donkey)
+
+(defcustom donkey-pair-stand-down t
+  "Whether `donkey-pair-mode' yields to Smartparens in the buffer.
+
+Non-nil, the default, means DONKEY does nothing where
+`smartparens-mode' is on: that package has its own answer for these
+keys and its own pair definitions, so a reader who prefers it keeps it
+with no configuration at all.  Set to nil to pair regardless, which
+puts a second closing half beside every one Smartparens writes.
+
+`electric-pair-mode' is not covered by this and never yields to it.
+Emacs\\='s own pairing is left in charge of typing wherever it is on,
+and DONKEY hands it the delimiters rather than competing; see
+`donkey--pair-supply-electric-pair'.
+
+A list, and it says where it stops: another package on
+`post-self-insert-hook' pairs just as well and is not named here."
+  :type 'boolean
+  :group 'donkey)
+
+(defvar-local donkey--pair-excluded-cache nil
+  "Memo for `donkey--pair-excluded-mode-p'.
+
+Holds ((MAJOR-MODE . SNAPSHOT) . RESULT); see
+`donkey--memo-major-mode-in-p'.")
+
+(defvar-local donkey--pair-done-this-command nil
+  "Non-nil once this command has had its turn at pairing.
+
+`post-self-insert-hook' can run more than once for one press: a
+pairing package that writes its closing half with `self-insert-command'
+runs the whole hook again, with a character the reader never typed.
+Cleared by `donkey--pair-reset' before each command.")
+
+(defun donkey--pair-characters ()
+  "Return the OPEN characters that pair while typing, as a list.
+
+`donkey-pair-delimiters' taken as it stands when it is a list; every
+OPEN character of `donkey-mark-pair-delimiters' under `all'; and that
+table less `donkey--pair-typing-punctuation' under `safe', which is
+what any other value reads as.
+
+Both variables are defcustoms and hold whatever they were given, so
+this is where the coercion happens: a character naming no pair in the
+table is dropped, and so is anything that is not a character.  The
+table is read through `consp' rather than `car', an entry that is not
+a pair at all being the shape a reader gets from one bracket too few."
+  (let* ((pairs (seq-filter #'consp donkey-mark-pair-delimiters))
+         (asked (cond ((listp donkey-pair-delimiters) donkey-pair-delimiters)
+                      ((eq donkey-pair-delimiters 'all) (mapcar #'car pairs))
+                      ;; `safe' and anything else: the table less the
+                      ;; punctuation that is text far more often than it
+                      ;; is a delimiter.
+                      (t (seq-remove
+                          (lambda (char)
+                            (memq char donkey--pair-typing-punctuation))
+                          (mapcar #'car pairs))))))
+    (seq-filter (lambda (char)
+                  (and (characterp char)
+                       (characterp (cdr (assq char pairs)))))
+                asked)))
+
+(defun donkey--pair-close-for (open)
+  "Return the closing half of the pair OPEN opens, or nil.
+
+A plain lookup: `assq' passes over a table row that is not a cons, and
+every caller has already put OPEN through `donkey--pair-characters',
+which is where a row holding something that is not a character is
+refused."
+  (cdr (assq open donkey-mark-pair-delimiters)))
+
+(defun donkey--pair-open-for (close)
+  "Return the opening half of the pair CLOSE closes, or nil.
+
+A symmetric delimiter answers itself.  Nil when CLOSE closes no pair.
+A plain lookup, for the reason `donkey--pair-close-for' gives: what
+comes back is only ever used to ask `memq' of a list
+`donkey--pair-characters' has already coerced."
+  (car (rassq close donkey-mark-pair-delimiters)))
+
+(defun donkey--pair-excluded-mode-p ()
+  "Return non-nil when this buffer\\='s major mode is excluded from pairing.
+
+`donkey-pair-excluded-modes' or `donkey-excluded-modes': the second
+because DONKEY holds nothing in a terminal or a REPL, and pairing
+there would be the one thing it still did."
+  (or (donkey--memo-major-mode-in-p 'donkey--pair-excluded-cache
+                                    donkey-pair-excluded-modes)
+      (donkey--excluded-mode-p)))
+
+(defun donkey--pair-exception-p (char)
+  "Return non-nil if CHAR is excepted from pairing in this major mode.
+
+Reads `donkey-pair-delimiter-exceptions', first matching row only.  A
+row that is not a cons whose car is a symbol is skipped, so a
+mis-typed option cannot signal from the hook this runs on."
+  (let ((row (seq-find (lambda (entry)
+                         (and (consp entry)
+                              (symbolp (car entry))
+                              (car entry)
+                              (derived-mode-p (car entry))))
+                       donkey-pair-delimiter-exceptions)))
+    (and row (memq char (seq-filter #'characterp (cdr row))) t)))
+
+(defun donkey--pair-off-here-p ()
+  "Return non-nil when DONKEY itself should not pair in this buffer.
+
+An excluded mode, the minibuffer, or a buffer where something else is
+already doing the job.
+
+Two somethings, and they are not treated alike.  `electric-pair-mode'
+is Emacs\\='s own and is left in charge of typing wherever it is on:
+DONKEY hands it the delimiters instead, through
+`donkey--pair-supply-electric-pair', so a pair the reader added to
+the table is one Emacs pairs.  `smartparens-mode' is a package with
+its own answer for these keys, and DONKEY steps out of its way
+entirely while `donkey-pair-stand-down' says so.
+
+The packages are asked for by their mode variables rather than by what
+sits on `post-self-insert-hook': one turned off leaves its function
+there, and a buffer would go on being treated as taken."
+  (or (minibufferp)
+      (donkey--pair-excluded-mode-p)
+      (and (bound-and-true-p electric-pair-local-mode) t)
+      (and (bound-and-true-p electric-pair-mode) t)
+      (and donkey-pair-stand-down
+           (bound-and-true-p smartparens-mode)
+           t)))
+
+(defun donkey--pair-reset ()
+  "Let the next command have its turn at pairing.
+
+On `pre-command-hook' while `donkey-pair-mode' is on; see
+`donkey--pair-done-this-command'."
+  (setq donkey--pair-done-this-command nil))
+
+(defun donkey--pair-post-self-insert ()
+  "Close the delimiter just typed, or step over the one already there.
+
+On `post-self-insert-hook' while `donkey-pair-mode' is on, at a depth
+ahead of the pairing packages so that the buffer is asked what is live
+in it before any of them has had a turn.
+
+Does nothing under a count: \\[universal-argument] 3 and a delimiter
+types three of them and pairs none, which is what a count means to
+`self-insert-command' and what a count already means to
+`donkey-wrap-region'.  Does nothing either where
+`donkey--pair-off-here-p' says the buffer is not DONKEY\\='s to pair
+in, and at most once per command."
+  (unless donkey--pair-done-this-command
+    ;; Set first, and for every press rather than only the ones acted
+    ;; on: what this stops is a second run of the whole hook, and by
+    ;; then the reasons for standing down read differently.
+    (setq donkey--pair-done-this-command t)
+    (let ((char last-command-event))
+      (when (and (characterp char)
+                 (null current-prefix-arg)
+                 ;; Cheapest and most selective first: this runs for
+                 ;; every character typed, and almost every character
+                 ;; typed is a letter, which is in neither half of the
+                 ;; table.  Asking that first keeps the list-building
+                 ;; and the two buffer questions off the common press.
+                 (or (assq char donkey-mark-pair-delimiters)
+                     (rassq char donkey-mark-pair-delimiters))
+                 (not (donkey--pair-off-here-p))
+                 (not (donkey--pair-exception-p char)))
+        (let ((chars (donkey--pair-characters)))
+          (cond
+           ;; The same character already stands after point: step over
+           ;; it.  For a symmetric pair this is the whole decision --
+           ;; nothing in the text says whether the press opened or
+           ;; closed -- so "one is already here" is the rule for both
+           ;; halves of every pair.
+           ((and (eq (char-after) char)
+                 (memq (donkey--pair-open-for char) chars))
+            (delete-char -1)
+            (forward-char 1))
+           ;; An opening half: write the closing one after point.
+           ((memq char chars)
+            (save-excursion
+              (insert (donkey--pair-close-for char))))))))))
+
+(defvar donkey--pair-supplied nil
+  "The rows DONKEY added to `electric-pair-pairs', and only those.
+
+Recorded at the moment they are added so that turning the mode off
+takes back exactly what it gave and nothing else: a pair the reader
+had there already, or `elec-pair' shipped, is left standing.")
+
+(defvar electric-pair-pairs) ;(donkey--pair-supply-electric-pair); elec-pair.el
+
+(defun donkey--pair-supply-electric-pair ()
+  "Hand DONKEY\\='s delimiters to `electric-pair-mode' to pair.
+
+Emacs pairs what its syntax tables call a pair, plus whatever
+`electric-pair-pairs' names.  This puts `donkey-pair-delimiters' into
+that variable, so a pair the reader added to
+`donkey-mark-pair-delimiters' -- `(?# . ?#)' say -- is one Emacs pairs
+while they type, with nothing said twice and Emacs\\='s own handling of
+brackets and quotes untouched.
+
+Adds, never replaces: what was there is kept, what DONKEY put there
+last time is taken out first, and `donkey--pair-supplied' remembers
+the difference so that turning the mode off gives back exactly what
+was taken (rule 67).
+
+Loads `elec-pair' first, and does nothing if `electric-pair-pairs'
+is still unbound afterwards.  Written before that library has
+loaded, the value would leave the variable's `defcustom' nothing to
+do and Emacs\\='s own three pairs would be lost."
+  ;; Loaded rather than waited for: `elec-pair' is stock Emacs and
+  ;; costs nothing to have, and the variable has to EXIST before
+  ;; anything is put in it.  The load and the write that depends on
+  ;; it sit together, so no caller has to remember the order.
+  (require 'elec-pair nil t)
+  (when (boundp 'electric-pair-pairs)
+    (donkey--pair-withdraw-electric-pair)
+    (when (bound-and-true-p donkey-pair-mode)
+      (let* ((asked (delq nil
+                          (mapcar (lambda (char)
+                                    (let ((close (donkey--pair-close-for char)))
+                                      (and (characterp close) (cons char close))))
+                                  (donkey--pair-characters))))
+             (had (default-value 'electric-pair-pairs))
+             (added (seq-remove (lambda (row) (member row had)) asked)))
+        (setq donkey--pair-supplied added)
+        (set-default 'electric-pair-pairs (append added had))))))
+
+(defun donkey--pair-withdraw-electric-pair ()
+  "Take back the rows DONKEY put into `electric-pair-pairs'.
+
+Only those: `donkey--pair-supplied' is what was added rather than what
+is there, so a pair the reader keeps in that variable survives the
+mode being turned off."
+  (when (and (boundp 'electric-pair-pairs) donkey--pair-supplied)
+    (set-default 'electric-pair-pairs
+                 (seq-remove (lambda (row) (member row donkey--pair-supplied))
+                             (default-value 'electric-pair-pairs)))
+    (setq donkey--pair-supplied nil)))
+
+(defun donkey-pair-refresh ()
+  "Hand the delimiters to `electric-pair-mode' again.
+
+`donkey-pair-delimiters' and `donkey-mark-pair-delimiters' are read at
+every press by DONKEY\\='s own pairing, so nothing has to be refreshed
+for it.  Emacs\\='s pairing is told the set instead of asking for it, so
+a plain `setq' or `add-to-list' on either variable does not reach it
+until this runs.  \[customize-variable] and `setopt' need no help."
+  (interactive)
+  (donkey--pair-supply-electric-pair)
+  (message "DONKEY: %d delimiter%s handed to electric-pair-mode"
+           (length donkey--pair-supplied)
+           (if (= (length donkey--pair-supplied) 1) "" "s")))
+
+(defun donkey--pair-empty-pair-here-p ()
+  "Return non-nil when point sits between the two halves of an empty pair.
+
+The pair has to be one `donkey-pair-delimiters' asks for, in a buffer
+`donkey--pair-off-here-p' leaves to DONKEY, so \\`DEL' goes back to
+the major mode everywhere else."
+  (let ((before (char-before))
+        (after (char-after)))
+    (and before
+         after
+         ;; Asked before the table is, so that a delimiter the reader
+         ;; never asked for cannot reach `donkey--pair-close-for'.
+         (memq before (donkey--pair-characters))
+         (eq after (donkey--pair-close-for before))
+         (not (donkey--pair-off-here-p))
+         (not (donkey--pair-exception-p before)))))
+
+(defun donkey--pair-delete-filter (command)
+  "Return COMMAND where \\`DEL' should take a whole empty pair, else nil.
+
+The `:filter' of the \\`DEL' entry in `donkey-pair-mode-map'.  Nil
+hands the key back, so the major mode\\='s own \\`DEL' runs untouched
+everywhere the pair is not there -- and under a count, a count meaning
+delete that many characters.
+
+Returning nil is what makes this binding invisible: \\[describe-bindings]
+and which-key run the filter in a buffer where no pair stands, and are
+shown the major mode\\='s command."
+  (and (null current-prefix-arg)
+       (null prefix-arg)
+       (donkey--pair-empty-pair-here-p)
+       command))
+
+(defun donkey-pair-delete-pair ()
+  "Delete the empty pair point sits between, both halves in one press.
+
+Reached from \\`DEL' under `donkey-pair-mode', and only where point is
+between the two halves of an empty pair DONKEY would have written; see
+`donkey--pair-delete-filter'.  Neither half goes to the kill ring,
+single characters being typo fixes rather than cuts."
+  (interactive)
+  (delete-char 1)
+  (delete-char -1))
+
+(defvar donkey-pair-mode-map
+  (let ((map (make-sparse-keymap)))
+    (keymap-set map "DEL"
+                '(menu-item "" donkey-pair-delete-pair
+                            :filter donkey--pair-delete-filter))
+    map)
+  "Keymap for `donkey-pair-mode'.
+
+One key: \\`DEL', bound through a filter that answers only between the
+halves of an empty pair.  Everywhere else the key is the major
+mode\\='s, which is why this is a filter and not a plain binding --
+\\`DEL' is `org-delete-backward-char' in Org and
+`backward-delete-char-untabify' in Lisp, and neither is DONKEY\\='s to
+take.")
+
+;;;###autoload
+(define-minor-mode donkey-pair-mode
+  "Toggle closing a delimiter as you type it (DONKEY Pair mode).
+
+Type an opening delimiter and the closing half is written after point,
+with point left between the two: \\=`{\\=' gives you a brace pair with
+the cursor inside it.  Type a closing half where that character
+already stands and point steps over it rather than doubling it.
+\\`DEL' between the two halves of an empty pair takes both.
+
+Which delimiters do this is `donkey-pair-delimiters', read from the
+same table as `donkey-wrap-region' and `donkey-mark-inner', so a pair
+added to `donkey-mark-pair-delimiters' can be typed as well as
+selected and wrapped.
+
+WHO does it depends on what else is on, and Emacs comes first:
+
+- `electric-pair-mode' on -- Emacs goes on doing the pairing, exactly
+  as it did, and DONKEY hands it the delimiters instead of pairing
+  anything itself.  A pair Emacs would not have known, `(?# . ?#)'
+  say, is one it pairs now.  See `donkey-pair-refresh'.
+- `smartparens-mode' on -- DONKEY stays out of the way altogether,
+  which is `donkey-pair-stand-down'.
+- neither on -- DONKEY does the pairing itself.
+
+Off by default, because Insert state is otherwise Emacs\\='s: \\`C-g'
+is the only key DONKEY holds there, and nobody\\='s typing changes
+until they ask.  `donkey-pair-excluded-modes' turns it off by major
+mode.
+
+Independent of `donkey-mode': this is about typing, and typing is
+Insert state\\='s business.  Normal state suppresses
+`self-insert-command' outright, so no delimiter pairs there however
+this is set -- there, a delimiter key wraps the selection instead."
+  :global t
+  :group 'donkey
+  :lighter nil
+  :keymap donkey-pair-mode-map
+  (if donkey-pair-mode
+      (progn
+        ;; Depth 10 puts DONKEY ahead of `electric-pair-mode' at 50.
+        ;; The order is what makes the stand-down true: a package
+        ;; writing its own closing half binds its mode variable to nil
+        ;; around the insertion, so a later reader is told nothing is
+        ;; pairing here.
+        (add-hook 'post-self-insert-hook #'donkey--pair-post-self-insert 10)
+        (add-hook 'pre-command-hook #'donkey--pair-reset)
+        (donkey--pair-supply-electric-pair))
+    (remove-hook 'post-self-insert-hook #'donkey--pair-post-self-insert)
+    (remove-hook 'pre-command-hook #'donkey--pair-reset)
+    (donkey--pair-withdraw-electric-pair)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mark and Text Object Selection Commands
