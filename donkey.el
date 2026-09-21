@@ -3618,7 +3618,14 @@ than from a key."
                      (on-closer (car on-closer))
                      (t (donkey--mark-pair-open-for
                          (donkey--mark-pair-read-delimiter-char)))))
-         (close-char (or (cdr (assq open-char table))
+         ;; Read again rather than from TABLE: the prompt above can
+         ;; wait an arbitrary time, and `donkey--mark-pair-open-for'
+         ;; answers it from the table as it is THEN.  Taking the
+         ;; closing half from a snapshot made before the wait let the
+         ;; two disagree, and a pair added while the prompt stood was
+         ;; accepted as an opener and then refused as unsupported
+         ;; (rule 19).
+         (close-char (or (cdr (assq open-char (donkey--pair-table)))
                          (donkey--mark-pair-unsupported-error open-char))))
     (list open-char close-char on-opener (and (or on-opener on-closer) t))))
 

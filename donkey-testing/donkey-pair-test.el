@@ -697,6 +697,34 @@ fails."
       (should-not (donkey--pair-open-for ?\)))
       (should-not (donkey--pair-exception-p ?\()))))
 
+(ert-deftest donkey-the-delimiter-prompt-reads-the-table-after-the-wait ()
+  "A pair added while `m i' is waiting is one `m i' can use.
+
+`donkey--mark-pair-read-delimiter' resolves the opening half through
+`donkey--mark-pair-open-for', which reads the table when the key is
+answered.  The closing half has to be read then too: a snapshot taken
+before the prompt let the two disagree, so a pair added during the
+wait was accepted as an opener and refused as unsupported in the same
+breath (rule 19).
+
+The prompt is stubbed with the change it is racing, because the race
+is the thing under test and a batch run that reaches `read-char'
+hangs rather than fails."
+  (let ((table (default-value 'donkey-mark-pair-delimiters)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'donkey--mark-pair-read-delimiter-char)
+                   (lambda (&rest _)
+                     (setq donkey-mark-pair-delimiters
+                           (cons '(?@ . ?%) donkey-mark-pair-delimiters))
+                     ?@)))
+          (with-temp-buffer
+            (text-mode)
+            (insert "alpha")
+            (goto-char 2)
+            (should (equal (donkey--mark-pair-read-delimiter)
+                           (list ?@ ?% nil nil)))))
+      (set-default 'donkey-mark-pair-delimiters table))))
+
 (ert-deftest donkey-the-delimiter-prompt-refuses-a-mistyped-table ()
   "`m i' answers a mistyped pair table with its own refusal.
 
