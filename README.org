@@ -234,9 +234,9 @@ you can read.
 =M-x donkey-tutor= opens a buffer you learn in by editing it, the way
 =M-x help-with-tutorial= and vimtutor do.
 
-Fourteen lessons, ending with the three that go beyond a single
-cursor — wrapping a selection, the characters the keyboard does not
-have, and editing every match at once:
+Fifteen lessons, ending with the four that go beyond a single cursor
+— wrapping a selection, the characters the keyboard does not have, and
+editing every match at once and choosing what it holds:
 
 1. Moving around (including =S= for undoing a mis-keyed jump)
 2. Counts
@@ -252,6 +252,7 @@ have, and editing every match at once:
 12. Wrapping a selection
 13. Characters your keyboard does not have (digraphs)
 14. Editing every match at once (Split mode)
+15. Choosing what a split holds (selections, banks, regexps)
 
 The keys it names are *your* keys: the lessons are written with
 =substitute-command-keys= escapes, so anyone who has rebound something
@@ -774,12 +775,13 @@ buffer is a selection like any other, so you reach it by choosing it.
 
 Banked lines are how the split reaches lines that are not next to each
 other. Each run of banked lines is searched up to the end of its last
-line and no further, so =^= and =$= stay on the lines you banked. A =v= selection made after banking is searched with the
-bank, exactly as selected; the line the cursor happens to be on is not
-added. Opening the split spends the bank, as =y= and =d= do, so =C-g=
-on the split ends it without bringing the bank back; if nothing
-matches, the bank stays. A live =m v= block is searched instead of the
-bank and leaves it alone.
+line and no further, so =^= and =$= stay on the lines you banked. A =v=
+selection made after banking is searched with the bank, exactly as
+selected; the line the cursor happens to be on is not added. Opening
+the split spends the bank, as =y= and =d= do, so =C-g= on the split
+ends it without bringing the bank back; if nothing matches, the bank
+stays. A live =m v= block is searched instead of the bank and leaves it
+alone.
 
 Two things follow from searching inside a block. A match to the right
 of the block is not found — widen with =C-u= if you want the rows
@@ -798,6 +800,19 @@ Case is ignored the way =r r= (=replace-regexp=) ignores it: a regexp
 with no capital letter matches any case, so =todo= finds =TODO=, =Todo=
 and =todo=, and one with a capital is exact. =case-fold-search= and
 =search-upper-case= decide it, as they do for every search in Emacs.
+
+** The regexp
+
+It is Emacs's own regexp, the one =r r=, =r q=, =C-M-s= and
+=M-x occur= read, and five spellings differ from what other tools use:
+
+- =\s-= is whitespace; =\s+= here matches nothing at all.
+- =\S-= is anything but whitespace; =\S+= here matches every character.
+- =[0-9]= is a digit; =\d= here is the letter =d=.
+- =\(a\|b\)= is =a= or =b=; plain parentheses match themselves.
+- =x\{3\}= is =xxx=; plain braces match themselves.
+
+=M-x re-builder= highlights what a regexp matches as you type it.
 
 ** Two examples
 

@@ -8927,46 +8927,146 @@ for you to say what to do with all of them at once:
 While you type, what you write appears at every match together.
 Backspace and retype as you like: it is ordinary INSERT state, and
 \\`C-g' ends it KEEPING what you typed, exactly as it does everywhere
-else.
+else.  A Backspace just before the matches, or a \\`C-d' just after
+them, is made at every one of them too.
 
->> Put the cursor on the first ---> line, press \\`v' \\`j' \\`j' \\[move-end-of-line],
-   then \\[donkey-split] and \\`=' RET.  Press \\`c' and type \\`:=' -- all three
-   change together.  Press \\`C-g' when you are done.
+>> Put the cursor on the first price line below and press \\`v' \\`j' \\`j'
+   \\[move-end-of-line] to select all three.  Press \\[donkey-split], type price and
+   RET.  Press \\`i' and type unit_ -- every price becomes unit_price as
+   you type.  Press \\`C-g' when you are done.
 
-   ---> alpha = 1
-   ---> beta = 22
-   ---> gamma = 333
+   ---> total = price + tax
+   ---> total = price - discount
+   ---> total = price * rate
+
+>> Select the same three lines, press \\[donkey-split], type total and RET,
+   then \\`a' and type _cost.  \\`C-g'.
+
+>> Once more: \\[donkey-split], = and RET, then \\`c' and type :=.  Every =
+   changes at once.  \\`C-g'.
+
+What \\`c' and \\`d' remove reaches the kill ring as ONE kill: a single
+copy when the matches agree, so \\[donkey-yank] pastes what was there rather
+than a column of copies, and every match on a line of its own when they
+differ.
+
+>> Select the three DRAFT lines, press \\[donkey-split], type DRAFT: and SPC
+   and RET, then \\`d'.  The label leaves all three lines at once.
+
+   ---> DRAFT: open the window
+   ---> DRAFT: close the door
+   ---> DRAFT: feed the cat
+
+A wrap is the one verb that leaves the split standing: the matches keep
+their highlight and the reminder still offers every verb.  So a second
+pair goes inside the first, the same pair again takes it off, and any
+other verb can follow.
+
+>> Select the three apple lines, press \\[donkey-split], type apple and RET,
+   then press \\`(' -- every apple is (apple), and the split is still
+   there.  Press \\`[' for ([apple]), and \\`[' again to take the brackets
+   off.  Now press \\`a' and type s: (apples).  \\`C-g'.
+
+   ---> apple pie
+   ---> apple juice
+   ---> apple tree
+
+\\`w' does the same with a pair it asks you to name: \\`w' then \\`\"'
+wraps every match in quotes.
 
 A match can be empty, which is how you reach the end of every line:
 \\`$' holds a place at each line end whatever the line holds, and \\`^'
 holds one at each start.
 
->> Select the three ---> lines again and press \\[donkey-split] \\`$' RET, then
+>> Select the three lines below, press \\[donkey-split], type $ and RET, then
    \\`a' and \\`;'.  Every line gains a semicolon, ragged right edge and
    all.
 
-A wrap leaves the split standing, so pairs nest and a verb can still
-follow; the other verbs end it.  What \\`c' and \\`d' remove reaches the
-kill ring as ONE kill: a single copy when the matches agree, so
-\\[donkey-yank] pastes what was there rather than a column of copies, and
-every match on a line of its own when they differ.
+   ---> int a = 1
+   ---> long bb = 22
+   ---> char ccc = 333
 
-What is searched is what you selected, and no more.  With nothing
-selected it is the current LINE -- there is no whole-buffer default,
-because \\[donkey-mark-whole-buffer] makes the buffer a selection like any other and
-that way you reach it by choosing it.  Under \\[donkey-rectangle-mark-mode] the search stays
-INSIDE the block; a count widens it to each row's whole line instead.
-Lines banked with \\[donkey-bank-selection] are searched too, and opening the split
-spends them.
+Lesson 15 -- choosing what a split holds
+----------------------------------------
 
-The matches do not have to agree.  [0-9]+ holds 1, 22 and 333, and
-\\`a' then types after each of them without touching the numbers.  Case
-is ignored when the regexp holds no capital letter, as \\[replace-regexp]
-ignores it: todo finds TODO, Todo and todo alike.
+What a split searches is what you selected, and no more.  With nothing
+selected it is the line the cursor is on -- there is no whole-buffer
+default, because \\[donkey-mark-whole-buffer] makes the buffer a selection like any other
+and that way you reach it by choosing it.
 
-What it will not do is edit INSIDE matches that differ -- moving into
-one ends the split -- and it refuses matches that touch, such as a
-over aaa, since text typed where two meet would belong to both.
+>> Put the cursor on the first date below, press \\[donkey-split], type / and
+   RET, then \\`c' and \\`-'.  Only that line's slashes change.  \\`C-g'.
+
+   ---> 2026/09/24
+   ---> 2026/09/25
+
+Under \\[donkey-rectangle-mark-mode] the search stays INSIDE the block; a count before
+\\[donkey-split] widens it to each row's whole line.
+
+Banked lines, from Lesson 8, reach lines that are not next to each
+other.  Every banked line is searched, and opening the split spends the
+bank, as \\[donkey-copy] and DONKEY-DELETE-KEYS do.
+
+>> Bank the two keep lines below with \\[donkey-bank-selection] on each, leaving the
+   skip lines alone.  Press \\[donkey-split], type : and RET, then \\`c' and
+   type SPC and =.  Only the banked lines change, and the bank is gone.
+   \\`C-g'.
+
+   ---> keep: red
+   ---> skip: green
+   ---> keep: blue
+   ---> skip: yellow
+
+A \\`v' selection made after banking is searched along with the bank,
+exactly as it is selected -- the part you chose, not its whole line.
+
+>> Bank the first pear line.  On the third, put the cursor on the
+   second pear and press \\`v' \\[move-end-of-line].  Now press \\[donkey-split], type pear
+   and RET, then \\`c' and type fig: both pears on the banked line
+   change, and on the third only the one you selected.  \\`C-g'.
+
+   ---> pear, apple, pear
+   ---> pear, apple, pear
+   ---> pear, apple, pear
+
+The regexp is Emacs's own, the one \\[replace-regexp] and \\`C-M-s' read.  Case is
+ignored while it holds no capital letter, and a capital makes it exact.
+
+>> Select the three lines below, press \\[donkey-split], type todo and RET,
+   then \\`i' and type [x] and SPC.  All three are marked, whatever their
+   case.  \\`C-g', \\`u' to take the marks back, and try Todo instead:
+   only the line written that way is held.
+
+   ---> TODO fix the door
+   ---> Todo paint the fence
+   ---> todo wash the car
+
+The matches do not have to agree.
+
+>> Select the three item lines, press \\[donkey-split], type [0-9]+ and RET,
+   and press \\`(': every number is wrapped, whatever its length.  Then
+   \\`a' and type SPC and pcs, for (7 pcs), (42 pcs) and (365 pcs).
+   \\`C-g'.
+
+   ---> item 7
+   ---> item 42
+   ---> item 365
+
+Where the matches differ, what you type goes at their edges: moving
+into one ends the split, since there is no one text to edit in all of
+them.  And matches that touch are refused -- a over aaa -- since text
+typed where two meet would belong to both.
+
+If you know regular expressions from elsewhere, five spellings differ
+in Emacs:
+
+  \\=\\s-         whitespace        (\\=\\s+ matches nothing at all)
+  \\=\\S-         anything else     (\\=\\S+ matches every character)
+  [0-9]       a digit           (\\=\\d is the letter d)
+  \\=\\(a\\=\\|b\\=\\)    a or b            (plain parentheses match themselves)
+  x\\=\\{3\\=\\}      three x           (plain braces match themselves)
+
+\\[re-builder] shows what a regexp matches as you type it.
 
 Your Emacs still works
 ----------------------

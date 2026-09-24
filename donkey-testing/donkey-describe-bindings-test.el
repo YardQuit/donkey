@@ -1612,6 +1612,152 @@ came out as."
             (should (equal bare nil)))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
+(defvar donkey-tutor-test--regexp nil
+  "What the stubbed `read-regexp' answers in a Split exercise.")
+
+(defun donkey-tutor-test--split (regexp keys)
+  "Press KEYS, answering REGEXP when `donkey-split' asks for one.
+The regexp is typed into the minibuffer in the lesson; batch has none."
+  (let ((donkey-tutor-test--regexp regexp))
+    (cl-letf (((symbol-function 'read-regexp)
+               (lambda (&rest _) donkey-tutor-test--regexp)))
+      (donkey-tutor-test--keys keys))))
+
+(defun donkey-tutor-test--lines (needle count)
+  "Return COUNT lines from the one holding NEEDLE, each without its indent."
+  (donkey-tutor-test--goline needle)
+  (let (lines)
+    (dotimes (_ count)
+      (push (string-trim (donkey-tutor-test--line)) lines)
+      (forward-line 1))
+    (nreverse lines)))
+
+(ert-deftest donkey-tutor-lesson-14-types-at-every-match ()
+  "The price, total and = exercises change all three lines, as the lesson says."
+  (dolist (case '(("price" "i u n i t _ C-g"
+                   ("---> total = unit_price + tax"
+                    "---> total = unit_price - discount"
+                    "---> total = unit_price * rate"))
+                  ("total" "a _ c o s t C-g"
+                   ("---> total_cost = price + tax"
+                    "---> total_cost = price - discount"
+                    "---> total_cost = price * rate"))
+                  ("=" "c : = C-g"
+                   ("---> total := price + tax"
+                    "---> total := price - discount"
+                    "---> total := price * rate"))))
+    (donkey-tutor-test--live
+     (donkey-tutor-test--goline "---> total = price + tax")
+     (donkey-tutor-test--split (car case) (concat "v j j g l f " (cadr case)))
+     (should (equal (donkey-tutor-test--lines "---> total" 3) (nth 2 case))))))
+
+(ert-deftest donkey-tutor-lesson-14-deletes-every-label ()
+  "The DRAFT exercise takes the label off all three lines, and the kill ring holds one copy."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> DRAFT: open the window")
+   (donkey-tutor-test--split "DRAFT: " "v j j g l f d")
+   (should (equal (donkey-tutor-test--lines "---> open the window" 3)
+                  '("---> open the window" "---> close the door"
+                    "---> feed the cat")))
+   (should (equal kill-ring '("DRAFT: ")))))
+
+(ert-deftest donkey-tutor-lesson-14-a-wrap-keeps-the-split ()
+  "The apple exercise: a wrap leaves the split standing, pairs nest and come off."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> apple pie")
+   (donkey-tutor-test--split "apple" "v j j g l f (")
+   (should (equal (donkey-tutor-test--lines "---> (apple) pie" 1)
+                  '("---> (apple) pie")))
+   (should (eq donkey--split-phase 'select))
+   (donkey-tutor-test--keys "[")
+   (should (equal (donkey-tutor-test--lines "---> ([apple]) pie" 1)
+                  '("---> ([apple]) pie")))
+   (donkey-tutor-test--keys "[")
+   (donkey-tutor-test--keys "a s C-g")
+   (should (equal (donkey-tutor-test--lines "---> (apples) pie" 3)
+                  '("---> (apples) pie" "---> (apples) juice"
+                    "---> (apples) tree"))))
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> apple pie")
+   (donkey-tutor-test--split "apple" "v j j g l f w \"")
+   (should (equal (donkey-tutor-test--lines "---> \"apple\" pie" 1)
+                  '("---> \"apple\" pie")))))
+
+(ert-deftest donkey-tutor-lesson-14-ends-every-line ()
+  "The $ exercise puts a semicolon at every line end, ragged edge and all."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> int a = 1")
+   (donkey-tutor-test--split "$" "v j j g l f a ; C-g")
+   (should (equal (donkey-tutor-test--lines "---> int a = 1" 3)
+                  '("---> int a = 1;" "---> long bb = 22;"
+                    "---> char ccc = 333;")))))
+
+(ert-deftest donkey-tutor-lesson-15-searches-this-line-alone ()
+  "With nothing selected, the date exercise changes only the cursor's line."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> 2026/09/24")
+   (donkey-tutor-test--split "/" "f c - C-g")
+   (should (equal (donkey-tutor-test--lines "---> 2026-09-24" 2)
+                  '("---> 2026-09-24" "---> 2026/09/25")))))
+
+(ert-deftest donkey-tutor-lesson-15-searches-the-banked-lines ()
+  "The keep exercise changes the banked lines alone, and spends the bank."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> keep: red")
+   (donkey-tutor-test--split ":" "m l j j m l f c SPC = C-g")
+   (should (equal (donkey-tutor-test--lines "---> keep = red" 4)
+                  '("---> keep = red" "---> skip: green" "---> keep = blue"
+                    "---> skip: yellow")))
+   (should (null (donkey--banked-spans)))))
+
+(ert-deftest donkey-tutor-lesson-15-searches-a-bank-and-part-of-a-line ()
+  "The pear exercise: the whole banked line, and only the selected part of the third."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> pear, apple, pear")
+   (donkey-tutor-test--keys "m l")
+   (donkey-tutor-test--goline "---> pear, apple, pear" 3)
+   (search-forward "pear")
+   (search-forward "pear")
+   (goto-char (match-beginning 0))
+   (donkey-tutor-test--split "pear" "v g l f c f i g C-g")
+   (should (equal (donkey-tutor-test--lines "---> fig, apple, fig" 3)
+                  '("---> fig, apple, fig" "---> pear, apple, pear"
+                    "---> pear, apple, fig")))))
+
+(ert-deftest donkey-tutor-lesson-15-ignores-case-without-a-capital ()
+  "The todo exercise marks all three lines; Todo holds only its own."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> TODO fix the door")
+   (donkey-tutor-test--split "todo" "v j j g l f i [ x ] SPC C-g")
+   (should (equal (donkey-tutor-test--lines "---> [x] TODO fix the door" 3)
+                  '("---> [x] TODO fix the door" "---> [x] Todo paint the fence"
+                    "---> [x] todo wash the car")))
+   (donkey-tutor-test--keys "u")
+   (donkey-tutor-test--goline "---> TODO fix the door")
+   (donkey-tutor-test--split "Todo" "v j j g l f")
+   (should (= (length donkey--split-places) 1))))
+
+(ert-deftest donkey-tutor-lesson-15-wraps-numbers-of-every-length ()
+  "The item exercise wraps each number, whatever its length, then types after each."
+  (donkey-tutor-test--live
+   (donkey-tutor-test--goline "---> item 7")
+   (donkey-tutor-test--split "[0-9]+" "v j j g l f ( a SPC p c s C-g")
+   (should (equal (donkey-tutor-test--lines "---> item (7 pcs)" 3)
+                  '("---> item (7 pcs)" "---> item (42 pcs)"
+                    "---> item (365 pcs)")))))
+
+(ert-deftest donkey-tutor-lesson-15-shows-the-emacs-spellings ()
+  "The five regexp spellings render with one backslash each, as typed."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (dolist (spelling '("  \\s-" "  \\S-" "(\\d is" "  \\(a\\|b\\)"
+                              "  x\\{3\\}"))
+            (goto-char (point-min))
+            (should (search-forward spelling nil t)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
 (ert-deftest donkey-tutor-lesson-12-wraps-and-unwraps-for-real ()
   "The wrap lesson's first exercise does what the lesson says.
 
