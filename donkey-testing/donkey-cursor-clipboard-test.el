@@ -1150,7 +1150,7 @@ across all three kinds, and with shapes that tell them apart."
             (should (eq (donkey--insert-cursor-setting) shape))))))))
 
 (ert-deftest donkey-the-shipped-cursor-shapes-are-the-four-intended ()
-  "Normal and a support mode share a shape; Insert and an excluded one share theirs.
+  "Normal and support modes share one shape, Insert and excluded modes another.
 
 A support mode takes Normal state's box because the keys there are
 Normal state's: `h', `j', `k' and `l' move and nothing typed

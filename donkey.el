@@ -6011,7 +6011,7 @@ nothing."
     (list (cons (line-beginning-position) (line-end-position))))))
 
 (defun donkey--split-place-text (place)
-  "Return the text PLACE holds."
+  "Return the text in PLACE."
   (buffer-substring-no-properties (overlay-start place) (overlay-end place)))
 
 (defun donkey--split-make (regexp)
@@ -6233,7 +6233,7 @@ at each place\\='s beginning and `end' to put it at the end."
   (donkey--repaint-hint (donkey--split-hint)))
 
 (defun donkey-split-insert ()
-  "Type before every place the split holds, keeping what is there.
+  "Type before every place in the split, keeping what is there.
 
 The split\\='s `donkey-insert-here': point lands at each place\\='s start
 and what is typed appears at all of them.  \\[donkey-split-append] types
@@ -6245,7 +6245,7 @@ Bound to \\`i' inside `donkey-split-mode-map'."
   (donkey--split-enter-edit nil 'start))
 
 (defun donkey-split-append ()
-  "Type after every place the split holds, keeping what is there.
+  "Type after every place in the split, keeping what is there.
 
 The split\\='s `donkey-insert-after': point lands at each place\\='s end.
 \\[donkey-split-insert] types before instead.
@@ -6255,7 +6255,7 @@ Bound to \\`a' inside `donkey-split-mode-map'."
   (donkey--split-enter-edit nil 'end))
 
 (defun donkey-split-change ()
-  "Empty every place the split holds, then type at all of them.
+  "Empty every place in the split, then type at all of them.
 
 The split\\='s `donkey-change'.  What the places held goes on the
 `kill-ring' as one copy, so \\[donkey-yank] brings it back.
@@ -6265,7 +6265,7 @@ Bound to \\`c' inside `donkey-split-mode-map'."
   (donkey--split-enter-edit t 'start))
 
 (defun donkey-split-delete ()
-  "Delete every place the split holds and end the split.
+  "Delete every place in the split and end the split.
 
 The split\\='s `donkey-delete'.  What the places held goes on the
 `kill-ring' as one copy.
@@ -6302,7 +6302,7 @@ Read from `donkey-mark-pair-delimiters', the one table
    donkey--split-places))
 
 (defun donkey-split-wrap (char)
-  "Wrap every place the split holds in the pair CHAR names, or take it off.
+  "Wrap every place in the split in the pair CHAR names, or take it off.
 
 Reads `donkey-mark-pair-delimiters' the way `donkey-wrap-region' does, so
 either half of a pair names it and nothing is escaped.  Where the pair
@@ -6347,7 +6347,7 @@ its own key, as `donkey-wrap-region' is reached in Normal state."
     (donkey--repaint-hint (donkey--split-hint))))
 
 (defun donkey-split-wrap-key ()
-  "Wrap every place the split holds in the delimiter just pressed.
+  "Wrap every place in the split in the delimiter just pressed.
 
 Bound to each half of every pair in `donkey-mark-pair-delimiters' inside
 `donkey-split-mode-map'; see `donkey-split-wrap'."

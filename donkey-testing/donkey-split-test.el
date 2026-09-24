@@ -20,7 +20,7 @@ split can be driven by real keys without a minibuffer."
   "What the stubbed `read-regexp' answers for the test being run.")
 
 (defmacro donkey-split-test--on (regexp &rest body)
-  "Answer `read-regexp' with REGEXP while BODY runs."
+  "Answer `read-regexp' with REGEXP inside BODY."
   (declare (indent 1))
   `(let ((donkey-split-test--regexp ,regexp))
      (cl-letf (((symbol-function 'read-regexp)
