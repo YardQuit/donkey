@@ -765,9 +765,19 @@ so =p= pastes what was there rather than a column of copies.
 | =v=, =V=, =%=    | the selection                         |
 | =m v=            | inside the block                      |
 | =C-u= then =f=   | with =m v=, each row's whole line     |
+| banked (=m l=)   | the banked lines, plus a live =v=     |
 
 There is no whole-buffer default on purpose: press =%= first and the
 buffer is a selection like any other, so you reach it by choosing it.
+
+Banked lines are how the split reaches lines that are not next to each
+other. Each run of banked lines is searched up to the end of its last
+line and no further, so =^= and =$= stay on the lines you banked. A =v= selection made after banking is searched with the
+bank, exactly as selected; the line the cursor happens to be on is not
+added. Opening the split spends the bank, as =y= and =d= do, so =C-g=
+on the split ends it without bringing the bank back; if nothing
+matches, the bank stays. A live =m v= block is searched instead of the
+bank and leaves it alone.
 
 Two things follow from searching inside a block. A match to the right
 of the block is not found — widen with =C-u= if you want the rows

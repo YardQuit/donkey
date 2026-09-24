@@ -5967,6 +5967,12 @@ verb pressed anywhere else would act on nothing.")
 (defvar donkey--split-wide nil
   "Bound non-nil while a split should search each row\\='s whole line.")
 
+(defvar donkey--split-banked nil
+  "The banked spans a split is searching, bound while it is made.
+
+Set by `donkey--split-bounds' and spent by `donkey-split' once the split
+opens, as \\`y' and \\`d' spend what they act on.")
+
 (defconst donkey--split-inert-commands
   '(undefined ignore donkey--quit-the-sequence
     handle-switch-frame handle-focus-in handle-focus-out
@@ -5989,6 +5995,12 @@ Any other selection is one range.  With no selection the range is the
 current line: reaching the whole buffer is `donkey-mark-whole-buffer'
 first, so that it is chosen rather than fallen into.
 
+Each run of banked lines is one range, stopping short of its last line
+break, so `^' cannot match the line after a bank.  A live region is
+searched with them exactly as it is selected, and ranges that overlap
+are merged so no match is held twice.  A live rectangle wins over a
+bank, as it does for \\`y' and \\`d'.
+
 The narrow reading costs the anchors: `$' and `^' match a real line end
 and line start, so on a row whose block stops mid-line they match
 nothing."
@@ -6003,6 +6015,24 @@ nothing."
                       (cons (line-beginning-position) (line-end-position))))
                   rows)
         rows)))
+   ((donkey--banked-selection-p)
+    (let* ((banked (donkey--banked-spans))
+           (lines (donkey--span-line-count banked)))
+      (setq donkey--split-banked banked
+            donkey--split-scope
+            (format "%d banked line%s%s" lines (if (= lines 1) "" "s")
+                    (if (use-region-p) " and the selection" "")))
+      (donkey--merge-spans
+       (sort (append
+              (mapcar (lambda (span)
+                        (cons (car span)
+                              (if (eq (char-before (cdr span)) ?\n)
+                                  (1- (cdr span))
+                                (cdr span))))
+                      banked)
+              (and (use-region-p)
+                   (list (cons (region-beginning) (region-end)))))
+             (lambda (a b) (< (car a) (car b)))))))
    ((use-region-p)
     (setq donkey--split-scope "the selection")
     (list (cons (region-beginning) (region-end))))
@@ -6421,15 +6451,21 @@ other selection is searched entire.  With no selection the current line
 is searched: \\[donkey-mark-whole-buffer] first is how the whole buffer
 is reached, so that it is chosen rather than fallen into.
 
+Banked lines are searched too, along with any live region exactly as
+it is selected, and opening the split spends the bank, as \\`y' and
+\\`d' do.  A live rectangle is searched instead of the bank.
+
 Refuses where the matches do not all hold the same text, since what is
 typed at one place replaces the others.
 
 Bound to \\`f' in Normal state."
   (interactive (list (read-regexp "Split on regexp: ") current-prefix-arg))
   (let* ((donkey--split-wide wide)
+         (donkey--split-banked nil)
          (n (donkey--split-make regexp)))
     (if (zerop n)
         (message "Nothing matched %s" regexp)
+      (donkey--consume-banked-spans donkey--split-banked)
       (when (bound-and-true-p rectangle-mark-mode)
         (rectangle-mark-mode -1))
       (deactivate-mark)
@@ -8499,6 +8535,8 @@ selected it is the current LINE -- there is no whole-buffer default,
 because \\[donkey-mark-whole-buffer] makes the buffer a selection like any other and
 that way you reach it by choosing it.  Under \\[donkey-rectangle-mark-mode] the search stays
 INSIDE the block; a count widens it to each row's whole line instead.
+Lines banked with \\[donkey-bank-selection] are searched too, and opening the split
+spends them.
 
 One thing it will not do: every match gets the SAME text, so a regexp
 whose matches differ from each other is refused rather than replacing

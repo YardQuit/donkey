@@ -155,6 +155,74 @@ what is typed at one place would replace the rest."
       (should (equal (buffer-string) "ab foo zz!\ncd foo zz!\n")))))
 
 ;;; ---------------------------------------------------------------------------
+;;; Banked lines
+;;; ---------------------------------------------------------------------------
+
+(defconst donkey-split-test--four "a foo\nb foo\nc foo\nd foo\n"
+  "Four lines that each hold one match.")
+
+(ert-deftest donkey-split-searches-the-banked-lines-and-spends-the-bank ()
+  "Banked lines are the scope, and opening the split spends them."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-bank*" donkey-split-test--four
+        "V m l j j V m l f a X"
+      (should (equal (buffer-string) "a fooX\nb foo\nc fooX\nd foo\n"))
+      (should (null (donkey--banked-spans))))))
+
+(ert-deftest donkey-split-a-line-start-stays-on-the-banked-lines ()
+  "`^' holds the start of each banked line, not of the line after it."
+  (donkey-split-test--on "^"
+    (donkey-split-test--keys "*split-bank-bol*" donkey-split-test--four
+        "V m l j j V m l f i >"
+      (should (equal (buffer-string) ">a foo\nb foo\n>c foo\nd foo\n")))))
+
+(ert-deftest donkey-split-a-region-joins-the-bank-exactly-as-selected ()
+  "A live region is searched with the bank, and is not widened to its lines."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-bank-v*" donkey-split-test--four
+        "V m l j j g h v l f"
+      (should (= (length donkey--split-places) 1))
+      (should (= (line-number-at-pos (overlay-start
+                                      (car donkey--split-places)))
+                 1))))
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-bank-v-in*" donkey-split-test--four
+        "V m l j j g h v g l f a X"
+      (should (equal (buffer-string) "a fooX\nb foo\nc fooX\nd foo\n")))))
+
+(ert-deftest donkey-split-holds-a-match-once-where-region-and-bank-overlap ()
+  "A region over a banked line does not hold its match twice."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-bank-overlap*" donkey-split-test--four
+        "V m l g h v g l f"
+      (should (= (length donkey--split-places) 1)))))
+
+(ert-deftest donkey-split-with-a-bank-leaves-the-cursor-line-out ()
+  "The bank is the selection, so the line under point is not added."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-bank-cursor*" donkey-split-test--four
+        "V m l j j f a X"
+      (should (equal (buffer-string) "a fooX\nb foo\nc foo\nd foo\n")))))
+
+(ert-deftest donkey-split-that-does-not-open-keeps-the-bank ()
+  "No match, and matches that differ, leave the bank standing."
+  (donkey-split-test--on "zzz"
+    (donkey-split-test--keys "*split-bank-none*" donkey-split-test--four
+        "V m l f"
+      (should (= (length (donkey--banked-spans)) 1))))
+  (donkey-split-test--keys "*split-bank-differ*" "a foo\nb fox\n" "V j m l"
+    (should-error (donkey-split "fo.") :type 'user-error)
+    (should (= (donkey--banked-line-count) 2))))
+
+(ert-deftest donkey-split-a-live-rectangle-wins-over-the-bank ()
+  "A rectangle is searched instead of the bank, which stays banked."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-bank-rect*" donkey-split-test--four
+        "j j j V m l k k k g h m v j l l l l l f"
+      (should (= (length donkey--split-places) 2))
+      (should (= (length (donkey--banked-spans)) 1)))))
+
+;;; ---------------------------------------------------------------------------
 ;;; The anchors, and the ends of things
 ;;; ---------------------------------------------------------------------------
 
