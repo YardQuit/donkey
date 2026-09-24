@@ -6314,33 +6314,58 @@ just past HERE\\='s edges, at every other place\\='s edges.  Every place is
 changed or none is.  Return nil where the deletions could not be made
 the same way everywhere, or left two places touching; signal where a
 place cannot be written."
-  (let ((new (donkey--split-place-text here))
+  (let ((old donkey--split-text)
+        (new (donkey--split-place-text here))
         (donkey--split-copying t)
         (deactivate-mark nil))
-    (or (and (equal new donkey--split-text) (null edge-edits))
+    (or (and (equal new old) (null edge-edits))
         (progn
           (setq donkey--split-text new)
           (catch 'donkey--split-unlike
             (atomic-change-group
               (save-excursion
-                (donkey--split-copy-text here new)
+                (donkey--split-copy-text here old new)
                 (unless (and (donkey--split-copy-edges here edge-edits)
                              (not (donkey--split-touching-p)))
                   (throw 'donkey--split-unlike nil))))
             t)))))
 
-(defun donkey--split-copy-text (here new)
-  "Make every place but HERE hold NEW, the text HERE has now."
-  (dolist (place donkey--split-places)
-    (when (and (not (eq place here))
-               (overlay-buffer place))
-      (let ((beg (overlay-start place))
-            (end (overlay-end place)))
-        (unless (equal new (buffer-substring-no-properties beg end))
-          (goto-char beg)
-          (delete-region beg end)
-          (insert new)
-          (move-overlay place beg (point)))))))
+(defun donkey--split-copy-text (here old new)
+  "Make every place but HERE hold NEW, what HERE has now in place of OLD.
+
+A place still holding OLD has only the part that changed rewritten, the
+beginning and end OLD and NEW share left standing, so what is recorded
+for undo and told to the change hooks is what was typed; any other
+place is rewritten whole."
+  (let* ((old-length (length old))
+         (new-length (length new))
+         (same (compare-strings old nil nil new nil nil))
+         (prefix (if (eq same t)
+                     (min old-length new-length)
+                   (1- (abs same))))
+         (suffix 0))
+    (while (and (< suffix (- (min old-length new-length) prefix))
+                (eq (aref old (- old-length suffix 1))
+                    (aref new (- new-length suffix 1))))
+      (setq suffix (1+ suffix)))
+    (let ((middle (substring new prefix (- new-length suffix))))
+      (dolist (place donkey--split-places)
+        (when (and (not (eq place here))
+                   (overlay-buffer place))
+          (let* ((beg (overlay-start place))
+                 (end (overlay-end place))
+                 (text (buffer-substring-no-properties beg end)))
+            (cond
+             ((equal text new))
+             ((equal text old)
+              (delete-region (+ beg prefix) (- end suffix))
+              (goto-char (+ beg prefix))
+              (insert middle))
+             (t
+              (goto-char beg)
+              (delete-region beg end)
+              (insert new)
+              (move-overlay place beg (point))))))))))
 
 (defun donkey--split-line-breaks (text)
   "Return the offsets of the line breaks in TEXT, as a list."

@@ -855,6 +855,28 @@ touch the text it goes around, so it is not asked."
       (execute-kbd-macro (kbd "X C-g"))
       (should (equal (buffer-string) "a fooX b\nc fooX d\n")))))
 
+(defvar donkey-split-test--sizes nil
+  "What each change on the second line inserted and removed, newest first.")
+
+(defun donkey-split-test--note-size (beg end length)
+  "Note what a change at BEG to END, replacing LENGTH, did on the second line."
+  (when (and donkey--split-places (= (line-number-at-pos beg) 2))
+    (push (list (- end beg) length) donkey-split-test--sizes)))
+
+(ert-deftest donkey-split-rewrites-only-what-changed ()
+  "A key typed into a split changes one character at every other place.
+
+Not the whole place: what the undo record and the change hooks are
+given is what was typed."
+  (dolist (verb '("a" "i"))
+    (let ((donkey-split-test--sizes nil))
+      (donkey-split-test--on "fo+"
+        (donkey-test-keys--harness "*split-only-changed*" #'text-mode
+            ((after-change-functions (list #'donkey-split-test--note-size)))
+            "a fooooooooo b\nc fooooooooo d\n" (concat "v G f " verb " X")
+          (should (equal (list verb donkey-split-test--sizes)
+                         (list verb '((1 0))))))))))
+
 (ert-deftest donkey-split-belongs-to-the-buffer-it-was-made-in ()
   "A verb pressed in another buffer refuses, and leaves no places behind.
 
