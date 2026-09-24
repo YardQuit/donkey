@@ -181,11 +181,19 @@ what is typed at one place would replace the rest."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-split-a-key-that-does-nothing-does-not-end-the-split ()
-  "A mistyped key costs a bell, not the split, as in a mark run."
-  (donkey-split-test--on "foo"
-    (donkey-split-test--keys "*split-typo*" "a foo b\nc foo d\n" "v G f q"
-      (should (eq donkey--split-phase 'select))
-      (should (= (length donkey--split-places) 2)))))
+  "A mistyped key costs a bell, not the split, as in a mark run.
+
+`ding' is stubbed because `execute-kbd-macro' stops at the bell in a
+live frame, and the verb pressed AFTER the mistype is the whole point."
+  (cl-letf (((symbol-function 'ding) #'ignore))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-typo*" "a foo b\nc foo d\n" "v G f q"
+        (should (eq donkey--split-phase 'select))
+        (should (= (length donkey--split-places) 2))))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-typo-then*" "a foo b\nc foo d\n"
+          "v G f q a X"
+        (should (equal (buffer-string) "a fooX b\nc fooX d\n"))))))
 
 (ert-deftest donkey-split-a-key-of-its-own-ends-it-and-does-its-own-job ()
   "Any other key lapses the map and runs in the same press."
