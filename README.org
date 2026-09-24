@@ -23,6 +23,7 @@
 - [[#pairing-as-you-type][Pairing as you type]] — closing a delimiter for you
 - [[#the-enter-key][The Enter key]]
 - [[#search-and-replace][Search and replace]]
+- [[#split-mode][Editing every match at once: =f=]]
 - [[#typing-characters-your-keyboard-lacks][Typing characters your keyboard lacks]]
 - [[#other-languages][Other languages]]
 - [[#suppressed-keys][Suppressed keys]]
@@ -233,8 +234,9 @@ you can read.
 =M-x donkey-tutor= opens a buffer you learn in by editing it, the way
 =M-x help-with-tutorial= and vimtutor do.
 
-Thirteen lessons, ending with the two the keyboard itself cannot give
-you — wrapping a selection, and the characters that are not on it:
+Fourteen lessons, ending with the three that go beyond a single
+cursor — wrapping a selection, the characters the keyboard does not
+have, and editing every match at once:
 
 1. Moving around (including =S= for undoing a mis-keyed jump)
 2. Counts
@@ -249,6 +251,7 @@ you — wrapping a selection, and the characters that are not on it:
 11. When two selections disagree
 12. Wrapping a selection
 13. Characters your keyboard does not have (digraphs)
+14. Editing every match at once (Split mode)
 
 The keys it names are *your* keys: the lessons are written with
 =substitute-command-keys= escapes, so anyone who has rebound something
@@ -717,13 +720,78 @@ See [[#modes-where-donkey-steps-aside][Modes Where DONKEY Steps Aside]].)
 :CUSTOM_ID: search-and-replace
 :END:
 
-| Key   | Runs            |
-|-------+-----------------|
+| Key   | Runs             |
+|-------+------------------|
 | =r r= | =replace-regexp= |
 | =r q= | =query-replace=  |
 
 isearch is untouched: =C-s= and =C-r= work in both states, as does
 everything else Emacs binds to a control or meta key.
+
+* Editing every match at once: =f=
+:PROPERTIES:
+:CUSTOM_ID: split-mode
+:END:
+
+=f= (=donkey-split=) asks for a regexp and holds every match in the
+selection. It changes nothing by itself — it selects, and then waits
+for you to say what to do:
+
+| Key             | What it does                              |
+|-----------------+-------------------------------------------|
+| =i=             | type before every match                   |
+| =a=             | type after every match                    |
+| =c=             | empty every match, then type              |
+| =d=             | delete every match                        |
+| =w=, or a pair  | wrap every match, or take the pair off    |
+| =C-g=           | end it                                    |
+
+While you type, what you write appears at every match at once.
+Backspace, retype, keep going: it is ordinary INSERT state, and =C-g=
+ends it keeping what you typed, exactly as =C-g= does anywhere else.
+
+A wrap leaves the split standing, so pairs nest and a verb can still
+follow — =f= =(= =[= =a= wraps twice and then types after. The other
+verbs end it.
+
+What =c= and =d= remove reaches the kill ring once, not once per match,
+so =p= pastes what was there rather than a column of copies.
+
+** What gets searched
+
+| Selection        | Searched                              |
+|------------------+---------------------------------------|
+| none             | the current line                      |
+| =v=, =V=, =%=    | the selection                         |
+| =m v=            | inside the block                      |
+| =C-u= then =f=   | with =m v=, each row's whole line     |
+
+There is no whole-buffer default on purpose: press =%= first and the
+buffer is a selection like any other, so you reach it by choosing it.
+
+Two things follow from searching inside a block. A match to the right
+of the block is not found — widen with =C-u= if you want the rows
+rather than the columns. And =$= and =^= match a real line end and line
+start, so in a block that stops mid-line they match nothing; with =v=
+or with no selection they work as you would expect.
+
+** Two examples
+
+Align three assignments, then end each line:
+
+: v j j g l   f  =  RET   c  :=
+: v j j g l   f  $  RET   a  ;
+
+Comment out a region, by holding the start of every line:
+
+: v j j j   f  ^  RET   i  # SPC
+
+** What it will not do
+
+Every match gets the same text. A regexp whose matches differ — =^[a-z]+=
+over =alpha=, =beta=, =gamma= — is refused rather than replacing them
+all with the first. Editing matches independently is what a
+multiple-cursors package is for; this is not one.
 
 * Typing characters your keyboard lacks
 :PROPERTIES:
