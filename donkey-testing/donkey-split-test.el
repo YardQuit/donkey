@@ -500,6 +500,213 @@ every place has to reach the hooks, or the copy and the buffer part."
           (should (equal (list keys donkey-split-test--shadow)
                          (list keys (buffer-string)))))))))
 
+(defun donkey-split-test--painted ()
+  "Return how many split places are painted in this buffer."
+  (seq-count (lambda (o) (overlay-get o 'donkey-split))
+             (save-restriction (widen) (overlays-in (point-min) (point-max)))))
+
+(ert-deftest donkey-split-refuses-an-empty-regexp ()
+  "An empty regexp is refused, and the selection it was given stays."
+  (donkey-split-test--on ""
+    (donkey-split-test--keys "*split-empty*" "a foo b\nc foo d\n" "v G"
+      (should-error (call-interactively #'donkey-split) :type 'user-error)
+      (should (region-active-p))
+      (should (zerop (donkey-split-test--painted))))))
+
+(ert-deftest donkey-split-reads-a-mis-set-pair-table-anyway ()
+  "A pair table that is not all pairs, or not a list, still gives a split.
+
+What it wraps in follows from what is left of the table: a pair that
+survived is a pair, and a character the table no longer names wraps
+in itself."
+  (dolist (case '((((?\( . ?\)) ?x) "a (foo) b\nc (foo) d\n")
+                  (parens "a (foo( b\nc (foo( d\n")))
+    (let ((donkey-mark-pair-delimiters (car case)))
+      (donkey-split-test--on "foo"
+        (donkey-split-test--keys "*split-pairs*" "a foo b\nc foo d\n" "v G f w ("
+          (should donkey--split-exit-function)
+          (should (equal (buffer-string) (cadr case))))))))
+
+(ert-deftest donkey-split-stands-though-letting-go-of-the-selection-fails ()
+  "A `deactivate-mark-hook' that signals does not leave a split half made."
+  (donkey-split-test--on "foo"
+    (donkey-test-keys--harness "*split-hook-fails*" #'text-mode
+        ((deactivate-mark-hook (list (lambda () (error "Hook failed")))))
+        "a foo b\nc foo d\n" "v G f a X C-g"
+      (should (equal (buffer-string) "a fooX b\nc fooX d\n"))
+      (should (zerop (donkey-split-test--painted))))))
+
+(ert-deftest donkey-split-a-search-that-fails-leaves-nothing-painted ()
+  "A search that signals part way leaves no places and spends no bank."
+  (let ((calls 0)
+        (search (symbol-function 're-search-forward)))
+    (cl-letf (((symbol-function 're-search-forward)
+               (lambda (&rest args)
+                 (when (= (cl-incf calls) 2) (error "Search failed"))
+                 (apply search args))))
+      (donkey-split-test--on "foo"
+        (donkey-split-test--keys "*split-search-fails*" "a foo b\nc foo d\n"
+            "V m l"
+          (should-error (execute-kbd-macro (kbd "v G f")))
+          (should (zerop (donkey-split-test--painted)))
+          (should (null donkey--split-places))
+          (should (= (length (donkey--banked-spans)) 1)))))))
+
+(ert-deftest donkey-split-refuses-its-verbs-in-a-read-only-buffer ()
+  "Every verb is refused in a read-only buffer, and nothing is written."
+  (dolist (verb '("i" "a" "c" "d" "("))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-ro*" "a foo b\nc foo d\n" "v G f"
+        (setq buffer-read-only t)
+        (should-error (execute-kbd-macro (kbd verb)))
+        (should (equal (list verb (buffer-string))
+                       (list verb "a foo b\nc foo d\n")))
+        (should (null kill-ring))
+        (should donkey--split-exit-function)
+        (setq buffer-read-only nil)))))
+
+(defun donkey-split-test--read-only-last ()
+  "Make the last match in the buffer read-only.
+The last, so the places before it are written before it refuses."
+  (save-excursion
+    (goto-char (point-max))
+    (search-backward "foo")
+    (let ((inhibit-read-only t))
+      (put-text-property (match-beginning 0) (match-end 0) 'read-only t))))
+
+(ert-deftest donkey-split-writes-every-place-or-none ()
+  "A place that cannot be written leaves every place as it was."
+  (dolist (verb '("d" "c X" "(" "i X" "a X"))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-some-ro*" "a foo b\nc foo d\ne foo f\n"
+          "v G f"
+        (donkey-split-test--read-only-last)
+        (ignore-errors (execute-kbd-macro (kbd verb)))
+        (should (equal (list verb (buffer-string))
+                       (list verb "a foo b\nc foo d\ne foo f\n")))
+        (should (null kill-ring))
+        (let ((inhibit-read-only t))
+          (remove-text-properties (point-min) (point-max) '(read-only nil)))))))
+
+(ert-deftest donkey-split-refuses-to-type-at-an-edge-that-cannot-take-text ()
+  "A place whose edge refuses an insertion refuses `i', changing nothing.
+
+The text of the place is writable; the character before it is
+read-only, and an insertion takes that property from it."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-ro-edge*" "a foo b\nc foo d\ne foo f\n"
+        "v G f"
+      (save-excursion
+        (goto-char (point-max))
+        (search-backward "foo")
+        (let ((inhibit-read-only t))
+          (put-text-property (1- (point)) (point) 'read-only t)))
+      (should-error (execute-kbd-macro (kbd "i")) :type 'user-error)
+      (should (equal (buffer-string) "a foo b\nc foo d\ne foo f\n"))
+      (should (eq donkey--split-phase 'select))
+      (let ((inhibit-read-only t))
+        (remove-text-properties (point-min) (point-max) '(read-only nil))))))
+
+(ert-deftest donkey-split-a-place-that-refuses-the-edit-undoes-the-others ()
+  "A place whose text will not change leaves every place as it was.
+
+The refusal here comes from a `modification-hooks' property that
+signals, which no read-only test sees in advance.  A wrap does not
+touch the text it goes around, so it is not asked."
+  (dolist (verb '("c X" "d"))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-refuses*" "a foo b\nc foo d\ne foo f\n"
+          "v G f"
+        (save-excursion
+          (goto-char (point-max))
+          (search-backward "foo")
+          (put-text-property (match-beginning 0) (match-end 0)
+                             'modification-hooks
+                             (list (lambda (&rest _) (error "Refused")))))
+        (ignore-errors (execute-kbd-macro (kbd verb)))
+        (let ((inhibit-modification-hooks t))
+          (remove-text-properties (point-min) (point-max)
+                                  '(modification-hooks nil)))
+        (should (equal (list verb (buffer-string))
+                       (list verb "a foo b\nc foo d\ne foo f\n")))
+        (should (null kill-ring))))))
+
+(ert-deftest donkey-split-a-place-that-cannot-be-written-ends-the-split ()
+  "A place turning read-only mid-writing ends the split, saying why."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-late-ro*" "a foo b\nc foo d\ne foo f\n"
+        "v G f a"
+      (donkey-split-test--read-only-last)
+      (let ((said nil))
+        (cl-letf (((symbol-function 'message)
+                   (lambda (fmt &rest args)
+                     (when fmt (push (apply #'format fmt args) said))
+                     nil)))
+          (execute-kbd-macro (kbd "X")))
+        (should (member "Split ended -- Text is read-only" said)))
+      (should (null donkey--split-phase))
+      (should (zerop (donkey-split-test--painted)))
+      (should (equal (buffer-string) "a fooX b\nc foo d\ne foo f\n"))
+      (let ((inhibit-read-only t))
+        (remove-text-properties (point-min) (point-max) '(read-only nil))))))
+
+(ert-deftest donkey-split-that-fails-to-arm-spends-no-bank ()
+  "The bank is spent only once the split stands."
+  (cl-letf (((symbol-function 'set-transient-map)
+             (lambda (&rest _) (error "Cannot arm"))))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-arm-fails*" "a foo b\nc foo d\n" "V m l"
+        (should-error (execute-kbd-macro (kbd "v G f")))
+        (should (= (length (donkey--banked-spans)) 1))))))
+
+(ert-deftest donkey-split-copies-past-a-narrowing ()
+  "Narrowing while writing does not stop the other places being copied."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-narrow*" "a foo b\nc foo d\n" "v G f a"
+      (narrow-to-region (point-min) (line-end-position))
+      (execute-kbd-macro (kbd "X C-g"))
+      (widen)
+      (should (equal (buffer-string) "a fooX b\nc fooX d\n")))))
+
+(ert-deftest donkey-split-carries-on-past-a-place-deleted-by-something-else ()
+  "A place whose overlay something else deleted is dropped, not tripped over."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-lost-place*" "a foo b\nc foo d\ne foo f\n"
+        "v G f"
+      (delete-overlay (car donkey--split-places))
+      (execute-kbd-macro (kbd "a X C-g"))
+      (should (equal (buffer-string) "a foo b\nc fooX d\ne fooX f\n")))))
+
+(ert-deftest donkey-split-ends-when-the-major-mode-changes ()
+  "A new major mode takes the split down: nothing stays painted."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-mode-change*" "a foo b\nc foo d\n" "v G f"
+      (fundamental-mode)
+      (should (zerop (donkey-split-test--painted)))
+      (should (null donkey--split-buffer))
+      (should (null donkey--split-exit-function)))))
+
+(ert-deftest donkey-split-ends-when-donkey-mode-is-turned-off ()
+  "Turning DONKEY off takes a split down with it."
+  (unwind-protect
+      (donkey-split-test--on "foo"
+        (donkey-split-test--keys "*split-mode-off*" "a foo b\nc foo d\n" "v G f"
+          (donkey-mode -1)
+          (should (zerop (donkey-split-test--painted)))
+          (should (null donkey--split-exit-function))
+          (should-not (eq (key-binding "d") #'donkey-split-delete))))
+    (donkey-mode 1)))
+
+(ert-deftest donkey-split-says-left-alone-when-nothing-changed ()
+  "Where a verb changed nothing, the report says the places were left alone."
+  (dolist (case '(("foo" "a C-g") ("foo" "i C-g") ("$" "d") ("$" "c C-g")))
+    (donkey-split-test--on (car case)
+      (donkey-split-test--keys "*split-nothing*" "a foo b\nc foo d\n"
+          (concat "v G f " (cadr case))
+        (should (equal (list (cadr case) donkey-test-keys--said)
+                       (list (cadr case)
+                             "Split ended -- 2 places left alone")))))))
+
 (ert-deftest donkey-split-belongs-to-the-buffer-it-was-made-in ()
   "A verb pressed in another buffer refuses, and leaves no places behind.
 
