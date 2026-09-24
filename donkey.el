@@ -5937,6 +5937,15 @@ a selecting state.  \\[keyboard-quit] is what lets go."
 (defvar-local donkey--split-phase nil
   "`select' while a verb is being chosen, `edit' once one was, else nil.")
 
+(defvar-local donkey--split-did nil
+  "What the split\\='s verb did, for the report when the split ends.
+
+One of `before', `after', `changed', `deleted', `wrapped',
+`unwrapped', or nil where no verb ran.  A wrap leaves the split armed,
+so a verb after one replaces it: the report names what ended the
+split.  Every ending names what happened and to how many places, so the
+reader is told the same thing whichever verb they chose.")
+
 (defvar-local donkey--split-scope "this line"
   "What the live split searched, named for the reminder.")
 
@@ -6052,6 +6061,22 @@ per match, which this does not provide."
                    (<= (point) (overlay-end place))))
             donkey--split-places))
 
+(defun donkey--split-places-phrase (n)
+  "Return N written as a count of places."
+  (format "%d place%s" n (if (= n 1) "" "s")))
+
+(defun donkey--split-report (n)
+  "Return what to say about N places when the split ends."
+  (pcase donkey--split-did
+    ('before  (format "Split: typed before %s" (donkey--split-places-phrase n)))
+    ('after   (format "Split: typed after %s" (donkey--split-places-phrase n)))
+    ('changed (format "Split: changed %s" (donkey--split-places-phrase n)))
+    ('deleted (format "Split: deleted %s" (donkey--split-places-phrase n)))
+    ('wrapped (format "Split: wrapped %s" (donkey--split-places-phrase n)))
+    ('unwrapped (format "Split: unwrapped %s" (donkey--split-places-phrase n)))
+    (_        (format "Split ended -- %s left alone"
+                      (donkey--split-places-phrase n)))))
+
 (defun donkey--split-hint ()
   "Return the echo-area reminder for the phase the split is in."
   (let ((n (length donkey--split-places)))
@@ -6120,7 +6145,12 @@ The places are overlays in the split\\='s own buffer, which need not be
 the current one, so both are cleared."
   (let ((home donkey--split-buffer))
     (when (and (or donkey--split-places home) (not quiet))
-      (donkey--repaint-hint "Split ended"))
+      ;; Counted in the split's own buffer: the places are buffer-local
+      ;; and this may be running from somewhere else.
+      (let ((there (if (buffer-live-p home) home (current-buffer))))
+        (donkey--repaint-hint
+         (with-current-buffer there
+           (donkey--split-report (length donkey--split-places))))))
     (when donkey--split-exit-function
       (let ((donkey--split-keeping t)
             (disarm donkey--split-exit-function))
@@ -6134,7 +6164,8 @@ the current one, so both are cleared."
         (setq donkey--split-places nil
               donkey--split-primary nil
               donkey--split-text nil
-              donkey--split-phase nil)
+              donkey--split-phase nil
+              donkey--split-did nil)
         (remove-hook 'post-command-hook #'donkey--split-sync t)))))
 
 (defun donkey-split-quit ()
@@ -6174,6 +6205,9 @@ copy is what was there.  \\[donkey-yank] brings it back after
 CLEAR non-nil empties each place first.  WHERE is `start' to put point
 at each place\\='s beginning and `end' to put it at the end."
   (donkey--split-live-p)
+  (setq donkey--split-did (cond (clear 'changed)
+                                ((eq where 'start) 'before)
+                                (t 'after)))
   (when clear
     (donkey--split-save-one)
     (let ((inhibit-modification-hooks t))
@@ -6236,13 +6270,12 @@ The split\\='s `donkey-delete'.  What the places held goes on the
 Bound to \\`d' inside `donkey-split-mode-map'."
   (interactive)
   (donkey--split-live-p)
-  (let ((n (length donkey--split-places)))
-    (donkey--split-save-one)
-    (let ((inhibit-modification-hooks t))
-      (dolist (place donkey--split-places)
-        (delete-region (overlay-start place) (overlay-end place))))
-    (donkey--split-dissolve t)
-    (message "Deleted %d place%s" n (if (= n 1) "" "s"))))
+  (setq donkey--split-did 'deleted)
+  (donkey--split-save-one)
+  (let ((inhibit-modification-hooks t))
+    (dolist (place donkey--split-places)
+      (delete-region (overlay-start place) (overlay-end place))))
+  (donkey--split-dissolve))
 
 (defun donkey--split-pair (char)
   "Return the (OPENER . CLOSER) CHAR names, whichever half it is.
@@ -6304,7 +6337,8 @@ its own key, as `donkey-wrap-region' is reached in Normal state."
                 (insert closer)
                 (move-overlay place inner end))
               (set-marker end nil))))))
-    (setq donkey--split-text
+    (setq donkey--split-did (if off 'unwrapped 'wrapped)
+          donkey--split-text
           (and donkey--split-primary
                (donkey--split-place-text donkey--split-primary)))
     (donkey--repaint-hint (donkey--split-hint))))
