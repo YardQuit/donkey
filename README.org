@@ -391,6 +391,18 @@ again re-anchors it where the cursor is; =C-g= cancels it.
 =V= — see [[#long-lines-j-k-and-v][Long lines]] above — also serves as a line-wise selection
 when a selection is what you are after.
 
+The highlight stops at the end of the last line, but =y=, =d= and =p=
+take that line's newline as well, so lines go and come back whole. So
+do Emacs's own =C-w=, =M-w= and =C-x r s=, and anything else that asks
+Emacs for the region's text.
+
+A command that reads the region's two ends for itself sees it stop
+before the last newline: =M-x keep-lines= leaves the last line out,
+=M-|= hands its command the lines without their last newline, and
+=C-x n n= and =M-x append-to-buffer= leave that newline behind. For
+those, select with =v= from the start of the first line to the start of
+the line after — =g h v j j= for two lines.
+
 ** Text objects: the =m= prefix
 
 | Key   | Selects                                    |

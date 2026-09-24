@@ -3995,6 +3995,20 @@ would keep converting quits for a package the user turned off."
                                               command-error-function)))
     (donkey-mode -1)))
 
+(ert-deftest donkey-mode-enable-wraps-region-extract-function ()
+  "Enabling the mode wraps `region-extract-function'; disabling unwraps."
+  (unwind-protect
+      (progn
+        (donkey-mode 1)
+        (should (advice-function-member-p
+                 #'donkey--visual-line-extract-region
+                 (default-value 'region-extract-function)))
+        (donkey-mode -1)
+        (should-not (advice-function-member-p
+                     #'donkey--visual-line-extract-region
+                     (default-value 'region-extract-function))))
+    (donkey-mode -1)))
+
 (ert-deftest donkey-startup-resweep-forgets-its-timer ()
   "The resweep clears `donkey--startup-resweep-timer' when it runs.
 

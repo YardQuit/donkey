@@ -1985,6 +1985,35 @@ untouched."
       (donkey--whole-line-span (region-beginning) (region-end))
     (cons (region-beginning) (region-end))))
 
+(defun donkey--visual-line-extract-region (extract method)
+  "Answer `region-extract-function' with a `V' session's whole lines.
+
+EXTRACT is the function this one wraps, and METHOD what it was asked
+for.  While a visual-line session is live, a copy, a kill and the
+bounds all come from `donkey--visual-line-region-bounds', final
+newline included, so \\[kill-region], \\[kill-ring-save] and
+\\[copy-to-register] take what `y' and `d' take, and so does anything
+else that asks Emacs for the region's text.  METHOD `delete-only',
+which clears a selection to make room for what replaces it, is left to
+EXTRACT, and so are a rectangle -- even one made from a `V' selection,
+which keeps the session's anchor -- and every region outside a
+session.
+
+Coverage stops at commands that read point and mark themselves:
+`keep-lines', `shell-command-on-region', `narrow-to-region' and
+`append-to-buffer' see the region as highlighted, one character short
+of the lines.
+
+Installed around `region-extract-function' by `donkey-mode'."
+  (if (or (eq method 'delete-only)
+          (bound-and-true-p rectangle-mark-mode)
+          (not (donkey--visual-line-session-active-p)))
+      (funcall extract method)
+    (let ((span (donkey--visual-line-region-bounds)))
+      (if (eq method 'bounds)
+          (list span)
+        (filter-buffer-substring (car span) (cdr span) method)))))
+
 (defun donkey--selection-to-act-on-p ()
   "Return non-nil when an action key has a linear selection to take.
 
@@ -3491,7 +3520,11 @@ ending it is NOT shown as selected -- but `donkey-copy', `donkey-delete'
 and `donkey-yank' widen a live session to whole lines before acting, so
 the line break goes with it: `d' removes the line outright rather than
 emptying it, `y' gives a kill that pastes back as a complete line, and
-`p' replaces the line instead of opening an empty one under it."
+`p' replaces the line instead of opening an empty one under it.
+Emacs's own \\[kill-region], \\[kill-ring-save] and \\[copy-to-register]
+take the same whole lines; a command that reads point and mark itself,
+such as `keep-lines', sees the highlighted region.  See
+`donkey--visual-line-extract-region'."
   (interactive "P")
   (let ((n (prefix-numeric-value arg)))
     (cond
@@ -8530,6 +8563,12 @@ empty ones behind, and why a \\[donkey-copy] here pastes back as whole lines rat
 than running into whatever line it lands on.  Worth knowing before you
 report it: the selection is one character shorter than what it takes.
 
+Emacs' own \\[kill-region] and \\[kill-ring-save] take the whole lines too.  A command that
+reads the selection's two ends for itself sees the shorter one --
+\\[keep-lines] leaves the last line out -- so for one of those,
+select from the start of the first line to the start of the line
+after with \\`v' instead.
+
 Lines can be put back together as well as taken apart.  \\[donkey-join-line] pulls the
 line BELOW up onto the one you are on, tidying the whitespace at the
 join -- the direction you want when you are sitting on a line deciding
@@ -11532,7 +11571,11 @@ donkey-mode' to toggle."
         ;; A mark run follows its frame's focus; see
         ;; `donkey--mark-run-follow-focus'.
         (add-function :after after-focus-change-function
-                      #'donkey--mark-run-follow-focus))
+                      #'donkey--mark-run-follow-focus)
+        ;; What Emacs takes out of a `V' selection is its whole lines;
+        ;; see `donkey--visual-line-extract-region'.
+        (add-function :around region-extract-function
+                      #'donkey--visual-line-extract-region))
     ;; Mark run mode's map lives in `overriding-terminal-local-map',
     ;; terminal-wide; `donkey--mark-run-exit' takes down all of it and
     ;; is a no-op when nothing was armed.  A run put down by a focus
@@ -11556,6 +11599,8 @@ donkey-mode' to toggle."
     ;; that balanced it.
     (setq donkey--minibuffer-pre-state-stack nil)
     (remove-function command-error-function #'donkey--recover-quit-in-insert)
+    (remove-function region-extract-function
+                     #'donkey--visual-line-extract-region)
     (donkey--sweep-buffers #'donkey--disable-in-buffer)))
 
 ;;; ---------------------------------------------------------------------------

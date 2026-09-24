@@ -3420,6 +3420,123 @@ delete\" -- rather than `kill-region' pushing \"\" onto the ring."
     (should (equal donkey-test-keys--said
                    "End of buffer -- nothing to copy"))))
 
+;; What Emacs takes out of a `V' selection -- see
+;; `donkey--visual-line-extract-region'.
+
+(ert-deftest donkey-visual-line-kill-region-takes-whole-lines ()
+  "A `V J' selection killed with \\[kill-region] goes whole, newline included."
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "one\ntwo\nthree\n" "V J C-w"
+    (should (equal (buffer-string) "three\n"))
+    (should (equal (car kill-ring) "one\ntwo\n"))))
+
+(ert-deftest donkey-visual-line-kill-ring-save-takes-whole-lines ()
+  "A `V J' selection copied with \\[kill-ring-save] comes with its newline."
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "one\ntwo\nthree\n" "V J M-w"
+    (should (equal (buffer-string) "one\ntwo\nthree\n"))
+    (should (equal (car kill-ring) "one\ntwo\n"))))
+
+(ert-deftest donkey-visual-line-copy-to-register-takes-whole-lines ()
+  "A `V J' selection stored with \\[copy-to-register] keeps its newline."
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode
+      ((register-alist nil))
+      "one\ntwo\nthree\n" "V J C-x r s a"
+    (should (equal (get-register ?a) "one\ntwo\n"))))
+
+(ert-deftest donkey-visual-line-counted-and-upward-sessions-take-whole-lines ()
+  "Counted, shrunk and upward `V' sessions are killed as whole lines."
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "a\nb\nc\nd\n" "C-u 3 V C-w"
+    (should (equal (buffer-string) "d\n"))
+    (should (equal (car kill-ring) "a\nb\nc\n")))
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "a\nb\nc\n" "V J K C-w"
+    (should (equal (buffer-string) "b\nc\n"))
+    (should (equal (car kill-ring) "a\n")))
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "a\nb\nc\n" "j V K C-w"
+    (should (equal (buffer-string) "c\n"))
+    (should (equal (car kill-ring) "a\nb\n"))))
+
+(ert-deftest donkey-visual-line-region-bounds-are-the-whole-lines ()
+  "`region-bounds' in a `V J' session answers the span `y' and `d' take."
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "one\ntwo\nthree\n" "V J"
+    (should (equal (region-bounds) '((1 . 9))))))
+
+(ert-deftest donkey-visual-line-extract-region-hands-the-rest-on ()
+  "Other regions, and `delete-only' in a session, go to the wrapped function."
+  (let ((handed-on (lambda (method) (list 'handed-on method))))
+    (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+        "one\ntwo\nthree\n" "l v j"
+      (dolist (method '(nil delete bounds delete-only))
+        (should (equal (donkey--visual-line-extract-region handed-on method)
+                       (list 'handed-on method)))))
+    (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+        "one\ntwo\nthree\n" "V J"
+      (should (equal (donkey--visual-line-extract-region handed-on 'delete-only)
+                     '(handed-on delete-only))))))
+
+(ert-deftest donkey-visual-line-delete-only-takes-the-highlighted-region ()
+  "`delete-only' in a `V J' session deletes what is highlighted, no more."
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "one\ntwo\nthree\n" "V J"
+    (funcall region-extract-function 'delete-only)
+    (should (equal (buffer-string) "\nthree\n"))))
+
+(ert-deftest donkey-visual-line-last-line-without-a-newline-takes-no-newline ()
+  "A final line with no newline is killed from `V' without reaching past it."
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "one\ntwo" "j V C-w"
+    (should (equal (buffer-string) "one\n"))
+    (should (equal (car kill-ring) "two"))))
+
+(ert-deftest donkey-other-selections-are-extracted-as-selected ()
+  "`v' and `m v' regions reach \\[kill-region] exactly as they are selected."
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "one\ntwo\nthree\n" "l v j C-w"
+    (should (equal (buffer-string) "owo\nthree\n"))
+    (should (equal (car kill-ring) "ne\nt")))
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "one\ntwo\nthree\n" "m v j l C-w"
+    (should (equal (buffer-string) "e\no\nthree\n"))
+    (should (equal (substring-no-properties (car kill-ring)) "on\ntw"))))
+
+(ert-deftest donkey-a-rectangle-made-from-v-is-extracted-as-a-rectangle ()
+  "`V J m v' then \\[kill-region] kills the block of columns, not whole lines."
+  (require 'rect)
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "one\ntwo\nthree\n" "V J m v h C-w"
+    (should (equal (buffer-string) "e\no\nthree\n")))
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "one\ntwo\nthree\n" "V J m v C-w"
+    (should (equal (buffer-string) "\n\nthree\n"))))
+
+(ert-deftest donkey-visual-line-point-and-mark-readers-see-the-highlight ()
+  "Commands reading point and mark see a `V J' selection as highlighted.
+
+`keep-lines', `narrow-to-region', `append-to-buffer' and
+`shell-command-on-region' are the four the README names."
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "cat one\ndog\ncat two\ndog\n" "V J M-x keep-lines RET cat RET"
+    (should (equal (buffer-string) "cat one\ndog\ncat two\ndog\n")))
+  (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+      "one\ntwo\nthree\n" "V J"
+    (call-interactively #'narrow-to-region)
+    (should (equal (buffer-string) "one\ntwo"))
+    (widen))
+  (unwind-protect
+      (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+          "one\ntwo\nthree\n" "V J M-x append-to-buffer RET *vx-target* RET"
+        (should (equal (with-current-buffer "*vx-target*" (buffer-string))
+                       "one\ntwo")))
+    (when (get-buffer "*vx-target*") (kill-buffer "*vx-target*")))
+  (when (executable-find "sort")
+    (donkey-test-keys--harness "*donkey-vx-test*" #'text-mode ()
+        "b\na\nc\n" "V J C-u M-| sort RET"
+      (should (equal (buffer-string) "a\nb\n\nc\n")))))
+
 (ert-deftest donkey-change-does-not-act-on-banked-lines ()
   "`c' changes the character at point and leaves banks standing.
 
