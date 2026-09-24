@@ -6217,8 +6217,7 @@ the writing it was holding the places for is over."
         (let ((new (donkey--split-place-text here)))
           (unless (equal new donkey--split-text)
             (setq donkey--split-text new)
-            (let ((inhibit-modification-hooks t)
-                  (deactivate-mark nil))
+            (let ((deactivate-mark nil))
               (save-excursion
                 (dolist (place donkey--split-places)
                   (when (and (not (eq place here)) (overlay-buffer place))
@@ -6328,9 +6327,8 @@ at each place\\='s beginning and `end' to put it at the end."
                                 (t 'after)))
   (when clear
     (donkey--split-save-one)
-    (let ((inhibit-modification-hooks t))
-      (dolist (place donkey--split-places)
-        (delete-region (overlay-start place) (overlay-end place)))))
+    (dolist (place donkey--split-places)
+      (delete-region (overlay-start place) (overlay-end place))))
   (setq donkey--split-phase 'edit)
   ;; Dismissing the chooser on purpose must not take the split with it.
   (when donkey--split-exit-function
@@ -6390,9 +6388,8 @@ Bound to \\`d' inside `donkey-split-mode-map'."
   (donkey--split-live-p)
   (setq donkey--split-did 'deleted)
   (donkey--split-save-one)
-  (let ((inhibit-modification-hooks t))
-    (dolist (place donkey--split-places)
-      (delete-region (overlay-start place) (overlay-end place))))
+  (dolist (place donkey--split-places)
+    (delete-region (overlay-start place) (overlay-end place)))
   (donkey--split-dissolve))
 
 (defun donkey--split-pair (char)
@@ -6435,26 +6432,25 @@ its own key, as `donkey-wrap-region' is reached in Normal state."
          (opener (car pair))
          (closer (cdr pair))
          (off (donkey--split-wrapped-p opener closer)))
-    (let ((inhibit-modification-hooks t))
-      (save-excursion
-        (dolist (place donkey--split-places)
-          (if off
-              ;; The closer first: removing the opener would move the
-              ;; position the closer is still to be reached at.
-              (progn
-                (delete-region (overlay-end place) (1+ (overlay-end place)))
-                (delete-region (1- (overlay-start place))
-                               (overlay-start place)))
-            ;; Insertion type nil keeps the marker before the closer,
-            ;; which is where the place has to stop.
-            (let ((end (copy-marker (overlay-end place))))
-              (goto-char (overlay-start place))
-              (insert opener)
-              (let ((inner (point)))
-                (goto-char end)
-                (insert closer)
-                (move-overlay place inner end))
-              (set-marker end nil))))))
+    (save-excursion
+      (dolist (place donkey--split-places)
+        (if off
+            ;; The closer first: removing the opener would move the
+            ;; position the closer is still to be reached at.
+            (progn
+              (delete-region (overlay-end place) (1+ (overlay-end place)))
+              (delete-region (1- (overlay-start place))
+                             (overlay-start place)))
+          ;; Insertion type nil keeps the marker before the closer,
+          ;; which is where the place has to stop.
+          (let ((end (copy-marker (overlay-end place))))
+            (goto-char (overlay-start place))
+            (insert opener)
+            (let ((inner (point)))
+              (goto-char end)
+              (insert closer)
+              (move-overlay place inner end))
+            (set-marker end nil)))))
     (setq donkey--split-did (if off 'unwrapped 'wrapped)
           donkey--split-text
           (and donkey--split-primary

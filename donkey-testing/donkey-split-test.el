@@ -475,6 +475,31 @@ different value.  Arming the next split clears the map away."
         (should-not (memq stranded (cdr overriding-terminal-local-map)))
         (should (eq (key-binding "d") #'donkey-split-delete))))))
 
+(defvar donkey-split-test--shadow nil
+  "The test buffer\'s text as `after-change-functions' alone reports it.")
+
+(defun donkey-split-test--follow-change (beg end length)
+  "Apply to the shadow the change from BEG to END that replaced LENGTH."
+  (when (equal (buffer-name) "*split-hooks*")
+    (setq donkey-split-test--shadow
+          (concat (substring donkey-split-test--shadow 0 (1- beg))
+                  (buffer-substring-no-properties beg end)
+                  (substring donkey-split-test--shadow (+ (1- beg) length))))))
+
+(ert-deftest donkey-split-change-hooks-are-told-of-every-edit ()
+  "A copy kept from `after-change-functions' alone ends equal to the buffer.
+
+What a language server client or a parser cache keeps: every edit at
+every place has to reach the hooks, or the copy and the buffer part."
+  (dolist (keys '("a X C-g" "i X C-g" "c X C-g" "d" "( [" "w (" "( ("))
+    (let ((donkey-split-test--shadow ""))
+      (donkey-split-test--on "foo"
+        (donkey-test-keys--harness "*split-hooks*" #'text-mode
+            ((after-change-functions (list #'donkey-split-test--follow-change)))
+            "a foo b\nc foo d\ne foo f\n" (concat "v G f " keys)
+          (should (equal (list keys donkey-split-test--shadow)
+                         (list keys (buffer-string)))))))))
+
 (ert-deftest donkey-split-belongs-to-the-buffer-it-was-made-in ()
   "A verb pressed in another buffer refuses, and leaves no places behind.
 
