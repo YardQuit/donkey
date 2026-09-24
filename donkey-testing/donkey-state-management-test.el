@@ -1751,11 +1751,11 @@ Both options that reach `donkey--major-mode-in-p' are covered."
             (goto-char (point-min))
             (donkey-enter-normal)
             (should (memq #'donkey--check-post-command-non-editing
-                          post-command-hook))
+                          (default-value 'post-command-hook)))
             (set var 'dired-mode)
             (execute-kbd-macro (kbd "l"))
             (should (memq #'donkey--check-post-command-non-editing
-                          post-command-hook)))
+                          (default-value 'post-command-hook))))
         (set var orig)
         (when (buffer-live-p buf) (kill-buffer buf))
         (donkey-mode -1)))))
