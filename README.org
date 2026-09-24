@@ -754,8 +754,10 @@ A wrap leaves the split standing, so pairs nest and a verb can still
 follow — =f= =(= =[= =a= wraps twice and then types after. The other
 verbs end it.
 
-What =c= and =d= remove reaches the kill ring once, not once per match,
-so =p= pastes what was there rather than a column of copies.
+What =c= and =d= remove reaches the kill ring as one kill: a single
+copy when the matches agree, so =p= pastes what was there rather than a
+column of copies, and every match on a line of its own when they
+differ.
 
 ** What gets searched
 
@@ -785,6 +787,18 @@ rather than the columns. And =$= and =^= match a real line end and line
 start, so in a block that stops mid-line they match nothing; with =v=
 or with no selection they work as you would expect.
 
+** Matches that differ, and case
+
+The matches do not have to agree. =[0-9]+= over =1=, =22= and =333=
+holds three different texts: =i= and =a= then type at the start or the
+end of each, so what you type is added and none of them is replaced;
+=c= empties every one before you type; =d= deletes them.
+
+Case is ignored the way =r r= (=replace-regexp=) ignores it: a regexp
+with no capital letter matches any case, so =todo= finds =TODO=, =Todo=
+and =todo=, and one with a capital is exact. =case-fold-search= and
+=search-upper-case= decide it, as they do for every search in Emacs.
+
 ** Two examples
 
 Align three assignments, then end each line:
@@ -798,10 +812,14 @@ Comment out a region, by holding the start of every line:
 
 ** What it will not do
 
-Every match gets the same text. A regexp whose matches differ — =^[a-z]+=
-over =alpha=, =beta=, =gamma= — is refused rather than replacing them
-all with the first. Editing matches independently is what a
-multiple-cursors package is for; this is not one.
+Matches that touch are refused — =a= over =aaa=, or a single space over
+two — because text typed where two of them meet would belong to both.
+An empty regexp is refused too.
+
+Where the matches differ, the split types only at their edges: moving
+into one ends it, since there is no one text to edit in all of them.
+Editing inside matches that differ is what a multiple-cursors package
+is for; this is not one.
 
 * Typing characters your keyboard lacks
 :PROPERTIES:

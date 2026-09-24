@@ -6011,6 +6011,13 @@ reader is told the same thing whichever verb they chose.")
 (defvar-local donkey--split-scope "this line"
   "What the live split searched, named for the reminder.")
 
+(defvar-local donkey--split-agree nil
+  "Non-nil where every place held the same text when the split was made.
+
+Places that agree are kept whole while they are written, so a change
+inside the match is copied too; places that differ are shrunk to the
+edge being typed at, so only what is typed is copied.")
+
 (defvar-local donkey--split-tick nil
   "`buffer-chars-modified-tick' when the live split was made.
 
@@ -6122,11 +6129,10 @@ nothing."
 (defun donkey--split-make (regexp)
   "Hold every REGEXP match inside the selection.  Return how many.
 
-Signals a `user-error' where the matches do not all hold the same text:
-what is typed at one place is copied to the others, so holding matches
-that differ would replace them with the first.  That case wants a cursor
-per match, which this does not provide.  A search that signals or is
-quit leaves no places behind."
+The matches need not hold the same text; `donkey--split-agree' records
+whether they do.  Signals a `user-error' where two matches touch, since
+text typed where they meet would belong to both.  A search that signals
+or is quit leaves no places behind."
   (donkey--split-dissolve t)
   (let ((complete nil))
     (unwind-protect
@@ -6137,20 +6143,27 @@ quit leaves no places behind."
         (mapc #'delete-overlay donkey--split-places)
         (setq donkey--split-places nil))))
   (setq donkey--split-places (nreverse donkey--split-places))
-  (let ((texts (delete-dups (mapcar #'donkey--split-place-text
-                                    donkey--split-places))))
-    (when (cdr texts)
-      (donkey--split-dissolve t)
-      (user-error "Matches differ (%s) -- a split holds matches that agree"
-                  (string-join (seq-take texts 3) ", "))))
+  (let ((previous nil))
+    (dolist (place donkey--split-places)
+      (when (and previous (<= (overlay-start place) (overlay-end previous)))
+        (donkey--split-dissolve t)
+        (user-error "Matches touch -- a split needs a character between places"))
+      (setq previous place)))
+  (setq donkey--split-agree
+        (null (cdr (delete-dups (mapcar #'donkey--split-place-text
+                                        donkey--split-places)))))
   (length donkey--split-places))
 
 (defun donkey--split-search (regexp)
   "Push a place onto `donkey--split-places' for every REGEXP match in scope.
 
-The places come in reverse buffer order; `donkey--split-make' puts them
-right."
-  (let ((case-fold-search nil))
+Case is ignored as `replace-regexp' ignores it: where `case-fold-search'
+is on and REGEXP holds no capital letter, unless `search-upper-case'
+says otherwise.  The places come in reverse buffer order;
+`donkey--split-make' puts them right."
+  (let ((case-fold-search (if (and case-fold-search search-upper-case)
+                              (isearch-no-upper-case-p regexp t)
+                            case-fold-search)))
     (save-excursion
       (dolist (range (donkey--split-bounds))
         (goto-char (car range))
@@ -6312,6 +6325,7 @@ the current one, so both are cleared."
               donkey--split-text nil
               donkey--split-phase nil
               donkey--split-did nil
+              donkey--split-agree nil
               donkey--split-tick nil)
         (remove-hook 'post-command-hook #'donkey--split-sync t)
         (remove-hook 'kill-buffer-hook #'donkey--split-flush t)
@@ -6355,40 +6369,51 @@ else deleted are dropped first."
 (defun donkey--split-writable-p (place edge)
   "Return non-nil where PLACE can be written at EDGE, `start' or `end'.
 
-Its text must hold nothing read-only, since what is written at one
-place is copied over the others, and an insertion at EDGE must not be
-refused; see `donkey--insertion-read-only-p'."
+Where the places agree its text must hold nothing read-only, since
+what is written at one place is copied over the others; where they
+differ only EDGE is written.  An insertion at EDGE must not be
+refused either; see `donkey--insertion-read-only-p'."
   (or inhibit-read-only
       (let ((beg (overlay-start place))
             (end (overlay-end place)))
-        (not (or (text-property-not-all beg end 'read-only nil)
+        (not (or (and donkey--split-agree
+                      (text-property-not-all beg end 'read-only nil))
                  (donkey--insertion-read-only-p
                   (if (eq edge 'start) beg end)))))))
 
 (defun donkey--split-kill-text ()
   "Return what `c' and `d' put on the `kill-ring', or nil for nothing.
 
-One copy and not one per place: a split holds matches that agree, so the
-copy is what was there.  \\[donkey-yank] brings it back after
-\\[donkey-split-change] and \\[donkey-split-delete], as it does after
-`donkey-delete'."
-  (let ((text (and donkey--split-places
-                   (donkey--split-place-text
-                    (or donkey--split-primary (car donkey--split-places))))))
-    (and text (not (string-empty-p text)) text)))
+One kill whatever the number of places.  Where the places agree it is
+one copy of what they held, so \\[donkey-yank] gives back what was there
+rather than a column of copies; where they differ it is every text, one
+per line, in buffer order."
+  (let ((texts (mapcar #'donkey--split-place-text donkey--split-places)))
+    (cond
+     ((seq-every-p #'string-empty-p texts) nil)
+     (donkey--split-agree (car texts))
+     (t (string-join texts "\n")))))
 
 (defun donkey--split-enter-edit (clear where)
   "Leave the chooser and open Insert state over the places.
 
 CLEAR non-nil empties each place first.  WHERE is `start' to put point
-at each place\\='s beginning and `end' to put it at the end.  Refuses,
-changing nothing, where the buffer or a place cannot be written."
+at each place\\='s beginning and `end' to put it at the end.  Places
+that differ are shrunk to that edge, so only what is typed is copied.
+Refuses, changing nothing, where the buffer or a place cannot be
+written."
   (donkey--split-live-p)
   (barf-if-buffer-read-only)
   (unless (seq-every-p (lambda (place)
                          (donkey--split-writable-p place where))
                        donkey--split-places)
     (user-error "A place is read-only"))
+  (unless (or clear donkey--split-agree)
+    (dolist (place donkey--split-places)
+      (let ((edge (if (eq where 'start)
+                      (overlay-start place)
+                    (overlay-end place))))
+        (move-overlay place edge edge))))
   (when clear
     (let ((kill (donkey--split-kill-text)))
       (atomic-change-group
@@ -6441,7 +6466,8 @@ Bound to \\`a' inside `donkey-split-mode-map'."
   "Empty every place in the split, then type at all of them.
 
 The split\\='s `donkey-change'.  What the places held goes on the
-`kill-ring' as one copy, so \\[donkey-yank] brings it back.
+`kill-ring' as one kill, so \\[donkey-yank] brings it back; see
+`donkey--split-kill-text'.
 
 Bound to \\`c' inside `donkey-split-mode-map'."
   (interactive)
@@ -6451,8 +6477,8 @@ Bound to \\`c' inside `donkey-split-mode-map'."
   "Delete every place in the split and end the split.
 
 The split\\='s `donkey-delete'.  What the places held goes on the
-`kill-ring' as one copy.  Every place is deleted or none is: where one
-cannot be, nothing changes.
+`kill-ring' as one kill; see `donkey--split-kill-text'.  Every place is
+deleted or none is: where one cannot be, nothing changes.
 
 Bound to \\`d' inside `donkey-split-mode-map'."
   (interactive)
@@ -6637,9 +6663,13 @@ Banked lines are searched too, along with any live region exactly as
 it is selected, and opening the split spends the bank, as \\`y' and
 \\`d' do.  A live rectangle is searched instead of the bank.
 
-Refuses where the matches do not all hold the same text, since what is
-typed at one place replaces the others, and refuses an empty REGEXP,
-which would put a place at every character.
+The matches need not hold the same text: where they differ, \\`i' and
+\\`a' type only at each place\\='s edge, and what \\`c' and \\`d' remove
+reaches the kill ring one per line.  Case is ignored as
+`replace-regexp' ignores it: when REGEXP holds no capital letter.
+Refuses matches that touch, since text typed where two meet would
+belong to both, and an empty REGEXP, which would put a place at every
+character.
 
 Bound to \\`f' in Normal state."
   (interactive (list (read-regexp "Split on regexp: ") current-prefix-arg))
@@ -8725,8 +8755,9 @@ holds one at each start.
 
 A wrap leaves the split standing, so pairs nest and a verb can still
 follow; the other verbs end it.  What \\`c' and \\`d' remove reaches the
-kill ring ONCE rather than once per match, so \\[donkey-yank] pastes what was
-there rather than a column of copies.
+kill ring as ONE kill: a single copy when the matches agree, so
+\\[donkey-yank] pastes what was there rather than a column of copies, and
+every match on a line of its own when they differ.
 
 What is searched is what you selected, and no more.  With nothing
 selected it is the current LINE -- there is no whole-buffer default,
@@ -8736,9 +8767,14 @@ INSIDE the block; a count widens it to each row's whole line instead.
 Lines banked with \\[donkey-bank-selection] are searched too, and opening the split
 spends them.
 
-One thing it will not do: every match gets the SAME text, so a regexp
-whose matches differ from each other is refused rather than replacing
-them all with the first.
+The matches do not have to agree.  [0-9]+ holds 1, 22 and 333, and
+\\`a' then types after each of them without touching the numbers.  Case
+is ignored when the regexp holds no capital letter, as \\[replace-regexp]
+ignores it: todo finds TODO, Todo and todo alike.
+
+What it will not do is edit INSIDE matches that differ -- moving into
+one ends the split -- and it refuses matches that touch, such as a
+over aaa, since text typed where two meet would belong to both.
 
 Your Emacs still works
 ----------------------

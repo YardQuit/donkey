@@ -39,16 +39,82 @@ split can be driven by real keys without a minibuffer."
       (should (eq donkey--split-phase 'select))
       (should (= (length donkey--split-places) 2)))))
 
-(ert-deftest donkey-split-refuses-matches-that-do-not-agree ()
-  "A regexp matching different text at each place is refused.
+(ert-deftest donkey-split-holds-matches-that-differ ()
+  "A regexp matching different text at each place still makes a split."
+  (donkey-split-test--on "^[a-z]+"
+    (donkey-split-test--keys "*split-differ*" "alpha 1\nbeta 2\n" "v G f a X C-g"
+      (should (equal (buffer-string) "alphaX 1\nbetaX 2\n")))))
 
-Signals rather than reports, as `donkey-yank-rectangle' does over a row
-mismatch: the reader asked for something the split cannot carry, and
-what is typed at one place would replace the rest."
-  (donkey-split-test--keys "*split-differ*" "alpha 1\nbeta 2\n" "v G"
-    (should-error (donkey-split "^[a-z]+") :type 'user-error)
-    (should (null donkey--split-places))
-    (should (equal (buffer-string) "alpha 1\nbeta 2\n"))))
+(ert-deftest donkey-split-types-only-at-the-edges-of-matches-that-differ ()
+  "Where the matches differ, each verb leaves every match its own text."
+  (dolist (case '(("i < C-g" "id=<1;\nid=<22;\nid=<333;\n")
+                  ("a > C-g" "id=1>;\nid=22>;\nid=333>;\n")
+                  ("c N C-g" "id=N;\nid=N;\nid=N;\n")
+                  ("d"       "id=;\nid=;\nid=;\n")
+                  ("( ["     "id=([1]);\nid=([22]);\nid=([333]);\n")))
+    (donkey-split-test--on "[0-9]+"
+      (donkey-split-test--keys "*split-edges*" "id=1;\nid=22;\nid=333;\n"
+          (concat "v G f " (car case))
+        (should (equal (list (car case) (buffer-string))
+                       (list (car case) (cadr case))))))))
+
+(ert-deftest donkey-split-edits-inside-matches-that-agree ()
+  "Where the matches agree the place is the whole match, so an edit inside it is copied."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-inside*" "a foo b\nc foo d\n"
+        "v G f i X <right> Y C-g"
+      (should (equal (buffer-string) "a XfYoo b\nc XfYoo d\n")))))
+
+(ert-deftest donkey-split-leaving-the-edge-of-matches-that-differ-ends-it ()
+  "Where the matches differ, moving into one ends the split."
+  (donkey-split-test--on "fo."
+    (donkey-split-test--keys "*split-leave-edge*" "foo fox\n" "f i X <right>"
+      (should (null donkey--split-phase))
+      (should (equal (buffer-string) "Xfoo Xfox\n")))))
+
+(ert-deftest donkey-split-kills-every-text-that-differs-one-per-line ()
+  "`c' and `d' over places that differ put every text on the kill ring as one kill."
+  (dolist (keys '("c N C-g" "d"))
+    (donkey-split-test--on "[0-9]+"
+      (donkey-split-test--keys "*split-kill-differ*" "id=1;\nid=22;\nid=333;\n"
+          (concat "v G f " keys)
+        (should (equal (list keys kill-ring) (list keys '("1\n22\n333"))))))))
+
+(ert-deftest donkey-split-ignores-case-without-a-capital ()
+  "Case is ignored as `replace-regexp' ignores it."
+  (dolist (case '(("todo" t t 3) ("Todo" t t 1) ("todo" nil t 1)
+                  ("Todo" t nil 3)))
+    (let ((case-fold-search (nth 1 case))
+          (search-upper-case (nth 2 case)))
+      (donkey-split-test--on (car case)
+        (donkey-split-test--keys "*split-case*" "Todo one\ntodo two\nTODO three\n"
+            "v G f"
+          (should (equal (list case (length donkey--split-places))
+                         (list case (nth 3 case)))))))))
+
+(ert-deftest donkey-split-refuses-matches-that-touch ()
+  "Matches that share a boundary are refused, and nothing is painted."
+  (dolist (case '(("aaa\n" "a") ("x  y\n" " ") ("xxb\n" "x*")))
+    (donkey-split-test--on (cadr case)
+      (donkey-split-test--keys "*split-touch*" (car case) ""
+        (should-error (call-interactively #'donkey-split) :type 'user-error)
+        (should (null donkey--split-places))
+        (should (zerop (donkey-split-test--painted)))
+        (should (equal (buffer-string) (car case)))))))
+
+(ert-deftest donkey-split-types-at-the-edge-of-read-only-matches-that-differ ()
+  "Where the matches differ only their edges are written, so read-only text in one is no obstacle."
+  (donkey-split-test--on "[0-9]+"
+    (donkey-split-test--keys "*split-ro-differ*" "id=1;\nid=22;\nid=333;\n" "v G f"
+      (save-excursion
+        (goto-char (point-max))
+        (search-backward "333")
+        (let ((inhibit-read-only t))
+          (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))
+      (execute-kbd-macro (kbd "i < C-g"))
+      (should (equal (buffer-string) "id=<1;\nid=<22;\nid=<333;\n"))
+      (let ((inhibit-read-only t))
+        (remove-text-properties (point-min) (point-max) '(read-only nil))))))
 
 (ert-deftest donkey-split-says-nothing-matched-when-nothing-does ()
   "A regexp with no match leaves no split and says so."
@@ -206,13 +272,13 @@ what is typed at one place would replace the rest."
       (should (equal (buffer-string) "a fooX\nb foo\nc foo\nd foo\n")))))
 
 (ert-deftest donkey-split-that-does-not-open-keeps-the-bank ()
-  "No match, and matches that differ, leave the bank standing."
+  "No match, and matches that touch, leave the bank standing."
   (donkey-split-test--on "zzz"
     (donkey-split-test--keys "*split-bank-none*" donkey-split-test--four
         "V m l f"
       (should (= (length (donkey--banked-spans)) 1))))
-  (donkey-split-test--keys "*split-bank-differ*" "a foo\nb fox\n" "V j m l"
-    (should-error (donkey-split "fo.") :type 'user-error)
+  (donkey-split-test--keys "*split-bank-touch*" "aaa\nbbb\n" "V j m l"
+    (should-error (donkey-split "a") :type 'user-error)
     (should (= (donkey--banked-line-count) 2))))
 
 (ert-deftest donkey-split-a-live-rectangle-wins-over-the-bank ()
