@@ -773,6 +773,88 @@ touch the text it goes around, so it is not asked."
                        (list (cadr case)
                              "Split ended -- 2 places left alone")))))))
 
+(ert-deftest donkey-split-repeats-an-edit-at-a-place-s-edge-everywhere ()
+  "A deletion reaching just past the place is made past every place."
+  (dolist (case '(("i DEL C-g" "afoo b\ncfoo d\n")
+                  ("a C-d C-g" "a foob\nc food\n")
+                  ("c DEL C-g" "a b\nc d\n")))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-edge*" "a foo b\nc foo d\n"
+          (concat "v G f " (car case))
+        (should (equal (list (car case) (buffer-string))
+                       (list (car case) (cadr case))))))))
+
+(ert-deftest donkey-split-keeps-every-place-alike-through-electric-indentation ()
+  "What `electric-indent-mode' does beside the place after RET happens at every place."
+  (let ((electric-indent-mode t))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-electric*" "a foo b\nc foo d\n"
+          "v G f a RET C-g"
+        (should (equal (buffer-string) "a foo\nb\nc foo\nd\n"))))))
+
+(ert-deftest donkey-split-ends-where-an-edge-edit-cannot-be-made-alike ()
+  "A deletion that would take a line break at one place and not another ends the split."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-edge-unlike*" "a foo b\nfoo d\n"
+        "v G f i"
+      (let ((said nil))
+        (cl-letf (((symbol-function 'message)
+                   (lambda (fmt &rest args)
+                     (when fmt (push (apply #'format fmt args) said))
+                     nil)))
+          (execute-kbd-macro (kbd "DEL")))
+        (should (member "Split ended -- an edit beside a place could not be made at every place"
+                        said)))
+      (should (null donkey--split-phase))
+      (should (equal (buffer-string) "afoo b\nfoo d\n")))))
+
+(ert-deftest donkey-split-ends-where-an-edge-edit-would-leave-places-touching ()
+  "A deletion that leaves two places sharing a boundary ends the split."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-edge-touch*" "x foo foo y\n" "f a C-d"
+      (should (null donkey--split-phase))
+      (should (equal (buffer-string) "x foofoo y\n")))))
+
+(defun donkey-split-test--append-z ()
+  "Put a Z at the end of the buffer, away from every place."
+  (interactive)
+  (save-excursion
+    (goto-char (point-max))
+    (insert "Z")))
+
+(ert-deftest donkey-split-ends-at-an-edit-away-from-the-places ()
+  "A command that changes text away from the places ends the split, saying so."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-stray*" "a foo b\nc foo d\n" "v G f a"
+      (let ((said nil)
+            (overriding-local-map (let ((map (make-sparse-keymap)))
+                                    (define-key map [f7]
+                                      #'donkey-split-test--append-z)
+                                    map)))
+        (cl-letf (((symbol-function 'message)
+                   (lambda (fmt &rest args)
+                     (when fmt (push (apply #'format fmt args) said))
+                     nil)))
+          (execute-kbd-macro [f7]))
+        (should (member "Split ended -- an edit away from the places" said)))
+      (should (null donkey--split-phase))
+      (should (equal (buffer-string) "a foo b\nc foo d\nZ")))))
+
+(ert-deftest donkey-split-survives-an-undo-while-writing ()
+  "An undo while writing puts every place back together, and writing goes on."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-undo*" "a foo b\nc foo d\n"
+        "v G f a X C-/ Y C-g"
+      (should (equal (buffer-string) "a fooY b\nc fooY d\n")))))
+
+(ert-deftest donkey-split-is-not-ended-by-a-property-change ()
+  "A text property set away from the places while writing changes no text."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-property*" "a foo b\nc foo d\n" "v G f a"
+      (put-text-property (1- (point-max)) (point-max) 'face 'bold)
+      (execute-kbd-macro (kbd "X C-g"))
+      (should (equal (buffer-string) "a fooX b\nc fooX d\n")))))
+
 (ert-deftest donkey-split-belongs-to-the-buffer-it-was-made-in ()
   "A verb pressed in another buffer refuses, and leaves no places behind.
 
