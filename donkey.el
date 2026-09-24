@@ -4990,6 +4990,9 @@ why."
         (donkey--mark-run-exit)))
     (error nil)))
 
+(defvar donkey--mark-run-terminal nil
+  "The terminal the armed mark run's map lives on, or nil.")
+
 (defun donkey--mark-run-mode-keep-p ()
   "Return non-nil while mark run mode should stay active.
 
@@ -5003,8 +5006,12 @@ too, as members of `donkey--mark-run-inert-commands'.
 A key that DOES NOTHING does not end it either, nor does a mistyped
 sequence that reached no command at all, nor `donkey-mark-run-refuse'
 -- see `donkey--mark-run-inert-commands'.  \`.' is judged by the
-command it repeats, through `donkey--mark-run-press-command'."
-  (or (memq (donkey--mark-run-press-command) donkey--mark-run-commands)
+command it repeats, through `donkey--mark-run-press-command'.
+
+A command from another terminal leaves the run alone: only a key on
+`donkey--mark-run-terminal' can end it."
+  (or (not (eq (frame-terminal) donkey--mark-run-terminal))
+      (memq (donkey--mark-run-press-command) donkey--mark-run-commands)
       ;; A sequence that resolves to nothing arrives as nil: the same
       ;; mistype as an unbound key, under another spelling.
       (null this-command)
@@ -5022,9 +5029,6 @@ terminal until something disarms it.")
 
 (defvar donkey--mark-run-buffer nil
   "The buffer the armed mark run belongs to, or nil when none is armed.")
-
-(defvar donkey--mark-run-terminal nil
-  "The terminal the armed mark run's map lives on, or nil.")
 
 (defvar donkey--mark-run-suspended nil
   "A mark run put down by a focus change or a buffer switch, or nil.
@@ -5206,6 +5210,25 @@ that said something of its own keeps its echo."
     (when exit
       (funcall exit))))
 
+(defun donkey--mark-run-answers-p ()
+  "Return non-nil where the mark run\\='s keys answer.
+
+On the terminal the armed run was armed on.  A map left on a terminal
+after its run ended from another answers nothing."
+  (eq (frame-terminal) donkey--mark-run-terminal))
+
+(defun donkey--mark-run-armed-map ()
+  "Return the map a mark run arms.
+
+The keys of `donkey-mark-run-mode-map', every one answering only while
+`donkey--mark-run-answers-p' holds; see `donkey--answering-map'."
+  (let (bindings)
+    (map-keymap (lambda (event definition)
+                  (push (cons event definition) bindings))
+                donkey-mark-run-mode-map)
+    (donkey--answering-map (nreverse bindings) #'donkey--mark-run-answers-p
+                           'donkey-mark-run-keys)))
+
 (defun donkey--mark-run-enter ()
   "Arm mark run mode: the transient map, the hint hook, the reminder.
 
@@ -5235,8 +5258,9 @@ armed-by-keypress one is to have written it down."
   (setq donkey--mark-run-history nil)
   (add-hook 'pre-command-hook #'donkey--mark-run-mode-pre-command)
   (add-hook 'post-command-hook #'donkey--mark-run-mode-post-command)
+  (donkey--drop-stranded-maps 'donkey-mark-run-keys)
   (setq donkey--mark-run-exit-function
-        (set-transient-map donkey-mark-run-mode-map
+        (set-transient-map (donkey--mark-run-armed-map)
                            #'donkey--mark-run-mode-keep-p
                            #'donkey--mark-run-exit))
   (message "%s" donkey--mark-run-mode-hint))

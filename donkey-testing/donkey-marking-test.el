@@ -4967,6 +4967,42 @@ the returning frame brings; ending on it would undo the resume."
           (should-not donkey--mark-run-exit-function))
       (kill-buffer other))))
 
+(ert-deftest donkey-mark-run-a-command-on-another-terminal-leaves-it-armed ()
+  "Only a key on the terminal a run was armed on can end it."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (should donkey--mark-run-exit-function)
+    (let ((donkey--mark-run-terminal 'elsewhere))
+      (execute-kbd-macro (kbd "C-e")))
+    (should donkey--mark-run-exit-function)))
+
+(ert-deftest donkey-mark-run-keys-answer-only-on-its-own-terminal ()
+  "Looked up from another terminal, a run\'s key is the ordinary one."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (should (eq (key-binding "u") #'donkey-mark-run-step-back))
+    (let ((donkey--mark-run-terminal 'elsewhere))
+      (should-not (eq (key-binding "u") #'donkey-mark-run-step-back)))))
+
+(ert-deftest donkey-mark-run-a-map-left-behind-answers-nothing ()
+  "A run ended from another terminal leaves its map there, inert.
+
+Ending it with `overriding-terminal-local-map' bound to nil is what an
+ending on another terminal does to this one: the map is popped from a
+different value.  Arming the next run clears the map away."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (let ((stranded (seq-find (lambda (map)
+                                (and (keymapp map)
+                                     (lookup-key map [donkey-mark-run-keys])))
+                              (cdr overriding-terminal-local-map))))
+      (should stranded)
+      (let ((overriding-terminal-local-map nil))
+        (donkey--mark-run-exit))
+      (should (memq stranded (cdr overriding-terminal-local-map)))
+      (should-not (eq (key-binding "u") #'donkey-mark-run-step-back))
+      (execute-kbd-macro (kbd "M"))
+      (should donkey--mark-run-exit-function)
+      (should-not (memq stranded (cdr overriding-terminal-local-map)))
+      (should (eq (key-binding "u") #'donkey-mark-run-step-back)))))
+
 (ert-deftest donkey-mark-run-ends-when-its-buffer-is-killed ()
   "Killing the run's buffer from Lisp disarms the run; nothing is left pending or suspended."
   (donkey-mark-test--keys "for text that is not saved" "w w l M w"
