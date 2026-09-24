@@ -84,7 +84,8 @@ what is typed at one place would replace the rest."
   (donkey-split-test--on "foo"
     (donkey-split-test--keys "*split-d*" "a foo b\nc foo d\n" "v G f d"
       (should (equal (buffer-string) "a  b\nc  d\n"))
-      (should (null donkey--split-places)))))
+      (should (null donkey--split-places))
+      (should-not (memq #'donkey--split-flush kill-buffer-hook)))))
 
 (ert-deftest donkey-split-c-and-d-save-one-copy-not-one-per-place ()
   "What a split replaces reaches the kill ring once, since the places agree."
@@ -346,6 +347,70 @@ message owes is the binding of `message-log-max' it was made under."
       (should (= (length logged) 2))
       (should (string-match-p "\\`Split: 2 places in " (car logged)))
       (should (string-match-p "2 places" (cadr logged))))))
+
+(ert-deftest donkey-split-whose-buffer-is-killed-ends-there-with-its-count ()
+  "Killing the buffer ends its split there, reporting what the split had.
+
+Checked at the verb menu and while writing, with the buffer killed by
+Lisp rather than by a command, so nothing but the kill can end it."
+  (dolist (case '(("v G f"     "Split ended -- 2 places left alone")
+                  ("v G f a X" "Split: typed after 2 places")))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-killed*" "a foo b\nc foo d\n"
+          (car case)
+        (let (said)
+          (cl-letf (((symbol-function 'message)
+                     (lambda (fmt &rest args)
+                       (when fmt (push (apply #'format fmt args) said))
+                       nil)))
+            (kill-buffer (current-buffer)))
+          (should (equal said (list (cadr case)))))
+        (should (null donkey--split-buffer))
+        (should (null donkey--split-exit-function))
+        (when (bound-and-true-p donkey-insert-mode)
+          (donkey-normal-mode 1))))))
+
+(ert-deftest donkey-split-whose-buffer-died-unseen-reports-no-count ()
+  "Where the kill skipped its hook, the ending counts nothing it cannot see.
+
+The next key ends the split from another buffer, which holds no places
+of its own; a count read there would say none were left alone."
+  (let ((other (get-buffer-create "*split-survivor*")))
+    (unwind-protect
+        (donkey-split-test--on "foo"
+          (donkey-split-test--keys "*split-unseen*" "a foo b\nc foo d\n" "v G f"
+            (let ((kill-buffer-hook nil))
+              (kill-buffer (current-buffer)))
+            (switch-to-buffer other)
+            (text-mode)
+            (insert "one\ntwo\n")
+            (goto-char (point-min))
+            (let (said)
+              (cl-letf (((symbol-function 'message)
+                         (lambda (fmt &rest args)
+                           (when fmt (push (apply #'format fmt args) said))
+                           nil)))
+                (execute-kbd-macro (kbd "j")))
+              (should-not (seq-find (lambda (m) (string-match-p "places" m))
+                                    said)))
+            (should (null donkey--split-exit-function))))
+      (kill-buffer other))))
+
+(ert-deftest donkey-split-can-never-stop-its-buffer-being-killed ()
+  "An error while a split ends does not keep its buffer alive.
+
+Run with `debug-on-error' on as well as off, since a guard that only
+catches when the debugger is off lets the error through for anyone
+who works with it on."
+  (dolist (debug-on-error '(nil t))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-kill-error*" "a foo b\nc foo d\n" "v G f"
+        (let ((buffer (current-buffer)))
+          (cl-letf (((symbol-function 'donkey--split-report)
+                     (lambda (_) (error "Report failed"))))
+            (let ((inhibit-message t))
+              (kill-buffer buffer)))
+          (should-not (buffer-live-p buffer)))))))
 
 (ert-deftest donkey-split-belongs-to-the-buffer-it-was-made-in ()
   "A verb pressed in another buffer refuses, and leaves no places behind.

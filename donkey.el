@@ -6172,7 +6172,9 @@ chooser on the screen offering verbs that are gone, and the next press
 then looks like a fault in the verb.
 
 What is said is logged in *Messages*, under the line that opened the
-split, so the count outlasts the next key.
+split, so the count outlasts the next key.  Nothing is said where the
+split\\='s buffer is already dead, since there is nothing left to count:
+`donkey--split-flush' ends a split before its buffer goes.
 
 The places are overlays in the split\\='s own buffer, which need not be
 the current one, so both are cleared."
@@ -6180,8 +6182,8 @@ the current one, so both are cleared."
     (when (and (or donkey--split-places home) (not quiet))
       ;; Counted in the split's own buffer: the places are buffer-local
       ;; and this may be running from somewhere else.
-      (let ((there (if (buffer-live-p home) home (current-buffer))))
-        (message "%s" (with-current-buffer there
+      (when (or (null home) (buffer-live-p home))
+        (message "%s" (with-current-buffer (or home (current-buffer))
                         (donkey--split-report
                          (length donkey--split-places))))))
     (when donkey--split-exit-function
@@ -6199,7 +6201,20 @@ the current one, so both are cleared."
               donkey--split-text nil
               donkey--split-phase nil
               donkey--split-did nil)
-        (remove-hook 'post-command-hook #'donkey--split-sync t)))))
+        (remove-hook 'post-command-hook #'donkey--split-sync t)
+        (remove-hook 'kill-buffer-hook #'donkey--split-flush t)))))
+
+(defun donkey--split-flush ()
+  "End the split when its buffer is killed, while the places still count.
+
+Runs from `kill-buffer-hook' in the split\\='s buffer, so the report
+counts the real places and the chooser is disarmed at once rather than
+by the next key.  An error here would stop the buffer being killed, so
+none is let out."
+  (condition-case err
+      (donkey--split-dissolve)
+    (error (message "DONKEY: ending a split failed: %s"
+                    (error-message-string err)))))
 
 (defun donkey-split-quit ()
   "End the split, leaving what it changed.
@@ -6474,6 +6489,7 @@ Bound to \\`f' in Normal state."
         (setq donkey--split-primary first
               donkey--split-text (donkey--split-place-text first)))
       (add-hook 'post-command-hook #'donkey--split-sync nil t)
+      (add-hook 'kill-buffer-hook #'donkey--split-flush nil t)
       (setq donkey--split-buffer (current-buffer)
             donkey--split-phase 'select
             donkey--split-exit-function

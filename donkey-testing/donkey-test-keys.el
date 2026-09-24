@@ -132,6 +132,10 @@ user was told without silencing the run."
      ;; A macro that ends on one of the mark run's letters leaves its
      ;; map armed, terminal-wide, for whatever test runs next.
      (donkey--mark-run-exit)
+     ;; So does a split left at its verb menu, and the next test's first
+     ;; key would end it there -- reporting into that test's messages.
+     ;; Taken down quietly while its buffer is still alive.
+     (donkey--split-dissolve t)
      (when (get-buffer ,name) (kill-buffer ,name))))
 
 (provide 'donkey-test-keys)
