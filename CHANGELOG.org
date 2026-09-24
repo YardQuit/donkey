@@ -9,6 +9,86 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.16.0 — 2026-09-24
+
+=f= edits every match at once. It asks for a regexp, holds every match
+in what you selected, and waits: =i= types before every match, =a=
+after it, =c= empties it and types in its place, =d= deletes it, and
+=w= or a delimiter wraps it. What you type appears at every match as
+you type it, in ordinary INSERT state, and =C-g= ends it keeping what
+you wrote.
+
+It is DONKEY's own take on multiple cursors, and it works by mirroring
+rather than by cursors: the place you type in is copied into the others
+after each command, so nothing intercepts a command while you write and
+INSERT state stays Emacs's own.
+
+*Added*
+
+- =f= (=donkey-split=), a key that rang the bell before. It changes
+  nothing by itself: it selects every match and waits for a verb. A
+  wrap leaves the split standing, so pairs nest and a verb can still
+  follow — =f= =(= =[= =a= wraps twice and then types after — and the
+  other verbs end it.
+- What =f= searches is what you selected: the current line when nothing
+  is, a =v=, =V= or =%= selection, the inside of an =m v= block (=C-u f=
+  takes each row's whole line), or banked lines, with a =v= selection
+  made after banking searched exactly as selected. There is no
+  whole-buffer default; press =%= first. Opening the split spends the
+  bank, as =y= and =d= do.
+- The matches need not agree: =[0-9]+= over =1=, =22= and =333= holds
+  three different texts, and =i= and =a= then type at their edges, so
+  nothing is replaced. Case is decided the way =r r= decides it: a
+  regexp with no capital ignores case.
+- Backspace just before a match, =C-d= just after it, and the
+  indentation =RET= brings with it are repeated at every match. An edit
+  anywhere else ends the split and says so.
+- =c= and =d= put one kill on the ring: one copy when the matches agree,
+  every match on a line of its own when they differ.
+- A split that ends says what it did — "Split: typed after 3 places" —
+  and the line stays in =*Messages*=.
+- =donkey-split-face= colors the matches while a split is open.
+- Lessons 14 and 15 of the tutor teach the split by exercise: the verbs,
+  a selection, banked lines alone and with part of a line selected,
+  case, and the five regexp spellings Emacs does not share with other
+  tools.
+
+*Changed — you will notice these*
+
+- =C-w=, =M-w= and =C-x r s= on a =V= selection take its whole lines,
+  final newline included, as =d= and =y= do. =C-w= used to leave an
+  empty line behind, and =M-w= copied the lines without their last
+  newline, so the paste ran into the line it landed on. =M-s o= searches
+  the same lines. Commands that read point and mark for themselves
+  still see the selection stop before its last newline — =M-x
+  keep-lines= leaves the last line out — and the README says how to
+  hand them whole lines.
+
+*Fixed — you will notice these*
+
+- =M= in a daemon with two clients: a key on the second client ended a
+  mark run armed on the first but left its keys armed there for good,
+  so on that client its letters went on running mark commands in every
+  state — typing =wow= in INSERT state left a single =o=. A run now
+  keeps to the terminal it started on.
+
+*Under the hood*
+
+- Every match's edit goes through Emacs's change hooks as a typed edit
+  does, so font-lock, the syntax cache and a language server see every
+  match change, not only the one you typed in.
+- A verb over many matches is one change: it happens at every match or
+  at none, and what it reports reaches the kill ring only once it has.
+- Only what changed is copied into the other matches, which keeps a key
+  at a thousand matches to about a millisecond and a half, and the undo
+  record to about a third of the size.
+
+*Upgrading*
+
+Nothing to do. =f= was a free key, so if you had bound it yourself your
+binding still wins; DONKEY's startup report now names it — "f is ...
+now, was donkey-split" — because the key is DONKEY's from this release.
+
 * 1.15.0 — 2026-09-21
 
 DONKEY can close a delimiter while you type, if you ask it to. Type
