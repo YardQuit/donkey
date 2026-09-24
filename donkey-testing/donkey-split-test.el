@@ -248,6 +248,29 @@ ended' left the reader guessing whether anything had happened at all."
     (donkey-split-test--keys "*split-one-report*" "only foo here\n" "v G f a X C-g"
       (should (equal donkey-test-keys--said "Split: typed after 1 place")))))
 
+(ert-deftest donkey-split-logs-its-report-once-after-its-opening ()
+  "The report reaches *Messages* once, after the line that opened the split.
+
+Asserted at the call, as `donkey-a-repainted-reminder-is-never-logged'
+is, since a live-frame run of the suite has no log to count: what each
+message owes is the binding of `message-log-max' it was made under."
+  (dolist (keys '("d" "a X C-g" "( C-g" "C-g"))
+    (let ((message-log-max 1000) logged)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (when (and fmt message-log-max)
+                     (push (apply #'format fmt args) logged))
+                   nil)))
+        (donkey-split-test--on "foo"
+          (donkey-split-test--keys "*split-log*" "a foo b\nc foo d\n"
+              (concat "v G f " keys)
+            nil)))
+      (setq logged (seq-filter (lambda (m) (string-prefix-p "Split" m))
+                               (nreverse logged)))
+      (should (= (length logged) 2))
+      (should (string-match-p "\\`Split: 2 places in " (car logged)))
+      (should (string-match-p "2 places" (cadr logged))))))
+
 (ert-deftest donkey-split-belongs-to-the-buffer-it-was-made-in ()
   "A verb pressed in another buffer refuses, and leaves no places behind.
 

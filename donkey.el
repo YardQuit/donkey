@@ -6141,6 +6141,9 @@ so a split that ends for a reason the reader did not cause leaves the
 chooser on the screen offering verbs that are gone, and the next press
 then looks like a fault in the verb.
 
+What is said is logged in *Messages*, under the line that opened the
+split, so the count outlasts the next key.
+
 The places are overlays in the split\\='s own buffer, which need not be
 the current one, so both are cleared."
   (let ((home donkey--split-buffer))
@@ -6148,9 +6151,9 @@ the current one, so both are cleared."
       ;; Counted in the split's own buffer: the places are buffer-local
       ;; and this may be running from somewhere else.
       (let ((there (if (buffer-live-p home) home (current-buffer))))
-        (donkey--repaint-hint
-         (with-current-buffer there
-           (donkey--split-report (length donkey--split-places))))))
+        (message "%s" (with-current-buffer there
+                        (donkey--split-report
+                         (length donkey--split-places))))))
     (when donkey--split-exit-function
       (let ((donkey--split-keeping t)
             (disarm donkey--split-exit-function))
