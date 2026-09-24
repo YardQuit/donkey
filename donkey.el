@@ -5916,6 +5916,44 @@ a selecting state.  \\[keyboard-quit] is what lets go."
   (call-interactively #'mark-whole-buffer))
 
 ;;; ---------------------------------------------------------------------------
+;;; Transient maps across terminals
+;;; ---------------------------------------------------------------------------
+
+(defun donkey--answering-map (bindings answers-p marker)
+  "Return a keymap of BINDINGS whose keys answer only while ANSWERS-P does.
+
+BINDINGS is a list of (EVENT . DEFINITION).  ANSWERS-P is called with
+no arguments at every lookup; where it returns nil the key does its
+ordinary job, as though the map were not there.  MARKER, a symbol, is
+bound in the map so that `donkey--drop-stranded-maps' can find it.
+
+For a map armed with `set-transient-map': the map is pushed on one
+terminal and popped from whichever terminal runs the command that ends
+it, so it can outlive its mode on the terminal it was armed on."
+  (let ((map (make-sparse-keymap))
+        (filter (lambda (definition) (and (funcall answers-p) definition))))
+    (dolist (binding bindings)
+      (define-key map (vector (car binding))
+        `(menu-item "" ,(cdr binding) :filter ,filter)))
+    (define-key map (vector marker) #'ignore)
+    map))
+
+(defun donkey--drop-stranded-maps (marker)
+  "Take every map carrying MARKER off this terminal.
+
+A map `donkey--answering-map' built, left behind by a mode ended from
+another terminal.  Called by the mode as it arms again here."
+  (let ((tail (cdr-safe overriding-terminal-local-map))
+        stranded)
+    (while (consp tail)
+      (when (and (keymapp (car tail))
+                 (lookup-key (car tail) (vector marker)))
+        (push (car tail) stranded))
+      (setq tail (cdr tail)))
+    (dolist (map stranded)
+      (internal-pop-keymap map 'overriding-terminal-local-map))))
+
+;;; ---------------------------------------------------------------------------
 ;;; Split Mode
 ;;; ---------------------------------------------------------------------------
 
@@ -5960,6 +5998,13 @@ verb pressed anywhere else would act on nothing.")
 
 (defvar donkey--split-exit-function nil
   "What disarms Split mode, or nil when the mode is not armed.")
+
+(defvar donkey--split-terminal nil
+  "The terminal the armed split\\='s map was pushed on, or nil.
+
+`overriding-terminal-local-map' is per terminal, so this is the one
+terminal whose keys the split\\='s verbs answer and whose commands can
+end it.")
 
 (defvar donkey--split-keeping nil
   "Bound while the chooser is dismissed on purpose rather than abandoned.")
@@ -6191,7 +6236,8 @@ the current one, so both are cleared."
             (disarm donkey--split-exit-function))
         (setq donkey--split-exit-function nil)
         (funcall disarm)))
-    (setq donkey--split-buffer nil)
+    (setq donkey--split-buffer nil
+          donkey--split-terminal nil)
     (dolist (buffer (delq nil (list (and (buffer-live-p home) home)
                                     (current-buffer))))
       (with-current-buffer buffer
@@ -6426,14 +6472,33 @@ typo; see `donkey--split-inert-commands'.")
     donkey-split-quit)
   "The commands that keep Split mode armed.")
 
+(defun donkey--split-answers-p ()
+  "Return non-nil where a split\\='s verbs answer a key.
+
+In the live split\\='s own buffer, on the terminal it was armed on.
+Anywhere else a verb\\='s key does its ordinary job, and
+`donkey--split-keep-p' lets the split go in the same press."
+  (and (eq (current-buffer) donkey--split-buffer)
+       (eq (frame-terminal) donkey--split-terminal)))
+
 (defun donkey--split-chooser-map ()
-  "Return `donkey-split-mode-map' with every delimiter on its own key."
-  (let ((map (copy-keymap donkey-split-mode-map)))
+  "Return the map a split arms: its verbs, and every delimiter on its own key.
+
+The keys of `donkey-split-mode-map', and each delimiter in
+`donkey-mark-pair-delimiters' bound to `donkey-split-wrap-key', every
+one answering only while `donkey--split-answers-p' holds; see
+`donkey--answering-map'."
+  (let (bindings)
+    (map-keymap (lambda (event definition)
+                  (push (cons event definition) bindings))
+                donkey-split-mode-map)
     (dolist (pair donkey-mark-pair-delimiters)
       (dolist (char (list (car pair) (cdr pair)))
-        (unless (keymap-lookup map (key-description (vector char)))
-          (define-key map (vector char) #'donkey-split-wrap-key))))
-    map))
+        (unless (or (lookup-key donkey-split-mode-map (vector char))
+                    (assq char bindings))
+          (push (cons char #'donkey-split-wrap-key) bindings))))
+    (donkey--answering-map (nreverse bindings) #'donkey--split-answers-p
+                           'donkey-split-verbs)))
 
 (defun donkey--split-keep-p ()
   "Return non-nil while Split mode should stay armed.
@@ -6442,13 +6507,15 @@ The mode lives while the command about to run is one of its own, is part
 of entering a count, or changes nothing -- see
 `donkey--split-inert-commands'.  Any other key lapses the map and does
 its ordinary job in the same press.  A split belongs to one buffer, so
-the map lapses anywhere else."
-  (and (eq (current-buffer) donkey--split-buffer)
-       (or (memq this-command donkey--split-commands)
-           (null this-command)
-           (memq this-command donkey--split-inert-commands)
-           (memq this-command '(universal-argument universal-argument-more
-                                digit-argument negative-argument)))))
+the map lapses anywhere else.  A command from another terminal leaves
+the split alone: only a key on `donkey--split-terminal' can end it."
+  (or (not (eq (frame-terminal) donkey--split-terminal))
+      (and (eq (current-buffer) donkey--split-buffer)
+           (or (memq this-command donkey--split-commands)
+               (null this-command)
+               (memq this-command donkey--split-inert-commands)
+               (memq this-command '(universal-argument universal-argument-more
+                                    digit-argument negative-argument))))))
 
 (defun donkey-split (regexp &optional wide)
   "Hold every REGEXP match in the selection, then wait for a verb.
@@ -6490,7 +6557,9 @@ Bound to \\`f' in Normal state."
               donkey--split-text (donkey--split-place-text first)))
       (add-hook 'post-command-hook #'donkey--split-sync nil t)
       (add-hook 'kill-buffer-hook #'donkey--split-flush nil t)
+      (donkey--drop-stranded-maps 'donkey-split-verbs)
       (setq donkey--split-buffer (current-buffer)
+            donkey--split-terminal (frame-terminal)
             donkey--split-phase 'select
             donkey--split-exit-function
             (set-transient-map (donkey--split-chooser-map)

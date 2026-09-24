@@ -412,6 +412,69 @@ who works with it on."
               (kill-buffer buffer)))
           (should-not (buffer-live-p buffer)))))))
 
+(ert-deftest donkey-split-a-verb-key-in-another-buffer-does-its-own-job ()
+  "A verb\'s key pressed in another buffer is that buffer\'s key.
+
+The buffer is changed without a command, as a window selected by the
+mouse or a frame switch does, so nothing has ended the split first."
+  (let ((other (get-buffer-create "*split-elsewhere*")))
+    (unwind-protect
+        (donkey-split-test--on "foo"
+          (donkey-split-test--keys "*split-home-key*" "a foo b\nc foo d\n"
+              "v G f"
+            (let ((home (current-buffer)))
+              (switch-to-buffer other)
+              (text-mode)
+              (insert "zzz\n")
+              (goto-char (point-min))
+              (donkey--ensure-default-state)
+              (execute-kbd-macro (kbd "i Q"))
+              (should (equal (buffer-string) "Qzzz\n"))
+              (should (null donkey--split-exit-function))
+              (should (null (buffer-local-value 'donkey--split-places home))))))
+      (kill-buffer other))))
+
+(ert-deftest donkey-split-a-command-on-another-terminal-leaves-it-armed ()
+  "Only a key on the terminal a split was armed on can end it."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-terminal*" "a foo b\nc foo d\n" "v G f"
+      (let ((donkey--split-terminal 'elsewhere))
+        (execute-kbd-macro (kbd "j")))
+      (should donkey--split-exit-function)
+      (execute-kbd-macro (kbd "d"))
+      (should (equal (buffer-string) "a  b\nc  d\n")))))
+
+(ert-deftest donkey-split-verbs-answer-only-on-its-own-terminal ()
+  "Looked up from another terminal, a verb\'s key is the ordinary one."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-own-terminal*" "a foo b\nc foo d\n"
+        "v G f"
+      (should (eq (key-binding "d") #'donkey-split-delete))
+      (let ((donkey--split-terminal 'elsewhere))
+        (should-not (eq (key-binding "d") #'donkey-split-delete))))))
+
+(ert-deftest donkey-split-a-map-left-behind-answers-nothing ()
+  "A split ended from another terminal leaves its map there, inert.
+
+Ending it with `overriding-terminal-local-map' bound to nil is what an
+ending on another terminal does to this one: the map is popped from a
+different value.  Arming the next split clears the map away."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-stranded*" "a foo b\nc foo d\n" "v G f"
+      (let ((stranded (seq-find (lambda (map)
+                                  (and (keymapp map)
+                                       (lookup-key map [donkey-split-verbs])))
+                                (cdr overriding-terminal-local-map))))
+        (should stranded)
+        (let ((overriding-terminal-local-map nil))
+          (donkey--split-dissolve t))
+        (should (memq stranded (cdr overriding-terminal-local-map)))
+        (should-not (eq (key-binding "d") #'donkey-split-delete))
+        (goto-char (point-min))
+        (execute-kbd-macro (kbd "v G f"))
+        (should-not (memq stranded (cdr overriding-terminal-local-map)))
+        (should (eq (key-binding "d") #'donkey-split-delete))))))
+
 (ert-deftest donkey-split-belongs-to-the-buffer-it-was-made-in ()
   "A verb pressed in another buffer refuses, and leaves no places behind.
 
