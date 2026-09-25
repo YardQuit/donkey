@@ -6353,6 +6353,70 @@ before the change.")
 The report says the places were left alone where it has not moved,
 whichever verb ran.")
 
+(defvar-local donkey--split-target nil
+  "What the places are being brought to hold, or nil where they hold it.
+
+A list (OLD NEW PREFIX SUFFIX MIDDLE): NEW is what the primary holds,
+OLD what every place held when it was last brought up to date, PREFIX
+and SUFFIX how many characters the two share at the front and at the
+back, and MIDDLE the part of NEW between them.  Set by
+`donkey--split-set-target', read by `donkey--split-copy-place'.")
+
+(defvar-local donkey--split-behind nil
+  "The places not yet holding what the primary holds, in buffer order.
+
+A tail of `donkey--split-places'.  The places a window can show are
+written as the keystroke is made, and the rest by `donkey--split-sweep'
+whenever no key is waiting; see `donkey--split-copy'.")
+
+(defvar-local donkey--split-sweep-timer nil
+  "The timer that writes the places still behind, or nil.")
+
+(defvar-local donkey--split-writing nil
+  "Non-nil from Insert state opening over the places until the writing is recorded.
+
+Cleared by `donkey--split-close-edit'.")
+
+(defvar-local donkey--split-edit-head nil
+  "`buffer-undo-list' as Insert state opened over the places.
+
+What was recorded above it while writing is replaced by one entry as
+Insert state ends; see `donkey--split-close-edit'.")
+
+(defvar-local donkey--split-edit-initial nil
+  "What every place held as Insert state opened over the places.")
+
+(defvar-local donkey--split-edge-texts nil
+  "What was deleted past each place\\='s edges while writing, or nil.
+
+A vector with a cons (BEFORE . AFTER) for each place, in the order of
+`donkey--split-places': the text deleted just before the place and just
+after it, at the written place and as `donkey--split-copy-edges' made
+the same deletions at the others.  Nil until a deletion was made.")
+
+(defvar-local donkey--split-changes nil
+  "The changes the running command made, oldest first.
+
+Each is (BEG END LENGTH TEXT), as `donkey--split-noted-change' saw it:
+the change stands from BEG to END and replaced LENGTH characters that
+held TEXT.  Split mode\\='s own copies are not among them.  Read by
+`donkey--split-close-edit', which folds a change made away from the
+places into the writing\\='s undo entry, and cleared after every
+command by `donkey--split-sync'.")
+
+(defconst donkey--split-eager-places 2000
+  "How many places a keystroke writes before the rest are left to the sweep.
+
+About ten milliseconds of copying.  Every place a window can show is
+written first, whatever the count; see `donkey--split-copy'.")
+
+(defvar donkey--split-text-buffer nil
+  "A hidden buffer holding the target\\='s texts, for comparing places against.
+
+Filled by `donkey--split-set-target', NEW from its start and OLD after
+it.  `compare-buffer-substrings' against it allocates nothing, where a
+`buffer-substring' at every place costs a string each.")
+
 (defvar donkey--split-buffer nil
   "The buffer an armed split belongs to, or nil when none is armed.
 
@@ -6705,8 +6769,10 @@ On `post-command-hook' while a split is live.  Nothing intercepts a
 command: what is typed reaches the buffer as it always does, and the
 copy is made afterward, so Insert state behaves as it does anywhere
 else -- \\[donkey--exit-insert] included, which ends the split because
-the writing it was holding the places for is over.  A split of cursors
-goes back to its cursors instead; see `donkey--split-cursors-resume'.
+the writing it was holding the places for is over, once every place
+holds what was written; see `donkey--split-close-edit'.  A split of
+cursors goes back to its cursors instead; see
+`donkey--split-cursors-resume'.
 
 What changed inside the place is copied into every other place, and a
 deletion reaching just past its edge -- \\`DEL' at its start, \\`C-d' at
@@ -6724,7 +6790,12 @@ place is copied whatever the buffer\\='s narrowing, or none is."
     (setq donkey--split-running nil))
   (when donkey--split-places
     (let ((edge-edits (reverse donkey--split-edge-edits))
-          (strayed donkey--split-strayed))
+          (strayed donkey--split-strayed)
+          ;; A quit part of the way through the copying would leave the
+          ;; places out of step, and the quit would take this function
+          ;; off the hook for good; it is delivered once the copying is
+          ;; done.
+          (inhibit-quit t))
       (setq donkey--split-edge-edits nil
             donkey--split-strayed nil)
       ;; A function that signals here is removed from the hook for good,
@@ -6741,6 +6812,7 @@ place is copied whatever the buffer\\='s narrowing, or none is."
                ;; them.
                ((and (eq donkey--split-phase 'edit)
                      (not (bound-and-true-p donkey-insert-mode)))
+                (donkey--split-close-edit)
                 (if donkey--split-cursors
                     (donkey--split-cursors-resume)
                   (donkey--split-dissolve)))
@@ -6756,54 +6828,85 @@ place is copied whatever the buffer\\='s narrowing, or none is."
                   (donkey--split-dissolve)))
                (t
                 (unless (eq here donkey--split-primary)
+                  ;; The place point moved into may still be behind, and
+                  ;; what it holds is about to be the truth.
+                  (donkey--split-sweep-flush)
                   (setq donkey--split-primary here
                         donkey--split-text (donkey--split-place-text here)))
                 (if (donkey--split-copy here edge-edits)
                     (progn
+                      (setq donkey--split-changes nil)
                       (donkey--split-draw-cursors)
                       (donkey--repaint-hint (donkey--split-hint)))
                   (donkey--split-dissolve t)
                   (message "Split ended -- %s" "an edit beside a place could \
 not be made at every place"))))))
         (error
+         (donkey--split-close-edit t)
          (donkey--split-dissolve t)
          (message "Split ended -- %s" (error-message-string err)))))))
 
 (defun donkey--split-copy (here edge-edits)
   "Copy what the running command did at the place HERE onto the others.
 
-Its text into every other place, and EDGE-EDITS, the deletions noted
-just past HERE\\='s edges, at every other place\\='s edges.  Every place is
-changed or none is.  Return nil where the deletions could not be made
-the same way everywhere, or left two places touching; signal where a
-place cannot be written."
+Its text into every other place a window can show, then into
+`donkey--split-eager-places' more; the rest are left behind for
+`donkey--split-sweep' to write between keystrokes, and whenever the
+view moves the places it newly shows are written first.  Nothing of
+the copying is recorded for undo: the writing is recorded as one entry
+when Insert state ends, see `donkey--split-close-edit'.
+
+EDGE-EDITS, the deletions noted just past HERE\\='s edges, are made at
+every other place\\='s edges at once, every place or none.  Return nil
+where they could not be made the same way everywhere, or left two
+places touching; signal where a place cannot be written."
   (let ((old donkey--split-text)
-        (new (donkey--split-place-text here))
-        (donkey--split-copying t)
-        (deactivate-mark nil))
-    (or (and (equal new old) (null edge-edits))
-        (progn
-          (setq donkey--split-text new)
-          (catch 'donkey--split-unlike
-            (atomic-change-group
-              (save-excursion
-                (donkey--split-copy-text here old new)
-                ;; Only a deletion past a place's edge can close the
-                ;; gap between two places: a copy inside a place moves
-                ;; its neighbors along with it.
-                (when edge-edits
+        (new (donkey--split-place-text here)))
+    (unless (equal new old)
+      (setq donkey--split-text new
+            donkey--split-behind donkey--split-places)
+      (donkey--split-set-target old new))
+    (catch 'donkey--split-unlike
+      (when edge-edits
+        ;; Noted before the others are tried: what the written place
+        ;; lost past its edges is part of the writing whether or not
+        ;; the same can be done everywhere.
+        (donkey--split-edge-note-primary here edge-edits)
+        (let ((donkey--split-copying t)
+              (deactivate-mark nil)
+              (head buffer-undo-list))
+          (unwind-protect
+              (atomic-change-group
+                (save-excursion
+                  ;; Only a deletion past a place's edge can close the
+                  ;; gap between two places: a copy inside a place moves
+                  ;; its neighbors along with it.
                   (unless (and (donkey--split-copy-edges here edge-edits)
                                (not (donkey--split-touching-p)))
-                    (throw 'donkey--split-unlike nil)))))
-            t)))))
+                    (throw 'donkey--split-unlike nil))))
+            (setq buffer-undo-list head))))
+      (when donkey--split-behind
+        (donkey--split-copy-places (donkey--split-visible-places))
+        (when (donkey--split-sweep donkey--split-eager-places)
+          (donkey--split-sweep-arm)))
+      t)))
 
-(defun donkey--split-copy-text (here old new)
-  "Make every place but HERE hold NEW, what HERE has now in place of OLD.
+(defun donkey--split-text-buffer ()
+  "Return `donkey--split-text-buffer', making it where it is not live."
+  (unless (buffer-live-p donkey--split-text-buffer)
+    (setq donkey--split-text-buffer
+          (get-buffer-create " *donkey-split-text*" t))
+    (with-current-buffer donkey--split-text-buffer
+      (setq buffer-undo-list t)))
+  donkey--split-text-buffer)
 
-A place still holding OLD has only the part that changed rewritten, the
-beginning and end OLD and NEW share left standing, so what is recorded
-for undo and told to the change hooks is what was typed; any other
-place is rewritten whole."
+(defun donkey--split-set-target (old new)
+  "Make NEW, in place of OLD, the text every place is to hold.
+
+Sets `donkey--split-target' and fills `donkey--split-text-buffer'.  A
+place still holding OLD has only the part that changed rewritten, the
+beginning and end OLD and NEW share left standing, so what the change
+hooks are told is what was typed; any other place is rewritten whole."
   (let* ((old-length (length old))
          (new-length (length new))
          (same (compare-strings old nil nil new nil nil))
@@ -6816,25 +6919,392 @@ place is rewritten whole."
          ;; once is quadratic in the length of the place.
          (room (- (min old-length new-length) prefix))
          (back (compare-strings (reverse old) 0 room (reverse new) 0 room))
-         (suffix (if (eq back t) room (1- (abs back)))))
-    (let ((middle (substring new prefix (- new-length suffix))))
-      (dolist (place donkey--split-places)
-        (when (and (not (eq place here))
-                   (overlay-buffer place))
-          (let* ((beg (overlay-start place))
-                 (end (overlay-end place))
-                 (text (buffer-substring-no-properties beg end)))
-            (cond
-             ((equal text new))
-             ((equal text old)
-              (delete-region (+ beg prefix) (- end suffix))
-              (goto-char (+ beg prefix))
-              (insert middle))
-             (t
-              (goto-char beg)
-              (delete-region beg end)
-              (insert new)
-              (move-overlay place beg (point))))))))))
+         (suffix (if (eq back t) room (1- (abs back))))
+         (multibyte enable-multibyte-characters))
+    (with-current-buffer (donkey--split-text-buffer)
+      (erase-buffer)
+      (set-buffer-multibyte multibyte)
+      (insert new old))
+    (setq donkey--split-target
+          (list old new prefix suffix
+                (substring new prefix (- new-length suffix))))))
+
+(defun donkey--split-holds-p (beg end offset length)
+  "Return non-nil where BEG to END is the target text at OFFSET, LENGTH long.
+
+OFFSET is 1 for NEW and one past NEW\\='s length for OLD, where
+`donkey--split-set-target' put them in `donkey--split-text-buffer'."
+  (and (= (- end beg) length)
+       (or (zerop length)
+           (eq 0 (compare-buffer-substrings donkey--split-text-buffer
+                                            offset (+ offset length)
+                                            nil beg end)))))
+
+(defun donkey--split-copy-place (place)
+  "Make PLACE hold the text `donkey--split-target' names."
+  (pcase-let ((`(,old ,new ,prefix ,suffix ,middle) donkey--split-target))
+    (let ((beg (overlay-start place))
+          (end (overlay-end place))
+          (new-length (length new)))
+      (cond
+       ((donkey--split-holds-p beg end 1 new-length))
+       ((donkey--split-holds-p beg end (1+ new-length) (length old))
+        (delete-region (+ beg prefix) (- end suffix))
+        (goto-char (+ beg prefix))
+        (insert middle))
+       (t
+        (goto-char beg)
+        (delete-region beg end)
+        (insert new)
+        (move-overlay place beg (point)))))))
+
+(defun donkey--split-copy-places (places)
+  "Make each of PLACES hold the target text, every one or none.
+
+Written under `atomic-change-group', so a place that refuses leaves
+every one of them as it was.  What Emacs recorded for undo while they
+were written is dropped once they are: the writing is recorded as one
+entry when Insert state ends, see `donkey--split-close-edit'."
+  (let ((head buffer-undo-list)
+        (case-fold-search nil)
+        (donkey--split-copying t)
+        (deactivate-mark nil))
+    (unwind-protect
+        (atomic-change-group
+          (save-excursion
+            (dolist (place places)
+              (when (overlay-buffer place)
+                (donkey--split-copy-place place)))))
+      (setq buffer-undo-list head))))
+
+(defun donkey--split-visible-places ()
+  "Return the places a window could show, in no particular order."
+  (delete-dups
+   (mapcan (lambda (span)
+             (seq-filter (lambda (overlay)
+                           (overlay-get overlay 'donkey-split))
+                         (overlays-in (car span) (cdr span))))
+           (donkey--split-draw-spans))))
+
+(defun donkey--split-sweep (&optional budget flush)
+  "Write the places still behind, BUDGET of them at most, and say if any remain.
+
+Written in runs of a few hundred and recorded for undo not at all,
+stopping between runs where a key is waiting unless FLUSH is non-nil;
+with BUDGET nil every place is written.  A place that refuses leaves
+the ones before it written and signals.  Return non-nil where places
+are still behind."
+  (let ((run 256)
+        (done 0)
+        (case-fold-search nil)
+        (donkey--split-copying t)
+        (deactivate-mark nil)
+        (buffer-undo-list t))
+    (save-excursion
+      (while (and donkey--split-behind
+                  (or (null budget) (< done budget))
+                  (or flush (not (input-pending-p))))
+        (let ((n 0))
+          (while (and donkey--split-behind
+                      (< n run)
+                      (or (null budget) (< (+ done n) budget)))
+            (let ((place (car donkey--split-behind)))
+              (when (overlay-buffer place)
+                (donkey--split-copy-place place)))
+            (setq donkey--split-behind (cdr donkey--split-behind)
+                  n (1+ n)))
+          (setq done (+ done n)))))
+    (and donkey--split-behind t)))
+
+(defun donkey--split-sweep-arm ()
+  "Have the places still behind written by a timer, where none is set."
+  (unless donkey--split-sweep-timer
+    (setq donkey--split-sweep-timer
+          (run-with-timer 0.01 nil #'donkey--split-sweep-run
+                          (current-buffer)))))
+
+(defun donkey--split-sweep-cancel ()
+  "Take down the sweep\\='s timer, where one is set."
+  (when donkey--split-sweep-timer
+    (cancel-timer donkey--split-sweep-timer)
+    (setq donkey--split-sweep-timer nil)))
+
+(defun donkey--split-sweep-run (buffer)
+  "Write the places behind in BUFFER until a key waits, and come back for the rest.
+
+The sweep\\='s timer function.  Nothing is done where the split has
+ended, or is choosing a verb rather than being written.  A place that
+refuses ends the split, saying why, as it would from
+`donkey--split-sync'."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq donkey--split-sweep-timer nil)
+      (when (and donkey--split-behind
+                 (eq donkey--split-buffer buffer)
+                 (eq donkey--split-phase 'edit))
+        (condition-case err
+            (save-restriction
+              (widen)
+              (when (donkey--split-sweep)
+                (donkey--split-sweep-arm)))
+          (error
+           (donkey--split-close-edit t)
+           (donkey--split-dissolve t)
+           (message "Split ended -- %s" (error-message-string err))))))))
+
+(defun donkey--split-sweep-flush ()
+  "Write every place still behind now, whatever keys are waiting."
+  (donkey--split-sweep-cancel)
+  (when donkey--split-behind
+    (save-restriction
+      (widen)
+      (donkey--split-sweep nil t))))
+
+(defun donkey--split-text-at (texts i)
+  "Return element I of TEXTS, a string for every position or a vector of them."
+  (if (stringp texts) texts (aref texts i)))
+
+(defun donkey--split-texts-length (texts n)
+  "Return how many characters TEXTS hold over N positions."
+  (if (stringp texts)
+      (* n (length texts))
+    (let ((total 0))
+      (dotimes (i n)
+        (setq total (+ total (length (aref texts i)))))
+      total)))
+
+(defun donkey--split-texts (texts)
+  "Return TEXTS, a list of strings, as one string where all agree, else a vector."
+  (if (seq-every-p (lambda (text) (equal text (car texts))) (cdr texts))
+      (car texts)
+    (vconcat texts)))
+
+(defun donkey--split-record (positions from to end)
+  "Record on `buffer-undo-list' that FROM became TO at each of POSITIONS.
+
+POSITIONS is a vector of buffer positions in increasing order, each
+where its text now stands; FROM and TO are a string each, or a vector
+with a string for each position; END is where the text at the last
+position ends.  One entry whatever the number of positions, so `undo'
+takes the change back at all of them at once, and a change at hundreds
+of thousands of places does not pass `undo-outer-limit', past which
+Emacs discards the buffer\\='s whole undo history.  Nothing is
+recorded where undo is off in the buffer, or POSITIONS is empty."
+  (unless (or (eq buffer-undo-list t) (zerop (length positions)))
+    (let ((n (length positions)))
+      (push (list 'apply
+                  (- (donkey--split-texts-length from n)
+                     (donkey--split-texts-length to n))
+                  (aref positions 0) end
+                  #'donkey--split-put-back positions to from end)
+            buffer-undo-list))))
+
+(defun donkey--split-put-back (positions now then end)
+  "Put THEN back where NOW stands at each of POSITIONS, the last first.
+
+What an entry `donkey--split-record' made runs when it is undone: NOW
+is what each position holds and THEN what it held before, the entry\\='s
+TO and FROM, and END is where NOW ends at the last position.  The
+reverse is recorded the same way, at the positions the texts then
+stand at, so the change can be undone again.  Refuses, changing
+nothing, where a position does not hold NOW: the buffer is no longer
+what the entry was made from."
+  (let ((n (length positions))
+        (end-marker (copy-marker end t))
+        (moved (make-vector (length positions) 0))
+        (shift 0)
+        (i 0))
+    ;; Every position first, so nothing changes where one refuses.
+    (while (< i n)
+      (let* ((pos (aref positions i))
+             (text (donkey--split-text-at now i)))
+        (unless (and (<= (point-min) pos)
+                     (<= (+ pos (length text)) (point-max))
+                     (string= text (buffer-substring-no-properties
+                                    pos (+ pos (length text)))))
+          (error "The split's places no longer hold what was written at them"))
+        ;; Where the text will stand once the ones before it have moved.
+        (aset moved i (+ pos shift))
+        (setq shift (+ shift (- (length (donkey--split-text-at then i))
+                                (length text)))))
+      (setq i (1+ i)))
+    (let ((buffer-undo-list t)
+          (deactivate-mark nil))
+      (save-excursion
+        (while (> i 0)
+          (setq i (1- i))
+          (let ((pos (aref positions i)))
+            (delete-region pos (+ pos (length (donkey--split-text-at now i))))
+            (goto-char pos)
+            (insert (donkey--split-text-at then i))))))
+    (let ((new-end (marker-position end-marker)))
+      (set-marker end-marker nil)
+      (push (list 'apply
+                  (- (donkey--split-texts-length now n)
+                     (donkey--split-texts-length then n))
+                  (aref moved 0) new-end
+                  #'donkey--split-put-back moved then now new-end)
+            buffer-undo-list))))
+
+(defun donkey--split-close-edit (&optional no-flush)
+  "Bring every place up to date and record the writing as one undo entry.
+
+Called as Insert state ends over the places, from
+`donkey--split-dissolve' or before the cursors are taken back.  What
+was recorded for undo since Insert state opened -- the keystrokes at
+the primary, and whatever the command that ended the writing changed
+-- is replaced by one entry that puts every place back as it was,
+deletions past its edges and changes away from the places included;
+see `donkey--split-writing-entry' and `donkey--split-record'.  With
+NO-FLUSH non-nil the places still behind are left as they are,
+because writing them is what failed.
+
+Nothing is replaced where what was recorded can no longer be found,
+which a garbage collection can bring about, or where a change reached
+into a place so that the two cannot be told apart: the record then
+stays as Emacs made it, without the copies."
+  (when donkey--split-writing
+    (setq donkey--split-writing nil)
+    (unless no-flush
+      (condition-case err
+          (donkey--split-sweep-flush)
+        (error
+         (setq no-flush t)
+         (message "Split: a place could not be written -- %s"
+                  (error-message-string err)))))
+    (donkey--split-sweep-cancel)
+    (setq donkey--split-behind nil
+          donkey--split-target nil)
+    (unless (eq buffer-undo-list t)
+      (let* ((head donkey--split-edit-head)
+             (reachable (let ((tail buffer-undo-list))
+                          (while (and (consp tail) (not (eq tail head)))
+                            (setq tail (cdr tail)))
+                          (eq tail head)))
+             (entry (and reachable
+                         (donkey--split-writing-entry no-flush))))
+        (unless (or (not reachable) (eq entry 'lost))
+          (setq buffer-undo-list head)
+          (undo-boundary)
+          (when entry
+            (apply #'donkey--split-record entry)
+            (undo-boundary)))))
+    (setq donkey--split-edit-head nil
+          donkey--split-edit-initial nil
+          donkey--split-edge-texts nil
+          donkey--split-changes nil)))
+
+(defun donkey--split-writing-entry (no-flush)
+  "Return what `donkey--split-record' takes to record the writing, or nil.
+
+A list (POSITIONS FROM TO END) over every live place and every change
+the ending command made away from the places, in buffer order; nil
+where none of them changed anything, and `lost' where a change cannot
+be told apart from a place.  With NO-FLUSH non-nil each place is
+read for what it holds, since the places were not all written."
+  (let ((strays (donkey--split-stray-changes)))
+    (if (eq strays 'lost)
+        'lost
+      (let ((initial donkey--split-edit-initial)
+            (edges donkey--split-edge-texts)
+            (read (or no-flush strays))
+            (index -1)
+            (changed nil)
+            positions from to end)
+        (cl-flet ((take (position was now)
+                    (unless (equal was now)
+                      (setq changed t))
+                    (push position positions)
+                    (push was from)
+                    (push now to)
+                    (setq end (+ position (length now)))))
+          (dolist (place donkey--split-places)
+            (setq index (1+ index))
+            (when (overlay-buffer place)
+              (let ((beg (overlay-start place))
+                    (cell (and edges (aref edges index))))
+                ;; A change before this place, or a deletion at its
+                ;; start, which stood before it.
+                (while (and strays
+                            (or (< (car (car strays)) beg)
+                                (and (= (car (car strays)) beg)
+                                     (string-empty-p (nth 2 (car strays))))))
+                  (apply #'take (pop strays)))
+                (take beg
+                      (if cell (concat (car cell) initial (cdr cell)) initial)
+                      (if read (donkey--split-place-text place) donkey--split-text))
+                (setq end (overlay-end place)))))
+          (dolist (stray strays)
+            (apply #'take stray)))
+        (and changed
+             (list (vconcat (nreverse positions))
+                   (donkey--split-texts (nreverse from))
+                   (donkey--split-texts (nreverse to))
+                   end))))))
+
+(defun donkey--split-stray-changes ()
+  "Return what the ending command changed away from the places, or `lost'.
+
+Each is (POSITION OLD NEW) where the buffer now stands, in buffer
+order: the change put NEW where OLD stood.  A change inside a place,
+which the place\\='s own text records, and a deletion just past the
+written place\\='s edges, which `donkey--split-edge-texts' records,
+are left out.  A change reaching into a place, or a deletion at an
+empty place that is not the written one, cannot be told apart from
+the place, and `lost' is returned."
+  (let ((changes (donkey--split-changes-now))
+        (primary donkey--split-primary)
+        (strays nil))
+    (if (eq changes 'lost)
+        'lost
+      (catch 'lost
+        (dolist (change changes)
+          (pcase-let ((`(,beg ,end ,old) change))
+            (let ((covered nil))
+              (dolist (place donkey--split-places)
+                (when (overlay-buffer place)
+                  (let ((start (overlay-start place))
+                        (finish (overlay-end place)))
+                    (cond
+                     ((or (<= end start) (>= beg finish))
+                      ;; Away from the place, or a deletion at one of
+                      ;; its edges, which is outside it.
+                      (when (and (= beg end)
+                                 (or (= beg start) (= beg finish)))
+                        (cond
+                         ((eq place primary) (setq covered t))
+                         ((= start finish) (throw 'lost 'lost)))))
+                     ((and (<= start beg) (<= end finish))
+                      (setq covered t))
+                     (t (throw 'lost 'lost))))))
+              (unless covered
+                (push (list beg old (buffer-substring-no-properties beg end))
+                      strays)))))
+        (sort strays (lambda (a b) (< (car a) (car b))))))))
+
+(defun donkey--split-changes-now ()
+  "Return `donkey--split-changes' as (BEG END TEXT) where the buffer now stands.
+
+Each change is noted where it stood as it was made, and the changes
+after it in the same command moved it; nil where there are none, and
+`lost' where two of them overlap."
+  (catch 'lost
+    (let ((tail (reverse donkey--split-changes))
+          (result nil))
+      (while tail
+        (pcase-let ((`(,beg ,end ,_ ,text) (car tail)))
+          (dolist (later (cdr tail))
+            (pcase-let ((`(,lbeg ,lend ,llength ,_) later))
+              (cond
+               ((<= (+ lbeg llength) beg)
+                (let ((delta (- (- lend lbeg) llength)))
+                  (setq beg (+ beg delta)
+                        end (+ end delta))))
+               ((>= lbeg end))
+               (t (throw 'lost 'lost)))))
+          (push (list beg end text) result))
+        (setq tail (cdr tail)))
+      (nreverse result))))
 
 (defun donkey--split-line-breaks (text)
   "Return the offsets of the line breaks in TEXT, as a list."
@@ -6852,31 +7322,85 @@ Each is (SIDE . TEXT), as `donkey--split-edge-edits' holds them.  At
 every other place as many characters are deleted on the same side,
 where there are that many, they reach no other place, and a line break
 stands among them exactly where one stood in TEXT.  Return nil where a
-place fails that, having deleted at the places after it."
-  (catch 'unlike
-    (dolist (edit edits t)
-      (let ((after (eq (car edit) 'after))
-            (count (length (cdr edit)))
-            (breaks (donkey--split-line-breaks (cdr edit))))
-        (dolist (place (reverse donkey--split-places))
-          (unless (eq place here)
-            (let* ((edge (if after (overlay-end place) (overlay-start place)))
-                   (beg (if after edge (- edge count)))
-                   (end (if after (+ edge count) edge)))
-              (unless (and (>= beg (point-min))
-                           (<= end (point-max))
-                           (equal breaks
-                                  (donkey--split-line-breaks
-                                   (buffer-substring-no-properties beg end)))
-                           (not (seq-some
-                                 (lambda (other)
-                                   (and (not (eq other place))
-                                        (overlay-get other 'donkey-split)
-                                        (< (overlay-start other) end)
-                                        (> (overlay-end other) beg)))
-                                 (overlays-in beg end))))
-                (throw 'unlike nil))
-              (delete-region beg end))))))))
+place fails that, having deleted at the places after it.  What was
+deleted at each other place is noted in `donkey--split-edge-texts'
+once every place has had its deletions; HERE\\='s own deletions were
+noted by `donkey--split-edge-note-primary'."
+  (let* ((places donkey--split-places)
+         (n (length places))
+         (texts (donkey--split-edge-texts-copy n)))
+    (catch 'unlike
+      (dolist (edit edits)
+        (let ((after (eq (car edit) 'after))
+              (count (length (cdr edit)))
+              (breaks (donkey--split-line-breaks (cdr edit)))
+              (index n))
+          (dolist (place (reverse places))
+            (setq index (1- index))
+            (cond
+             ((not (overlay-buffer place)))
+             ((eq place here))
+             (t
+              (let* ((edge (if after (overlay-end place) (overlay-start place)))
+                     (beg (if after edge (- edge count)))
+                     (end (if after (+ edge count) edge)))
+                (unless (and (>= beg (point-min))
+                             (<= end (point-max))
+                             (equal breaks
+                                    (donkey--split-line-breaks
+                                     (buffer-substring-no-properties beg end)))
+                             (not (seq-some
+                                   (lambda (other)
+                                     (and (not (eq other place))
+                                          (overlay-get other 'donkey-split)
+                                          (< (overlay-start other) end)
+                                          (> (overlay-end other) beg)))
+                                   (overlays-in beg end))))
+                  (throw 'unlike nil))
+                (donkey--split-edge-note
+                 texts index after (buffer-substring-no-properties beg end))
+                (delete-region beg end)))))))
+      (setq donkey--split-edge-texts texts)
+      t)))
+
+(defun donkey--split-edge-texts-copy (n)
+  "Return a copy of `donkey--split-edge-texts' with a cell for each of N places.
+
+A copy, so that deletions that cannot be made everywhere leave the
+record as it was once they are taken back."
+  (let ((copy (make-vector n nil))
+        (i 0))
+    (while (< i n)
+      (let ((cell (and donkey--split-edge-texts
+                       (< i (length donkey--split-edge-texts))
+                       (aref donkey--split-edge-texts i))))
+        (aset copy i (if cell (cons (car cell) (cdr cell)) (cons "" ""))))
+      (setq i (1+ i)))
+    copy))
+
+(defun donkey--split-edge-note-primary (here edits)
+  "Note EDITS, the deletions made past HERE\\='s edges, for undo.
+
+In `donkey--split-edge-texts'.  EDITS are (SIDE . TEXT) in the order
+they were made, as `donkey--split-copy' has them."
+  (let ((index (seq-position donkey--split-places here)))
+    (when index
+      (let ((texts (donkey--split-edge-texts-copy
+                    (length donkey--split-places))))
+        (dolist (edit edits)
+          (donkey--split-edge-note texts index (eq (car edit) 'after)
+                                   (cdr edit)))
+        (setq donkey--split-edge-texts texts)))))
+
+(defun donkey--split-edge-note (texts index after text)
+  "Note in TEXTS that TEXT was deleted past the edge of place INDEX.
+
+Just after it where AFTER is non-nil, else just before it; see
+`donkey--split-edge-texts'."
+  (let ((cell (aref texts index)))
+    (if after
+        (setcdr cell (concat (cdr cell) text))
+      (setcar cell (concat text (car cell))))))
 
 (defun donkey--split-touching-p ()
   "Return non-nil where two places share a boundary."
@@ -6921,6 +7445,7 @@ sets `donkey--split-strayed'.  Never signals, for the reason
           (cl-destructuring-bind (old-beg old-end start finish text) pending
             (unless (and (= length (- end beg))
                          (equal text (buffer-substring-no-properties beg end)))
+              (push (list beg end length text) donkey--split-changes)
               ;; What was inserted went in at OLD-BEG.
               (when (and (> end beg)
                          (not (<= start old-beg finish)))
@@ -6956,6 +7481,8 @@ split\\='s buffer is already dead, since there is nothing left to count:
 The places are overlays in the split\\='s own buffer, which need not be
 the current one, so both are cleared."
   (let ((home donkey--split-buffer))
+    (with-current-buffer (if (buffer-live-p home) home (current-buffer))
+      (donkey--split-close-edit))
     (when (and (or donkey--split-places home) (not quiet))
       ;; Counted in the split's own buffer: the places are buffer-local
       ;; and this may be running from somewhere else.
@@ -6974,7 +7501,9 @@ the current one, so both are cleared."
     (dolist (buffer (delq nil (list (and (buffer-live-p home) home)
                                     (current-buffer))))
       (with-current-buffer buffer
-        (mapc #'donkey--split-cursor-release donkey--split-places)
+        ;; Only a split of cursors put anything on its places.
+        (when donkey--split-cursors
+          (mapc #'donkey--split-cursor-release donkey--split-places))
         (mapc #'delete-overlay donkey--split-cursor-marks)
         (mapc #'delete-overlay donkey--split-places)
         (setq donkey--split-places nil
@@ -6987,6 +7516,13 @@ the current one, so both are cleared."
               donkey--split-strayed nil
               donkey--split-pending nil
               donkey--split-tick nil
+              donkey--split-target nil
+              donkey--split-behind nil
+              donkey--split-writing nil
+              donkey--split-edit-head nil
+              donkey--split-edit-initial nil
+              donkey--split-edge-texts nil
+              donkey--split-changes nil
               donkey--split-cursors nil
               donkey--split-running nil
               donkey--split-run-history nil
@@ -7105,7 +7641,13 @@ written."
   (setq donkey--split-did (cond (clear 'changed)
                                 ((eq where 'start) 'before)
                                 (t 'after)))
-  (setq donkey--split-phase 'edit)
+  (setq donkey--split-phase 'edit
+        donkey--split-writing t
+        donkey--split-edit-head buffer-undo-list
+        donkey--split-edge-texts nil
+        donkey--split-changes nil
+        donkey--split-target nil
+        donkey--split-behind nil)
   ;; Dismissing the chooser on purpose must not take the split with it.
   (when donkey--split-exit-function
     (let ((donkey--split-keeping t)
@@ -7120,7 +7662,8 @@ written."
                    (overlay-start first)
                  (overlay-end first)))
     (setq donkey--split-primary first
-          donkey--split-text (donkey--split-place-text first)))
+          donkey--split-text (donkey--split-place-text first)
+          donkey--split-edit-initial donkey--split-text))
   (add-hook 'before-change-functions #'donkey--split-note-change nil t)
   (add-hook 'after-change-functions #'donkey--split-noted-change nil t)
   (donkey-enter-insert)
@@ -7419,6 +7962,13 @@ reaches the kill ring one per line.  Case is ignored as
 Refuses matches that touch, since text typed where two meet would
 belong to both, and an empty REGEXP, which would put a place at every
 character.
+
+There is no limit on the number of matches.  Past
+`donkey--split-eager-places' of them, a keystroke writes the matches a
+window shows and the rest between keystrokes, the ones scrolled onto
+first; \\`C-g' waits for the last of them.  Once the split has ended
+its writing is one undo entry, whatever the number of matches; see
+`donkey--split-close-edit'.
 
 Bound to \\`f' in Normal state."
   (interactive (list (read-regexp "Split on regexp: ") current-prefix-arg))
@@ -7740,13 +8290,7 @@ show are drawn, so drawing costs the same however many there are; see
                             (not (string-prefix-p "unspecified" color))))
                      (list (face-background 'donkey-split-cursor-face nil t)
                            (face-foreground 'default nil t)))))
-      (dolist (place (delete-dups
-                      (mapcan (lambda (span)
-                                (seq-filter
-                                 (lambda (overlay)
-                                   (overlay-get overlay 'donkey-split))
-                                 (overlays-in (car span) (cdr span))))
-                              (donkey--split-draw-spans))))
+      (dolist (place (donkey--split-visible-places))
         (unless (or (eq place donkey--split-primary)
                     (not (overlay-buffer place)))
           (let ((mark (donkey--split-cursor-mark
@@ -10900,7 +11444,8 @@ While you type, what you write appears at every match together.
 Backspace and retype as you like: it is ordinary INSERT state, and
 \\`C-g' ends it KEEPING what you typed, exactly as it does everywhere
 else.  A Backspace just before the matches, or a \\`C-d' just after
-them, is made at every one of them too.
+them, is made at every one of them too.  Once the split has ended,
+\\`u' takes back everything it wrote, at every match, in one step.
 
 >> Put the cursor on the first price line below and press \\`v' \\`j' \\`j'
    \\[move-end-of-line] to select all three.  Press \\[donkey-split], type price and

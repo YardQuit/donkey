@@ -1744,6 +1744,259 @@ minibuffer as text, and every cursor's line is searched."
   (should (eq (keymap-lookup donkey-normal-mode-map "t")
               #'donkey-split-add-cursor)))
 
+;;; ---------------------------------------------------------------------------
+;;; Writing many places, and what the writing leaves for undo
+;;; ---------------------------------------------------------------------------
+
+(defun donkey-split-test--numbered-lines (n)
+  "Return N lines reading foo 1 to foo N."
+  (mapconcat (lambda (i) (format "foo %d\n" i)) (number-sequence 1 n) ""))
+
+(defun donkey-split-test--last-line ()
+  "Return the buffer's last line that is not empty."
+  (save-excursion
+    (goto-char (point-max))
+    (forward-line -1)
+    (buffer-substring-no-properties (point) (line-end-position))))
+
+
+(defmacro donkey-split-test--with-no-key-waiting (&rest body)
+  "Run BODY with `input-pending-p' answering nil.
+
+The sweep yields to a waiting key, and a terminal frame can report one
+that is not a key at all; what these tests pin is the sweep, not the
+frame."
+  (declare (indent 0))
+  `(cl-letf (((symbol-function 'input-pending-p) (lambda (&rest _) nil)))
+     ,@body))
+
+(ert-deftest donkey-split-finds-the-place-point-is-in-at-its-edges ()
+  "The place point is in is found at its start, inside it, at its end, and empty."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-at-point*" "foo bar foo\n" "v G f"
+      (let ((first (car donkey--split-places))
+            (second (cadr donkey--split-places)))
+        (dolist (case (list (cons (overlay-start first) first)
+                            (cons (1+ (overlay-start first)) first)
+                            (cons (overlay-end first) first)
+                            (cons (1+ (overlay-end first)) nil)
+                            (cons (overlay-start second) second)
+                            (cons (overlay-end second) second)))
+          (goto-char (car case))
+          (should (eq (donkey--split-place-at-point) (cdr case)))))))
+  (donkey-split-test--on "^"
+    (donkey-split-test--keys "*split-at-point-empty*" "a\nb\n" "v G f"
+      (goto-char (point-min))
+      (should (eq (donkey--split-place-at-point) (car donkey--split-places)))
+      (goto-char (point-max))
+      (should (null (donkey--split-place-at-point))))))
+
+(ert-deftest donkey-split-rewrites-a-place-whose-text-changed-under-it ()
+  "A place no longer holding what the primary held is rewritten whole.
+
+Even where what it holds is of the same length: the places are
+compared by their text, not by their size."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-same-length*" "a foo b\nc foo d\n"
+        "v G f a X"
+      (let ((donkey--split-copying t)
+            (buffer-undo-list t))
+        (save-excursion
+          (goto-char (point-max))
+          (search-backward "X")
+          (delete-char 1)
+          (insert "Y")))
+      (should (equal (buffer-string) "a fooX b\nc fooY d\n"))
+      (execute-kbd-macro (kbd "Z C-g"))
+      (should (equal (buffer-string) "a fooXZ b\nc fooXZ d\n")))))
+
+(ert-deftest donkey-split-undo-after-the-split-takes-the-writing-back-everywhere ()
+  "Once the split has ended, one undo takes what it wrote back at every place."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-undo-after*" "a foo b\nc foo d\ne foo f\n"
+        "v G f a X Y C-g u"
+      (should (equal (buffer-string) "a foo b\nc foo d\ne foo f\n"))
+      (execute-kbd-macro (kbd "U"))
+      (should (equal (buffer-string) "a fooXY b\nc fooXY d\ne fooXY f\n"))
+      (execute-kbd-macro (kbd "u"))
+      (should (equal (buffer-string) "a foo b\nc foo d\ne foo f\n")))))
+
+(ert-deftest donkey-split-records-its-writing-as-one-undo-entry ()
+  "The writing is one entry on the undo list, whatever the number of places."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-one-entry*"
+        (donkey-split-test--numbered-lines 50) "v G f a X Y Z C-g"
+      (should (= 1 (seq-count (lambda (entry) (eq (car-safe entry) 'apply))
+                              buffer-undo-list)))
+      ;; The entry, its boundaries, and what the harness recorded
+      ;; putting the text in: nothing per place.
+      (should (< (length buffer-undo-list) 8))
+      (should (equal (donkey-split-test--last-line) "fooXYZ 50")))))
+
+(ert-deftest donkey-split-c-and-the-writing-are-two-undo-steps ()
+  "After c, one undo takes the typing back and a second puts the matches back."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-c-undo*" "a foo b\nc foo d\n"
+        "v G f c X C-g u u"
+      (should (equal (buffer-string) "a foo b\nc foo d\n"))
+      (execute-kbd-macro (kbd "U U"))
+      (should (equal (buffer-string) "a X b\nc X d\n")))))
+
+(ert-deftest donkey-split-undo-puts-back-what-a-backspace-past-the-edges-took ()
+  "Text a Backspace deleted just before every place comes back with one undo."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-edge-undo*" "a foo b\nc foo d\ne foo f\n"
+        "v G f i DEL DEL C-g"
+      (should (equal (buffer-string) "foo b\nfoo d\nfoo f\n"))
+      (execute-kbd-macro (kbd "u"))
+      (should (equal (buffer-string) "a foo b\nc foo d\ne foo f\n"))
+      (execute-kbd-macro (kbd "U"))
+      (should (equal (buffer-string) "foo b\nfoo d\nfoo f\n")))))
+
+(ert-deftest donkey-split-joins-lines-at-every-place-and-undo-parts-them ()
+  "A Backspace at every line-start place joins the lines, and undo parts them."
+  (donkey-split-test--on "^"
+    (donkey-split-test--keys "*split-join*" "one\ntwo\nthree\nfour\n"
+        "j v j f i DEL C-g"
+      (should (equal (buffer-string) "onetwothree\nfour\n"))
+      (execute-kbd-macro (kbd "u"))
+      (should (equal (buffer-string) "one\ntwo\nthree\nfour\n")))))
+
+(ert-deftest donkey-split-ended-by-an-edit-away-keeps-undo-whole ()
+  "After an edit away from the places ends the split, undo takes everything back."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-stray-undo*" "a foo b\nc foo d\n" "v G f a X"
+      (local-set-key (kbd "<f9>")
+                     (lambda ()
+                       (interactive)
+                       (save-excursion (goto-char (point-max)) (insert "Z"))))
+      (execute-kbd-macro (kbd "<f9>"))
+      (should (null donkey--split-phase))
+      (should (equal (buffer-string) "a fooX b\nc fooX d\nZ"))
+      (should (= 1 (seq-count (lambda (entry) (eq (car-safe entry) 'apply))
+                              buffer-undo-list)))
+      (execute-kbd-macro (kbd "C-g u"))
+      (should (equal (buffer-string) "a foo b\nc foo d\n"))
+      (execute-kbd-macro (kbd "U"))
+      (should (equal (buffer-string) "a fooX b\nc fooX d\nZ")))))
+
+(ert-deftest donkey-split-refuses-to-undo-over-text-that-changed-since ()
+  "The writing's undo entry changes nothing where a place no longer holds what it wrote."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-undo-refuses*" "a foo b\nc foo d\n"
+        "v G f a X C-g"
+      (let ((buffer-undo-list t))
+        (save-excursion
+          (goto-char (point-max))
+          (search-backward "X")
+          (delete-char 1)))
+      (should-error (execute-kbd-macro (kbd "u")))
+      (should (equal (buffer-string) "a fooX b\nc foo d\n")))))
+
+(ert-deftest donkey-split-undo-after-a-place-refused-takes-back-what-was-written ()
+  "After a place turned read-only ended the split, undo takes the writing back."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-late-ro-undo*" "a foo b\nc foo d\ne foo f\n"
+        "v G f a"
+      (donkey-split-test--read-only-last)
+      (execute-kbd-macro (kbd "X"))
+      (should (null donkey--split-phase))
+      (should (equal (buffer-string) "a fooX b\nc foo d\ne foo f\n"))
+      (execute-kbd-macro (kbd "C-g u"))
+      (should (equal (buffer-string) "a foo b\nc foo d\ne foo f\n"))
+      (let ((inhibit-read-only t))
+        (remove-text-properties (point-min) (point-max) '(read-only nil))))))
+
+(ert-deftest donkey-split-writes-the-places-a-window-shows-first ()
+  "Past the eager count, the places in view are written with the keystroke and the rest after."
+  (let ((donkey--split-eager-places 3))
+   (donkey-split-test--with-no-key-waiting
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-behind*"
+          (donkey-split-test--numbered-lines 1000) "v G f a X"
+        (should donkey--split-behind)
+        (should donkey--split-sweep-timer)
+        ;; The cursor's own line is in view whatever the frame.
+        (should (equal (buffer-substring (point-min) (line-end-position))
+                       "fooX 1"))
+        ;; The places in view, then the eager count, and no more.
+        (should (<= (- 1000 (length donkey--split-behind))
+                    (+ (length (donkey--split-visible-places)) 3)))
+        (donkey--split-sweep-run (current-buffer))
+        (should (null donkey--split-behind))
+        (should (null donkey--split-sweep-timer))
+        (should (equal (donkey-split-test--last-line) "fooX 1000"))
+        ;; Nothing of the sweep is recorded for undo.
+        (should (< (length buffer-undo-list) 8))
+        (execute-kbd-macro (kbd "Y C-g u"))
+        (should (equal (donkey-split-test--last-line) "foo 1000"))
+        (should (equal (buffer-substring (point-min) (line-end-position))
+                       "foo 1")))))))
+
+(ert-deftest donkey-split-a-waiting-key-leaves-the-rest-to-the-timer ()
+  "The sweep stops for a key that is waiting, and the timer takes the rest."
+  (let ((donkey--split-eager-places 3))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-key-waits*"
+          (donkey-split-test--numbered-lines 1000) "v G f a X"
+        (let ((behind (length donkey--split-behind)))
+          (cl-letf (((symbol-function 'input-pending-p) (lambda (&rest _) t)))
+            (donkey--split-sweep-run (current-buffer)))
+          (should (= (length donkey--split-behind) behind))
+          (should donkey--split-sweep-timer))
+        (donkey-split-test--with-no-key-waiting
+          (donkey--split-sweep-run (current-buffer)))
+        (should (null donkey--split-behind))
+        (should (equal (donkey-split-test--last-line) "fooX 1000"))))))
+
+(ert-deftest donkey-split-brings-the-places-newly-in-view-up-to-date-first ()
+  "When the view moves onto places still behind, they are written with the next key."
+  (let ((donkey--split-eager-places 3))
+   (donkey-split-test--with-no-key-waiting
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-view*"
+          (donkey-split-test--numbered-lines 1000) "v G f a X"
+        (local-set-key (kbd "<f9>") #'ignore)
+        (set-window-start (selected-window)
+                          (save-excursion
+                            (goto-char (point-max))
+                            (forward-line -10)
+                            (point)))
+        (execute-kbd-macro (kbd "<f9>"))
+        (should (equal (donkey-split-test--last-line) "fooX 1000"))
+        (should donkey--split-behind))))))
+
+(ert-deftest donkey-split-leaves-no-timer-behind-when-it-ends ()
+  "Ending the split, or killing its buffer, with places behind cancels the sweep."
+  (let ((donkey--split-eager-places 3))
+   (donkey-split-test--with-no-key-waiting
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-timer-end*"
+          (donkey-split-test--numbered-lines 1000) "v G f a X"
+        (let ((timer donkey--split-sweep-timer))
+          (should timer)
+          (execute-kbd-macro (kbd "C-g"))
+          (should-not (memq timer timer-list))
+          (should (null donkey--split-sweep-timer))
+          (should (equal (donkey-split-test--last-line) "fooX 1000")))))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-timer-kill*"
+          (donkey-split-test--numbered-lines 1000) "v G f a X"
+        (let ((timer donkey--split-sweep-timer))
+          (should timer)
+          (kill-buffer (current-buffer))
+          (should-not (memq timer timer-list))))))))
+
+(ert-deftest donkey-split-cursors-writing-is-one-undo-step-at-the-cursors ()
+  "Back at the cursors, u takes what was typed at every cursor back in one step."
+  (donkey-split-test--keys "*cursors-write-undo*" donkey-split-test--column
+      "t t i X C-g u"
+    (should (equal (buffer-string) donkey-split-test--column))
+    (should (= (length donkey--split-places) 3))
+    (execute-kbd-macro (kbd "U"))
+    (should (equal (buffer-string)
+                   "Xalpha beta\nXgamma delta\nXepsilon zeta\nlast\n"))))
+
 (provide 'donkey-split-test)
 
 ;;; donkey-split-test.el ends here

@@ -781,6 +781,13 @@ write appears at every match at once.
 Backspace, retype, keep going: it is ordinary INSERT state, and =C-g=
 ends it keeping what you typed, exactly as =C-g= does anywhere else.
 
+There is no limit on how many matches a split holds. Past a couple of
+thousand, a keystroke writes the matches on screen at once and the
+rest as fast as they can be written, between your keystrokes; scroll
+and what you scroll onto is written first, and =C-g= waits for the
+last of them. Once the split has ended, one =u= takes back everything
+it wrote, at every match, and =U= puts it back.
+
 A wrap leaves the split standing, so pairs nest and a verb can still
 follow — =f= =(= =[= =a= wraps twice and then types after. The other
 verbs end it.
