@@ -1209,6 +1209,9 @@ minibuffer as text, and every cursor's line is searched."
       "jupiter\nsaturn\nuranus\nneptune\n" "j j j T T T DEL i > SPC C-g C-g"
     (should (equal (buffer-string)
                    "jupiter\n> saturn\n> uranus\n> neptune\n")))
+  (donkey-split-test--keys "*cursors-tutor-align*"
+      "one two three\nx yy zzz\nalpha beta\n" "t t w = i | C-g C-g"
+    (should (equal (buffer-string) "one| two three\nx y|y zzz\nalp|ha beta\n")))
   (donkey-split-test--keys "*cursors-tutor-M*"
       "old red apple\nold green pear\nold blue plum\n"
       "t t M w c f r e s h C-g C-g"
@@ -1700,6 +1703,41 @@ minibuffer as text, and every cursor's line is searched."
     (donkey-split-test--keys "*cursors-drawn-visible*" (concat text "\n") "% t"
       (should (= (length donkey--split-places) 2000))
       (should (< 0 (length donkey--split-cursor-marks) 500)))))
+
+(defconst donkey-split-test--ragged
+  "alpha beta gamma\nx yy zzz wwww\nlonger words here\nab\n"
+  "Lines whose words differ in length, for lining the cursors up.")
+
+(defun donkey-split-test--columns ()
+  "Return the column of every cursor, top first."
+  (mapcar (lambda (place)
+            (save-excursion
+              (goto-char (donkey--split-cursor place))
+              (current-column)))
+          donkey--split-places))
+
+(ert-deftest donkey-split-cursors-line-up-under-the-real-one ()
+  "The equals key puts every cursor at the real one's column, or a line's end."
+  (dolist (case '(("t t t w" (5 1 6 2)) ("t t t w =" (5 5 5 2))
+                  ("t t t w w =" (10 10 10 2)) ("l l l t t t b =" (0 0 0 0))))
+    (donkey-split-test--keys "*cursors-align*" donkey-split-test--ragged
+        (car case)
+      (should (equal (list (car case) (donkey-split-test--columns)) case))
+      (should (equal (buffer-string) donkey-split-test--ragged)))))
+
+(ert-deftest donkey-split-cursors-line-up-then-type-in-one-column ()
+  "After lining the cursors up, typing lands in one column on every row."
+  (donkey-split-test--keys "*cursors-align-type*" donkey-split-test--ragged
+      "t t t w = i | C-g"
+    (should (equal (buffer-string)
+                   "alpha| beta gamma\nx yy |zzz wwww\nlonge|r words here\nab|\n"))))
+
+(ert-deftest donkey-split-cursors-wrap-in-equals-when-selecting ()
+  "With selections, the equals key wraps them as any delimiter does."
+  (donkey-split-test--keys "*cursors-align-wrap*" donkey-split-test--ragged
+      "t t t v w ="
+    (should (equal (buffer-string)
+                   "=alpha= beta gamma\n=x= yy zzz wwww\n=longer= words here\n=ab=\n"))))
 
 (ert-deftest donkey-split-add-cursor-is-bound-to-t-in-normal-state ()
   "The key the README names reaches the command."

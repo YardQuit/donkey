@@ -872,7 +872,9 @@ is for; this is not one.
 at the same column; each =t= after adds one more below the last, and a
 count adds that many. =T= (=donkey-split-add-cursor-above=) adds above
 instead, and =DEL= takes back the cursor added last. A line shorter
-than the column gets its cursor at its end.
+than the column gets its cursor at its end. When a motion leaves the
+cursors in different columns, ~=~ lines them up under the real one
+again; with selections it wraps them, as any delimiter does.
 
 With lines selected, =t= puts a cursor on every one of them at once:
 =V j j j j t= gives five cursors, each at its line's start, and a =v=
@@ -894,6 +896,7 @@ instead. Every cursor then does what the real one does:
 | a pair                                 | wrap each selection, as in Normal      |
 | =M=, then =w= =b= =s= =h= =l= =g h=    | a mark run at every cursor             |
 | =t= =T=, =DEL=                         | add a cursor below, above; drop one    |
+| ~=~                                    | line the cursors up under the real one |
 | =m l=, =m u=                           | bank or unbank each cursor's line      |
 | =M-u= =M-l= =M-c=                      | case of each selection, or the word    |
 | =o= =O=                                | open a line at each cursor and type    |

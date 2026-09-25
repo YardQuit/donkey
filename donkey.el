@@ -6678,7 +6678,7 @@ since the split was made, whichever verb ran."
 adjust, . again, u U step, M or C-g ends"
               (donkey--split-places-phrase n)))
      (donkey--split-cursors
-      (format "Split: %s%s -- %s add, DEL drop, v V m M select, \
+      (format "Split: %s%s -- %s add, DEL drop, = line up, v V m M select, \
 i a I A o O c d y p D, f find, C-g"
               (donkey--split-places-phrase n)
               (if (seq-some #'donkey--split-cursor-selecting-p
@@ -7297,7 +7297,8 @@ typo; see `donkey--split-inert-commands'.")
     donkey-split-cursors-undo donkey-split-cursors-redo
     donkey-split-cursors-upcase donkey-split-cursors-downcase
     donkey-split-cursors-capitalize donkey-split-cursors-append
-    donkey-split-drop-cursor donkey-split-cursors-run-step-back
+    donkey-split-drop-cursor donkey-split-cursors-align
+    donkey-split-cursors-run-step-back
     donkey-split-cursors-run-step-forward)
   "The commands that keep Split mode armed.")
 
@@ -7826,6 +7827,9 @@ split\\='s there."
                     (setf (cadr row) cursor))
                   (when (and run (null (cddr row)))
                     (setf (cddr row) run)))))
+      ;; Before the wrap keys, which `=' is one of: with a selection it
+      ;; still wraps, through the command it names here.
+      (put (kbd "=") #'donkey-split-cursors-align nil)
       (dolist (entry (append (mapcar (lambda (command)
                                        (cons command
                                              #'donkey-split-cursors-replay))
@@ -8388,6 +8392,33 @@ back leaves nothing to put forward."
   (push (mapcar #'donkey--split-cursor-state donkey--split-places)
         donkey--split-run-history)
   (donkey--split-cursors-restore (pop donkey--split-run-redo)))
+
+(defun donkey-split-cursors-align ()
+  "Put every cursor at the real cursor\\='s column, or wrap in equals signs.
+
+With no cursor selecting, each cursor moves on its own line to the
+column the real one is at, or to the line\\='s end where the line is
+shorter, as \\[donkey-split-add-cursor] places them; the text is not
+changed.  Where a cursor holds a selection, the key wraps as any
+delimiter does at the cursors; see `donkey-split-wrap'.
+
+Bound to \\`=' at the cursors."
+  (interactive)
+  (donkey--split-live-p)
+  (if (seq-some #'donkey--split-cursor-selecting-p donkey--split-places)
+      (donkey-split-wrap ?=)
+    (let ((column (current-column)))
+      (dolist (place donkey--split-places)
+        (unless (eq place donkey--split-primary)
+          (donkey--split-cursor-set
+           place
+           (save-excursion
+             (goto-char (donkey--split-cursor place))
+             (move-to-column column)
+             (point))
+           nil nil nil)))
+      (setq donkey--split-column column)
+      (donkey--split-cursors-settle))))
 
 (defun donkey-split-cursors-select ()
   "Start a selection at every cursor, where each cursor is.
@@ -11038,6 +11069,18 @@ the one added last.
    ---> saturn
    ---> uranus
    ---> neptune
+
+Words differ in length, so after a motion the cursors can stand in
+different columns.  \\`=' puts every cursor back under the real one.
+
+>> Put the cursor at the start of the one line and press
+   \\[donkey-split-add-cursor] twice, then \\[forward-word]: each cursor stops at the end of
+   its own first word.  Press \\`=' and they line up under the real
+   one.  Press \\`i', type |, and \\`C-g' twice.
+
+   ---> one two three
+   ---> x yy zzz
+   ---> alpha beta
 
 \\`C-g' in INSERT state brings you back to the cursors rather than ending
 them, so one set of cursors can do several things in turn.
