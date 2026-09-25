@@ -786,7 +786,8 @@ thousand, a keystroke writes the matches on screen at once and the
 rest as fast as they can be written, between your keystrokes; scroll
 and what you scroll onto is written first, and =C-g= waits for the
 last of them. Once the split has ended, one =u= takes back everything
-it wrote, at every match, and =U= puts it back.
+it wrote, at every match, and =U= puts it back; what =c=, =d= or a
+wrap did is one undo step too.
 
 A wrap leaves the split standing, so pairs nest and a verb can still
 follow — =f= =(= =[= =a= wraps twice and then types after. The other
@@ -938,14 +939,18 @@ the cursors is one change: =u= takes it back everywhere at once, and
 an edit that fails at one cursor is taken back at all of them. =z z=
 and =C-l= move the view and keep the cursors.
 
-Every key runs once at every cursor, so cursors are for a screenful of
-lines rather than a whole book: at a thousand a key takes a few
-milliseconds, at tens of thousands a second or more. =t= refuses to
-make more than =donkey-split-cursor-limit= (1000), and says so; set it
-higher, or to =nil= for no limit, or set
-=donkey-split-cursor-limit-ask= to be asked instead. =c= on a rectangle
-taller than the limit asks for its text in the minibuffer and writes it
-on every row at once. =f= has no limit: its places cost far less.
+Every key but the ones that type runs once at every cursor: a motion
+or a selection takes about ten microseconds a cursor, so ten thousand
+cursors answer in a tenth of a second and a hundred thousand in a
+second or two. Typing is written at the cursors as it is at the
+matches of =f=, however many. =t= refuses to make more than
+=donkey-split-cursor-limit= (10000), and says so; set it higher, or to
+=nil= for no limit, or set =donkey-split-cursor-limit-ask= to be asked
+instead. =c= on a rectangle taller than the limit asks for its text in
+the minibuffer and writes it on every row at once. =f= has no limit.
+
+What a key changes at the cursors is one undo step, whatever their
+number: =u= takes it back at every cursor and =U= puts it back.
 
 Three limits keep the cursors out of each other's way. A cursor never
 leaves its own line: a motion that would cross stops at the line's
@@ -2762,7 +2767,7 @@ Using =setopt= for everything means never having to know which is which.
     ;;; Cursors in a column
 
     ;; T refuses to make more cursors than this; nil for no limit.
-    (setopt donkey-split-cursor-limit 1000)                      ; default
+    (setopt donkey-split-cursor-limit 10000)                     ; default
     ;; Ask past the limit instead of refusing.
     (setopt donkey-split-cursor-limit-ask nil)                   ; default
 
@@ -3264,7 +3269,7 @@ and =M-x apropos-command donkey-= finds any of them.
 | =donkey-cursor-support=            | =box=                            | cursor in a support mode, =[S]= |
 | =donkey-cursor-excluded=           | =(bar . 2)=                      | cursor in an excluded mode, =[E]= |
 | =donkey-decscusr-denied-terminals= | =("dumb" "linux")=               | terminals that get no cursor escapes |
-| =donkey-split-cursor-limit=        | =1000=                           | most cursors =t= makes; =nil= for no limit |
+| =donkey-split-cursor-limit=        | =10000=                          | most cursors =t= makes; =nil= for no limit |
 | =donkey-split-cursor-limit-ask=    | =nil=                            | ask past the limit instead of refusing |
 | =donkey-mark-pair-delimiters=      | 21 pairs                         | what =m i=/=m a= select and the keys wrap |
 | =donkey-wrap-delimiters=           | =all=                            | which of those pairs get a key |

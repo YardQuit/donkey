@@ -1997,6 +1997,208 @@ compared by their text, not by their size."
     (should (equal (buffer-string)
                    "Xalpha beta\nXgamma delta\nXepsilon zeta\nlast\n"))))
 
+;;; ---------------------------------------------------------------------------
+;;; What a verb records for undo
+;;; ---------------------------------------------------------------------------
+
+(defun donkey-split-test--split-entries ()
+  "Return how many entries of the split's own kind are on `buffer-undo-list'."
+  (seq-count (lambda (entry)
+               (and (eq (car-safe entry) 'apply)
+                    (eq (nth 4 entry) #'donkey--split-put-back)))
+             buffer-undo-list))
+
+(ert-deftest donkey-split-d-is-one-undo-entry-whatever-the-number-of-places ()
+  "Deleting fifty places records one entry, and undo puts every one back."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-d-entry*"
+        (donkey-split-test--numbered-lines 50) "v G f d"
+      (should (= 1 (donkey-split-test--split-entries)))
+      (should (< (length buffer-undo-list) 8))
+      (should (equal (donkey-split-test--last-line) " 50"))
+      (execute-kbd-macro (kbd "u"))
+      (should (equal (donkey-split-test--last-line) "foo 50"))
+      (should (equal (buffer-substring (point-min) (line-end-position))
+                     "foo 1"))
+      (execute-kbd-macro (kbd "U"))
+      (should (equal (donkey-split-test--last-line) " 50")))))
+
+(ert-deftest donkey-split-d-over-places-that-differ-puts-each-text-back ()
+  "Deleting places that differ is one entry too, and undo gives each its own."
+  (donkey-split-test--on "[0-9]+"
+    (donkey-split-test--keys "*split-d-differ*" "a 1 b\nc 22 d\ne 333 f\n"
+        "v G f d"
+      (should (equal (buffer-string) "a  b\nc  d\ne  f\n"))
+      (should (= 1 (donkey-split-test--split-entries)))
+      (execute-kbd-macro (kbd "u"))
+      (should (equal (buffer-string) "a 1 b\nc 22 d\ne 333 f\n")))))
+
+(ert-deftest donkey-split-c-records-its-emptying-as-one-entry ()
+  "After c, the emptying and the writing are one entry each."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-c-entry*"
+        (donkey-split-test--numbered-lines 50) "v G f c X C-g"
+      (should (= 2 (donkey-split-test--split-entries)))
+      (should (< (length buffer-undo-list) 10))
+      (execute-kbd-macro (kbd "u u"))
+      (should (equal (donkey-split-test--last-line) "foo 50"))
+      (execute-kbd-macro (kbd "U U"))
+      (should (equal (donkey-split-test--last-line) "X 50")))))
+
+(ert-deftest donkey-split-a-wrap-and-its-removal-are-one-entry-each ()
+  "Each wrap is one entry, taken back one pair at a time."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-wrap-entry*" "a foo b\nc foo d\n"
+        "v G f ( [ C-g"
+      (should (equal (buffer-string) "a ([foo]) b\nc ([foo]) d\n"))
+      (should (= 2 (donkey-split-test--split-entries)))
+      (execute-kbd-macro (kbd "u"))
+      (should (equal (buffer-string) "a (foo) b\nc (foo) d\n"))
+      (execute-kbd-macro (kbd "U"))
+      (should (equal (buffer-string) "a ([foo]) b\nc ([foo]) d\n"))
+      (execute-kbd-macro (kbd "u u"))
+      (should (equal (buffer-string) "a foo b\nc foo d\n"))
+      (execute-kbd-macro (kbd "U U"))
+      (should (equal (buffer-string) "a ([foo]) b\nc ([foo]) d\n"))))
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-unwrap-entry*" "a foo b\nc foo d\n"
+        "v G f ( ( C-g"
+      (should (equal (buffer-string) "a foo b\nc foo d\n"))
+      (should (= 2 (donkey-split-test--split-entries)))
+      (execute-kbd-macro (kbd "u"))
+      (should (equal (buffer-string) "a (foo) b\nc (foo) d\n"))
+      (execute-kbd-macro (kbd "U"))
+      (should (equal (buffer-string) "a foo b\nc foo d\n")))))
+
+(ert-deftest donkey-split-a-wrap-s-record-holds-its-two-delimiters-once ()
+  "A wrap over fifty places records the opener and the closer, not a hundred strings."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-wrap-size*"
+        (donkey-split-test--numbered-lines 50) "v G f ("
+      (let ((entry (seq-find (lambda (entry)
+                               (and (eq (car-safe entry) 'apply)
+                                    (eq (nth 4 entry) #'donkey--split-put-back)))
+                             buffer-undo-list)))
+        (should entry)
+        ;; A hundred positions, two delimiters, one empty string.
+        (should (< (donkey--split-entry-size entry) 1000))
+        (execute-kbd-macro (kbd "C-g u"))
+        (should (equal (donkey-split-test--last-line) "foo 50"))
+        (execute-kbd-macro (kbd "U"))
+        (should (equal (donkey-split-test--last-line) "(foo) 50"))))))
+
+(ert-deftest donkey-split-wraps-empty-places-and-takes-the-pair-off-again ()
+  "An empty place is wrapped opener first, and the pair comes off whole."
+  (donkey-split-test--on "$"
+    (donkey-split-test--keys "*split-wrap-empty*" "ab\ncd\n" "v G f ( ("
+      (should (equal (buffer-string) "ab\ncd\n"))
+      (execute-kbd-macro (kbd "("))
+      (should (equal (buffer-string) "ab()\ncd()\n"))
+      (execute-kbd-macro (kbd "C-g u u"))
+      (should (equal (buffer-string) "ab()\ncd()\n")))))
+
+(ert-deftest donkey-split-cursor-verbs-record-one-entry-each ()
+  "Every verb at the cursors is one undo entry, taken back in order."
+  (donkey-split-test--keys "*cursors-entries*" donkey-split-test--column
+      "t t m w d"
+    (should (equal (buffer-string) " beta\n delta\n zeta\nlast\n"))
+    (should (= 1 (donkey-split-test--split-entries)))
+    (execute-kbd-macro (kbd "p"))
+    (should (equal (buffer-string) donkey-split-test--column))
+    (should (= 2 (donkey-split-test--split-entries)))
+    (execute-kbd-macro (kbd "D"))
+    (should (equal (buffer-string) "alpha\ngamma\nepsilon\nlast\n"))
+    (should (= 3 (donkey-split-test--split-entries)))
+    (execute-kbd-macro (kbd "o Z C-g"))
+    (should (equal (buffer-string)
+                   "alpha\nZ\ngamma\nZ\nepsilon\nZ\nlast\n"))
+    (should (= 5 (donkey-split-test--split-entries)))
+    ;; The cursors stand after the Z: the case key wants the word ahead.
+    (execute-kbd-macro (kbd "g h M-l"))
+    (should (equal (buffer-string)
+                   "alpha\nz\ngamma\nz\nepsilon\nz\nlast\n"))
+    (should (= 6 (donkey-split-test--split-entries)))
+    (should (< (length buffer-undo-list) 20))
+    (execute-kbd-macro (kbd "u u u u u u"))
+    (should (equal (buffer-string) donkey-split-test--column))
+    (should (= (length donkey--split-places) 3))
+    (execute-kbd-macro (kbd "U U U U U U"))
+    (should (equal (buffer-string)
+                   "alpha\nz\ngamma\nz\nepsilon\nz\nlast\n"))))
+
+(ert-deftest donkey-split-cursors-open-above-is-one-entry ()
+  "O at the cursors is one entry, and undo closes every line it opened."
+  (donkey-split-test--keys "*cursors-O-entry*" donkey-split-test--column
+      "t t O Z C-g"
+    (should (equal (buffer-string)
+                   "Z\nalpha beta\nZ\ngamma delta\nZ\nepsilon zeta\nlast\n"))
+    (should (= 2 (donkey-split-test--split-entries)))
+    (execute-kbd-macro (kbd "u u"))
+    (should (equal (buffer-string) donkey-split-test--column))))
+
+(ert-deftest donkey-split-cursors-change-and-indent-are-one-entry-each ()
+  "The c on characters and the > at the cursors each record one entry."
+  (donkey-test-keys--harness "*cursors-c-entry*" #'emacs-lisp-mode ()
+      "(a\nb\nc)\n" "j t >"
+    (should (equal (buffer-string) "(a\n b\n c)\n"))
+    (should (= 1 (donkey-split-test--split-entries)))
+    (execute-kbd-macro (kbd "u"))
+    (should (equal (buffer-string) "(a\nb\nc)\n")))
+  (donkey-split-test--keys "*cursors-c-chars*" donkey-split-test--column
+      "t t c X C-g"
+    (should (equal (buffer-string) "Xlpha beta\nXamma delta\nXpsilon zeta\nlast\n"))
+    (should (= 2 (donkey-split-test--split-entries)))
+    (execute-kbd-macro (kbd "u u"))
+    (should (equal (buffer-string) donkey-split-test--column))))
+
+(ert-deftest donkey-split-rectangle-change-records-its-emptying-as-one-entry ()
+  "The rectangle change empties the block as one entry, the writing is another."
+  (donkey-split-test--keys "*rect-c-entry*" donkey-split-test--column
+      "m v j j l c Q C-g C-g"
+    (should (equal (buffer-string) "Qpha beta\nQmma delta\nQsilon zeta\nlast\n"))
+    (should (= 2 (donkey-split-test--split-entries)))
+    (execute-kbd-macro (kbd "u u"))
+    (should (equal (buffer-string) donkey-split-test--column))))
+
+(ert-deftest donkey-split-undo-record-keeps-to-undo-limit-by-what-it-holds ()
+  "Past `undo-limit', counted by positions and texts, the older entries go."
+  (let ((undo-limit 600)
+        (undo-strong-limit 1200))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-undo-limit*"
+          (donkey-split-test--numbered-lines 50) "v G f ( ["
+        (should (= 1 (donkey-split-test--split-entries))))))
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-undo-limit-off*"
+        (donkey-split-test--numbered-lines 50) "v G f ( ["
+      (should (= 2 (donkey-split-test--split-entries))))))
+
+(ert-deftest donkey-split-a-record-past-undo-outer-limit-is-not-made ()
+  "A change too large for `undo-outer-limit' is made, said, and not recorded."
+  (let ((undo-outer-limit 100)
+        (said nil))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-outer-limit*"
+          (donkey-split-test--numbered-lines 50) "v G f"
+        (cl-letf (((symbol-function 'message)
+                   (lambda (fmt &rest args)
+                     (when fmt (push (apply #'format fmt args) said))
+                     nil)))
+          (execute-kbd-macro (kbd "d")))
+        (should (equal (donkey-split-test--last-line) " 50"))
+        (should (= 0 (donkey-split-test--split-entries)))
+        (should (seq-find (lambda (line)
+                            (string-match-p "too large to record" line))
+                          said))))))
+
+(ert-deftest donkey-split-cursor-limit-defaults-to-ten-thousand ()
+  "The default limit is 10,000 cursors, and a value that is not a count reads as it."
+  (should (= (default-value 'donkey-split-cursor-limit) 10000))
+  (let ((donkey-split-cursor-limit "many")
+        (donkey-split-cursor-limit-ask nil))
+    (should (donkey--split-cursors-allowed-p 10000))
+    (should-not (donkey--split-cursors-allowed-p 10001))))
+
 (provide 'donkey-split-test)
 
 ;;; donkey-split-test.el ends here
