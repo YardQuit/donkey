@@ -197,6 +197,22 @@ split can be driven by real keys without a minibuffer."
         "v G f ( [ a X"
       (should (equal (buffer-string) "a ([fooX]) b\nc ([fooX]) d\n")))))
 
+(ert-deftest donkey-split-wraps-an-empty-place-opener-first ()
+  "A zero-width place takes its pair the right way round, and gives it back."
+  (donkey-split-test--on "$"
+    (donkey-split-test--keys "*split-wrap-empty*" "a\nbb\n" "v G f ("
+      (should (equal (buffer-string) "a()\nbb()\n"))
+      (should (equal (mapcar (lambda (place)
+                               (cons (overlay-start place) (overlay-end place)))
+                             donkey--split-places)
+                     '((3 . 3) (8 . 8))))))
+  (donkey-split-test--on "$"
+    (donkey-split-test--keys "*split-wrap-empty-off*" "a\nbb\n" "v G f ( ("
+      (should (equal (buffer-string) "a\nbb\n"))))
+  (donkey-split-test--on "^"
+    (donkey-split-test--keys "*split-wrap-empty-then*" "a\nbb\n" "v G f [ a X"
+      (should (equal (buffer-string) "[X]a\n[X]bb\n")))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; What is searched
 ;;; ---------------------------------------------------------------------------

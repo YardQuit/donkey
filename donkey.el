@@ -6770,18 +6770,17 @@ its own key, as `donkey-wrap-region' is reached in Normal state."
                 (delete-region (overlay-end place) (1+ (overlay-end place)))
                 (delete-region (1- (overlay-start place))
                                (overlay-start place)))
-            ;; Insertion type nil keeps the marker before the closer,
-            ;; which is where the place has to stop.
-            (let ((end (copy-marker (overlay-end place))))
-              (unwind-protect
-                  (progn
-                    (goto-char (overlay-start place))
-                    (insert opener)
-                    (let ((inner (point)))
-                      (goto-char end)
-                      (insert closer)
-                      (move-overlay place inner end)))
-                (set-marker end nil)))))))
+            ;; The closer first, as `donkey--wrap-put-on' does: an empty
+            ;; place has one position for both halves, and an opener
+            ;; put there first would be followed by the closer put
+            ;; before it.
+            (let ((beg (overlay-start place))
+                  (end (overlay-end place)))
+              (goto-char end)
+              (insert closer)
+              (goto-char beg)
+              (insert opener)
+              (move-overlay place (1+ beg) (1+ end)))))))
     (setq donkey--split-did (if off 'unwrapped 'wrapped)
           donkey--split-text
           (and donkey--split-primary
