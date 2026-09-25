@@ -6111,7 +6111,11 @@ opens, as \\`y' and \\`d' spend what they act on.")
 
 (defface donkey-split-cursor-face
   '((t :inverse-video t))
-  "Face for each cursor a split of cursors holds besides the real one."
+  "Face for each cursor a split of cursors holds besides the real one.
+
+The color every such cursor is drawn in, whatever shape the real
+cursor has: the text\\='s own, as reverse video shows it, or this
+face\\='s background where it has one."
   :group 'donkey)
 
 (defvar-local donkey--split-cursors nil
@@ -6128,6 +6132,23 @@ donkey-anchor where that is set, and nothing otherwise.")
 
 (defvar-local donkey--split-cursor-marks nil
   "The overlays drawing every cursor of the split but the real one.")
+
+(defvar-local donkey--split-running nil
+  "Non-nil while a split of cursors is in a mark run.
+
+Entered with the key Normal state has `donkey-mark-run-toggle' on; see
+`donkey-split-cursors-run-toggle'.")
+
+(defconst donkey--split-run-keeps
+  '(donkey-split-cursors-replay donkey-split-cursors-run-toggle
+    donkey-split-cursors-run-repeat donkey-split-cursors-run-refuse
+    universal-argument universal-argument-more
+    digit-argument negative-argument)
+  "The commands after which a run of the cursors carries on.
+
+With `donkey--split-inert-commands', which change nothing, and no
+command at all, as when a keyboard macro starts; every other command
+ends the run and keeps the cursors.")
 
 (defvar donkey--split-cursor-last nil
   "The command the cursors last ran together, their `last-command'.")
@@ -6318,8 +6339,12 @@ since the split was made, whichever verb ran."
      ((eq donkey--split-phase 'edit)
       (format "Split: writing at %d place%s -- C-g to finish"
               n (if (= n 1) "" "s")))
+     ((and donkey--split-cursors donkey--split-running)
+      (format "Split: %s, mark run -- w W b B s S grow, h l g h g l * \
+adjust, . again, M or C-g ends"
+              (donkey--split-places-phrase n)))
      (donkey--split-cursors
-      (format "Split: %s%s -- %s add, v V m select, i a I A c d y p D, \
+      (format "Split: %s%s -- %s add, v V m M select, i a I A c d y p D, \
 f find, C-g"
               (donkey--split-places-phrase n)
               (if (seq-some #'donkey--split-cursor-selecting-p
@@ -6350,6 +6375,11 @@ its end -- is made at every other place\\='s edge too; see
 `donkey--split-copy-edges'.  An edit away from the places ends the
 split, as does a place that cannot be written, and says why.  Every
 place is copied whatever the buffer\\='s narrowing, or none is."
+  (when (and donkey--split-running
+             this-command
+             (not (memq this-command donkey--split-run-keeps))
+             (not (memq this-command donkey--split-inert-commands)))
+    (setq donkey--split-running nil))
   (when donkey--split-places
     (let ((edge-edits (reverse donkey--split-edge-edits))
           (strayed donkey--split-strayed))
@@ -6612,6 +6642,7 @@ the current one, so both are cleared."
               donkey--split-pending nil
               donkey--split-tick nil
               donkey--split-cursors nil
+              donkey--split-running nil
               donkey--split-column nil
               donkey--split-cursor-marks nil)
         (remove-hook 'post-command-hook #'donkey--split-sync t)
@@ -6636,14 +6667,19 @@ mode changing, so none is let out."
 (defun donkey-split-quit ()
   "End the split, leaving what it changed.
 
-In a split of cursors where any cursor is selecting, let go of every
-cursor\\='s selection instead and keep the cursors.
+In a split of cursors in a run, or where any cursor is selecting, end
+the run and let go of every cursor\\='s selection instead, keeping the
+cursors.
 
 Bound to \\`C-g' inside `donkey-split-mode-map'."
   (interactive)
   (if (and (donkey--split-cursors-live-p)
-           (seq-some #'donkey--split-cursor-selecting-p donkey--split-places))
-      (donkey--split-cursors-deselect)
+           (or donkey--split-running
+               (seq-some #'donkey--split-cursor-selecting-p
+                         donkey--split-places)))
+      (progn
+        (setq donkey--split-running nil)
+        (donkey--split-cursors-deselect))
     (donkey--split-dissolve)))
 
 (defun donkey--split-live-p ()
@@ -6899,7 +6935,9 @@ typo; see `donkey--split-inert-commands'.")
     donkey-split-cursors-insert-line donkey-split-cursors-append-line
     donkey-split-cursors-change donkey-split-cursors-delete
     donkey-split-cursors-copy donkey-split-cursors-yank
-    donkey-split-cursors-kill-line)
+    donkey-split-cursors-kill-line donkey-split-cursors-bank
+    donkey-split-cursors-unbank donkey-split-cursors-run-toggle
+    donkey-split-cursors-run-repeat donkey-split-cursors-run-refuse)
   "The commands that keep Split mode armed.")
 
 (defun donkey--split-answers-p ()
@@ -7070,6 +7108,8 @@ the split and does its ordinary job, except the ones
     (donkey-copy . donkey-split-cursors-copy)
     (donkey-yank . donkey-split-cursors-yank)
     (kill-line . donkey-split-cursors-kill-line)
+    (donkey-bank-selection . donkey-split-cursors-bank)
+    (donkey-unbank-line . donkey-split-cursors-unbank)
     (donkey-wrap-region . donkey-split-wrap-key)
     (donkey-split-add-cursor . donkey-split-add-cursor)
     (donkey-split . donkey-split))
@@ -7086,6 +7126,20 @@ does at one.")
 What the commands in `donkey--split-cursor-replayed' leave behind to
 grow a selection on the next press, bound for each cursor to what that
 cursor left, so one cursor\\='s run never grows another\\='s.")
+
+(defconst donkey--split-run-replayed
+  '(donkey-mark-word donkey-mark-word-backward
+    donkey-mark-symbol donkey-mark-symbol-backward
+    donkey-mark-sentence donkey-mark-sentence-backward
+    donkey-mark-run-left donkey-mark-run-right
+    donkey-mark-run-line-start donkey-mark-run-line-end
+    donkey-mark-run-exchange)
+  "The mark run commands every cursor runs while the cursors are in a run.
+
+On whichever keys `donkey-mark-run-mode-map' has them on, through
+`donkey-split-cursors-replay'.  The run\\='s other keys move a
+selection off its line or walk the run\\='s history, and are refused
+at the cursors by `donkey-split-cursors-run-refuse'.")
 
 (defun donkey--split-cursors-live-p ()
   "Return non-nil where a split of cursors is live in this buffer."
@@ -7179,21 +7233,23 @@ cursor, read from `cursor-type' and, where that is t, from the frame."
 (defun donkey--split-cursor-mark (pos shape)
   "Return an overlay drawing a cursor of SHAPE at POS, or nil for no SHAPE.
 
-SHAPE is what `donkey--split-cursor-shape' returns.  A box is the
-character at POS in `donkey-split-cursor-face', or a space after the
-end of a line.  A bar is WIDTH pixels of the cursor\\='s color before
-the character on a graphical frame; a terminal has nothing narrower
-than a character, so there it is a `|' that moves the rest of the line
-over by one column.  An underline and an outline take the cursor\\='s
-color on a graphical frame and the text\\='s in a terminal, which draws
-an outline as a box."
+SHAPE is what `donkey--split-cursor-shape' returns.  Every shape is
+drawn in the color of `donkey-split-cursor-face' -- its background
+where it has one, and otherwise the text\\='s -- and never in the real
+cursor\\='s.  A box is the character at POS in that face, or a
+space after the end of a line.  A bar is WIDTH pixels before the
+character on a graphical frame; a terminal has nothing narrower than a
+character, so there it is a `|' that moves the rest of the line over
+by one column.  An underline is an underline, and an outline is an
+outline on a graphical frame and a box in a terminal."
   (let* ((on-text (not (memq (char-after pos) '(nil ?\n))))
          (graphic (display-graphic-p))
-         ;; A terminal draws its own cursor in a color of its own, not
-         ;; in the `cursor' face, so there the text's color is used.
-         (color (let ((background (and graphic
-                                       (face-background 'cursor nil t))))
-                  (and (stringp background) background)))
+         (color (seq-find
+                 (lambda (color)
+                   (and (stringp color)
+                        (not (string-prefix-p "unspecified" color))))
+                 (list (face-background 'donkey-split-cursor-face nil t)
+                       (face-foreground 'default nil t))))
          (mark nil))
     (pcase shape
       ('nil)
@@ -7206,7 +7262,9 @@ an outline as a box."
                                     'face (if color
                                               `(:background ,color)
                                             'donkey-split-cursor-face))
-                      "|")))
+                      (propertize "|" 'face (if color
+                                                `(:foreground ,color)
+                                              'default)))))
       (_
        (let ((face (pcase shape
                      (`(hbar . ,_)
@@ -7303,34 +7361,101 @@ after a buffer\\='s final newline is not one."
         (push (point) spots))
       (nreverse spots))))
 
+(defun donkey--split-cursor-keys (command map)
+  "Return the one- and two-key sequences MAP has COMMAND on."
+  (seq-filter (lambda (keys)
+                (and (<= 1 (length keys) 2)
+                     (not (memq (aref keys 0) '(remap menu-bar tool-bar)))))
+              (where-is-internal command (list map))))
+
+(defun donkey--split-cursor-layers ()
+  "Return what each key does at the cursors, as (KEYS CURSOR . RUN).
+
+CURSOR is the command KEYS runs at the cursors and RUN the one it runs
+while they are in a run, either nil where KEYS does nothing of the
+split\\='s there."
+  (let ((table nil))
+    (cl-flet ((put (keys cursor run)
+                (let ((row (assoc keys table)))
+                  (unless row
+                    (setq row (list keys nil))
+                    (push row table))
+                  (when (and cursor (null (cadr row)))
+                    (setf (cadr row) cursor))
+                  (when (and run (null (cddr row)))
+                    (setf (cddr row) run)))))
+      (dolist (entry (append (mapcar (lambda (command)
+                                       (cons command
+                                             #'donkey-split-cursors-replay))
+                                     donkey--split-cursor-replayed)
+                             donkey--split-cursor-verbs
+                             '((donkey-mark-run-toggle
+                                . donkey-split-cursors-run-toggle))))
+        (dolist (keys (donkey--split-cursor-keys (car entry)
+                                                 donkey-normal-mode-map))
+          (put keys (cdr entry) nil)))
+      (map-keymap
+       (lambda (event definition)
+         (let ((pairs (if (keymapp definition)
+                          (let (inner)
+                            (map-keymap (lambda (next command)
+                                          (push (cons (vector event next)
+                                                      command)
+                                                inner))
+                                        definition)
+                            inner)
+                        (list (cons (vector event) definition)))))
+           (pcase-dolist (`(,keys . ,command) pairs)
+             (put keys nil
+                  (cond
+                   ((memq command donkey--split-run-replayed)
+                    #'donkey-split-cursors-replay)
+                   ((eq command 'donkey-mark-run-cancel)
+                    #'donkey-split-cursors-run-toggle)
+                   ((eq command 'repeat) #'donkey-split-cursors-run-repeat)
+                   (t #'donkey-split-cursors-run-refuse))))))
+       donkey-mark-run-mode-map)
+      (dolist (command '(donkey-mark-paragraph donkey-mark-paragraph-backward))
+        (dolist (keys (donkey--split-cursor-keys command
+                                                 donkey-normal-mode-map))
+          (put keys nil #'donkey-split-cursors-run-refuse)))
+      (put (kbd "C-g") #'donkey-split-quit #'donkey-split-quit))
+    table))
+
 (defun donkey--split-cursor-map ()
   "Return the map a split of cursors arms.
 
 Every key Normal state has a command of `donkey--split-cursor-replayed'
 on runs it at every cursor, every key it has a command of
 `donkey--split-cursor-verbs' on runs the verb, and \\`C-g' is
-`donkey-split-quit'.  Each answers only while `donkey--split-answers-p'
-holds; see `donkey--answering-map'."
-  (let ((plain (make-sparse-keymap))
-        (bindings nil))
-    (dolist (entry (append (mapcar (lambda (command)
-                                     (cons command
-                                           #'donkey-split-cursors-replay))
-                                   donkey--split-cursor-replayed)
-                           donkey--split-cursor-verbs))
-      (dolist (keys (where-is-internal (car entry)
-                                       (list donkey-normal-mode-map)))
-        (when (and (<= 1 (length keys) 2)
-                   (not (memq (aref keys 0) '(remap menu-bar tool-bar))))
-          ;; A key the map already has as a command cannot also be a
-          ;; prefix; the first binding stands.
-          (ignore-errors (define-key plain keys (cdr entry))))))
-    (define-key plain (kbd "C-g") #'donkey-split-quit)
-    (map-keymap (lambda (event definition)
-                  (push (cons event definition) bindings))
-                plain)
-    (donkey--answering-map (nreverse bindings) #'donkey--split-answers-p
-                           'donkey-split-verbs)))
+`donkey-split-quit'.  While the cursors are in a run the keys of
+`donkey-mark-run-mode-map' answer first; see
+`donkey--split-cursor-layers'.  Each key answers only while
+`donkey--split-answers-p' holds, and a key with nothing to do in the
+layer that is live falls through to Normal state."
+  (let ((map (make-sparse-keymap))
+        (prefixes nil))
+    (pcase-dolist (`(,keys ,cursor . ,run) (donkey--split-cursor-layers))
+      (let ((item `(menu-item
+                    "" ,(or cursor run)
+                    :filter ,(lambda (_)
+                               (and (donkey--split-answers-p)
+                                    (if donkey--split-running
+                                        (or run cursor)
+                                      cursor))))))
+        (if (= (length keys) 1)
+            (define-key map keys item)
+          (let ((prefix (or (alist-get (aref keys 0) prefixes)
+                            (setf (alist-get (aref keys 0) prefixes)
+                                  (make-sparse-keymap)))))
+            (define-key prefix (vector (aref keys 1)) item)))))
+    (pcase-dolist (`(,event . ,prefix) prefixes)
+      (define-key map (vector event)
+        `(menu-item "" ,prefix
+                    :filter ,(lambda (definition)
+                               (and (donkey--split-answers-p) definition)))))
+    (define-key map [donkey-split-verbs] #'ignore)
+    map))
 
 (defun donkey-split-add-cursor (&optional count)
   "Add a cursor on the line below the last cursor, at the same column.
@@ -7462,16 +7587,76 @@ shown."
 (defun donkey-split-cursors-replay (&optional arg)
   "Run the Normal state command on the keys just pressed at every cursor.
 
-Only a command of `donkey--split-cursor-replayed' is run.  ARG is the
-prefix argument, given to every cursor."
+While the cursors are in a run, a command of
+`donkey--split-run-replayed' on those keys in `donkey-mark-run-mode-map'
+is run; otherwise the command Normal state has there, where it is one
+of `donkey--split-cursor-replayed'.  ARG is the prefix argument, given
+to every cursor."
   (interactive "P")
   (donkey--split-live-p)
-  (let ((command (lookup-key donkey-normal-mode-map
-                             (this-single-command-keys))))
-    (unless (memq command donkey--split-cursor-replayed)
+  (let* ((keys (this-single-command-keys))
+         (run (and donkey--split-running
+                   (lookup-key donkey-mark-run-mode-map keys)))
+         (command (if (memq run donkey--split-run-replayed)
+                      run
+                    (lookup-key donkey-normal-mode-map keys))))
+    (unless (or (eq command run)
+                (memq command donkey--split-cursor-replayed))
       (user-error "%s is not run at every cursor"
                   (key-description (this-single-command-keys))))
     (donkey--split-cursors-run command arg)))
+
+(defun donkey-split-cursors-run-toggle ()
+  "Start a mark run at every cursor, or end it and let go of the selections.
+
+The split\\='s `donkey-mark-run-toggle'.  Selections the cursors hold
+are taken into the run, a whole line as its text; with none, every
+cursor selects its word, and where a cursor has none the run starts
+with nothing selected.  In the run the keys of
+`donkey-mark-run-mode-map' grow and adjust every cursor\\='s selection;
+see `donkey--split-run-replayed'.  Any other key ends the run, and a key
+the cursors answer does its job at every cursor."
+  (interactive)
+  (donkey--split-live-p)
+  (if donkey--split-running
+      (progn
+        (setq donkey--split-running nil)
+        (donkey--split-cursors-deselect))
+    (if (seq-some (lambda (place)
+                    (< (overlay-start place) (overlay-end place)))
+                  donkey--split-places)
+        (progn
+          (dolist (place donkey--split-places)
+            (when (overlay-get place 'donkey-line)
+              (let ((line (donkey--split-cursor-line place)))
+                (donkey--split-cursor-set place (car line) (cdr line)
+                                          nil nil))))
+          (setq donkey--split-cursor-last 'donkey-mark-run-adopt))
+      (condition-case nil
+          (donkey--split-cursors-run 'donkey-mark-word nil)
+        (user-error (setq donkey--split-cursor-last nil))))
+    (setq donkey--split-running t)
+    (donkey--split-cursors-settle)))
+
+(defun donkey-split-cursors-run-repeat ()
+  "Run the run\\='s last press again at every cursor.
+
+The split\\='s `repeat' while the cursors are in a run."
+  (interactive)
+  (donkey--split-live-p)
+  (if (memq donkey--split-cursor-last donkey--split-run-replayed)
+      (donkey--split-cursors-run donkey--split-cursor-last nil)
+    (ding)))
+
+(defun donkey-split-cursors-run-refuse ()
+  "Refuse a mark run key the cursors do not run, and keep the run.
+
+The keys that move a selection to another line or to the buffer\\='s
+edge, and the run\\='s history, since a cursor stays on its own line."
+  (interactive)
+  (ding)
+  (message "%s is not run at the cursors -- each stays on its line"
+           (key-description (this-single-command-keys))))
 
 (defun donkey-split-cursors-select ()
   "Start a selection at every cursor, where each cursor is.
@@ -7543,6 +7728,7 @@ wrote, and the split chooses again."
   (setq donkey--split-edge-edits nil
         donkey--split-strayed nil
         donkey--split-pending nil
+        donkey--split-running nil
         donkey--split-cursor-last nil)
   (donkey--split-arm (donkey--split-cursor-map))
   (donkey--split-cursors-settle)
@@ -7714,6 +7900,48 @@ many copies."
                 (donkey--split-cursor-set place (point) nil nil nil))))
         (setq donkey--split-did 'pasted)
         (donkey--split-cursors-settle)))))
+
+(defun donkey--split-cursors-line-spans ()
+  "Return every cursor\\='s whole line as (BEG . END), its newline included."
+  (mapcar (lambda (place)
+            (let ((cursor (donkey--split-cursor place)))
+              (donkey--whole-line-span cursor cursor)))
+          donkey--split-places))
+
+(defun donkey-split-cursors-bank ()
+  "Bank every cursor\\='s line, or unbank them all where every one is banked.
+
+The split\\='s `donkey-bank-selection', with its toggle: lines partly
+banked are banked the rest of the way.  The cursors stay, and the bank
+is there for \\[donkey-copy], \\[donkey-delete] and \\[donkey-split] once
+they end."
+  (interactive)
+  (donkey--split-live-p)
+  (let* ((spans (donkey--split-cursors-line-spans))
+         (unbanking (seq-every-p (lambda (span)
+                                   (donkey--span-lines-banked-p
+                                    (car span) (cdr span)))
+                                 spans)))
+    (dolist (span spans)
+      (if unbanking
+          (donkey--unbank-span (car span) (cdr span))
+        (donkey--bank-span (car span) (cdr span))))
+    (message "%s %s (%d banked in all)"
+             (if unbanking "Unbanked" "Banked")
+             (donkey--split-places-phrase (length spans))
+             (donkey--banked-line-count))))
+
+(defun donkey-split-cursors-unbank ()
+  "Unbank every cursor\\='s line, leaving every other bank alone.
+
+The split\\='s `donkey-unbank-line': it only ever removes."
+  (interactive)
+  (donkey--split-live-p)
+  (dolist (span (donkey--split-cursors-line-spans))
+    (donkey--delete-banked-overlays (donkey--banked-overlays-at (car span))))
+  (message "Unbanked at %s (%d banked in all)"
+           (donkey--split-places-phrase (length donkey--split-places))
+           (donkey--banked-line-count)))
 
 (defun donkey-split-cursors-kill-line (&optional _count)
   "Kill from every cursor to the end of its line.
@@ -9767,6 +9995,12 @@ for you to say what to do with all of them at once:
   \\`i' types before every match, \\`a' after it, \\`c' empties them first,
   \\`d' deletes them, \\`w' or any delimiter wraps them, and \\`C-g' ends it.
 
+A painted match is ONE thing, the way a single character is: \\`a' types
+after the whole of it and \\`i' before the whole of it, wherever the
+cursor sits.  That is not how a \\`v' selection behaves: there \\`a'
+types after the character under the cursor and \\`i' before it,
+wherever in the selection the cursor is.
+
 While you type, what you write appears at every match together.
 Backspace and retype as you like: it is ordinary INSERT state, and
 \\`C-g' ends it KEEPING what you typed, exactly as it does everywhere
@@ -9937,6 +10171,18 @@ them, so one set of cursors can do several things in turn.
    ---> ada
    ---> alan
    ---> grace
+
+\\[donkey-mark-run-toggle] at the cursors is the mark run from Lesson 5 at every cursor:
+each cursor selects its word, and the run's keys grow every selection
+at once.
+
+>> Put the cursor at the start of the first fruit line and press
+   \\[donkey-split-add-cursor] twice.  Press \\[donkey-mark-run-toggle] and \\`w': every cursor holds two
+   words.  Press \\`c', type fresh, and \\`C-g' twice.
+
+   ---> old red apple
+   ---> old green pear
+   ---> old blue plum
 
 What the cursors copy goes on the kill ring one line per cursor, and a
 paste with as many lines as there are cursors gives each its own.

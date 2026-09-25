@@ -855,7 +855,11 @@ is for; this is not one.
 =T= (=donkey-split-add-cursor=) puts a second cursor on the line below,
 at the same column; each =T= after adds one more below the last, and a
 count adds that many. A line shorter than the column gets its cursor
-at its end. Every cursor then does what the real one does:
+at its end. The other cursors are drawn in the real cursor's shape,
+a box or a bar as the state changes, and always in the text's own
+color rather than the real cursor's; a background given to the face
+=donkey-split-cursor-face= is used instead. Every cursor then does
+what the real one does:
 
 | Key                                    | At every cursor                        |
 |----------------------------------------+----------------------------------------|
@@ -866,6 +870,8 @@ at its end. Every cursor then does what the real one does:
 | =i= =a= =I= =A= =c=                    | type; =C-g= comes back to the cursors  |
 | =d= =x=, =D=, =y=, =p=                 | delete, kill, copy, paste              |
 | a pair                                 | wrap, or put the pair in               |
+| =M=, then =w= =b= =s= =h= =l= =g h=    | a mark run at every cursor             |
+| =m l=, =m u=                           | bank or unbank each cursor's line      |
 | =f=                                    | search each cursor's selection or line |
 | =C-g=                                  | let go of the selections, then end     |
 
@@ -874,6 +880,13 @@ ring as one kill, one line per cursor, and =p= gives each cursor its
 own line back when the kill has as many lines as there are cursors —
 so =m w y=, a move, and =p= copies each cursor's word to where that
 cursor went. A key =m i= would ask for is asked once.
+
+=M= at the cursors is the mark run at every cursor: each selects its
+word, or keeps what it had selected, and the run's keys grow and
+adjust every selection at once — =M w d= takes two words from every
+line. The run's keys that would leave the line, =j= =k= =J= =K= =g g=
+=g e=, and its =u= and =U=, beep and keep the run. Any other key ends
+the run, and a key the cursors answer does its job at every cursor.
 
 Three limits keep the cursors out of each other's way. A cursor never
 leaves its own line: a motion that would cross stops at the line's

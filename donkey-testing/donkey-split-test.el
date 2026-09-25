@@ -1131,7 +1131,7 @@ minibuffer as text, and every cursor's line is searched."
                               (overlays-in (point-min) (point-max)))))))
 
 (ert-deftest donkey-split-cursors-tutor-exercises-do-what-lesson-16-says ()
-  "The three exercises of the tutor's cursor lesson give what it promises."
+  "The exercises of the tutor's cursor lesson give what it promises."
   (donkey-split-test--keys "*cursors-tutor-1*" "milk\neggs\nbread\n"
       "T T I - SPC C-g C-g"
     (should (equal (buffer-string) "- milk\n- eggs\n- bread\n"))
@@ -1139,6 +1139,10 @@ minibuffer as text, and every cursor's line is searched."
   (donkey-split-test--keys "*cursors-tutor-2*" "ada\nalan\ngrace\n"
       "T T m w y A SPC = SPC C-g p C-g"
     (should (equal (buffer-string) "ada = ada\nalan = alan\ngrace = grace\n")))
+  (donkey-split-test--keys "*cursors-tutor-M*"
+      "old red apple\nold green pear\nold blue plum\n"
+      "T T M w c f r e s h C-g C-g"
+    (should (equal (buffer-string) "fresh apple\nfresh pear\nfresh plum\n")))
   (donkey-split-test--on ","
     (donkey-split-test--keys "*cursors-tutor-3*" "1,2,3\n4,5,6\n7,8,9\n0,0,0\n"
         "T T f c ; C-g"
@@ -1174,6 +1178,69 @@ minibuffer as text, and every cursor's line is searched."
           "T T"
         (should (equal (list (car case) (donkey-split-test--drawn)) case))))))
 
+(ert-deftest donkey-split-cursors-keep-their-own-color-in-every-shape ()
+  "Every shape is drawn in the text's color, or the face's, never the cursor's."
+  (let ((face-was (face-attribute 'donkey-split-cursor-face :background))
+        (text-was (face-attribute 'default :foreground))
+        (cursor-was (face-attribute 'cursor :background)))
+    (unwind-protect
+        (dolist (case '((unspecified "blue") ("gray50" "gray50")))
+          (set-face-background 'donkey-split-cursor-face (car case))
+          (set-face-foreground 'default "blue")
+          (set-face-background 'cursor "red")
+          (dolist (graphic '(t nil))
+            (cl-letf (((symbol-function 'display-graphic-p)
+                       (lambda (&rest _) graphic)))
+              (donkey-split-test--keys "*cursors-color*"
+                  donkey-split-test--column "T T i"
+                (should (equal (list (car case) graphic
+                                     (get-text-property
+                                      0 'face
+                                      (overlay-get (car donkey--split-cursor-marks)
+                                                   'before-string)))
+                               (list (car case) graphic
+                                     (list (if graphic :background :foreground)
+                                           (cadr case)))))))))
+      (set-face-background 'donkey-split-cursor-face face-was)
+      (set-face-foreground 'default text-was)
+      (set-face-background 'cursor cursor-was))))
+
+(ert-deftest donkey-split-types-after-a-painted-place-as-one-thing ()
+  "`a' types after the whole place, where after `v' it types after the cursor."
+  (donkey-split-test--keys "*split-a-v*" "alpha beta\n" "v w a X C-g"
+    (should (equal (buffer-string) "alpha Xbeta\n")))
+  (donkey-split-test--on "alpha"
+    (donkey-split-test--keys "*split-a-place*" "alpha beta\n" "f a X C-g"
+      (should (equal (buffer-string) "alphaX beta\n")))
+    (donkey-split-test--keys "*split-i-place*" "alpha beta\n" "f i X C-g"
+      (should (equal (buffer-string) "Xalpha beta\n")))))
+
+(ert-deftest donkey-split-cursors-bank-every-cursor-s-line ()
+  "`m l' banks every cursor's line and keeps the cursors; again, unbanks."
+  (donkey-split-test--keys "*cursors-bank*" donkey-split-test--column "T T m l"
+    (should (= (donkey--banked-line-count) 3))
+    (should (= (length donkey--split-places) 3))
+    (should (equal (buffer-string) donkey-split-test--column)))
+  (donkey-split-test--keys "*cursors-bank2*" donkey-split-test--column
+      "T T m l m l"
+    (should (= (donkey--banked-line-count) 0)))
+  (donkey-split-test--keys "*cursors-bank3*" donkey-split-test--column
+      "T T m l m u"
+    (should (= (donkey--banked-line-count) 0))
+    (should (= (length donkey--split-places) 3))))
+
+(ert-deftest donkey-split-cursors-bank-the-rest-of-a-partly-banked-column ()
+  "Where some cursor lines are banked, `m l' banks the rest."
+  (donkey-split-test--keys "*cursors-bank-part*" donkey-split-test--column
+      "m l T T m l"
+    (should (= (donkey--banked-line-count) 3))))
+
+(ert-deftest donkey-split-cursors-leave-the-bank-for-after ()
+  "Lines banked at the cursors are what `d' takes once the cursors end."
+  (donkey-split-test--keys "*cursors-bank-d*" donkey-split-test--column
+      "T m l C-g d"
+    (should (equal (buffer-string) "epsilon zeta\nlast\n"))))
+
 (ert-deftest donkey-split-cursors-draw-an-outline-as-a-box-in-a-terminal ()
   "A hollow cursor is outlined on a graphical frame and a box elsewhere."
   (dolist (graphic '(t nil))
@@ -1183,6 +1250,86 @@ minibuffer as text, and every cursor's line is searched."
             "T T"
           (should (equal (donkey-split-test--drawn)
                          (if graphic '(hollow) '(box)))))))))
+
+(defconst donkey-split-test--words
+  "one two three four\nfive six seven eight\nnine ten eleven\n"
+  "Three lines of words for the mark run at the cursors.")
+
+(defun donkey-split-test--texts ()
+  "Return the text of every place of the live split, top first."
+  (mapcar #'donkey--split-place-text donkey--split-places))
+
+(ert-deftest donkey-split-cursors-M-selects-what-M-selects-at-one-cursor ()
+  "A mark run at the cursors selects on the first line what one cursor would."
+  (dolist (keys '("M" "M w" "M w w" "M w b" "M b" "M W" "M B" "M S" "M l l"
+                  "M g l" "M g h g l" "M * w" "M w ." "M m w" "M w * l"))
+    (let (single)
+      (donkey-split-test--keys "*cursors-M-one*" donkey-split-test--words keys
+        (setq single (buffer-substring (region-beginning) (region-end))))
+      (donkey-split-test--keys "*cursors-M-many*" donkey-split-test--words
+          (concat "T T " keys)
+        (should donkey--split-running)
+        (should (equal (list keys (car (donkey-split-test--texts)))
+                       (list keys single)))))))
+
+(ert-deftest donkey-split-cursors-M-grows-every-cursor-s-own-selection ()
+  "Each cursor's run grows from its own word."
+  (donkey-split-test--keys "*cursors-M-grow*" donkey-split-test--words
+      "l l l l T T M w b"
+    (should (equal (donkey-split-test--texts)
+                   '("one two three" "five six seven" "nine ten eleven")))))
+
+(ert-deftest donkey-split-cursors-M-refuses-what-would-leave-the-line ()
+  "Keys that cross lines, or walk the run's history, beep and keep the run."
+  (dolist (key '("j" "k" "J" "K" "g g" "g e" "G" "u" "U" "v" "V" "m p"))
+    (donkey-split-test--keys "*cursors-M-refuse*" donkey-split-test--words
+        "T T M w"
+      (condition-case nil (execute-kbd-macro (kbd key)) (error nil))
+      (should (equal (list key donkey--split-running (donkey-split-test--texts))
+                     (list key t '("one two" "five six" "nine ten"))))
+      (should (equal (buffer-string) donkey-split-test--words)))))
+
+(ert-deftest donkey-split-cursors-M-ends-on-a-verb-that-keeps-the-cursors ()
+  "`M w d' deletes at every cursor, ends the run and keeps the cursors."
+  (donkey-split-test--keys "*cursors-M-d*" donkey-split-test--words "T T M w d"
+    (should (equal (buffer-string) " three four\n seven eight\n eleven\n"))
+    (should (equal (car kill-ring) "one two\nfive six\nnine ten"))
+    (should-not donkey--split-running)
+    (should (= (length donkey--split-places) 3))))
+
+(ert-deftest donkey-split-cursors-M-and-C-g-end-the-run-one-level-at-a-time ()
+  "`M' or `C-g' ends the run and keeps the cursors; `C-g' again ends them."
+  (dolist (keys '("T T M w M" "T T M w C-g"))
+    (donkey-split-test--keys "*cursors-M-end*" donkey-split-test--words keys
+      (should-not donkey--split-running)
+      (should (= (length donkey--split-places) 3))
+      (should-not (seq-some #'donkey--split-cursor-selecting-p
+                            donkey--split-places))))
+  (donkey-split-test--keys "*cursors-M-end2*" donkey-split-test--words
+      "T T M w C-g C-g"
+    (should (null donkey--split-places))))
+
+(ert-deftest donkey-split-cursors-M-starts-where-there-is-no-word ()
+  "With no word to select, the run starts with nothing selected."
+  (donkey-split-test--keys "*cursors-M-empty*" "\n\n\n" "T T M"
+    (should donkey--split-running)
+    (should (equal (donkey-split-test--texts) '("" "" ""))))
+  (donkey-split-test--keys "*cursors-M-empty-quit*" "\n\n\n" "T T M C-g"
+    (should-not donkey--split-running)
+    (should (= (length donkey--split-places) 3))))
+
+(ert-deftest donkey-split-cursors-M-takes-the-selections-it-finds ()
+  "Selections the cursors hold are taken into the run and grow from there."
+  (donkey-split-test--keys "*cursors-M-adopt*" donkey-split-test--words
+      "T T v w w M w"
+    (should (equal (donkey-split-test--texts)
+                   '("one two three" "five six seven" "nine ten eleven"))))
+  (donkey-split-test--keys "*cursors-M-adopt-V*" donkey-split-test--words
+      "T T V M"
+    (should donkey--split-running)
+    (should (equal (donkey-split-test--texts)
+                   '("one two three four" "five six seven eight"
+                     "nine ten eleven")))))
 
 (ert-deftest donkey-split-add-cursor-is-bound-to-T-in-normal-state ()
   "The key the README names reaches the command."
