@@ -11029,6 +11029,16 @@ the one added last.
    ---> venus
    ---> earth
 
+>> Put the cursor at the start of the neptune line and press
+   \\[donkey-split-add-cursor-above] three times: the cursors climb to jupiter.  One is too many, so
+   press \\`DEL' and the jupiter cursor goes.  Press \\`i', type > and SPC,
+   and \\`C-g' twice.  Jupiter is left as it was.
+
+   ---> jupiter
+   ---> saturn
+   ---> uranus
+   ---> neptune
+
 \\`C-g' in INSERT state brings you back to the cursors rather than ending
 them, so one set of cursors can do several things in turn.
 
@@ -11346,8 +11356,8 @@ are prefixes on a key of their own.")
 (keymap-set donkey-normal-mode-map "r r" #'replace-regexp)
 (keymap-set donkey-normal-mode-map "r q" #'query-replace)
 (keymap-set donkey-normal-mode-map "f" #'donkey-split)
-(keymap-set donkey-normal-mode-map "T" #'donkey-split-add-cursor)
-(keymap-set donkey-normal-mode-map "t" #'donkey-split-add-cursor-above)
+(keymap-set donkey-normal-mode-map "t" #'donkey-split-add-cursor)
+(keymap-set donkey-normal-mode-map "T" #'donkey-split-add-cursor-above)
 
 ;; Enter/Return Key (Context Aware)
 (keymap-set donkey-normal-mode-map "<enter>" #'donkey-enter-dwim)

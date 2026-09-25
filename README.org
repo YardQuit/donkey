@@ -500,7 +500,7 @@ wrap keys and with banking, below.
 
 =c= on a rectangle empties the block on every row and puts a cursor on
 each, in INSERT state, so what you type appears on every row at once —
-the cursors of =T=, below. =C-g= comes back to the cursors and =C-g=
+the cursors of =t=, below. =C-g= comes back to the cursors and =C-g=
 again ends them. A row too short to reach the block is padded out to
 its column, and the block goes to the rectangle store, where =P= pastes
 it back. A block one row high is a plain change.
@@ -866,22 +866,22 @@ into one ends it, since there is no one text to edit in all of them.
 Editing inside matches that differ is what a multiple-cursors package
 is for; this is not one.
 
-** Cursors in a column: =T=
+** Cursors in a column: =t=
 
-=T= (=donkey-split-add-cursor=) puts a second cursor on the line below,
-at the same column; each =T= after adds one more below the last, and a
-count adds that many. =t= (=donkey-split-add-cursor-above=) adds above
-instead, and =DEL= takes back the cursor added last. A line shorter than the column gets its cursor at
-its end.
+=t= (=donkey-split-add-cursor=) puts a second cursor on the line below,
+at the same column; each =t= after adds one more below the last, and a
+count adds that many. =T= (=donkey-split-add-cursor-above=) adds above
+instead, and =DEL= takes back the cursor added last. A line shorter
+than the column gets its cursor at its end.
 
-With lines selected, =T= puts a cursor on every one of them at once:
-=V j j j j T= gives five cursors, each at its line's start, and a =v=
+With lines selected, =t= puts a cursor on every one of them at once:
+=V j j j j t= gives five cursors, each at its line's start, and a =v=
 selection or an =m v= block gives each line a cursor at point's column.
-The real cursor stays on point's line. The other cursors are drawn in the real cursor's shape,
-a box or a bar as the state changes, and always in the text's own
-color rather than the real cursor's; a background given to the face
-=donkey-split-cursor-face= is used instead. Every cursor then does
-what the real one does:
+The real cursor stays on point's line. The other cursors are drawn in
+the real cursor's shape, a box or a bar as the state changes, and
+always in the text's own color rather than the real cursor's; a
+background given to the face =donkey-split-cursor-face= is used
+instead. Every cursor then does what the real one does:
 
 | Key                                    | At every cursor                        |
 |----------------------------------------+----------------------------------------|
@@ -893,7 +893,7 @@ what the real one does:
 | =d= =x=, =D=, =y=, =p=                 | delete, kill, copy, paste              |
 | a pair                                 | wrap each selection, as in Normal      |
 | =M=, then =w= =b= =s= =h= =l= =g h=    | a mark run at every cursor             |
-| =T= =t=, =DEL=                         | add a cursor below, above; drop one    |
+| =t= =T=, =DEL=                         | add a cursor below, above; drop one    |
 | =m l=, =m u=                           | bank or unbank each cursor's line      |
 | =M-u= =M-l= =M-c=                      | case of each selection, or the word    |
 | =o= =O=                                | open a line at each cursor and type    |
@@ -930,7 +930,7 @@ and =C-l= move the view and keep the cursors.
 
 Every key runs once at every cursor, so cursors are for a screenful of
 lines rather than a whole book: at a thousand a key takes a few
-milliseconds, at tens of thousands a second or more. =T= refuses to
+milliseconds, at tens of thousands a second or more. =t= refuses to
 make more than =donkey-split-cursor-limit= (1000), and says so; set it
 higher, or to =nil= for no limit, or set
 =donkey-split-cursor-limit-ask= to be asked instead. =c= on a rectangle
@@ -3254,7 +3254,7 @@ and =M-x apropos-command donkey-= finds any of them.
 | =donkey-cursor-support=            | =box=                            | cursor in a support mode, =[S]= |
 | =donkey-cursor-excluded=           | =(bar . 2)=                      | cursor in an excluded mode, =[E]= |
 | =donkey-decscusr-denied-terminals= | =("dumb" "linux")=               | terminals that get no cursor escapes |
-| =donkey-split-cursor-limit=        | =1000=                           | most cursors =T= makes; =nil= for no limit |
+| =donkey-split-cursor-limit=        | =1000=                           | most cursors =t= makes; =nil= for no limit |
 | =donkey-split-cursor-limit-ask=    | =nil=                            | ask past the limit instead of refusing |
 | =donkey-mark-pair-delimiters=      | 21 pairs                         | what =m i=/=m a= select and the keys wrap |
 | =donkey-wrap-delimiters=           | =all=                            | which of those pairs get a key |
