@@ -234,9 +234,10 @@ you can read.
 =M-x donkey-tutor= opens a buffer you learn in by editing it, the way
 =M-x help-with-tutorial= and vimtutor do.
 
-Fifteen lessons, ending with the four that go beyond a single cursor
-— wrapping a selection, the characters the keyboard does not have, and
-editing every match at once and choosing what it holds:
+Sixteen lessons, ending with the five that go beyond a single cursor
+— wrapping a selection, the characters the keyboard does not have,
+editing every match at once and choosing what it holds, and cursors in
+a column:
 
 1. Moving around (including =S= for undoing a mis-keyed jump)
 2. Counts
@@ -253,6 +254,7 @@ editing every match at once and choosing what it holds:
 13. Characters your keyboard does not have (digraphs)
 14. Editing every match at once (Split mode)
 15. Choosing what a split holds (selections, banks, regexps)
+16. Cursors in a column
 
 The keys it names are *your* keys: the lessons are written with
 =substitute-command-keys= escapes, so anyone who has rebound something
@@ -847,6 +849,38 @@ Where the matches differ, the split types only at their edges: moving
 into one ends it, since there is no one text to edit in all of them.
 Editing inside matches that differ is what a multiple-cursors package
 is for; this is not one.
+
+** Cursors in a column: =T=
+
+=T= (=donkey-split-add-cursor=) puts a second cursor on the line below,
+at the same column; each =T= after adds one more below the last, and a
+count adds that many. A line shorter than the column gets its cursor
+at its end. Every cursor then does what the real one does:
+
+| Key                                    | At every cursor                        |
+|----------------------------------------+----------------------------------------|
+| =h= =l= =w= =b= =W= =B= =g h= =g l=    | move                                   |
+| =v= then a motion                      | select from where the cursor was       |
+| =V=                                    | select the cursor's line               |
+| =m w=, =m s=, =m i=, and the other =m= | select that object                     |
+| =i= =a= =I= =A= =c=                    | type; =C-g= comes back to the cursors  |
+| =d= =x=, =D=, =y=, =p=                 | delete, kill, copy, paste              |
+| a pair                                 | wrap, or put the pair in               |
+| =f=                                    | search each cursor's selection or line |
+| =C-g=                                  | let go of the selections, then end     |
+
+=d=, =D=, =y= and =p= keep the cursors. What they take reaches the kill
+ring as one kill, one line per cursor, and =p= gives each cursor its
+own line back when the kill has as many lines as there are cursors —
+so =m w y=, a move, and =p= copies each cursor's word to where that
+cursor went. A key =m i= would ask for is asked once.
+
+Three limits keep the cursors out of each other's way. A cursor never
+leaves its own line: a motion that would cross stops at the line's
+edge. Cursors that come to share a line — after =V d=, for one — become
+one. And a command that fails at one cursor is undone at all of them.
+Any key not in the table, =j= and =k= included, ends the cursors and
+does its ordinary job.
 
 * Typing characters your keyboard lacks
 :PROPERTIES:

@@ -918,6 +918,218 @@ this a verb elsewhere acts on nothing at all."
   "The key the README and the tutor name reaches the command."
   (should (eq (keymap-lookup donkey-normal-mode-map "f") #'donkey-split)))
 
+;;; ---------------------------------------------------------------------------
+;;; Cursors in a column
+;;; ---------------------------------------------------------------------------
+
+(defconst donkey-split-test--column
+  "alpha beta\ngamma delta\nepsilon zeta\nlast\n"
+  "Four lines for the column-cursor tests.")
+
+(defun donkey-split-test--cursors ()
+  "Return where every cursor of the live split is, top first."
+  (mapcar #'donkey--split-cursor donkey--split-places))
+
+(ert-deftest donkey-split-T-adds-a-cursor-below-at-the-same-column ()
+  "`T' makes a split of two cursors, one line apart, and changes nothing."
+  (donkey-split-test--keys "*cursors-T*" donkey-split-test--column "l l T"
+    (should (equal (buffer-string) donkey-split-test--column))
+    (should donkey--split-cursors)
+    (should (equal (donkey-split-test--cursors) '(3 14)))
+    (should (= (point) 3))))
+
+(ert-deftest donkey-split-T-grows-by-one-or-by-a-count ()
+  "Each `T' adds a cursor below the last; a count adds that many."
+  (dolist (case '(("l l T T" (3 14 26)) ("l l C-u 3 T" (3 14 26 39))))
+    (donkey-split-test--keys "*cursors-grow*" donkey-split-test--column
+        (car case)
+      (should (equal (list (car case) (donkey-split-test--cursors)) case)))))
+
+(ert-deftest donkey-split-T-puts-a-cursor-at-a-short-line-s-end ()
+  "A line shorter than the column gets its cursor at its end."
+  (donkey-split-test--keys "*cursors-short*" "abcdef\nab\nabcdef\n"
+      "l l l l T T"
+    (should (equal (donkey-split-test--cursors) '(5 10 15)))))
+
+(ert-deftest donkey-split-T-with-too-few-lines-below-changes-nothing ()
+  "A count past the last line adds no cursor at all."
+  (donkey-split-test--keys "*cursors-few*" donkey-split-test--column "j j"
+    (should (equal (should-error (execute-kbd-macro (kbd "C-u 3 T"))
+                                 :type 'user-error)
+                   '(user-error "Only 1 line below")))
+    (should (null donkey--split-places))
+    (should (= (point) 24))))
+
+(ert-deftest donkey-split-cursors-type-and-come-back ()
+  "`i' types at every cursor, and `C-g' comes back to the cursors."
+  (donkey-split-test--keys "*cursors-type*" donkey-split-test--column
+      "l l T T i X C-g"
+    (should (equal (buffer-string)
+                   "alXpha beta\ngaXmma delta\nepXsilon zeta\nlast\n"))
+    (should (eq donkey--split-phase 'select))
+    (should (bound-and-true-p donkey-normal-mode))
+    (should (equal (donkey-split-test--cursors) '(4 16 29)))))
+
+(ert-deftest donkey-split-cursors-type-at-line-ends-and-starts ()
+  "`A' and `I' type at every cursor's line end and line start."
+  (dolist (case '(("T T A ; C-g"
+                   "alpha beta;\ngamma delta;\nepsilon zeta;\nlast\n")
+                  ("l T T I - C-g"
+                   "-alpha beta\n-gamma delta\n-epsilon zeta\nlast\n")))
+    (donkey-split-test--keys "*cursors-line-ends*" donkey-split-test--column
+        (car case)
+      (should (equal (list (car case) (buffer-string)) case)))))
+
+(ert-deftest donkey-split-cursors-move-and-stop-at-their-line-s-end ()
+  "A motion moves every cursor, and none crosses into the next line."
+  (dolist (case '(("T T w" (6 17 31)) ("T T w w w w" (11 23 36))
+                  ("T T C-u 2 w" (11 23 36)) ("T T g l h" (10 22 35))))
+    (donkey-split-test--keys "*cursors-move*" donkey-split-test--column
+        (car case)
+      (should (equal (list (car case) (donkey-split-test--cursors)) case))
+      (should (equal (buffer-string) donkey-split-test--column)))))
+
+(ert-deftest donkey-split-cursors-grow-a-selection-on-a-second-press ()
+  "`m w m w' selects two words at every cursor, each cursor growing its own."
+  (donkey-split-test--keys "*cursors-grow-sel*" "a b c\nd e f\n" "T m w m w"
+    (should (equal (mapcar #'donkey--split-place-text donkey--split-places)
+                   '("a b" "d e")))))
+
+(ert-deftest donkey-split-cursors-grow-each-its-own-pair ()
+  "`m i ( m i (' goes one pair out at every cursor, from that cursor's own."
+  (donkey-split-test--keys "*cursors-grow-pair*" "(a (b) c)\n(dd (e) f)\n"
+      "l l l l T m i ( m i ("
+    (should (equal (mapcar #'donkey--split-place-text donkey--split-places)
+                   '("a (b) c" "dd (e) f")))))
+
+(ert-deftest donkey-split-cursors-change-what-each-selects ()
+  "`v w c' empties every cursor's selection and types there."
+  (donkey-split-test--keys "*cursors-change*" donkey-split-test--column
+      "l l T T v w c Z C-g"
+    (should (equal (buffer-string) "alZ beta\ngaZ delta\nepZ zeta\nlast\n"))
+    (should (equal (car kill-ring) "pha\nmma\nsilon"))))
+
+(ert-deftest donkey-split-cursors-delete-characters-without-a-kill ()
+  "`x' deletes the character at every cursor and saves nothing."
+  (donkey-split-test--keys "*cursors-x*" donkey-split-test--column "l l T T x"
+    (should (equal (buffer-string)
+                   "alha beta\ngama delta\nepilon zeta\nlast\n"))
+    (should (null kill-ring))
+    (should (= (length donkey--split-places) 3))))
+
+(ert-deftest donkey-split-cursors-that-meet-on-a-line-become-one ()
+  "`V d' takes every cursor's line, and the cursors left on one line merge."
+  (donkey-split-test--keys "*cursors-merge*" donkey-split-test--column "T T V d"
+    (should (equal (buffer-string) "last\n"))
+    (should (equal (car kill-ring) "alpha beta\ngamma delta\nepsilon zeta\n"))
+    (should (equal (donkey-split-test--cursors) '(1)))))
+
+(ert-deftest donkey-split-cursors-paste-each-its-own-line-back ()
+  "What `y' took from the cursors, `p' gives back one line to each."
+  (donkey-split-test--keys "*cursors-yank*" donkey-split-test--column
+      "T T m w y g l p"
+    (should (equal (car kill-ring) "alpha\ngamma\nepsilon"))
+    (should (equal (buffer-string)
+                   (concat "alpha betaalpha\ngamma deltagamma\n"
+                           "epsilon zetaepsilon\nlast\n")))))
+
+(ert-deftest donkey-split-cursors-kill-to-each-line-s-end ()
+  "`D' kills from every cursor to its line's end, and no newline."
+  (donkey-split-test--keys "*cursors-D*" donkey-split-test--column "l l T T D"
+    (should (equal (buffer-string) "al\nga\nep\nlast\n"))
+    (should (equal (car kill-ring) "pha beta\nmma delta\nsilon zeta"))))
+
+(ert-deftest donkey-split-cursors-wrap-at-every-cursor ()
+  "A delimiter puts its pair in at every cursor, the cursor inside it."
+  (donkey-split-test--keys "*cursors-wrap*" donkey-split-test--column
+      "l l T T ("
+    (should (equal (buffer-string)
+                   "al()pha beta\nga()mma delta\nep()silon zeta\nlast\n"))
+    (should (equal (donkey-split-test--cursors) '(4 17 31)))))
+
+(ert-deftest donkey-split-f-from-cursors-searches-their-lines ()
+  "`f' searches the cursors' lines only, and finding nothing keeps them."
+  (donkey-split-test--on "a"
+    (donkey-split-test--keys "*cursors-f*" "ab\nab\nab\nab\n" "T f"
+      (should-not donkey--split-cursors)
+      (should (equal (mapcar #'overlay-start donkey--split-places) '(1 4)))))
+  (donkey-split-test--on "q"
+    (donkey-split-test--keys "*cursors-f-none*" "ab\nab\nab\nab\n" "T f"
+      (should donkey--split-cursors)
+      (should (equal (donkey-split-test--cursors) '(1 4))))))
+
+(ert-deftest donkey-split-cursors-undo-a-command-that-fails-at-one ()
+  "A selection that fails at one cursor leaves every cursor where it was."
+  (donkey-split-test--keys "*cursors-fail*" "(ab) x\nno pair\n" "l T"
+    (should-error (execute-kbd-macro (kbd "m i (")) :type 'user-error)
+    (should (equal (donkey-split-test--cursors) '(2 9)))
+    (should-not (seq-some #'donkey--split-cursor-selecting-p
+                          donkey--split-places))))
+
+(ert-deftest donkey-split-cursors-ask-a-question-once ()
+  "The delimiter `m i' asks for is read once for every cursor."
+  (let ((reads 0))
+    (cl-letf* ((real (symbol-function 'read-char))
+               ((symbol-function 'read-char)
+                (lambda (&rest args)
+                  (setq reads (1+ reads))
+                  (apply real args))))
+      (donkey-split-test--keys "*cursors-ask*" "(ab) x\n(cd) y\n" "l T m i ("
+        (should (= reads 1))
+        (should (equal (mapcar #'donkey--split-place-text donkey--split-places)
+                       '("ab" "cd")))))))
+
+(ert-deftest donkey-split-cursors-let-go-of-selections-before-ending ()
+  "`C-g' lets go of the selections first, and ends the split second."
+  (donkey-split-test--keys "*cursors-quit*" donkey-split-test--column
+      "T T v w C-g"
+    (should donkey--split-cursors)
+    (should-not (seq-some #'donkey--split-cursor-selecting-p
+                          donkey--split-places)))
+  (donkey-split-test--keys "*cursors-quit2*" donkey-split-test--column
+      "T T v w C-g C-g"
+    (should (null donkey--split-places))))
+
+(ert-deftest donkey-split-cursors-end-on-a-key-they-do-not-answer ()
+  "`j' ends the cursors and moves the real one, as it does anywhere."
+  (donkey-split-test--keys "*cursors-j*" donkey-split-test--column "T T j"
+    (should (null donkey--split-places))
+    (should (= (point) 12))
+    (should (null (seq-filter (lambda (o) (overlay-get o 'donkey-split))
+                              (overlays-in (point-min) (point-max)))))))
+
+(ert-deftest donkey-split-cursors-draw-every-cursor-but-the-real-one ()
+  "Every cursor but the real one is drawn, and none once the split ends."
+  (donkey-split-test--keys "*cursors-draw*" "ab\nab\n\n" "T T"
+    (should (equal (sort (mapcar #'overlay-start donkey--split-cursor-marks)
+                         #'<)
+                   '(4 7)))
+    (should (seq-find (lambda (o) (overlay-get o 'after-string))
+                      donkey--split-cursor-marks))
+    (donkey--split-dissolve t)
+    (should (null (seq-filter (lambda (o) (eq (overlay-get o 'face)
+                                              'donkey-split-cursor-face))
+                              (overlays-in (point-min) (point-max)))))))
+
+(ert-deftest donkey-split-cursors-tutor-exercises-do-what-lesson-16-says ()
+  "The three exercises of the tutor's cursor lesson give what it promises."
+  (donkey-split-test--keys "*cursors-tutor-1*" "milk\neggs\nbread\n"
+      "T T I - SPC C-g C-g"
+    (should (equal (buffer-string) "- milk\n- eggs\n- bread\n"))
+    (should (null donkey--split-places)))
+  (donkey-split-test--keys "*cursors-tutor-2*" "ada\nalan\ngrace\n"
+      "T T m w y A SPC = SPC C-g p C-g"
+    (should (equal (buffer-string) "ada = ada\nalan = alan\ngrace = grace\n")))
+  (donkey-split-test--on ","
+    (donkey-split-test--keys "*cursors-tutor-3*" "1,2,3\n4,5,6\n7,8,9\n0,0,0\n"
+        "T T f c ; C-g"
+      (should (equal (buffer-string) "1;2;3\n4;5;6\n7;8;9\n0,0,0\n")))))
+
+(ert-deftest donkey-split-add-cursor-is-bound-to-T-in-normal-state ()
+  "The key the README names reaches the command."
+  (should (eq (keymap-lookup donkey-normal-mode-map "T")
+              #'donkey-split-add-cursor)))
+
 (provide 'donkey-split-test)
 
 ;;; donkey-split-test.el ends here
