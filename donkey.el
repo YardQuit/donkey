@@ -6939,9 +6939,16 @@ The mode lives while the command about to run is one of its own, is part
 of entering a count, or changes nothing -- see
 `donkey--split-inert-commands'.  Any other key lapses the map and does
 its ordinary job in the same press.  A split belongs to one buffer, so
-the map lapses anywhere else.  A command from another terminal leaves
-the split alone: only a key on `donkey--split-terminal' can end it."
+the map lapses anywhere else, except in the minibuffer of a prompt a
+command of the split opened there, such as the regexp \\[donkey-split]
+reads from a split of cursors: typing the answer, or quitting the
+prompt, leaves the split standing.  A command from another terminal
+leaves the split alone: only a key on `donkey--split-terminal' can end
+it."
   (or (not (eq (frame-terminal) donkey--split-terminal))
+      (and (minibufferp)
+           (eq (window-buffer (minibuffer-selected-window))
+               donkey--split-buffer))
       (and (eq (current-buffer) donkey--split-buffer)
            (or (memq this-command donkey--split-commands)
                (and donkey--split-cursors
@@ -7153,33 +7160,97 @@ keeps."
      (t
       (move-overlay place cursor cursor)))))
 
+(defun donkey--split-cursor-shape ()
+  "Return the shape of the real cursor in this buffer, as a cursor is drawn.
+
+One of `box', `hollow', (bar . WIDTH), (hbar . HEIGHT), or nil for no
+cursor, read from `cursor-type' and, where that is t, from the frame."
+  (pcase (if (eq cursor-type t)
+             (frame-parameter nil 'cursor-type)
+           cursor-type)
+    ('nil nil)
+    ('hollow 'hollow)
+    ('bar '(bar . 2))
+    (`(bar . ,(and (pred natnump) width)) (cons 'bar width))
+    ('hbar '(hbar . 2))
+    (`(hbar . ,(and (pred natnump) height)) (cons 'hbar height))
+    (_ 'box)))
+
+(defun donkey--split-cursor-mark (pos shape)
+  "Return an overlay drawing a cursor of SHAPE at POS, or nil for no SHAPE.
+
+SHAPE is what `donkey--split-cursor-shape' returns.  A box is the
+character at POS in `donkey-split-cursor-face', or a space after the
+end of a line.  A bar is WIDTH pixels of the cursor\\='s color before
+the character on a graphical frame; a terminal has nothing narrower
+than a character, so there it is a `|' that moves the rest of the line
+over by one column.  An underline and an outline take the cursor\\='s
+color on a graphical frame and the text\\='s in a terminal, which draws
+an outline as a box."
+  (let* ((on-text (not (memq (char-after pos) '(nil ?\n))))
+         (graphic (display-graphic-p))
+         ;; A terminal draws its own cursor in a color of its own, not
+         ;; in the `cursor' face, so there the text's color is used.
+         (color (let ((background (and graphic
+                                       (face-background 'cursor nil t))))
+                  (and (stringp background) background)))
+         (mark nil))
+    (pcase shape
+      ('nil)
+      (`(bar . ,width)
+       (setq mark (make-overlay pos pos))
+       (overlay-put mark 'before-string
+                    (if graphic
+                        (propertize " "
+                                    'display `(space :width (,(max 1 width)))
+                                    'face (if color
+                                              `(:background ,color)
+                                            'donkey-split-cursor-face))
+                      "|")))
+      (_
+       (let ((face (pcase shape
+                     (`(hbar . ,_)
+                      `(:underline (:color ,(or color 'foreground-color)
+                                    :position t)))
+                     ((and 'hollow (guard graphic))
+                      `(:box (:line-width (-1 . -1)
+                              :color ,(or color 'foreground-color))))
+                     (_ 'donkey-split-cursor-face))))
+         (setq mark (make-overlay pos (if on-text (1+ pos) pos)))
+         (if on-text
+             (overlay-put mark 'face face)
+           (overlay-put mark 'after-string (propertize " " 'face face))))))
+    (when mark
+      (overlay-put mark 'priority 1))
+    mark))
+
 (defun donkey--split-draw-cursors ()
   "Draw every cursor of a split of cursors but the one point is.
 
-While choosing, each cursor is drawn where it is.  While writing, each
-is drawn as far into its place as point is into the place it writes."
+Each is drawn in the shape the real cursor has now, so it changes as
+the real one does between Normal and Insert state; see
+`donkey--split-cursor-mark'.  While choosing, each cursor is drawn
+where it is.  While writing, each is drawn as far into its place as
+point is into the place it writes."
   (mapc #'delete-overlay donkey--split-cursor-marks)
   (setq donkey--split-cursor-marks nil)
   (when (and donkey--split-cursors donkey--split-primary
              (overlay-buffer donkey--split-primary))
     (let ((offset (and (eq donkey--split-phase 'edit)
-                       (- (point) (overlay-start donkey--split-primary)))))
+                       (- (point) (overlay-start donkey--split-primary))))
+          (shape (donkey--split-cursor-shape)))
       (dolist (place donkey--split-places)
         (unless (or (eq place donkey--split-primary)
                     (not (overlay-buffer place)))
-          (let* ((pos (if offset
-                          (max (overlay-start place)
-                               (min (overlay-end place)
-                                    (+ (overlay-start place) offset)))
-                        (donkey--split-cursor place)))
-                 (on-text (not (memq (char-after pos) '(nil ?\n))))
-                 (mark (make-overlay pos (if on-text (1+ pos) pos))))
-            (overlay-put mark 'priority 1)
-            (if on-text
-                (overlay-put mark 'face 'donkey-split-cursor-face)
-              (overlay-put mark 'after-string
-                           (propertize " " 'face 'donkey-split-cursor-face)))
-            (push mark donkey--split-cursor-marks)))))))
+          (let ((mark (donkey--split-cursor-mark
+                       (if offset
+                           (max (overlay-start place)
+                                (min (overlay-end place)
+                                     (+ (overlay-start place) offset)))
+                         (donkey--split-cursor place))
+                       shape)))
+            (when mark
+              (push mark donkey--split-cursor-marks))))))))
 
 (defun donkey--split-cursors-settle ()
   "Fit every place to its cursor after the cursors moved, and show them.

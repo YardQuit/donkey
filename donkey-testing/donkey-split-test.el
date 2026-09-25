@@ -1058,6 +1058,25 @@ this a verb elsewhere acts on nothing at all."
       (should donkey--split-cursors)
       (should (equal (donkey-split-test--cursors) '(1 4))))))
 
+(ert-deftest donkey-split-f-from-cursors-reads-its-regexp-through-the-prompt ()
+  "Typing the regexp into a real prompt keeps the cursors, whatever the keys.
+
+The letters and delimiters the cursors answer are typed into the
+minibuffer as text, and every cursor's line is searched."
+  (donkey-split-test--keys "*cursors-prompt*" "who (x)\nwho (x)\nwho (x)\nwho\n"
+      "T T f w h o SPC ( RET"
+    (should-not donkey--split-cursors)
+    (should (equal (mapcar #'donkey--split-place-text donkey--split-places)
+                   '("who (" "who (" "who (")))))
+
+(ert-deftest donkey-split-quitting-the-prompt-leaves-the-cursors ()
+  "`C-g' at the regexp prompt of `f' leaves every cursor standing."
+  (donkey-split-test--keys "*cursors-prompt-quit*" donkey-split-test--column "T T"
+    (condition-case nil (execute-kbd-macro (kbd "f w C-g")) (quit nil))
+    (should donkey--split-cursors)
+    (should (equal (donkey-split-test--cursors) '(1 12 24)))
+    (should (equal (buffer-string) donkey-split-test--column))))
+
 (ert-deftest donkey-split-cursors-undo-a-command-that-fails-at-one ()
   "A selection that fails at one cursor leaves every cursor where it was."
   (donkey-split-test--keys "*cursors-fail*" "(ab) x\nno pair\n" "l T"
@@ -1124,6 +1143,46 @@ this a verb elsewhere acts on nothing at all."
     (donkey-split-test--keys "*cursors-tutor-3*" "1,2,3\n4,5,6\n7,8,9\n0,0,0\n"
         "T T f c ; C-g"
       (should (equal (buffer-string) "1;2;3\n4;5;6\n7;8;9\n0,0,0\n")))))
+
+(defun donkey-split-test--drawn ()
+  "Return the shape of every drawn cursor: `box', `bar', `hbar' or `hollow'."
+  (delete-dups
+   (mapcar (lambda (mark)
+             (let ((face (or (overlay-get mark 'face)
+                             (get-text-property
+                              0 'face (or (overlay-get mark 'after-string) "")))))
+               (cond
+                ((overlay-get mark 'before-string) 'bar)
+                ((eq face 'donkey-split-cursor-face) 'box)
+                ((plist-get face :underline) 'hbar)
+                ((plist-get face :box) 'hollow))))
+           donkey--split-cursor-marks)))
+
+(ert-deftest donkey-split-cursors-are-drawn-in-the-real-cursor-s-shape ()
+  "The drawn cursors change shape with the real one, state by state."
+  (dolist (case '(("T T" (box)) ("T T i" (bar)) ("T T i C-g" (box))))
+    (donkey-split-test--keys "*cursors-shape*" donkey-split-test--column
+        (car case)
+      (should (equal (list (car case) (donkey-split-test--drawn)) case)))))
+
+(ert-deftest donkey-split-cursors-follow-the-reader-s-cursor-setting ()
+  "A shape set for Normal state is the shape every cursor is drawn in."
+  (dolist (case '((hbar (hbar)) ((hbar . 3) (hbar)) (bar (bar)) (nil nil)))
+    (let ((donkey-cursor-normal (car case))
+          (cursor-type (car case)))
+      (donkey-split-test--keys "*cursors-setting*" donkey-split-test--column
+          "T T"
+        (should (equal (list (car case) (donkey-split-test--drawn)) case))))))
+
+(ert-deftest donkey-split-cursors-draw-an-outline-as-a-box-in-a-terminal ()
+  "A hollow cursor is outlined on a graphical frame and a box elsewhere."
+  (dolist (graphic '(t nil))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) graphic)))
+      (let ((donkey-cursor-normal 'hollow))
+        (donkey-split-test--keys "*cursors-hollow*" donkey-split-test--column
+            "T T"
+          (should (equal (donkey-split-test--drawn)
+                         (if graphic '(hollow) '(box)))))))))
 
 (ert-deftest donkey-split-add-cursor-is-bound-to-T-in-normal-state ()
   "The key the README names reaches the command."
