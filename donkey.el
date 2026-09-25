@@ -6138,6 +6138,15 @@ donkey-anchor where that is set, and nothing otherwise.")
 (defvar-local donkey--split-cursor-marks nil
   "The overlays drawing every cursor of the split but the real one.")
 
+(defvar-local donkey--split-run-history nil
+  "The steps of the cursors\\=' run, newest first, for \\[undo] to take back.
+
+Each is every cursor\\='s state before one press of the run, as
+`donkey--split-cursor-state' gives it.")
+
+(defvar-local donkey--split-run-redo nil
+  "The steps \\[undo] took back in the cursors\\=' run, for \\[donkey-redo].")
+
 (defvar-local donkey--split-running nil
   "Non-nil while a split of cursors is in a mark run.
 
@@ -6147,6 +6156,7 @@ Entered with the key Normal state has `donkey-mark-run-toggle' on; see
 (defconst donkey--split-run-keeps
   '(donkey-split-cursors-replay donkey-split-cursors-run-toggle
     donkey-split-cursors-repeat donkey-split-cursors-run-refuse
+    donkey-split-cursors-run-step-back donkey-split-cursors-run-step-forward
     universal-argument universal-argument-more
     digit-argument negative-argument)
   "The commands after which a run of the cursors carries on.
@@ -6367,7 +6377,7 @@ since the split was made, whichever verb ran."
               n (if (= n 1) "" "s")))
      ((and donkey--split-cursors donkey--split-running)
       (format "Split: %s, mark run -- w W b B s S grow, h l g h g l * \
-adjust, . again, M or C-g ends"
+adjust, . again, u U step, M or C-g ends"
               (donkey--split-places-phrase n)))
      (donkey--split-cursors
       (format "Split: %s%s -- %s add, DEL drop, v V m M select, \
@@ -6673,6 +6683,8 @@ the current one, so both are cleared."
               donkey--split-tick nil
               donkey--split-cursors nil
               donkey--split-running nil
+              donkey--split-run-history nil
+              donkey--split-run-redo nil
               donkey--split-repeat nil
               donkey--split-cursor-order nil
               donkey--split-column nil
@@ -6987,7 +6999,8 @@ typo; see `donkey--split-inert-commands'.")
     donkey-split-cursors-undo donkey-split-cursors-redo
     donkey-split-cursors-upcase donkey-split-cursors-downcase
     donkey-split-cursors-capitalize donkey-split-cursors-append
-    donkey-split-drop-cursor)
+    donkey-split-drop-cursor donkey-split-cursors-run-step-back
+    donkey-split-cursors-run-step-forward)
   "The commands that keep Split mode armed.")
 
 (defun donkey--split-answers-p ()
@@ -7213,9 +7226,10 @@ cursor left, so one cursor\\='s run never grows another\\='s.")
   "The mark run commands every cursor runs while the cursors are in a run.
 
 On whichever keys `donkey-mark-run-mode-map' has them on, through
-`donkey-split-cursors-replay'.  The run\\='s other keys move a
-selection off its line or walk the run\\='s history, and are refused
-at the cursors by `donkey-split-cursors-run-refuse'.")
+`donkey-split-cursors-replay'.  The run\\='s history is walked by
+`donkey-split-cursors-run-step-back' and its forward half, and the
+run\\='s keys that move a selection off its line are refused at the
+cursors by `donkey-split-cursors-run-refuse'.")
 
 (defun donkey--split-cursors-live-p ()
   "Return non-nil where a split of cursors is live in this buffer."
@@ -7495,6 +7509,10 @@ split\\='s there."
                    ((eq command 'donkey-mark-run-cancel)
                     #'donkey-split-cursors-run-toggle)
                    ((eq command 'repeat) #'donkey-split-cursors-repeat)
+                   ((eq command 'donkey-mark-run-step-back)
+                    #'donkey-split-cursors-run-step-back)
+                   ((eq command 'donkey-mark-run-step-forward)
+                    #'donkey-split-cursors-run-step-forward)
                    (t #'donkey-split-cursors-run-refuse))))))
        donkey-mark-run-mode-map)
       (dolist (command '(donkey-mark-paragraph donkey-mark-paragraph-backward))
@@ -7800,7 +7818,10 @@ messages are shown."
                     (donkey--split-cursors-replay-at place command arg
                                                      edit))))
               (when edit
-                (setq donkey--split-did 'edited)))
+                (setq donkey--split-did 'edited))
+              (when (and donkey--split-running (not edit))
+                (push states donkey--split-run-history)
+                (setq donkey--split-run-redo nil)))
           (t
            (dolist (state states)
              (apply #'donkey--split-cursor-set state))
@@ -7862,7 +7883,9 @@ the cursors answer does its job at every cursor."
       (condition-case nil
           (donkey--split-cursors-run 'donkey-mark-word nil)
         (user-error (setq donkey--split-cursor-last nil))))
-    (setq donkey--split-running t)
+    (setq donkey--split-running t
+          donkey--split-run-history nil
+          donkey--split-run-redo nil)
     (donkey--split-cursors-settle)))
 
 (defun donkey-split-cursors-repeat ()
@@ -7888,11 +7911,46 @@ not repeated."
   "Refuse a mark run key the cursors do not run, and keep the run.
 
 The keys that move a selection to another line or to the buffer\\='s
-edge, and the run\\='s history, since a cursor stays on its own line."
+edge, since a cursor stays on its own line."
   (interactive)
   (ding)
   (message "%s is not run at the cursors -- each stays on its line"
            (key-description (this-single-command-keys))))
+
+(defun donkey--split-cursors-restore (snapshot)
+  "Restore every cursor from SNAPSHOT, and show them."
+  (dolist (state snapshot)
+    (when (overlay-buffer (car state))
+      (apply #'donkey--split-cursor-set state)))
+  (setq donkey--split-cursor-last 'donkey-mark-run-step-back)
+  (donkey--split-cursors-settle))
+
+(defun donkey-split-cursors-run-step-back ()
+  "Put every cursor\\='s selection back where the run\\='s last press found it.
+
+The split\\='s `donkey-mark-run-step-back', one press per step, for
+every cursor at once.  \\[donkey-split-cursors-run-step-forward] puts it
+forward again.  The press that started the run is not a step."
+  (interactive)
+  (donkey--split-live-p)
+  (unless donkey--split-run-history
+    (user-error "No earlier step in this run"))
+  (push (mapcar #'donkey--split-cursor-state donkey--split-places)
+        donkey--split-run-redo)
+  (donkey--split-cursors-restore (pop donkey--split-run-history)))
+
+(defun donkey-split-cursors-run-step-forward ()
+  "Put every cursor\\='s selection forward again, a step undone by \\`u'.
+
+The split\\='s `donkey-mark-run-step-forward'.  A new press after a step
+back leaves nothing to put forward."
+  (interactive)
+  (donkey--split-live-p)
+  (unless donkey--split-run-redo
+    (user-error "No later step in this run"))
+  (push (mapcar #'donkey--split-cursor-state donkey--split-places)
+        donkey--split-run-history)
+  (donkey--split-cursors-restore (pop donkey--split-run-redo)))
 
 (defun donkey-split-cursors-select ()
   "Start a selection at every cursor, where each cursor is.

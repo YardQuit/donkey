@@ -901,8 +901,9 @@ cursor went. A key =m i= would ask for is asked once.
 =M= at the cursors is the mark run at every cursor: each selects its
 word, or keeps what it had selected, and the run's keys grow and
 adjust every selection at once — =M w d= takes two words from every
-line. The run's keys that would leave the line, =j= =k= =J= =K= =g g=
-=g e=, and its =u= and =U=, beep and keep the run. Any other key ends
+line, and =u= and =U= step every cursor's selection back and forward
+as they step one. The run's keys that would leave the line, =j= =k= =J=
+=K= =g g= =g e=, beep and keep the run. Any other key ends
 the run, and a key the cursors answer does its job at every cursor.
 
 The case keys are Emacs's own, and a key you gave =upcase-region= or

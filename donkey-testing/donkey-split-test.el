@@ -1306,6 +1306,35 @@ minibuffer as text, and every cursor's line is searched."
         (should (equal (list keys (car (donkey-split-test--texts)))
                        (list keys single)))))))
 
+(ert-deftest donkey-split-cursors-M-steps-back-and-forward-as-one-cursor-does ()
+  "`u' and `U' in the run step every cursor as they step one cursor."
+  (dolist (keys '("M w u" "M w w u" "M w w u u" "M w u U" "M w w u u U U"
+                  "M w u w" "M w b u" "M l u" "M g l u" "M * u" "M w . u"
+                  "M m w u" "v w w M w u" "M w u b"))
+    (let (single)
+      (donkey-split-test--keys "*cursors-M-u-one*" donkey-split-test--words keys
+        (setq single (buffer-substring (region-beginning) (region-end))))
+      (donkey-split-test--keys "*cursors-M-u-many*" donkey-split-test--words
+          (concat "T T " keys)
+        (should donkey--split-running)
+        (should (equal (list keys (car (donkey-split-test--texts)))
+                       (list keys single)))
+        (should (equal (buffer-string) donkey-split-test--words))))))
+
+(ert-deftest donkey-split-cursors-M-refuses-a-step-that-is-not-there ()
+  "Stepping past either end of the run refuses and keeps the run."
+  (dolist (case '(("T T M" "u" "No earlier step in this run")
+                  ("T T M w u" "u" "No earlier step in this run")
+                  ("T T M w M M" "u" "No earlier step in this run")
+                  ("T T M w u U" "U" "No later step in this run")
+                  ("T T M w u w" "U" "No later step in this run")))
+    (donkey-split-test--keys "*cursors-M-u-end*" donkey-split-test--words
+        (car case)
+      (should (equal (should-error (execute-kbd-macro (kbd (nth 1 case)))
+                                   :type 'user-error)
+                     (list 'user-error (nth 2 case))))
+      (should donkey--split-running))))
+
 (ert-deftest donkey-split-cursors-M-grows-every-cursor-s-own-selection ()
   "Each cursor's run grows from its own word."
   (donkey-split-test--keys "*cursors-M-grow*" donkey-split-test--words
@@ -1314,8 +1343,8 @@ minibuffer as text, and every cursor's line is searched."
                    '("one two three" "five six seven" "nine ten eleven")))))
 
 (ert-deftest donkey-split-cursors-M-refuses-what-would-leave-the-line ()
-  "Keys that cross lines, or walk the run's history, beep and keep the run."
-  (dolist (key '("j" "k" "J" "K" "g g" "g e" "G" "u" "U" "v" "V" "m p"))
+  "Keys that would take a selection off its line beep and keep the run."
+  (dolist (key '("j" "k" "J" "K" "g g" "g e" "G" "v" "V" "m p"))
     (donkey-split-test--keys "*cursors-M-refuse*" donkey-split-test--words
         "T T M w"
       (condition-case nil (execute-kbd-macro (kbd key)) (error nil))
