@@ -2171,6 +2171,24 @@ from the bottom up, every line was parsed from far back."
       (should (equal (donkey-split-test--cursors)
                      (sort (donkey-split-test--cursors) #'<))))))
 
+(ert-deftest donkey-split-a-mark-a-replay-pushes-is-let-go-of ()
+  "A marker a command pushed on a mark ring at a cursor points nowhere once the replay is done."
+  (donkey-split-test--keys "*cursors-marks*" donkey-split-test--column "t t"
+    (let ((pushed nil))
+      (cl-letf* ((push (symbol-function 'push-mark))
+                 ((symbol-function 'push-mark)
+                  (lambda (&rest args)
+                    (prog1 (apply push args)
+                      (setq pushed (append mark-ring global-mark-ring pushed))))))
+        (execute-kbd-macro (kbd "m w")))
+      (should (>= (length pushed) 3))
+      (should (seq-every-p (lambda (marker) (null (marker-buffer marker)))
+                           pushed))
+      ;; The cursors still selected their words: the mark itself was
+      ;; kept, only the rings' copies were let go of.
+      (should (seq-every-p #'donkey--split-cursor-selecting-p
+                           donkey--split-places)))))
+
 (ert-deftest donkey-split-i-asks-every-place-only-where-some-text-is-read-only ()
   "A buffer with no read-only text opens Insert state without asking each place."
   (donkey-split-test--on "foo"

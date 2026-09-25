@@ -9045,14 +9045,24 @@ that would otherwise reach the next one."
             (mark-ring nil)
             (global-mark-ring nil)
             (deactivate-mark nil))
-        (condition-case nil
-            (if (eq edit 'line)
-                (save-restriction
-                  (narrow-to-region (car line) (cdr line))
+        (unwind-protect
+            (condition-case nil
+                (if (eq edit 'line)
+                    (save-restriction
+                      (narrow-to-region (car line) (cdr line))
+                      (call-interactively command))
                   (call-interactively command))
-              (call-interactively command))
-          ((beginning-of-buffer end-of-buffer)
-           (goto-char (donkey--split-cursor place))))
+              ((beginning-of-buffer end-of-buffer)
+               (goto-char (donkey--split-cursor place))))
+          ;; A mark COMMAND pushed went onto a ring these bindings throw
+          ;; away.  Its marker would stay in the buffer until the next
+          ;; garbage collection, moved by every change made before then
+          ;; -- one marker per cursor, at every change at every cursor
+          ;; -- so the rings' markers are let go of here.
+          (dolist (marker mark-ring)
+            (set-marker marker nil))
+          (dolist (marker global-mark-ring)
+            (set-marker marker nil)))
         (let ((mark (and mark-active (not edit) (mark t))))
           (donkey--split-cursor-set
            place
