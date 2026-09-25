@@ -220,7 +220,7 @@ A mode that will not load is skipped rather than failed."
 (ert-deftest donkey-readme-configuration-defaults-are-the-real-ones ()
   "Every value the worked configuration marks \"; default\" is one.
 
-The section shows twenty options set to the value they already have,
+The section shows twenty-two options set to the value they already have,
 so a reader can see the shipped answer beside the knob.  A default
 that moves leaves those lines quietly wrong, which is the worst kind
 of wrong in a configuration people copy (rule 30).
@@ -261,7 +261,7 @@ drift."
     ;; An exact count, not a floor: dropping the "; default" marker
     ;; from a line takes that line out of the scan, and a floor cannot
     ;; tell that from a section that never had it.
-    (should (= checked 20))
+    (should (= checked 22))
     (should (equal wrong nil))))
 
 (ert-deftest donkey-readme-configuration-names-every-option ()

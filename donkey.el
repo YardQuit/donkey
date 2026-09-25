@@ -6110,14 +6110,37 @@ cursor has: the text\\='s own, as reverse video shows it, or this
 face\\='s background where it has one."
   :group 'donkey)
 
+(defcustom donkey-split-cursor-limit 1000
+  "The most cursors \\[donkey-split-add-cursor] and its kin make at once.
+
+Every key runs once at every cursor, so a key at many thousand cursors
+takes a second or more.  A press that would pass the limit is refused,
+or asked about where `donkey-split-cursor-limit-ask' is set, and
+\\[donkey-change] over a rectangle taller than the limit asks for its
+text in the minibuffer instead of opening a cursor on every row.  Nil
+sets no limit.  A split made with \\[donkey-split] has none: its places
+cost far less than cursors."
+  :type '(choice (natnum :tag "At most")
+                 (const :tag "No limit" nil))
+  :group 'donkey)
+
+(defcustom donkey-split-cursor-limit-ask nil
+  "Non-nil to ask before passing `donkey-split-cursor-limit', not refuse."
+  :type 'boolean
+  :group 'donkey)
+
 (defvar-local donkey--split-cursors nil
   "Non-nil while the live split is a column of cursors.
 
 Made by `donkey-split-add-cursor'.  Each place then carries a cursor of
-its own, a marker under the overlay property named donkey-cursor, and
-the place is what that cursor selects: its whole line where the
-property donkey-line is set, the text between it and the marker under
-donkey-anchor where that is set, and nothing otherwise.")
+its own, and the place is what that cursor selects: its whole line
+where the overlay property donkey-line is set, the text between the
+cursor and its anchor where donkey-anchor is set, and nothing
+otherwise.  The cursor is an end of the place, the one donkey-at-end
+names, or on a whole line donkey-offset characters into it; see
+`donkey--split-cursor'.  A cursor holds no marker: Emacs moves every
+marker in a buffer at every change, so a marker per cursor made each
+keystroke cost as much as the cursors squared.")
 
 (defvar-local donkey--split-cursor-order nil
   "The cursors of the split added after the first, newest first.
@@ -7231,7 +7254,19 @@ cursors by `donkey-split-cursors-run-refuse'.")
 
 (defun donkey--split-cursor (place)
   "Return where PLACE\\='s cursor is."
-  (marker-position (overlay-get place 'donkey-cursor)))
+  (cond
+   ((overlay-get place 'donkey-line)
+    (min (overlay-end place)
+         (+ (overlay-start place) (or (overlay-get place 'donkey-offset) 0))))
+   ((overlay-get place 'donkey-at-end) (overlay-end place))
+   (t (overlay-start place))))
+
+(defun donkey--split-cursor-anchor (place)
+  "Return where the selection of PLACE\\='s cursor is anchored, or nil."
+  (when (overlay-get place 'donkey-anchor)
+    (if (overlay-get place 'donkey-at-end)
+        (overlay-start place)
+      (overlay-end place))))
 
 (defun donkey--split-cursor-line (place)
   "Return (BEG . END) of the line of PLACE\\='s cursor, without its newline."
@@ -7249,25 +7284,21 @@ cursors by `donkey-split-cursors-run-refuse'.")
   (let ((place (make-overlay pos pos nil nil t)))
     (overlay-put place 'face 'donkey-split-face)
     (overlay-put place 'donkey-split t)
-    (overlay-put place 'donkey-cursor (copy-marker pos))
     place))
 
 (defun donkey--split-cursor-release (place)
-  "Let go of the markers held by the cursor of PLACE."
-  (dolist (property '(donkey-cursor donkey-anchor))
-    (let ((marker (overlay-get place property)))
-      (when (markerp marker)
-        (set-marker marker nil))
-      (overlay-put place property nil))))
+  "Take the cursor off PLACE, leaving the overlay a plain place."
+  (dolist (property '(donkey-anchor donkey-at-end donkey-line donkey-offset
+                      donkey-memory))
+    (overlay-put place property nil)))
 
 (defun donkey--split-cursor-state (place)
   "Return the cursor state of PLACE, as `donkey--split-cursor-set' takes it."
-  (let ((anchor (overlay-get place 'donkey-anchor)))
-    (list place
-          (donkey--split-cursor place)
-          (and anchor (marker-position anchor))
-          (overlay-get place 'donkey-line)
-          (overlay-get place 'donkey-memory))))
+  (list place
+        (donkey--split-cursor place)
+        (donkey--split-cursor-anchor place)
+        (overlay-get place 'donkey-line)
+        (overlay-get place 'donkey-memory)))
 
 (defun donkey--split-cursor-set (place cursor anchor line memory)
   "Put PLACE\\='s cursor at CURSOR, selecting from ANCHOR or its LINE.
@@ -7275,26 +7306,34 @@ cursors by `donkey-split-cursors-run-refuse'.")
 ANCHOR is a position or nil, LINE non-nil for the whole line, and
 MEMORY the alist of `donkey--split-cursor-memory' values the cursor
 keeps."
-  (set-marker (overlay-get place 'donkey-cursor) cursor)
-  (let ((old (overlay-get place 'donkey-anchor)))
-    (when (markerp old)
-      (set-marker old nil)))
-  (overlay-put place 'donkey-anchor (and anchor (copy-marker anchor)))
+  (cond
+   (line
+    (save-excursion
+      (goto-char cursor)
+      (move-overlay place (line-beginning-position) (line-end-position))
+      (overlay-put place 'donkey-offset (- cursor (line-beginning-position)))))
+   (anchor
+    (move-overlay place (min cursor anchor) (max cursor anchor)))
+   (t
+    (move-overlay place cursor cursor)))
+  (overlay-put place 'donkey-anchor (and anchor (not line) t))
+  (overlay-put place 'donkey-at-end (and anchor (not line) (> cursor anchor)))
   (overlay-put place 'donkey-line (and line t))
   (overlay-put place 'donkey-memory memory))
 
 (defun donkey--split-cursor-refit (place)
-  "Fit PLACE to the selection of its cursor."
-  (let ((cursor (donkey--split-cursor place))
-        (anchor (overlay-get place 'donkey-anchor)))
-    (cond
-     ((overlay-get place 'donkey-line)
-      (let ((line (donkey--split-cursor-line place)))
-        (move-overlay place (car line) (cdr line))))
-     (anchor
-      (move-overlay place (min cursor anchor) (max cursor anchor)))
-     (t
-      (move-overlay place cursor cursor)))))
+  "Fit PLACE to the selection of its cursor, after text changed around it.
+
+A place holding no selection is its cursor alone, so text an undo put
+back at the cursor is not taken into it; a whole-line place is the
+cursor\\='s line again."
+  (cond
+   ((overlay-get place 'donkey-line)
+    (donkey--split-cursor-set place (donkey--split-cursor place) nil t
+                              (overlay-get place 'donkey-memory)))
+   ((overlay-get place 'donkey-anchor))
+   (t
+    (move-overlay place (overlay-start place) (overlay-start place)))))
 
 (defun donkey--split-cursor-shape ()
   "Return the shape of the real cursor in this buffer, as a cursor is drawn.
@@ -7312,6 +7351,31 @@ cursor, read from `cursor-type' and, where that is t, from the frame."
     (`(hbar . ,(and (pred natnump) height)) (cons 'hbar height))
     (_ 'box)))
 
+(defvar donkey--split-draw-graphic nil
+  "Whether the frame being drawn on is graphical, while cursors are drawn.")
+
+(defvar donkey--split-draw-color nil
+  "The color cursors are drawn in, while they are drawn.")
+
+(defun donkey--split-draw-spans ()
+  "Return (BEG . END) for every stretch of the buffer a cursor could show in.
+
+What each window on this buffer shows, and as much again below, and the
+same around point, where a command that moved it is about to scroll."
+  (let ((reach (lambda (from lines)
+                 (save-excursion
+                   (goto-char from)
+                   (forward-line lines)
+                   (point)))))
+    (cons (let ((height (window-body-height)))
+            (cons (funcall reach (point) (- (* 2 height)))
+                  (funcall reach (point) (* 2 height))))
+          (mapcar (lambda (window)
+                    (cons (window-start window)
+                          (funcall reach (window-start window)
+                                   (* 2 (window-body-height window)))))
+                  (get-buffer-window-list nil nil t)))))
+
 (defun donkey--split-cursor-mark (pos shape)
   "Return an overlay drawing a cursor of SHAPE at POS, or nil for no SHAPE.
 
@@ -7325,13 +7389,8 @@ character, so there it is a `|' that moves the rest of the line over
 by one column.  An underline is an underline, and an outline is an
 outline on a graphical frame and a box in a terminal."
   (let* ((on-text (not (memq (char-after pos) '(nil ?\n))))
-         (graphic (display-graphic-p))
-         (color (seq-find
-                 (lambda (color)
-                   (and (stringp color)
-                        (not (string-prefix-p "unspecified" color))))
-                 (list (face-background 'donkey-split-cursor-face nil t)
-                       (face-foreground 'default nil t))))
+         (graphic donkey--split-draw-graphic)
+         (color donkey--split-draw-color)
          (mark nil))
     (pcase shape
       ('nil)
@@ -7371,15 +7430,30 @@ Each is drawn in the shape the real cursor has now, so it changes as
 the real one does between Normal and Insert state; see
 `donkey--split-cursor-mark'.  While choosing, each cursor is drawn
 where it is.  While writing, each is drawn as far into its place as
-point is into the place it writes."
+point is into the place it writes.  Only the cursors a window could
+show are drawn, so drawing costs the same however many there are; see
+`donkey--split-draw-spans'."
   (mapc #'delete-overlay donkey--split-cursor-marks)
   (setq donkey--split-cursor-marks nil)
   (when (and donkey--split-cursors donkey--split-primary
              (overlay-buffer donkey--split-primary))
     (let ((offset (and (eq donkey--split-phase 'edit)
                        (- (point) (overlay-start donkey--split-primary))))
-          (shape (donkey--split-cursor-shape)))
-      (dolist (place donkey--split-places)
+          (shape (donkey--split-cursor-shape))
+          (donkey--split-draw-graphic (display-graphic-p))
+          (donkey--split-draw-color
+           (seq-find (lambda (color)
+                       (and (stringp color)
+                            (not (string-prefix-p "unspecified" color))))
+                     (list (face-background 'donkey-split-cursor-face nil t)
+                           (face-foreground 'default nil t)))))
+      (dolist (place (delete-dups
+                      (mapcan (lambda (span)
+                                (seq-filter
+                                 (lambda (overlay)
+                                   (overlay-get overlay 'donkey-split))
+                                 (overlays-in (car span) (cdr span))))
+                              (donkey--split-draw-spans))))
         (unless (or (eq place donkey--split-primary)
                     (not (overlay-buffer place)))
           (let ((mark (donkey--split-cursor-mark
@@ -7574,12 +7648,34 @@ Lets go of the selection first, a rectangle included."
           donkey--split-tick (buffer-chars-modified-tick)))
   (donkey--split-arm (donkey--split-cursor-map)))
 
+(defun donkey--split-cursors-allowed-p (n)
+  "Return non-nil where N cursors may be made, asking if the reader said to.
+
+Checked against `donkey-split-cursor-limit'; past it, asked with
+`y-or-n-p' where `donkey-split-cursor-limit-ask' is set, and nil
+otherwise."
+  (let ((limit (let ((value donkey-split-cursor-limit))
+                 (cond ((null value) nil)
+                       ((natnump value) value)
+                       (t 1000)))))
+    (or (null limit)
+        (<= n limit)
+        (and donkey-split-cursor-limit-ask
+             (y-or-n-p (format "Make %d cursors, with every key slow at that \
+many? " n))))))
+
+(defun donkey--split-cursors-refuse-p (n)
+  "Signal a `user-error' where N cursors may not be made."
+  (unless (donkey--split-cursors-allowed-p n)
+    (user-error "%d cursors would pass `donkey-split-cursor-limit' (%s)"
+                n donkey-split-cursor-limit)))
+
 (defun donkey--split-cursors-add (spots)
   "Add a cursor at each of SPOTS, noting them for `donkey-split-drop-cursor'."
-  (dolist (spot spots)
-    (let ((place (donkey--split-cursor-make spot)))
-      (setq donkey--split-places (append donkey--split-places (list place)))
-      (push place donkey--split-cursor-order)))
+  (let ((added (mapcar #'donkey--split-cursor-make spots)))
+    (setq donkey--split-places (append donkey--split-places added)
+          donkey--split-cursor-order (append (reverse added)
+                                             donkey--split-cursor-order)))
   (donkey--split-cursors-settle)
   (message "%s" (donkey--split-hint)))
 
@@ -7660,6 +7756,7 @@ the selections, and with none ends the split."
                                           (move-to-column column)
                                           (point))))
                                     lines))))
+          (donkey--split-cursors-refuse-p (1+ (length spots)))
           (donkey--split-cursors-start column)
           (donkey--split-cursors-add spots))
       (let ((spots (donkey--split-cursor-spots
@@ -7667,6 +7764,8 @@ the selections, and with none ends the split."
                         (donkey--split-cursor (car (last donkey--split-places)))
                       (point))
                     column n)))
+        (donkey--split-cursors-refuse-p
+         (+ (length spots) (if live (length donkey--split-places) 1)))
         (unless live
           (donkey--split-cursors-start column))
         (donkey--split-cursors-add spots)))))
@@ -7683,43 +7782,53 @@ column.  Over two rows or more a cursor then stands on every row, as
 Insert state types at all of them: \\`C-g' comes back to the cursors,
 and \\`C-g' again ends them.  Over one row it is Insert state alone.
 A block with no width empties nothing, so the text typed is inserted
-before the column on every row."
+before the column on every row.
+
+A block of more rows than `donkey-split-cursor-limit' asks for its
+text in the minibuffer instead and writes it on every row at once,
+through `string-rectangle'."
   (barf-if-buffer-read-only)
   (let* ((beg (region-beginning))
          (end (region-end))
          (column (min (save-excursion (goto-char beg) (current-column))
                       (save-excursion (goto-char end) (current-column))))
-         (line (line-number-at-pos))
-         (rows (extract-rectangle-bounds beg end))
-         (marks nil)
-         (primary nil))
-    (call-interactively #'copy-rectangle-as-kill)
-    (rectangle-mark-mode -1)
-    (deactivate-mark)
-    (atomic-change-group
-      (dolist (row (reverse rows))
-        (let ((own (= (line-number-at-pos (car row)) line)))
-          (delete-region (car row) (cdr row))
-          (goto-char (car row))
-          (move-to-column column t)
-          (let ((mark (point-marker)))
-            (push mark marks)
-            (when own (setq primary mark))))))
-    (goto-char (or primary (car marks)))
-    (if (null (cdr marks))
-        (donkey-enter-insert)
-      (donkey--split-cursors-start column)
-      ;; The rows are already emptied, so the split has changed text.
-      (setq donkey--split-tick nil)
-      (donkey--split-cursors-add
-       (delq nil (mapcar (lambda (mark)
-                           (unless (eq mark (or primary (car marks)))
-                             (marker-position mark)))
-                         marks)))
-      (setq donkey--split-did 'changed)
-      (donkey--split-enter-edit nil 'start))
-    (dolist (mark marks)
-      (set-marker mark nil))))
+         (here (cons (line-beginning-position) (line-end-position)))
+         (rows (extract-rectangle-bounds beg end)))
+    (if (and (cdr rows)
+             (not (donkey--split-cursors-allowed-p (length rows))))
+        (progn
+          (call-interactively #'copy-rectangle-as-kill)
+          (call-interactively #'string-rectangle)
+          (donkey-enter-normal))
+      (call-interactively #'copy-rectangle-as-kill)
+      (rectangle-mark-mode -1)
+      (deactivate-mark)
+      (let ((delta 0)
+            (spots nil)
+            (primary nil))
+        ;; Top down, each row moved by what the rows above it changed:
+        ;; markers would make every change walk every one of them.
+        (atomic-change-group
+          (dolist (row rows)
+            (let ((size (buffer-size))
+                  (own (<= (car here) (car row) (cdr here))))
+              (delete-region (+ (car row) delta) (+ (cdr row) delta))
+              (goto-char (+ (car row) delta))
+              (move-to-column column t)
+              (push (point) spots)
+              (when own
+                (setq primary (point)))
+              (setq delta (+ delta (- (buffer-size) size))))))
+        (setq primary (or primary (car (last spots))))
+        (goto-char primary)
+        (if (null (cdr spots))
+            (donkey-enter-insert)
+          (donkey--split-cursors-start column)
+          ;; The rows are already emptied, so the split has changed text.
+          (setq donkey--split-tick nil)
+          (donkey--split-cursors-add (delete primary (nreverse spots)))
+          (setq donkey--split-did 'changed)
+          (donkey--split-enter-edit nil 'start))))))
 
 (defun donkey-split-add-cursor-above (&optional count)
   "Add a cursor on the line above the first cursor, at the same column.
@@ -7737,6 +7846,8 @@ Nothing is added where there are not COUNT lines above."
                      (donkey--split-cursor (car donkey--split-places))
                    (point))
                  column n t)))
+    (donkey--split-cursors-refuse-p
+     (+ (length spots) (if live (length donkey--split-places) 1)))
     (unless live
       (donkey--split-cursors-start column))
     (donkey--split-cursors-add spots)))
@@ -7781,10 +7892,10 @@ COMMAND with the buffer narrowed to the cursor\\='s line, for a command
 that would otherwise reach the next one."
   (let* ((line (donkey--split-cursor-line place))
          (clamp (lambda (pos) (max (car line) (min (cdr line) pos))))
-         (anchor (overlay-get place 'donkey-anchor))
+         (anchor (donkey--split-cursor-anchor place))
          (memory (overlay-get place 'donkey-memory)))
     (goto-char (donkey--split-cursor place))
-    (set-marker (mark-marker) (and anchor (marker-position anchor)))
+    (set-marker (mark-marker) anchor)
     (setq mark-active (and anchor t))
     ;; An edit acts on a whole-line selection as on the region it is,
     ;; and leaves the cursor where it was.
@@ -8033,12 +8144,11 @@ at the same end; a cursor holding none goes to its place\\='s start."
   (dolist (place donkey--split-places)
     (let ((beg (overlay-start place))
           (end (overlay-end place))
-          (anchor (overlay-get place 'donkey-anchor)))
+          (anchor (donkey--split-cursor-anchor place)))
       (if (= beg end)
           (donkey--split-cursor-set place beg nil nil nil)
         (let ((back (and anchor
-                         (< (donkey--split-cursor place)
-                            (marker-position anchor)))))
+                         (< (donkey--split-cursor place) anchor))))
           (donkey--split-cursor-set place (if back beg end) (if back end beg)
                                     nil nil)))))
   (donkey--split-cursors-settle))

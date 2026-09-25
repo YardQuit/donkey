@@ -1598,6 +1598,73 @@ minibuffer as text, and every cursor's line is searched."
                             (donkey--split-cursor donkey--split-primary)))
                      case)))))
 
+(ert-deftest donkey-split-cursors-past-the-limit-are-refused ()
+  "A press that would pass the limit makes nothing, and says why."
+  (let ((donkey-split-cursor-limit 3)
+        (donkey-split-cursor-limit-ask nil))
+    (donkey-split-test--keys "*cursors-limit*" donkey-split-test--five "T T"
+      (should (equal (cadr (should-error (execute-kbd-macro (kbd "T"))
+                                         :type 'user-error))
+                     (format-message "4 cursors would pass `%s' (3)"
+                                     'donkey-split-cursor-limit)))
+      (should (= (length donkey--split-places) 3)))
+    (donkey-split-test--keys "*cursors-limit-sel*" donkey-split-test--five "% "
+      (should-error (execute-kbd-macro (kbd "T")) :type 'user-error)
+      (should (null donkey--split-places))
+      (should (equal (buffer-string) donkey-split-test--five)))))
+
+(ert-deftest donkey-split-cursors-past-the-limit-ask-when-told-to ()
+  "With asking on, the answer decides; a no makes nothing."
+  (dolist (answer '(t nil))
+    (let ((donkey-split-cursor-limit 2)
+          (donkey-split-cursor-limit-ask t))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) answer)))
+        (donkey-split-test--keys "*cursors-limit-ask*" donkey-split-test--five
+            ""
+          (condition-case nil (execute-kbd-macro (kbd "T T")) (error nil))
+          (should (equal (list answer (length donkey--split-places))
+                         (list answer (if answer 3 2)))))))))
+
+(ert-deftest donkey-split-cursor-limit-is-read-with-care ()
+  "No limit at all when nil, and the default where the value is not a count."
+  (dolist (case '((nil 5) ("many" 5) (4 4)))
+    (let ((donkey-split-cursor-limit (car case))
+          (donkey-split-cursor-limit-ask nil))
+      (donkey-split-test--keys "*cursors-limit-read*" donkey-split-test--five
+          ""
+        (execute-kbd-macro (kbd "C-u 3 T"))
+        (condition-case nil (execute-kbd-macro (kbd "T")) (error nil))
+        (should (equal (list (car case) (length donkey--split-places))
+                       case))))))
+
+(ert-deftest donkey-split-rectangle-change-past-the-limit-asks-in-the-minibuffer ()
+  "A block taller than the limit is changed through the one-pass prompt."
+  (let ((donkey-split-cursor-limit 2)
+        (donkey-split-cursor-limit-ask nil))
+    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "XY")))
+      (donkey-split-test--keys "*rect-change-limit*" "abcdef\nghijkl\nmnopqr\n"
+          "l l m v j j l l c"
+        (should (equal (buffer-string) "abXYf\nghXYl\nmnXYr\n"))
+        (should (null donkey--split-places))
+        (should (bound-and-true-p donkey-normal-mode))
+        (should (equal killed-rectangle '("cde" "ijk" "opq")))))))
+
+(ert-deftest donkey-split-cursors-hold-no-markers ()
+  "A cursor is an end of its overlay, never a marker Emacs must move."
+  (donkey-split-test--keys "*cursors-no-markers*" donkey-split-test--five
+      "T T v w T"
+    (dolist (place donkey--split-places)
+      (should-not (seq-some #'markerp (overlay-properties place))))))
+
+(ert-deftest donkey-split-cursors-are-drawn-only-where-a-window-can-show-them ()
+  "Of many cursors, only those near what the window shows are drawn."
+  (let ((donkey-split-cursor-limit nil)
+        (text (mapconcat (lambda (i) (format "line %d" i))
+                         (number-sequence 1 2000) "\n")))
+    (donkey-split-test--keys "*cursors-drawn-visible*" (concat text "\n") "% T"
+      (should (= (length donkey--split-places) 2000))
+      (should (< 0 (length donkey--split-cursor-marks) 500)))))
+
 (ert-deftest donkey-split-add-cursor-is-bound-to-T-in-normal-state ()
   "The key the README names reaches the command."
   (should (eq (keymap-lookup donkey-normal-mode-map "T")
