@@ -505,6 +505,13 @@ again ends them. A row too short to reach the block is padded out to
 its column, and the block goes to the rectangle store, where =P= pastes
 it back. A block one row high is a plain change.
 
+A rectangle costs a motion the same however tall it is: only the rows
+a window could show are highlighted, and a middle-click in another
+program is answered with the rectangle when it asks, rather than
+Emacs copying every row after every key. What the middle-click pastes
+is unchanged: the rectangle as it stands, as it was left, or what a
+change took out of it.
+
 ** Banking lines: keeping a selection that is not contiguous
 
 Sometimes the lines you want are not next to each other. =m l= banks

@@ -3659,6 +3659,289 @@ by one column, and not at the end of a line or of the buffer."
       ;; Last, so it is what stays.
       (message "%s" donkey--rectangle-hint))))
 
+;;; ---------------------------------------------------------------------------
+;;; Large Rectangles
+;;; ---------------------------------------------------------------------------
+
+;; `rect.el' keeps a rectangle selection by doing two things after every
+;; command, each over every row: it highlights them all, and Emacs copies
+;; their text to the PRIMARY selection.  Both grow with the rectangle, so
+;; a motion over twenty thousand rows took a quarter of a second.  DONKEY
+;; highlights only the rows a window could show, and answers PRIMARY
+;; with the rectangle only when another program asks for it.
+
+(defvar donkey--rectangle-span nil
+  "Bound to the stretches a window could show while its highlight is built.
+
+A list of (BEG . END), in buffer order and apart.")
+
+(defun donkey--rectangle-window-span (window)
+  "Return the stretches WINDOW could show, as `donkey--rectangle-span' is.
+
+What it shows and as much again below, and as much around its point,
+where a command that moved point is about to scroll it."
+  (with-current-buffer (window-buffer window)
+    (let* ((height (window-body-height window))
+           (reach (lambda (from lines)
+                    (save-excursion
+                      (goto-char from)
+                      (forward-line lines)
+                      (point))))
+           (start (window-start window))
+           (here (window-point window))
+           (spans (sort (list (cons (funcall reach start 0)
+                                    (funcall reach start (* 2 height)))
+                              (cons (funcall reach here (- (* 2 height)))
+                                    (funcall reach here (* 2 height))))
+                        (lambda (a b) (< (car a) (car b))))))
+      (if (<= (car (cadr spans)) (cdr (car spans)))
+          (list (cons (car (car spans))
+                      (max (cdr (car spans)) (cdr (cadr spans)))))
+        spans))))
+
+(defun donkey--rectangle-apply-visible (orig function start end &rest args)
+  "Call ORIG, `apply-on-rectangle', or while a highlight is built do its job.
+
+While `donkey--rectangle-span' is bound, FUNCTION runs on the rows of
+the rectangle from START to END that lie in those stretches only, with
+the columns `apply-on-rectangle' would give it, and ARGS."
+  (if (not donkey--rectangle-span)
+      (apply orig function start end args)
+    (save-excursion
+      (let* ((cols (rectangle--pos-cols start end))
+             (startcol (min (car cols) (cdr cols)))
+             (endcol (max (car cols) (cdr cols)))
+             (top (progn (goto-char start) (line-beginning-position)))
+             (bottom (progn (goto-char end) (line-end-position)))
+             (final nil))
+        (dolist (span donkey--rectangle-span)
+          (let ((first (max top (progn (goto-char (car span))
+                                       (line-beginning-position))))
+                (last (min bottom (cdr span))))
+            (when (<= first last)
+              (goto-char first)
+              (while (progn
+                       (apply function startcol endcol args)
+                       (setq final (point))
+                       (and (zerop (forward-line 1)) (bolp)
+                            (<= (point) last)))))))
+        final))))
+
+(defun donkey--rectangle-highlight-visible (next orig start end window rol)
+  "Highlight only the rows of the rectangle WINDOW could show.
+
+Around `rectangle--highlight-for-redisplay', which NEXT is, with ORIG,
+START, END, WINDOW and ROL as it takes them.  The highlight is rebuilt
+when what the window shows has moved, so a scroll that is no command
+still finds its rows lit.  An error falls back to the whole rectangle."
+  (if (not donkey-mode)
+      (funcall next orig start end window rol)
+    (condition-case nil
+        (let* ((span (donkey--rectangle-window-span window))
+               (rol (if (equal span (window-parameter window
+                                                      'donkey--rectangle-span))
+                        rol
+                      (set-window-parameter window 'donkey--rectangle-span
+                                            span)
+                      (if (eq (car-safe rol) 'rectangle)
+                          (append (list 'rectangle nil) (nthcdr 2 rol))
+                        rol))))
+          (let ((donkey--rectangle-span span))
+            (funcall next orig start end window rol)))
+      (error (funcall next orig start end window rol)))))
+
+(defvar donkey--rectangle-primary-overlay nil
+  "The overlay PRIMARY holds for a rectangle, or nil.
+
+`gui-set-selection' takes an overlay as a selection whose text is read
+when a program asks for it.  This one has no face; its property
+donkey-rectangle is `live' while its rectangle is, or the rectangle\\='s
+\(STARTCOL . ENDCOL) once it has ended, the overlay then spanning the
+rectangle\\='s corners.")
+
+(defvar-local donkey--rectangle-primary nil
+  "Non-nil while this buffer\\='s live rectangle is what PRIMARY answers with.
+
+An alist: under `restore' the value `select-active-regions' had, as
+\(SAVED . LOCAL); under `corners' the rectangle as the last command
+left it, (BEG END STARTCOL ENDCOL).")
+
+(defun donkey--rectangle-text (beg end startcol endcol)
+  "Return the text of the rectangle from BEG to END, STARTCOL to ENDCOL.
+
+What `extract-rectangle' gives, its rows joined by newlines."
+  (save-excursion
+    (let ((lines (list nil)))
+      (goto-char beg)
+      (beginning-of-line)
+      (while (progn
+               (extract-rectangle-line startcol endcol lines)
+               (and (zerop (forward-line 1)) (bolp) (<= (point) end))))
+      (mapconcat #'identity (nreverse (cdr lines)) "\n"))))
+
+(defun donkey--rectangle-corners ()
+  "Return (BEG END STARTCOL ENDCOL) for the rectangle point and mark make."
+  (let* ((beg (min (point) (mark t)))
+         (end (max (point) (mark t)))
+         (cols (rectangle--pos-cols beg end)))
+    (list beg end (min (car cols) (cdr cols)) (max (car cols) (cdr cols)))))
+
+(defun donkey--rectangle-primary-note ()
+  "Note the live rectangle\\='s corners, and claim PRIMARY again if they moved.
+
+On `post-command-hook' while PRIMARY answers from the rectangle.  A
+command can move point and mark before it changes the text, so the
+corners are taken here, where nothing has moved yet.  PRIMARY is
+claimed again with the same overlay when they moved: a graphical
+backend converts a selection once per claim and answers every later
+request with that, so an unclaimed rectangle would paste as it first
+was.  The claim copies nothing; the text is made only when a program
+asks.  Never signals."
+  (condition-case nil
+      (when (and donkey--rectangle-primary rectangle-mark-mode (mark t))
+        (let ((corners (donkey--rectangle-corners)))
+          (unless (equal corners (alist-get 'corners donkey--rectangle-primary))
+            (setf (alist-get 'corners donkey--rectangle-primary) corners)
+            (when (overlayp donkey--rectangle-primary-overlay)
+              (move-overlay donkey--rectangle-primary-overlay
+                            (car corners) (cadr corners))
+              (donkey--rectangle-primary-set
+               donkey--rectangle-primary-overlay)))))
+    (error nil)))
+
+(defun donkey--rectangle-primary-hold (beg end state)
+  "Give PRIMARY an overlay from BEG to END for a rectangle in STATE.
+
+STATE is as the property donkey-rectangle of
+`donkey--rectangle-primary-overlay' holds it.  The overlay from an
+earlier rectangle goes."
+  (when (overlayp donkey--rectangle-primary-overlay)
+    (delete-overlay donkey--rectangle-primary-overlay))
+  (let ((overlay (make-overlay beg end nil nil t)))
+    (overlay-put overlay 'donkey-rectangle state)
+    (setq donkey--rectangle-primary-overlay overlay)
+    (donkey--rectangle-primary-set overlay)))
+
+(defun donkey--rectangle-primary-text (value)
+  "Return the text PRIMARY holding VALUE gives, or nil if VALUE is not ours.
+
+VALUE is ours when it is an overlay DONKEY gave PRIMARY; see
+`donkey--rectangle-primary-overlay'.  A live rectangle is answered as
+Emacs would have answered it, and an ended one from its corners."
+  (when (and (overlayp value) (overlay-get value 'donkey-rectangle))
+    (let ((state (overlay-get value 'donkey-rectangle))
+          (buffer (overlay-buffer value)))
+      (cond
+       ((not (buffer-live-p buffer)) "")
+       ((eq state 'live)
+        (if (buffer-local-value 'rectangle-mark-mode buffer)
+            (with-current-buffer buffer
+              (let ((window (get-buffer-window buffer t)))
+                (substring-no-properties
+                 (if window
+                     (with-selected-window window
+                       (funcall region-extract-function nil))
+                   (funcall region-extract-function nil)))))
+          ""))
+       (t
+        (with-current-buffer buffer
+          (donkey--rectangle-text (overlay-start value) (overlay-end value)
+                                  (car state) (cdr state))))))))
+
+(defun donkey--rectangle-convert (orig selection type value)
+  "Call ORIG with SELECTION, TYPE and VALUE, VALUE made text if it is ours.
+
+Around `xselect-convert-to-string' and `xselect-convert-to-length', the
+converters `selection-converter-alist' names for text: DONKEY\\='s
+rectangle is turned into its text only here, when a program asks."
+  (funcall orig selection type
+           (or (donkey--rectangle-primary-text value) value)))
+
+(defun donkey--rectangle-primary-set (value)
+  "Give PRIMARY VALUE, where Emacs still owns it.
+
+A string replaces the overlay an earlier rectangle left there."
+  (when (gui-backend-selection-owner-p 'PRIMARY)
+    (when (and (stringp value) (overlayp donkey--rectangle-primary-overlay))
+      (delete-overlay donkey--rectangle-primary-overlay)
+      (setq donkey--rectangle-primary-overlay nil))
+    (gui-set-selection 'PRIMARY value)))
+
+(defun donkey--rectangle-primary-freeze ()
+  "Stop answering PRIMARY from the live rectangle, keeping what it held.
+
+As the rectangle ends.  Where a change already put its text in PRIMARY,
+that stays; otherwise PRIMARY keeps the rectangle\\='s corners, which
+`donkey--rectangle-primary-text' reads when a program asks.  Either way
+only where Emacs still owns PRIMARY, and `select-active-regions' is put
+back as it was."
+  (when donkey--rectangle-primary
+    (let ((restore (alist-get 'restore donkey--rectangle-primary))
+          (kept (alist-get 'kept donkey--rectangle-primary)))
+      (setq donkey--rectangle-primary nil)
+      (remove-hook 'before-change-functions
+                   #'donkey--rectangle-primary-before-change t)
+      (remove-hook 'post-command-hook #'donkey--rectangle-primary-note t)
+      (if (cdr restore)
+          (setq-local select-active-regions (car restore))
+        (kill-local-variable 'select-active-regions))
+      (when (and (not kept) (mark t))
+        (pcase-let ((`(,beg ,end ,startcol ,endcol)
+                     (donkey--rectangle-corners)))
+          (donkey--rectangle-primary-hold beg end (cons startcol endcol)))))))
+
+(defun donkey--rectangle-primary-before-change (_beg _end)
+  "Keep the live rectangle\\='s text in PRIMARY before a change reaches it.
+
+On `before-change-functions' while PRIMARY answers from the rectangle,
+as Emacs keeps `saved-region-selection': \\[donkey-delete] leaves in
+PRIMARY what it deleted.  Read from the corners the last command left,
+since a command can move point and mark before it changes the text.
+Never signals."
+  (condition-case nil
+      (let ((corners (alist-get 'corners donkey--rectangle-primary)))
+        (remove-hook 'before-change-functions
+                     #'donkey--rectangle-primary-before-change t)
+        (remove-hook 'post-command-hook #'donkey--rectangle-primary-note t)
+        (setf (alist-get 'kept donkey--rectangle-primary) t)
+        (donkey--rectangle-primary-set
+         (if corners
+             (apply #'donkey--rectangle-text corners)
+           (substring-no-properties (funcall region-extract-function nil)))))
+    (error nil)))
+
+(defun donkey--rectangle-primary-follow ()
+  "Answer PRIMARY from the rectangle while it lives, and keep it as it ends.
+
+On `rectangle-mark-mode-hook'.  In a graphical frame where
+`select-active-regions' would copy the rectangle to PRIMARY after every
+command, it is switched off here and PRIMARY is given the rectangle
+itself, which a program asking for it is answered from; see
+`donkey--rectangle-convert'."
+  (cond
+   ((and rectangle-mark-mode
+         donkey-mode
+         (not donkey--rectangle-primary)
+         (display-selections-p)
+         select-active-regions
+         (not (eq select-active-regions 'only)))
+    (setq donkey--rectangle-primary
+          (list (cons 'restore (cons select-active-regions
+                                     (local-variable-p
+                                      'select-active-regions)))))
+    (setq-local select-active-regions nil)
+    (add-hook 'before-change-functions
+              #'donkey--rectangle-primary-before-change nil t)
+    (add-hook 'post-command-hook #'donkey--rectangle-primary-note nil t)
+    (when (overlayp donkey--rectangle-primary-overlay)
+      (delete-overlay donkey--rectangle-primary-overlay))
+    (let ((overlay (make-overlay (region-beginning) (region-end) nil nil t)))
+      (overlay-put overlay 'donkey-rectangle 'live)
+      (setq donkey--rectangle-primary-overlay overlay)
+      (gui-set-selection 'PRIMARY overlay)))
+   ((not rectangle-mark-mode)
+    (donkey--rectangle-primary-freeze))))
+
 (defcustom donkey-mark-pair-delimiters
   '((?\{ . ?\}) (?\[ . ?\]) (?\( . ?\)) (?\< . ?>)
     (?\" . ?\") (?\' . ?\') (?\` . ?\`) (?‘ . ?’) (?“ . ?”)
@@ -13266,7 +13549,19 @@ donkey-mode' to toggle."
         ;; What Emacs takes out of a `V' selection is its whole lines;
         ;; see `donkey--visual-line-extract-region'.
         (add-function :around region-extract-function
-                      #'donkey--visual-line-extract-region))
+                      #'donkey--visual-line-extract-region)
+        ;; A large rectangle costs a motion little; see "Large
+        ;; Rectangles".
+        (advice-add 'rectangle--highlight-for-redisplay :around
+                    #'donkey--rectangle-highlight-visible)
+        (advice-add 'apply-on-rectangle :around
+                    #'donkey--rectangle-apply-visible)
+        (advice-add 'xselect-convert-to-string :around
+                    #'donkey--rectangle-convert)
+        (advice-add 'xselect-convert-to-length :around
+                    #'donkey--rectangle-convert)
+        (add-hook 'rectangle-mark-mode-hook
+                  #'donkey--rectangle-primary-follow))
     ;; Mark run mode's map lives in `overriding-terminal-local-map',
     ;; terminal-wide; `donkey--mark-run-exit' takes down all of it and
     ;; is a no-op when nothing was armed.  A run put down by a focus
@@ -13292,6 +13587,16 @@ donkey-mode' to toggle."
     (remove-function command-error-function #'donkey--recover-quit-in-insert)
     (remove-function region-extract-function
                      #'donkey--visual-line-extract-region)
+    (advice-remove 'rectangle--highlight-for-redisplay
+                   #'donkey--rectangle-highlight-visible)
+    (advice-remove 'apply-on-rectangle #'donkey--rectangle-apply-visible)
+    (advice-remove 'xselect-convert-to-string #'donkey--rectangle-convert)
+    (advice-remove 'xselect-convert-to-length #'donkey--rectangle-convert)
+    (remove-hook 'rectangle-mark-mode-hook #'donkey--rectangle-primary-follow)
+    (dolist (buffer (buffer-list))
+      (with-current-buffer buffer
+        (when donkey--rectangle-primary
+          (donkey--rectangle-primary-freeze))))
     (donkey--sweep-buffers #'donkey--disable-in-buffer)))
 
 ;;; ---------------------------------------------------------------------------

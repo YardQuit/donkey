@@ -7850,6 +7850,133 @@ an error -- never zero characters with a cheerful message."
                           (list command mode text 0))))
               (user-error nil))))))))
 
+;;; ---------------------------------------------------------------------------
+;;; Large rectangles: the highlight and PRIMARY
+;;; ---------------------------------------------------------------------------
+
+(defvar donkey-rect-test--sets nil
+  "Every value the rectangle tests saw handed to PRIMARY, newest first.")
+
+(defmacro donkey-rect-test--graphical (&rest body)
+  "Run BODY as in a graphical frame that owns PRIMARY, recording its values.
+
+`gui-set-selection' checks each value as Emacs does before any backend
+sees it, so a value a real frame would refuse fails here too."
+  (declare (indent 0))
+  `(let ((donkey-rect-test--sets nil)
+         (select-active-regions t))
+     (cl-letf (((symbol-function 'display-selections-p) (lambda (&rest _) t))
+               ((symbol-function 'gui-backend-selection-owner-p)
+                (lambda (&rest _) t))
+               ((symbol-function 'gui-set-selection)
+                (lambda (type value)
+                  (when (eq type 'PRIMARY)
+                    (unless (gui--valid-simple-selection-p value)
+                      (error "Invalid selection %S" value))
+                    (push value donkey-rect-test--sets)))))
+       ,@body)))
+
+(defconst donkey-rect-test--text "abcdef\nghijkl\nmnopqr\nstuvwx\n"
+  "Four rows for the PRIMARY tests.")
+
+(ert-deftest donkey-rectangle-primary-is-claimed-not-copied ()
+  "A live rectangle claims PRIMARY with a value Emacs takes, and copies nothing."
+  (donkey-rect-test--graphical
+    (let ((extracts 0))
+      (donkey-test-keys--harness "*rect-primary*" #'text-mode ()
+          donkey-rect-test--text "l m v j j l"
+        (should (overlayp (car donkey-rect-test--sets)))
+        (should (local-variable-p 'select-active-regions))
+        (should-not select-active-regions)
+        (cl-letf* ((extract region-extract-function)
+                   (region-extract-function
+                    (lambda (method)
+                      (setq extracts (1+ extracts))
+                      (funcall extract method))))
+          (execute-kbd-macro (kbd "j l")))
+        (should (= extracts 0))
+        (should (equal (donkey--rectangle-primary-text
+                        (car donkey-rect-test--sets))
+                       "bcd\nhij\nnop\ntuv"))))))
+
+(ert-deftest donkey-rectangle-primary-is-claimed-again-as-it-moves ()
+  "Each motion claims PRIMARY anew, for a backend that answers once per claim."
+  (donkey-rect-test--graphical
+    (donkey-test-keys--harness "*rect-primary-move*" #'text-mode ()
+        donkey-rect-test--text "l m v j"
+      (let ((before (length donkey-rect-test--sets)))
+        (execute-kbd-macro (kbd "l"))
+        (should (> (length donkey-rect-test--sets) before))
+        (should (equal (donkey--rectangle-primary-text
+                        (car donkey-rect-test--sets))
+                       "bc\nhi"))))))
+
+(ert-deftest donkey-rectangle-primary-keeps-an-ended-rectangle ()
+  "An ended rectangle stays in PRIMARY, and `select-active-regions' comes back."
+  (donkey-rect-test--graphical
+    (donkey-test-keys--harness "*rect-primary-end*" #'text-mode ()
+        donkey-rect-test--text "l m v j l"
+      (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+      (should-not (local-variable-p 'select-active-regions))
+      (should (equal (donkey--rectangle-primary-text
+                      (car donkey-rect-test--sets))
+                     "bc\nhi")))))
+
+(ert-deftest donkey-rectangle-primary-keeps-what-a-change-took ()
+  "A deleted rectangle leaves its text in PRIMARY, as a deleted region does."
+  (donkey-rect-test--graphical
+    (donkey-test-keys--harness "*rect-primary-delete*" #'text-mode ()
+        donkey-rect-test--text "l m v j l d"
+      (should (equal (buffer-string) "adef\ngjkl\nmnopqr\nstuvwx\n"))
+      (should (equal (car donkey-rect-test--sets) "bc\nhi"))
+      (should-not (local-variable-p 'select-active-regions)))))
+
+(ert-deftest donkey-rectangle-primary-is-answered-by-the-converter ()
+  "The converters Emacs calls for text turn DONKEY's overlay into its text."
+  (donkey-rect-test--graphical
+    (donkey-test-keys--harness "*rect-primary-convert*" #'text-mode ()
+        donkey-rect-test--text "l m v j l"
+      (let ((value (car donkey-rect-test--sets)))
+        (should (equal (cdr (xselect-convert-to-string 'PRIMARY 'STRING value))
+                       "bc\nhi"))
+        (should (xselect-convert-to-length 'PRIMARY 'LENGTH value))))))
+
+(ert-deftest donkey-rectangle-primary-is-left-alone-where-emacs-would-not-copy ()
+  "No takeover in a terminal, or where `select-active-regions' is `only'."
+  (dolist (case '((nil t) (t only)))
+    (donkey-rect-test--graphical
+      (let ((select-active-regions (cadr case)))
+        (cl-letf (((symbol-function 'display-selections-p)
+                   (lambda (&rest _) (car case))))
+          (donkey-test-keys--harness "*rect-primary-none*" #'text-mode ()
+              donkey-rect-test--text "l m v j l"
+            (should (equal (list case donkey-rect-test--sets) (list case nil)))
+            (should-not (local-variable-p 'select-active-regions))))))))
+
+(ert-deftest donkey-rectangle-primary-lets-go-when-donkey-mode-goes ()
+  "Turning DONKEY off gives `select-active-regions' back to a live rectangle."
+  (donkey-rect-test--graphical
+    (donkey-test-keys--harness "*rect-primary-off*" #'text-mode ()
+        donkey-rect-test--text "l m v j l"
+      (should (local-variable-p 'select-active-regions))
+      (unwind-protect
+          (progn
+            (donkey-mode -1)
+            (should-not (local-variable-p 'select-active-regions))
+            (should-not donkey--rectangle-primary))
+        (donkey-mode 1)))))
+
+(ert-deftest donkey-rectangle-highlight-covers-only-the-rows-in-view ()
+  "The highlight of a tall rectangle is built for the rows near the view."
+  (donkey-test-keys--harness "*rect-highlight*" #'text-mode ()
+      (mapconcat (lambda (i) (format "line %d" i)) (number-sequence 1 3000) "\n")
+      "l m v G"
+    (let ((rol (funcall redisplay-highlight-region-function
+                        (region-beginning) (region-end) (selected-window) nil)))
+      (should (eq (car rol) 'rectangle))
+      (should (< 0 (length (nthcdr 5 rol)) 1000))
+      (funcall redisplay-unhighlight-region-function rol))))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here
