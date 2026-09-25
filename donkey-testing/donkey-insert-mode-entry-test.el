@@ -998,44 +998,20 @@ below is the part that would have noticed."
       (should (= (car deleted-bounds) 6))
       (should (= (cadr deleted-bounds) 1)))))
 
-(ert-deftest donkey-change-rectangle-mode-calls-string-rectangle ()
-  "Change over a rectangle delegates to `string-rectangle'.
+(ert-deftest donkey-change-over-a-rectangle-types-on-every-row ()
+  "Change over a rectangle empties each row and types on all of them."
+  (donkey-test-keys--harness "*change-rect*" #'text-mode ()
+      "abcdef\nghijkl\nmnopqr\n" "l l m v j j l l c X Y"
+    (should (equal (buffer-string) "abXYf\nghXYl\nmnXYr\n"))
+    (should (bound-and-true-p donkey-insert-mode))
+    (should (= (length donkey--split-places) 3))))
 
-With region active and `rectangle-mark-mode' enabled, delegates to
-`string-rectangle' via `call-interactively'."
-  (let (called-cmd)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 3)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () t))
-                ((symbol-function 'call-interactively)
-                 (lambda (cmd) (setq called-cmd cmd)))
-                ((symbol-function 'donkey-enter-insert)
-                 (lambda () nil)))
-        (let ((rectangle-mark-mode t))
-          (donkey-change)))
-      (should (eq called-cmd 'string-rectangle)))))
-
-(ert-deftest donkey-change-rectangle-mode-skips-delete-region ()
-  "In rectangle mode, `delete-region' is not called."
-  (let (delete-region-called)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 3)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () t))
-                ((symbol-function 'call-interactively)
-                 (lambda (cmd) (ignore cmd)))
-                ((symbol-function 'delete-region)
-                 (lambda (beg end) (setq delete-region-called t)))
-                ((symbol-function 'donkey-enter-insert)
-                 (lambda () nil)))
-        (let ((rectangle-mark-mode t))
-          (donkey-change)))
-      (should-not delete-region-called))))
+(ert-deftest donkey-change-over-a-rectangle-saves-the-block ()
+  "What change over a rectangle empties goes to `killed-rectangle' only."
+  (donkey-test-keys--harness "*change-rect-kill*" #'text-mode ()
+      "abcdef\nghijkl\n" "l l m v j l c C-g C-g"
+    (should (equal killed-rectangle '("cd" "ij")))
+    (should (null kill-ring))))
 
 (ert-deftest donkey-change-rectangle-mode-falls-back-when-disabled ()
   "Change over a plain region falls back to `kill-region'.
@@ -1062,30 +1038,14 @@ When `rectangle-mark-mode' is nil and region is active, falls back to
       (should delete-called)
       (should-not ci-called))))
 
-(ert-deftest donkey-change-rectangle-mode-stays-in-normal-state ()
-  "Change over a rectangle ends in Normal state.
-
-Regression test: under `rectangle-mark-mode', `c' must end in NORMAL
-state, not INSERT.
-
-`string-rectangle' prompts for the replacement text itself and applies
-it to every covered line, so by the time it returns the edit is
-already finished and there is nothing left to type.  Entering INSERT
-there meant the next navigation keypress self-inserted instead of
-moving.  Confirmed live in `emacs -nw': after `m v', `c', a
-replacement string and RET, pressing `j' then `l' typed a literal
-\"jl\" into the buffer."
-  (with-temp-buffer
-    (donkey-normal-mode 1)
-    (insert "hello\n")
-    (goto-char 1)
-    (push-mark 3)
-    (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-              ((symbol-function 'call-interactively) (lambda (_cmd) nil)))
-      (let ((rectangle-mark-mode t))
-        (donkey-change)))
+(ert-deftest donkey-change-over-a-rectangle-ends-in-normal-state ()
+  "After typing on the rows, `C-g' twice is Normal state, and keys move again."
+  (donkey-test-keys--harness "*change-rect-normal*" #'text-mode ()
+      "hello\nhello\nhello\n" "m v j l c X C-g C-g j l"
     (should (bound-and-true-p donkey-normal-mode))
-    (should-not (bound-and-true-p donkey-insert-mode))))
+    (should-not (bound-and-true-p donkey-insert-mode))
+    (should (null donkey--split-places))
+    (should (equal (buffer-string) "Xllo\nXllo\nhello\n"))))
 
 (ert-deftest donkey-change-plain-region-still-enters-insert-state ()
   "Change over a plain region still enters Insert state.

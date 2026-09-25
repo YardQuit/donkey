@@ -1571,6 +1571,33 @@ minibuffer as text, and every cursor's line is searched."
   (should (eq (keymap-lookup donkey-normal-mode-map "t")
               #'donkey-split-add-cursor-above)))
 
+(ert-deftest donkey-split-rectangle-change-gives-what-the-prompt-gave ()
+  "Typing at the rows of `m v c' leaves what `string-rectangle' left."
+  (dolist (case '(("abcdef\ngh\nmnopqr\n" "l l l l m v j j l" "X Y"
+                   "abcdXY\ngh  XY\nmnopXY\n" ("ef" "  " "qr"))
+                  ("aaaaa\nbb\nccccccc\n" "g l m v j j" ";"
+                   "aaaaa;\nbb   ;\nccccc;cc\n" ("" "" ""))
+                  ("\tfoo\n\tbar\n" "m v j" "SPC SPC"
+                   "  foo\n  bar\n" ("        " "        "))
+                  ("漢字abc\n漢字abc\n" "l m v j" "X" "漢Xabc\n漢Xabc\n" ("字" "字"))
+                  ("abcdef\nghijkl\nmnopqr\n" "j j l l m v k k l" "Z"
+                   "abZef\nghZkl\nmnZqr\n" ("cd" "ij" "op"))))
+    (cl-destructuring-bind (text keys typed result block) case
+      (donkey-split-test--keys "*rect-change*" text
+          (concat keys " c " typed " C-g C-g")
+        (should (equal (list keys (buffer-string) killed-rectangle)
+                       (list keys result block)))))))
+
+(ert-deftest donkey-split-rectangle-change-puts-the-real-cursor-on-point-s-row ()
+  "The real cursor of `m v c' is on the row point was on."
+  (dolist (case '(("m v j j l c" 3) ("j j m v k k l c" 1)))
+    (donkey-split-test--keys "*rect-change-primary*" "abc\ndef\nghi\n"
+        (car case)
+      (should (equal (list (car case)
+                           (line-number-at-pos
+                            (donkey--split-cursor donkey--split-primary)))
+                     case)))))
+
 (ert-deftest donkey-split-add-cursor-is-bound-to-T-in-normal-state ()
   "The key the README names reaches the command."
   (should (eq (keymap-lookup donkey-normal-mode-map "T")

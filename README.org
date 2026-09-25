@@ -498,6 +498,13 @@ leave; see [[#a-mark-run-follows-you-between-buffers][A mark run follows you bet
 =m v= starts a rectangle. =P= pastes one back. Rectangles work with the
 wrap keys and with banking, below.
 
+=c= on a rectangle empties the block on every row and puts a cursor on
+each, in INSERT state, so what you type appears on every row at once —
+the cursors of =T=, below. =C-g= comes back to the cursors and =C-g=
+again ends them. A row too short to reach the block is padded out to
+its column, and the block goes to the rectangle store, where =P= pastes
+it back. A block one row high is a plain change.
+
 ** Banking lines: keeping a selection that is not contiguous
 
 Sometimes the lines you want are not next to each other. =m l= banks

@@ -2997,9 +2997,7 @@ other way round, passing live and failing in batch."
           (insert "aaaaa\nbbbbb\nccccc\n")
           (goto-char (point-min))
           (donkey-normal-mode 1)
-          (execute-kbd-macro (kbd "g l m v j j"))
-          (cl-letf (((symbol-function 'read-string) (lambda (&rest _) ";")))
-            (donkey-change))
+          (execute-kbd-macro (kbd "g l m v j j c ; C-g C-g"))
           (should (equal (buffer-string) "aaaaa;\nbbbbb;\nccccc;\n"))))
     (when (get-buffer "*donkey-rect-eol*") (kill-buffer "*donkey-rect-eol*"))))
 

@@ -1014,9 +1014,9 @@ opens one line, as a bare press does."
 (defun donkey-change (&optional count)
   "Delete the active region (or the character at point) and enter INSERT state.
 
-Under `rectangle-mark-mode' the region is replaced via
-`string-rectangle', which prompts for the replacement text and applies
-it to every covered line, and DONKEY stays in NORMAL state.
+Under `rectangle-mark-mode' every row of the block is emptied and a
+cursor stands on each, typing on all of them at once; see
+`donkey--change-rectangle'.
 
 A visual-line selection made with `V' is NOT widened to whole lines
 here, unlike `donkey-copy', `donkey-delete' and `donkey-yank'.  The
@@ -1052,15 +1052,7 @@ zero changes none while still entering INSERT state, the same reading
   (interactive "p")
   (if (donkey--selection-to-act-on-p)
       (if (bound-and-true-p rectangle-mark-mode)
-          (progn
-            ;; Saved to `killed-rectangle' before the prompt, as
-            ;; `donkey-delete' saves it; aborting the prompt leaves it
-            ;; there.
-            (call-interactively #'copy-rectangle-as-kill)
-            (call-interactively #'string-rectangle)
-            ;; Explicit: the command may be reached from Insert state
-            ;; through \\[execute-extended-command].
-            (donkey-enter-normal))
+          (donkey--change-rectangle)
         ;; `kill-region', not `delete-region': what a selection replaces
         ;; is recoverable.  Not over an empty span, which would push ""
         ;; onto the ring.
@@ -7679,6 +7671,56 @@ the selections, and with none ends the split."
           (donkey--split-cursors-start column))
         (donkey--split-cursors-add spots)))))
 
+(defun donkey--change-rectangle ()
+  "Empty every row of the rectangle selection and type on all of them.
+
+What `donkey-change' does over a rectangle.  The block goes to
+`killed-rectangle' first, where \\[donkey-yank-rectangle] pastes it
+from, and each row is emptied; a row too short to reach the block is
+padded with spaces out to its column, so what is typed lands in the
+column.  Over two rows or more a cursor then stands on every row, as
+\\[donkey-split-add-cursor] makes them, the real one on point\\='s row, and
+Insert state types at all of them: \\`C-g' comes back to the cursors,
+and \\`C-g' again ends them.  Over one row it is Insert state alone.
+A block with no width empties nothing, so the text typed is inserted
+before the column on every row."
+  (barf-if-buffer-read-only)
+  (let* ((beg (region-beginning))
+         (end (region-end))
+         (column (min (save-excursion (goto-char beg) (current-column))
+                      (save-excursion (goto-char end) (current-column))))
+         (line (line-number-at-pos))
+         (rows (extract-rectangle-bounds beg end))
+         (marks nil)
+         (primary nil))
+    (call-interactively #'copy-rectangle-as-kill)
+    (rectangle-mark-mode -1)
+    (deactivate-mark)
+    (atomic-change-group
+      (dolist (row (reverse rows))
+        (let ((own (= (line-number-at-pos (car row)) line)))
+          (delete-region (car row) (cdr row))
+          (goto-char (car row))
+          (move-to-column column t)
+          (let ((mark (point-marker)))
+            (push mark marks)
+            (when own (setq primary mark))))))
+    (goto-char (or primary (car marks)))
+    (if (null (cdr marks))
+        (donkey-enter-insert)
+      (donkey--split-cursors-start column)
+      ;; The rows are already emptied, so the split has changed text.
+      (setq donkey--split-tick nil)
+      (donkey--split-cursors-add
+       (delq nil (mapcar (lambda (mark)
+                           (unless (eq mark (or primary (car marks)))
+                             (marker-position mark)))
+                         marks)))
+      (setq donkey--split-did 'changed)
+      (donkey--split-enter-edit nil 'start))
+    (dolist (mark marks)
+      (set-marker mark nil))))
+
 (defun donkey-split-add-cursor-above (&optional count)
   "Add a cursor on the line above the first cursor, at the same column.
 
@@ -10132,15 +10174,14 @@ the first line and press \\[donkey-yank-rectangle] straight away -- the block go
 it came from.  A rectangle has its own paste key: \\[donkey-yank] pastes ordinary
 text, \\[donkey-yank-rectangle] pastes columns, and neither has to guess which you meant.
 
-\\[donkey-change] on a rectangle replaces the block on EVERY line it spans, in one
-go.  It asks for the replacement in the minibuffer -- \"String rectangle:\"
--- rather than dropping you into INSERT state, so type the text there and
-press RET.  You stay in NORMAL state throughout; nothing appears in the
-buffer until you confirm.
+\\[donkey-change] on a rectangle empties the block on EVERY line it spans and puts
+a cursor on each, in INSERT state: what you type appears on every row
+at once, the cursors of Lesson 16.  \\`C-g' comes back to the cursors,
+and \\`C-g' again ends them.
 
 >> Put the cursor on the first \"7\" below, press \\[donkey-rectangle-mark-mode], then \\[next-line] twice
-   and \\[forward-char] twice.  Press \\[donkey-change], type \"##\" and press RET.  All three
-   rows lose their digits together.
+   and \\[forward-char] twice.  Press \\[donkey-change], type \"##\" and press \\`C-g' twice.
+   All three rows lose their digits together.
 
    ---> 777 red
    ---> 888 green
@@ -10152,14 +10193,15 @@ what you wanted.  \\[next-line] gives the block its rows and \\[forward-char] it
 both have to happen before \\[donkey-change].
 
 >> Put the cursor on the first \"5\" below, press \\[donkey-rectangle-mark-mode], and press \\[donkey-change]
-   immediately -- no \\[next-line], no \\[forward-char].  One character goes.  That is
+   immediately -- no \\[next-line], no \\[forward-char].  One character goes, and you
+   type in its place as \\[donkey-change] always does; \\`C-g' once is enough.  That is
    the whole difference between the two exercises.
 
    ---> 555 solo
 
 The block does not have to cover any text at all.  A rectangle with NO
-width INSERTS instead of replacing, which is how the same text goes at
-the front, or the end, of a run of lines at once.
+width empties nothing, so what you type is inserted, which is how the
+same text goes at the front, or the end, of a run of lines at once.
 
 \\[donkey-rectangle-mark-mode] always starts one character wide, so for a prefix take that
 width straight back off with \\[backward-char] before going down.
@@ -10171,8 +10213,8 @@ the whole indent rather than one space of it.  Start from a character
 you can see if you want to change just it.
 
 >> Put the cursor on the \"r\" of \"red\" below, press \\[donkey-rectangle-mark-mode] then \\[backward-char],
-   then \\[next-line] twice.  Press \\[donkey-change], type \"// \" and press RET.  Nothing is
-   replaced; every row simply gains a front.
+   then \\[next-line] twice.  Press \\[donkey-change], type \"// \" and press \\`C-g' twice.
+   Nothing is replaced; every row simply gains a front.
 
    ---> red
    ---> green
@@ -10184,7 +10226,7 @@ to the right to widen into, so the rectangle is already zero-width and
 
 >> Put the cursor on the first row below and press \\[move-end-of-line], then
    \\[donkey-rectangle-mark-mode], then \\[next-line] twice.  Press \\[donkey-change], type \" ;\" and press
-   RET.
+   \\`C-g' twice.
 
    ---> aaaaa
    ---> bbbbb
