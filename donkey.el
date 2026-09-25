@@ -6127,6 +6127,11 @@ the place is what that cursor selects: its whole line where the
 property donkey-line is set, the text between it and the marker under
 donkey-anchor where that is set, and nothing otherwise.")
 
+(defvar-local donkey--split-cursor-order nil
+  "The cursors of the split added after the first, newest first.
+
+\\[donkey-split-drop-cursor] drops the newest of them still standing.")
+
 (defvar-local donkey--split-column nil
   "The column `donkey-split-add-cursor' puts each new cursor at.")
 
@@ -6365,15 +6370,16 @@ since the split was made, whichever verb ran."
 adjust, . again, M or C-g ends"
               (donkey--split-places-phrase n)))
      (donkey--split-cursors
-      (format "Split: %s%s -- %s add, v V m M select, i a I A o O c d y p D, \
-f find, C-g"
+      (format "Split: %s%s -- %s add, DEL drop, v V m M select, \
+i a I A o O c d y p D, f find, C-g"
               (donkey--split-places-phrase n)
               (if (seq-some #'donkey--split-cursor-selecting-p
                             donkey--split-places)
                   " selecting"
                 "")
               (substitute-command-keys
-               "\\<donkey-normal-mode-map>\\[donkey-split-add-cursor]")))
+               "\\<donkey-normal-mode-map>\\[donkey-split-add-cursor] \
+\\[donkey-split-add-cursor-above]")))
      (t
       (format
        "Split: %s in %s -- i before, a after, c change, d delete, w wrap, C-g"
@@ -6668,6 +6674,7 @@ the current one, so both are cleared."
               donkey--split-cursors nil
               donkey--split-running nil
               donkey--split-repeat nil
+              donkey--split-cursor-order nil
               donkey--split-column nil
               donkey--split-cursor-marks nil)
         (remove-hook 'post-command-hook #'donkey--split-sync t)
@@ -6863,8 +6870,8 @@ Read from `donkey-mark-pair-delimiters', the one table
         (rassq char pairs)
         (cons char char))))
 
-(defun donkey--split-wrapped-p (opener closer)
-  "Return non-nil where every place already sits inside OPENER and CLOSER."
+(defun donkey--split-wrapped-p (opener closer places)
+  "Return non-nil where every one of PLACES sits inside OPENER and CLOSER."
   (seq-every-p
    (lambda (place)
      (let ((beg (overlay-start place))
@@ -6873,7 +6880,7 @@ Read from `donkey-mark-pair-delimiters', the one table
             (< end (point-max))
             (eq (char-before beg) opener)
             (eq (char-after end) closer))))
-   donkey--split-places))
+   places))
 
 (defun donkey-split-wrap (char)
   "Wrap every place in the split in the pair CHAR names, or take it off.
@@ -6886,6 +6893,10 @@ The delimiters land outside the places, so what the split holds is
 unchanged and a verb can still follow.  The split stays armed: another
 pair wraps around the first.  Every place is wrapped or none is.
 
+In a split of cursors only a cursor holding a selection is wrapped, as
+a wrap key wraps only a selection in Normal state; with no cursor
+selecting, the key is `undefined' there as it is in Normal state.
+
 Bound to \\`w' inside `donkey-split-mode-map', and to each delimiter on
 its own key, as `donkey-wrap-region' is reached in Normal state."
   (interactive (list (read-char "Wrap every place in: ")))
@@ -6893,35 +6904,43 @@ its own key, as `donkey-wrap-region' is reached in Normal state."
   (let* ((pair (donkey--split-pair char))
          (opener (car pair))
          (closer (cdr pair))
-         (off (donkey--split-wrapped-p opener closer)))
-    (atomic-change-group
-      (save-excursion
-        (dolist (place donkey--split-places)
-          (if off
-              ;; The closer first: removing the opener would move the
-              ;; position the closer is still to be reached at.
-              (progn
-                (delete-region (overlay-end place) (1+ (overlay-end place)))
-                (delete-region (1- (overlay-start place))
-                               (overlay-start place)))
-            ;; The closer first, as `donkey--wrap-put-on' does: an empty
-            ;; place has one position for both halves, and an opener
-            ;; put there first would be followed by the closer put
-            ;; before it.
-            (let ((beg (overlay-start place))
-                  (end (overlay-end place)))
-              (goto-char end)
-              (insert closer)
-              (goto-char beg)
-              (insert opener)
-              (move-overlay place (1+ beg) (1+ end)))))))
-    (when donkey--split-cursors
-      (donkey--split-cursors-adopt))
-    (setq donkey--split-did (if off 'unwrapped 'wrapped)
-          donkey--split-text
-          (and donkey--split-primary
-               (donkey--split-place-text donkey--split-primary)))
-    (donkey--repaint-hint (donkey--split-hint))))
+         (targets (if donkey--split-cursors
+                      (seq-filter (lambda (place)
+                                    (< (overlay-start place)
+                                       (overlay-end place)))
+                                  donkey--split-places)
+                    donkey--split-places))
+         (off (and targets (donkey--split-wrapped-p opener closer targets))))
+    (if (null targets)
+        (call-interactively #'undefined)
+      (atomic-change-group
+	(save-excursion
+          (dolist (place targets)
+            (if off
+		;; The closer first: removing the opener would move the
+		;; position the closer is still to be reached at.
+		(progn
+                  (delete-region (overlay-end place) (1+ (overlay-end place)))
+                  (delete-region (1- (overlay-start place))
+				 (overlay-start place)))
+              ;; The closer first, as `donkey--wrap-put-on' does: an empty
+              ;; place has one position for both halves, and an opener
+              ;; put there first would be followed by the closer put
+              ;; before it.
+              (let ((beg (overlay-start place))
+                    (end (overlay-end place)))
+		(goto-char end)
+		(insert closer)
+		(goto-char beg)
+		(insert opener)
+		(move-overlay place (1+ beg) (1+ end)))))))
+      (when donkey--split-cursors
+	(donkey--split-cursors-adopt))
+      (setq donkey--split-did (if off 'unwrapped 'wrapped)
+            donkey--split-text
+            (and donkey--split-primary
+		 (donkey--split-place-text donkey--split-primary)))
+      (donkey--repaint-hint (donkey--split-hint)))))
 
 (defun donkey-split-wrap-key ()
   "Wrap every place in the split in the delimiter just pressed.
@@ -6967,7 +6986,8 @@ typo; see `donkey--split-inert-commands'.")
     donkey-split-cursors-indent donkey-split-cursors-comment
     donkey-split-cursors-undo donkey-split-cursors-redo
     donkey-split-cursors-upcase donkey-split-cursors-downcase
-    donkey-split-cursors-capitalize donkey-split-cursors-append)
+    donkey-split-cursors-capitalize donkey-split-cursors-append
+    donkey-split-drop-cursor)
   "The commands that keep Split mode armed.")
 
 (defun donkey--split-answers-p ()
@@ -7020,7 +7040,8 @@ it."
       (and (eq (current-buffer) donkey--split-buffer)
            (or (memq this-command donkey--split-commands)
                (and donkey--split-cursors
-                    (memq this-command '(donkey-split donkey-split-add-cursor)))
+                    (memq this-command '(donkey-split donkey-split-add-cursor
+                                         donkey-split-add-cursor-above)))
                (null this-command)
                (memq this-command donkey--split-inert-commands)
                (memq this-command donkey--split-view-commands)
@@ -7153,6 +7174,7 @@ the split and does its ordinary job, except the ones
     (donkey-redo . donkey-split-cursors-redo)
     (donkey-wrap-region . donkey-split-wrap-key)
     (donkey-split-add-cursor . donkey-split-add-cursor)
+    (donkey-split-add-cursor-above . donkey-split-add-cursor-above)
     (donkey-split . donkey-split))
   "Each Normal state command a split of cursors answers, and what answers it.
 
@@ -7395,22 +7417,24 @@ no two cursors ever share one.  Point goes to the real cursor."
                                         donkey--split-places)))))
   (donkey--split-draw-cursors))
 
-(defun donkey--split-cursor-spots (from column n)
-  "Return the N positions at COLUMN on the lines below FROM, top first.
+(defun donkey--split-cursor-spots (from column n &optional above)
+  "Return the N positions at COLUMN on the lines below FROM, nearest first.
 
-A line shorter than COLUMN gives its end.  Signals a `user-error',
-changing nothing, where there are not N lines below; the empty line
-after a buffer\\='s final newline is not one."
+On the lines ABOVE it where ABOVE is non-nil.  A line shorter than
+COLUMN gives its end.  Signals a `user-error', changing nothing, where
+there are not N lines that way; the empty line after a buffer\\='s final
+newline is not one."
   (save-excursion
     (goto-char from)
-    (let ((spots nil))
+    (let ((spots nil)
+          (way (if above "above" "below")))
       (dotimes (_ n)
-        (unless (and (zerop (forward-line 1))
-                     (not (and (eobp) (bolp))))
+        (unless (and (zerop (forward-line (if above -1 1)))
+                     (not (and (not above) (eobp) (bolp))))
           (user-error (if spots
-                          (format "Only %d line%s below" (length spots)
-                                  (if (cdr spots) "s" ""))
-                        "No line below")))
+                          (format "Only %d line%s %s" (length spots)
+                                  (if (cdr spots) "s" "") way)
+                        (format "No line %s" way))))
         (move-to-column column)
         (push (point) spots))
       (nreverse spots))))
@@ -7477,6 +7501,8 @@ split\\='s there."
         (dolist (keys (donkey--split-cursor-keys command
                                                  donkey-normal-mode-map))
           (put keys nil #'donkey-split-cursors-run-refuse)))
+      (dolist (key '("DEL" "<backspace>"))
+        (put (kbd key) #'donkey-split-drop-cursor nil))
       (put (kbd "C-g") #'donkey-split-quit #'donkey-split-quit))
     table))
 
@@ -7515,13 +7541,78 @@ layer that is live falls through to Normal state."
     (define-key map [donkey-split-verbs] #'ignore)
     map))
 
+(defun donkey--split-cursors-start (column)
+  "Make a split of cursors holding one cursor, at point, aiming at COLUMN.
+
+Lets go of the selection first, a rectangle included."
+  (donkey--split-dissolve t)
+  (condition-case err
+      (progn
+        (when (bound-and-true-p rectangle-mark-mode)
+          (rectangle-mark-mode -1))
+        (deactivate-mark))
+    (error (message "DONKEY: letting go of the selection failed: %s"
+                    (error-message-string err))))
+  (let ((first (donkey--split-cursor-make (point))))
+    (setq donkey--split-places (list first)
+          donkey--split-primary first
+          donkey--split-cursors t
+          donkey--split-column column
+          donkey--split-scope "a column"
+          donkey--split-cursor-last nil
+          donkey--split-cursor-order nil
+          donkey--split-tick (buffer-chars-modified-tick)))
+  (donkey--split-arm (donkey--split-cursor-map)))
+
+(defun donkey--split-cursors-add (spots)
+  "Add a cursor at each of SPOTS, noting them for `donkey-split-drop-cursor'."
+  (dolist (spot spots)
+    (let ((place (donkey--split-cursor-make spot)))
+      (setq donkey--split-places (append donkey--split-places (list place)))
+      (push place donkey--split-cursor-order)))
+  (donkey--split-cursors-settle)
+  (message "%s" (donkey--split-hint)))
+
+(defun donkey--split-selected-lines ()
+  "Return the start of every line the active region covers, top first.
+
+A region ending at a line\\='s start does not take that line, as
+`donkey--whole-line-span' reads it, except in a whole-line selection
+made with `donkey-visual-line-toggle', which takes every line it
+touches.  Nil without an active region."
+  (when (region-active-p)
+    (let* ((beg (region-beginning))
+           (end (region-end))
+           (span (if (donkey--visual-line-session-active-p)
+                     (save-excursion
+                       (cons (progn (goto-char beg) (line-beginning-position))
+                             (progn (goto-char end)
+                                    (min (point-max)
+                                         (1+ (line-end-position))))))
+                   (donkey--whole-line-span beg end)))
+           (starts nil))
+      (save-excursion
+        (goto-char (car span))
+        (while (and (< (point) (cdr span))
+                    (not (and (eobp) (bolp) (> (point) (car span)))))
+          (push (point) starts)
+          (forward-line 1)
+          (when (and (eobp) (not (bolp)))
+            (goto-char (point-max)))))
+      (nreverse starts))))
+
 (defun donkey-split-add-cursor (&optional count)
   "Add a cursor on the line below the last cursor, at the same column.
 
 The first press makes a split of cursors: one at point and one on the
 line below.  Each press after adds one more below the last.  COUNT adds
 that many.  A line shorter than the column gets its cursor at its end.
-Nothing is added where there are not COUNT lines below.
+Nothing is added where there are not COUNT lines below.  With a
+selection over two lines or more, the first press puts a cursor on
+every line it covers instead, the real one staying on point\\='s line:
+at point\\='s column, or at each line\\='s start for a whole-line
+selection made with \\[donkey-visual-line-toggle].  \\[donkey-split-add-cursor-above] adds above, and
+\\[donkey-split-drop-cursor] takes back the cursor added last.
 
 Every cursor then does what the real one does, on the keys Normal state
 has for it: the motions and selections in
@@ -7537,35 +7628,84 @@ the selections, and with none ends the split."
   (interactive "p")
   (let* ((n (max 1 (or count 1)))
          (live (donkey--split-cursors-live-p))
+         (lines (and (not live) (donkey--split-selected-lines)))
+         (column (cond (live donkey--split-column)
+                       ((and (cdr lines)
+                             (donkey--visual-line-session-active-p))
+                        0)
+                       (t (current-column)))))
+    (if (cdr lines)
+        (let* ((here (progn
+                       ;; Not the empty line after the final newline,
+                       ;; which `donkey--split-cursor-spots' never takes.
+                       (when (and (eobp) (bolp) (not (bobp)))
+                         (forward-line -1))
+                       (line-beginning-position)))
+               (_ (move-to-column column))
+               (spots (delq nil
+                            (mapcar (lambda (start)
+                                      (unless (= start here)
+                                        (save-excursion
+                                          (goto-char start)
+                                          (move-to-column column)
+                                          (point))))
+                                    lines))))
+          (donkey--split-cursors-start column)
+          (donkey--split-cursors-add spots))
+      (let ((spots (donkey--split-cursor-spots
+                    (if live
+                        (donkey--split-cursor (car (last donkey--split-places)))
+                      (point))
+                    column n)))
+        (unless live
+          (donkey--split-cursors-start column))
+        (donkey--split-cursors-add spots)))))
+
+(defun donkey-split-add-cursor-above (&optional count)
+  "Add a cursor on the line above the first cursor, at the same column.
+
+The upward half of \\[donkey-split-add-cursor]: the first press makes a
+split of cursors, one at point and one on the line above, and each
+press after adds one more above the first.  COUNT adds that many.
+Nothing is added where there are not COUNT lines above."
+  (interactive "p")
+  (let* ((n (max 1 (or count 1)))
+         (live (donkey--split-cursors-live-p))
          (column (if live donkey--split-column (current-column)))
          (spots (donkey--split-cursor-spots
                  (if live
-                     (donkey--split-cursor (car (last donkey--split-places)))
+                     (donkey--split-cursor (car donkey--split-places))
                    (point))
-                 column n)))
+                 column n t)))
     (unless live
-      (donkey--split-dissolve t)
-      (condition-case err
-          (progn
-            (when (bound-and-true-p rectangle-mark-mode)
-              (rectangle-mark-mode -1))
-            (deactivate-mark))
-        (error (message "DONKEY: letting go of the selection failed: %s"
-                        (error-message-string err))))
-      (let ((first (donkey--split-cursor-make (point))))
-        (setq donkey--split-places (list first)
-              donkey--split-primary first
-              donkey--split-cursors t
-              donkey--split-column column
-              donkey--split-scope "a column"
-              donkey--split-cursor-last nil
-              donkey--split-tick (buffer-chars-modified-tick)))
-      (donkey--split-arm (donkey--split-cursor-map)))
-    (setq donkey--split-places
-          (append donkey--split-places
-                  (mapcar #'donkey--split-cursor-make spots)))
-    (donkey--split-cursors-settle)
-    (message "%s" (donkey--split-hint))))
+      (donkey--split-cursors-start column))
+    (donkey--split-cursors-add spots)))
+
+(defun donkey-split-drop-cursor ()
+  "Take back the cursor added last, keeping the others.
+
+The real cursor is never dropped: with only it left, the press beeps,
+and \\`C-g' ends the split."
+  (interactive)
+  (donkey--split-live-p)
+  (setq donkey--split-cursor-order
+        (seq-filter (lambda (place)
+                      (and (memq place donkey--split-places)
+                           (not (eq place donkey--split-primary))))
+                    donkey--split-cursor-order))
+  (let ((place (or (car donkey--split-cursor-order)
+                   (seq-find (lambda (place)
+                               (not (eq place donkey--split-primary)))
+                             (reverse donkey--split-places)))))
+    (if (not place)
+        (progn
+          (ding)
+          (message "Only the real cursor is left -- C-g ends the split"))
+      (setq donkey--split-cursor-order (delq place donkey--split-cursor-order)
+            donkey--split-places (delq place donkey--split-places))
+      (donkey--split-cursor-release place)
+      (delete-overlay place)
+      (donkey--split-cursors-settle))))
 
 (defun donkey--split-cursors-replay-at (place command arg &optional edit)
   "Run COMMAND with prefix ARG at PLACE\\='s cursor, as the real cursor would.
@@ -10383,6 +10523,18 @@ copying and pasting all happen at each of them.
    ---> eggs
    ---> bread
 
+With lines selected, \\[donkey-split-add-cursor] gives every one of them a cursor at once.
+\\[donkey-split-add-cursor-above] adds a cursor above instead of below, and \\`DEL' takes back
+the one added last.
+
+>> Put the cursor on the mercury line, press \\`V' \\`j' \\`j' to select
+   three lines, and \\[donkey-split-add-cursor].  Every line starts with a cursor.  Press
+   \\`i', type * and SPC, and \\`C-g' twice.
+
+   ---> mercury
+   ---> venus
+   ---> earth
+
 \\`C-g' in INSERT state brings you back to the cursors rather than ending
 them, so one set of cursors can do several things in turn.
 
@@ -10701,6 +10853,7 @@ are prefixes on a key of their own.")
 (keymap-set donkey-normal-mode-map "r q" #'query-replace)
 (keymap-set donkey-normal-mode-map "f" #'donkey-split)
 (keymap-set donkey-normal-mode-map "T" #'donkey-split-add-cursor)
+(keymap-set donkey-normal-mode-map "t" #'donkey-split-add-cursor-above)
 
 ;; Enter/Return Key (Context Aware)
 (keymap-set donkey-normal-mode-map "<enter>" #'donkey-enter-dwim)

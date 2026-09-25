@@ -1052,13 +1052,31 @@ this a verb elsewhere acts on nothing at all."
     (should (equal (buffer-string) "al\nga\nep\nlast\n"))
     (should (equal (car kill-ring) "pha beta\nmma delta\nsilon zeta"))))
 
-(ert-deftest donkey-split-cursors-wrap-at-every-cursor ()
-  "A delimiter puts its pair in at every cursor, the cursor inside it."
-  (donkey-split-test--keys "*cursors-wrap*" donkey-split-test--column
-      "l l T T ("
-    (should (equal (buffer-string)
-                   "al()pha beta\nga()mma delta\nep()silon zeta\nlast\n"))
-    (should (equal (donkey-split-test--cursors) '(4 17 31)))))
+(ert-deftest donkey-split-cursors-wrap-only-what-is-selected ()
+  "A delimiter wraps each cursor's selection, and nothing where none is."
+  (dolist (case '(("l l T T v l ("
+                   "al(p)ha beta\nga(m)ma delta\nep(s)ilon zeta\nlast\n")
+                  ("l l T T v l ( ("
+                   "alpha beta\ngamma delta\nepsilon zeta\nlast\n")
+                  ("T T V ("
+                   "(alpha beta)\n(gamma delta)\n(epsilon zeta)\nlast\n")))
+    (donkey-split-test--keys "*cursors-wrap*" donkey-split-test--column
+        (car case)
+      (should (equal (list (car case) (buffer-string)) case))
+      (should (= (length donkey--split-places) 3))))
+  (donkey-split-test--keys "*cursors-wrap-none*" donkey-split-test--column
+      "l l T T"
+    (condition-case nil (execute-kbd-macro (kbd "(")) (error nil))
+    (should (equal (buffer-string) donkey-split-test--column))
+    (should (= (length donkey--split-places) 3))))
+
+(ert-deftest donkey-split-cursors-wrap-a-selecting-cursor-and-leave-the-rest ()
+  "Among the cursors, only one holding a selection is wrapped."
+  (donkey-split-test--keys "*cursors-wrap-some*" "ab\ncd\n" "T v l"
+    (donkey--split-cursor-set (cadr donkey--split-places) 4 nil nil nil)
+    (donkey--split-cursors-settle)
+    (execute-kbd-macro (kbd "("))
+    (should (equal (buffer-string) "(a)b\ncd\n"))))
 
 (ert-deftest donkey-split-f-from-cursors-searches-their-lines ()
   "`f' searches the cursors' lines only, and finding nothing keeps them."
@@ -1152,6 +1170,9 @@ minibuffer as text, and every cursor's line is searched."
   (donkey-split-test--keys "*cursors-tutor-2*" "ada\nalan\ngrace\n"
       "T T m w y A SPC = SPC C-g p C-g"
     (should (equal (buffer-string) "ada = ada\nalan = alan\ngrace = grace\n")))
+  (donkey-split-test--keys "*cursors-tutor-V*" "mercury\nvenus\nearth\n"
+      "V j j T i * SPC C-g C-g"
+    (should (equal (buffer-string) "* mercury\n* venus\n* earth\n")))
   (donkey-split-test--keys "*cursors-tutor-M*"
       "old red apple\nold green pear\nold blue plum\n"
       "T T M w c f r e s h C-g C-g"
@@ -1458,6 +1479,68 @@ minibuffer as text, and every cursor's line is searched."
         (car case)
       (should (equal (list (car case) (buffer-string)) case))
       (should (= (length donkey--split-places) 3)))))
+
+(defconst donkey-split-test--five
+  "alpha beta\ngamma delta\nepsilon zeta\nlast one\nfinal\n"
+  "Five lines for making cursors from a selection.")
+
+(ert-deftest donkey-split-T-puts-a-cursor-on-every-selected-line ()
+  "`T' over a selection of lines gives each line a cursor, the real one at point."
+  (dolist (case '(("V j j T" (1 12 24) 24)
+                  ("l l V j j T" (1 12 24) 24)
+                  ("j j l l V k k T" (1 12 24) 1)
+                  ("v j j l T" (2 13 25) 25)
+                  ("l l m v j j T" (4 15 27) 27)
+                  ("g g V G T" (1 12 24 37 46) 46)))
+    (donkey-split-test--keys "*cursors-from-selection*" donkey-split-test--five
+        (car case)
+      (should (equal (list (car case) (donkey-split-test--cursors)
+                           (donkey--split-cursor donkey--split-primary))
+                     case))
+      (should-not (region-active-p))
+      (should (equal (buffer-string) donkey-split-test--five)))))
+
+(ert-deftest donkey-split-T-on-a-selection-within-one-line-adds-below ()
+  "A selection inside one line is let go of, and `T' adds below as usual."
+  (donkey-split-test--keys "*cursors-one-line-sel*" donkey-split-test--five
+      "v l l T"
+    (should (equal (donkey-split-test--cursors) '(3 14)))))
+
+(ert-deftest donkey-split-t-adds-a-cursor-above ()
+  "`donkey-split-add-cursor-above' adds above the first; a count, that many."
+  (dolist (case '(("j j t" (12 24)) ("j j t t" (1 12 24))
+                  ("j j C-u 2 t" (1 12 24)) ("j j T t" (12 24 37))))
+    (donkey-split-test--keys "*cursors-above*" donkey-split-test--five
+        (car case)
+      (should (equal (list (car case) (donkey-split-test--cursors)) case))
+      (should (= (donkey--split-cursor donkey--split-primary) 24)))))
+
+(ert-deftest donkey-split-t-with-no-line-above-changes-nothing ()
+  "Adding above the first line refuses, and the cursors stay as they were."
+  (donkey-split-test--keys "*cursors-above-none*" donkey-split-test--five "j t"
+    (should (equal (should-error (execute-kbd-macro (kbd "t"))
+                                 :type 'user-error)
+                   '(user-error "No line above")))
+    (should (equal (donkey-split-test--cursors) '(1 12)))))
+
+(ert-deftest donkey-split-DEL-drops-the-cursor-added-last ()
+  "`DEL' takes back the newest cursor and never the real one."
+  (dolist (case '(("T T DEL" (1 12)) ("T T T DEL DEL" (1 12))
+                  ("j j t T DEL" (12 24)) ("l l V j j T DEL DEL" (24))))
+    (donkey-split-test--keys "*cursors-drop*" donkey-split-test--five
+        (car case)
+      (should (equal (list (car case) (donkey-split-test--cursors)) case))))
+  (dolist (keys '("T DEL" "l l V j j T V d"))
+    (donkey-split-test--keys "*cursors-drop-last*" donkey-split-test--five keys
+      (should (= (length donkey--split-places) 1))
+      (condition-case nil (execute-kbd-macro (kbd "DEL")) (error nil))
+      (should (equal (list keys (length donkey--split-places)) (list keys 1)))
+      (should donkey--split-cursors))))
+
+(ert-deftest donkey-split-add-cursor-above-is-bound-to-t-in-normal-state ()
+  "The key the README names reaches the command."
+  (should (eq (keymap-lookup donkey-normal-mode-map "t")
+              #'donkey-split-add-cursor-above)))
 
 (ert-deftest donkey-split-add-cursor-is-bound-to-T-in-normal-state ()
   "The key the README names reaches the command."

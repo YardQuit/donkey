@@ -854,8 +854,14 @@ is for; this is not one.
 
 =T= (=donkey-split-add-cursor=) puts a second cursor on the line below,
 at the same column; each =T= after adds one more below the last, and a
-count adds that many. A line shorter than the column gets its cursor
-at its end. The other cursors are drawn in the real cursor's shape,
+count adds that many. =t= (=donkey-split-add-cursor-above=) adds above
+instead, and =DEL= takes back the cursor added last. A line shorter than the column gets its cursor at
+its end.
+
+With lines selected, =T= puts a cursor on every one of them at once:
+=V j j j j T= gives five cursors, each at its line's start, and a =v=
+selection or an =m v= block gives each line a cursor at point's column.
+The real cursor stays on point's line. The other cursors are drawn in the real cursor's shape,
 a box or a bar as the state changes, and always in the text's own
 color rather than the real cursor's; a background given to the face
 =donkey-split-cursor-face= is used instead. Every cursor then does
@@ -869,8 +875,9 @@ what the real one does:
 | =m w=, =m s=, =m i=, and the other =m= | select that object                     |
 | =i= =a= =I= =A= =c=                    | type; =C-g= comes back to the cursors  |
 | =d= =x=, =D=, =y=, =p=                 | delete, kill, copy, paste              |
-| a pair                                 | wrap, or put the pair in               |
+| a pair                                 | wrap each selection, as in Normal      |
 | =M=, then =w= =b= =s= =h= =l= =g h=    | a mark run at every cursor             |
+| =T= =t=, =DEL=                         | add a cursor below, above; drop one    |
 | =m l=, =m u=                           | bank or unbank each cursor's line      |
 | =M-u= =M-l= =M-c=                      | case of each selection, or the word    |
 | =o= =O=                                | open a line at each cursor and type    |
