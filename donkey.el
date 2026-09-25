@@ -6632,12 +6632,16 @@ holds no capital letter, unless `search-upper-case' says otherwise."
     (nreverse spans)))
 
 (defun donkey--split-place-at-point ()
-  "Return the place point is in, or nil."
-  (seq-find (lambda (place)
-              (and (overlay-buffer place)
-                   (>= (point) (overlay-start place))
-                   (<= (point) (overlay-end place))))
-            donkey--split-places))
+  "Return the place point is in, or nil.
+
+Asked of the overlays around point rather than of the list of places,
+so the answer costs the same however many places the split holds."
+  (let ((pos (point)))
+    (seq-find (lambda (overlay)
+                (and (overlay-get overlay 'donkey-split)
+                     (<= (overlay-start overlay) pos (overlay-end overlay))))
+              (overlays-in (max (point-min) (1- pos))
+                           (min (point-max) (1+ pos))))))
 
 (defun donkey--split-places-phrase (n)
   "Return N written as a count of places, or of cursors in a split of cursors."
@@ -6784,9 +6788,13 @@ place cannot be written."
             (atomic-change-group
               (save-excursion
                 (donkey--split-copy-text here old new)
-                (unless (and (donkey--split-copy-edges here edge-edits)
-                             (not (donkey--split-touching-p)))
-                  (throw 'donkey--split-unlike nil))))
+                ;; Only a deletion past a place's edge can close the
+                ;; gap between two places: a copy inside a place moves
+                ;; its neighbors along with it.
+                (when edge-edits
+                  (unless (and (donkey--split-copy-edges here edge-edits)
+                               (not (donkey--split-touching-p)))
+                    (throw 'donkey--split-unlike nil)))))
             t)))))
 
 (defun donkey--split-copy-text (here old new)
