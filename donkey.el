@@ -6376,11 +6376,13 @@ place is rewritten whole."
          (prefix (if (eq same t)
                      (min old-length new-length)
                    (1- (abs same))))
-         (suffix 0))
-    (while (and (< suffix (- (min old-length new-length) prefix))
-                (eq (aref old (- old-length suffix 1))
-                    (aref new (- new-length suffix 1))))
-      (setq suffix (1+ suffix)))
+         ;; The shared end, compared from the back the way the front
+         ;; was: `aref' on a multibyte string walks from the string's
+         ;; nearest end for every index, so a loop over two of them at
+         ;; once is quadratic in the length of the place.
+         (room (- (min old-length new-length) prefix))
+         (back (compare-strings (reverse old) 0 room (reverse new) 0 room))
+         (suffix (if (eq back t) room (1- (abs back)))))
     (let ((middle (substring new prefix (- new-length suffix))))
       (dolist (place donkey--split-places)
         (when (and (not (eq place here))
