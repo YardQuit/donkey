@@ -6298,6 +6298,9 @@ another terminal.  Called by the mode as it arms again here."
 (defvar-local donkey--split-places nil
   "The overlays a live split is holding in this buffer, in buffer order.")
 
+(put 'donkey-split-place 'face 'donkey-split-face)
+(put 'donkey-split-place 'donkey-split t)
+
 (defvar-local donkey--split-primary nil
   "The place point is in, whose text the others follow.")
 
@@ -6410,6 +6413,13 @@ command by `donkey--split-sync'.")
 About ten milliseconds of copying.  Every place a window can show is
 written first, whatever the count; see `donkey--split-copy'.")
 
+(defconst donkey--split-place-category 'donkey-split-place
+  "The `category' of every place a split holds.
+
+The symbol carries the face and the donkey-split property every place
+has, so making a place costs one `overlay-put' rather than two, which
+at 850,000 places is a tenth of a second.")
+
 (defvar donkey--split-text-buffer nil
   "A hidden buffer holding the target\\='s texts, for comparing places against.
 
@@ -6502,6 +6512,12 @@ keystroke cost as much as the cursors squared.")
 
 (defvar-local donkey--split-cursor-marks nil
   "The overlays drawing every cursor of the split but the real one.")
+
+(defvar-local donkey--split-cursors-selecting nil
+  "Non-nil where some cursor of the split holds a selection.
+
+Found once by `donkey--split-cursors-settle' for the reminder, rather
+than by a walk of every cursor at every key.")
 
 (defvar-local donkey--split-run-history nil
   "The steps of the cursors\\=' run, newest first, for \\[undo] to take back.
@@ -6658,14 +6674,31 @@ is quit leaves the selection, and a split of cursors, as they were."
             (mapcar (lambda (span)
                       (let ((place (make-overlay (car span) (cdr span)
                                                  nil nil t)))
-                        (overlay-put place 'face 'donkey-split-face)
-                        (overlay-put place 'donkey-split t)
+                        (overlay-put place 'category
+                                     donkey--split-place-category)
                         place))
                     spans))
       (setq donkey--split-agree
-            (null (cdr (delete-dups (mapcar #'donkey--split-place-text
-                                            donkey--split-places))))))
+            (donkey--split-places-agree-p donkey--split-places)))
     (length spans)))
+
+(defun donkey--split-places-agree-p (places)
+  "Return non-nil where every one of PLACES has the text the first has.
+
+Compared in the buffer, so no place\\='s text is copied: at 850,000
+places the copies were a third of what \\[donkey-split] cost."
+  (let* ((first (car places))
+         (beg (overlay-start first))
+         (end (overlay-end first))
+         (length (- end beg))
+         (case-fold-search nil))
+    (seq-every-p (lambda (place)
+                   (let ((start (overlay-start place)))
+                     (and (= (- (overlay-end place) start) length)
+                          (or (zerop length)
+                              (eq 0 (compare-buffer-substrings
+                                     nil beg end nil start (+ start length)))))))
+                 (cdr places))))
 
 (defun donkey--split-search (regexp ranges)
   "Return every REGEXP match inside RANGES as (BEG . END), in buffer order.
@@ -6752,10 +6785,7 @@ adjust, . again, u U step, M or C-g ends"
       (format "Split: %s%s -- %s add, DEL drop, = line up, v V m M select, \
 i a I A o O c d y p D, f find, C-g"
               (donkey--split-places-phrase n)
-              (if (seq-some #'donkey--split-cursor-selecting-p
-                            donkey--split-places)
-                  " selecting"
-                "")
+              (if donkey--split-cursors-selecting " selecting" "")
               (substitute-command-keys
                "\\<donkey-normal-mode-map>\\[donkey-split-add-cursor] \
 \\[donkey-split-add-cursor-above]")))
@@ -7709,7 +7739,8 @@ the current one, so both are cleared."
               donkey--split-repeat nil
               donkey--split-cursor-order nil
               donkey--split-column nil
-              donkey--split-cursor-marks nil)
+              donkey--split-cursor-marks nil
+              donkey--split-cursors-selecting nil)
         (remove-hook 'post-command-hook #'donkey--split-sync t)
         (remove-hook 'kill-buffer-hook #'donkey--split-flush t)
         (remove-hook 'change-major-mode-hook #'donkey--split-flush t)
@@ -7777,6 +7808,16 @@ refused either; see `donkey--insertion-read-only-p'."
                  (donkey--insertion-read-only-p
                   (if (eq edge 'start) beg end)))))))
 
+(defun donkey--split-place-texts ()
+  "Return the text of every place, one string for each in buffer order.
+
+Where the places agree the one string is shared, so a verb over
+850,000 agreeing places copies one text rather than 850,000."
+  (if donkey--split-agree
+      (make-list (length donkey--split-places)
+                 (donkey--split-place-text (car donkey--split-places)))
+    (mapcar #'donkey--split-place-text donkey--split-places)))
+
 (defun donkey--split-kill-text (&optional texts)
   "Return what `c' and `d' put on the `kill-ring', or nil for nothing.
 
@@ -7803,9 +7844,16 @@ copied.  Refuses, changing nothing, where the buffer or a place cannot
 be written."
   (donkey--split-live-p)
   (barf-if-buffer-read-only)
-  (unless (seq-every-p (lambda (place)
-                         (donkey--split-writable-p place where))
-                       donkey--split-places)
+  ;; A buffer with no read-only text anywhere, the common case, is
+  ;; known writable from one scan of its properties; asking every
+  ;; place was a third of what i cost at 850,000 places.
+  (unless (or inhibit-read-only
+              (and (not (buffer-narrowed-p))
+                   (not (text-property-not-all (point-min) (point-max)
+                                               'read-only nil)))
+              (seq-every-p (lambda (place)
+                             (donkey--split-writable-p place where))
+                           donkey--split-places))
     (user-error "A place is read-only"))
   (unless (or clear donkey--split-agree)
     (dolist (place donkey--split-places)
@@ -7814,7 +7862,7 @@ be written."
                     (overlay-end place))))
         (move-overlay place edge edge))))
   (when clear
-    (let* ((texts (mapcar #'donkey--split-place-text donkey--split-places))
+    (let* ((texts (donkey--split-place-texts))
            (kill (donkey--split-kill-text texts))
            (head buffer-undo-list)
            (ops nil))
@@ -7902,7 +7950,7 @@ is one undo entry whatever the number of places; see
 Bound to \\`d' inside `donkey-split-mode-map'."
   (interactive)
   (donkey--split-live-p)
-  (let* ((texts (mapcar #'donkey--split-place-text donkey--split-places))
+  (let* ((texts (donkey--split-place-texts))
          (kill (donkey--split-kill-text texts))
          (head buffer-undo-list)
          (ops nil))
@@ -8333,8 +8381,7 @@ cursors by `donkey-split-cursors-run-refuse'.")
 (defun donkey--split-cursor-make (pos)
   "Return a new place with its cursor at POS and nothing selected."
   (let ((place (make-overlay pos pos nil nil t)))
-    (overlay-put place 'face 'donkey-split-face)
-    (overlay-put place 'donkey-split t)
+    (overlay-put place 'category donkey--split-place-category)
     place))
 
 (defun donkey--split-cursor-release (place)
@@ -8519,29 +8566,52 @@ Cursors that came to share a line are merged into the first of them, so
 no two cursors ever share one.  Point goes to the real cursor."
   (let ((kept nil)
         (line nil))
-    (dolist (place (sort (copy-sequence donkey--split-places)
-                         (lambda (a b)
-                           (< (donkey--split-cursor a)
-                              (donkey--split-cursor b)))))
-      (let ((this (car (donkey--split-cursor-line place))))
-        (if (eql this line)
-            (progn
-              (when (eq place donkey--split-primary)
-                (setq donkey--split-primary (car kept)))
-              (donkey--split-cursor-release place)
-              (delete-overlay place))
-          (setq line this)
-          (push place kept))))
+    ;; One excursion for the walk: point goes to the real cursor at the
+    ;; end, so saving it for every place was waste.
+    (save-excursion
+      (dolist (place (donkey--split-cursors-in-order))
+        (goto-char (donkey--split-cursor place))
+        (let ((this (line-beginning-position)))
+          (if (eql this line)
+              (progn
+                (when (eq place donkey--split-primary)
+                  (setq donkey--split-primary (car kept)))
+                (donkey--split-cursor-release place)
+                (delete-overlay place))
+            (setq line this)
+            (push place kept)))))
     (setq donkey--split-places (nreverse kept)))
   (mapc #'donkey--split-cursor-refit donkey--split-places)
   (unless (memq donkey--split-primary donkey--split-places)
     (setq donkey--split-primary (car donkey--split-places)))
   (goto-char (donkey--split-cursor donkey--split-primary))
   (setq donkey--split-text (donkey--split-place-text donkey--split-primary)
-        donkey--split-agree
-        (null (cdr (delete-dups (mapcar #'donkey--split-place-text
-                                        donkey--split-places)))))
+        donkey--split-agree (donkey--split-places-agree-p donkey--split-places)
+        donkey--split-cursors-selecting
+        (and (seq-some #'donkey--split-cursor-selecting-p donkey--split-places)
+             t))
   (donkey--split-draw-cursors))
+
+(defun donkey--split-cursors-in-order ()
+  "Return the places by their cursors\\=' positions.
+
+The places are kept in buffer order and a cursor never leaves its
+line, so they are in order already almost every time, and are only
+sorted where a walk finds one out of place."
+  (let ((last -1)
+        (ordered t))
+    (dolist (place donkey--split-places)
+      (let ((pos (donkey--split-cursor place)))
+        (when (< pos last)
+          (setq ordered nil))
+        (setq last pos)))
+    (if ordered
+        donkey--split-places
+      (mapcar #'cdr
+              (sort (mapcar (lambda (place)
+                              (cons (donkey--split-cursor place) place))
+                            donkey--split-places)
+                    #'car-less-than-car)))))
 
 (defun donkey--split-cursor-spots (from column n &optional above)
   "Return the N positions at COLUMN on the lines below FROM, nearest first.
@@ -8953,11 +9023,11 @@ EDIT non-nil says COMMAND changes text: the cursor is left where
 COMMAND leaves it and lets go of its selection.  EDIT `line' runs
 COMMAND with the buffer narrowed to the cursor\\='s line, for a command
 that would otherwise reach the next one."
-  (let* ((line (donkey--split-cursor-line place))
+  (goto-char (donkey--split-cursor place))
+  (let* ((line (cons (line-beginning-position) (line-end-position)))
          (clamp (lambda (pos) (max (car line) (min (cdr line) pos))))
          (anchor (donkey--split-cursor-anchor place))
          (memory (overlay-get place 'donkey-memory)))
-    (goto-char (donkey--split-cursor place))
     (set-marker (mark-marker) anchor)
     (setq mark-active (and anchor t))
     ;; An edit acts on a whole-line selection as on the region it is,

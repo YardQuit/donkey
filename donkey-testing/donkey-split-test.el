@@ -2126,6 +2126,80 @@ compared by their text, not by their size."
     (should (equal (buffer-string)
                    "alpha\nz\ngamma\nz\nepsilon\nz\nlast\n"))))
 
+(ert-deftest donkey-split-opening-lines-at-many-cursors-is-not-quadratic ()
+  "Opening lines at ten times the cursors costs about ten times, not a hundred.
+
+In `emacs-lisp-mode', whose indentation asks the syntax cache: opened
+from the bottom up, every line was parsed from far back."
+  (let ((times nil))
+    (dolist (n '(100 1000))
+      (donkey-test-keys--harness "*cursors-open-scale*" #'emacs-lisp-mode
+          ((donkey-split-cursor-limit nil))
+          (mapconcat (lambda (i) (format "(setq variable-%d (list %d))" i i))
+                     (number-sequence 1 (1+ n)) "\n")
+          (format "C-u %d t" n)
+        (garbage-collect)
+        (let ((t0 (float-time))
+              (gc0 gc-elapsed))
+          (execute-kbd-macro (kbd "o"))
+          (push (- (- (float-time) t0) (- gc-elapsed gc0)) times))))
+    (let ((ratio (/ (car times) (max 1e-6 (cadr times)))))
+      (should (< ratio 25)))))
+
+(ert-deftest donkey-split-a-place-answers-for-its-face-and-its-mark ()
+  "A place carries the split's face and its mark through its category."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-category*" "a foo b\nc foo d\n" "v G f"
+      (dolist (place donkey--split-places)
+        (should (eq (overlay-get place 'face) 'donkey-split-face))
+        (should (overlay-get place 'donkey-split)))))
+  (donkey-split-test--keys "*cursors-category*" donkey-split-test--column "t t"
+    (dolist (place donkey--split-places)
+      (should (eq (overlay-get place 'face) 'donkey-split-face))
+      (should (overlay-get place 'donkey-split)))))
+
+(ert-deftest donkey-split-cursors-settle-into-order-after-an-undo-moved-them ()
+  "Cursors that came out of order are put back in order, and merged where they share a line."
+  (donkey-split-test--keys "*cursors-order*" donkey-split-test--column "t t"
+    ;; Move the first cursor below the second by hand, as an undo of
+    ;; text before them could.
+    (let ((first (car donkey--split-places))
+          (third (nth 2 donkey--split-places)))
+      (move-overlay first (overlay-start third) (overlay-start third))
+      (donkey--split-cursors-settle)
+      (should (= (length donkey--split-places) 2))
+      (should (equal (donkey-split-test--cursors)
+                     (sort (donkey-split-test--cursors) #'<))))))
+
+(ert-deftest donkey-split-i-asks-every-place-only-where-some-text-is-read-only ()
+  "A buffer with no read-only text opens Insert state without asking each place."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-i-fast*" "a foo b\nc foo d\n" "v G f"
+      (let ((asked 0))
+        (cl-letf (((symbol-function 'donkey--split-writable-p)
+                   (lambda (&rest _) (setq asked (1+ asked)) t)))
+          (execute-kbd-macro (kbd "i")))
+        (should (= asked 0)))))
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-i-asks*" "a foo b\nc foo d\n" "v G f"
+      (let ((inhibit-read-only t))
+        (put-text-property 1 2 'read-only t))
+      (let ((asked 0))
+        (cl-letf (((symbol-function 'donkey--split-writable-p)
+                   (lambda (&rest _) (setq asked (1+ asked)) t)))
+          (execute-kbd-macro (kbd "i")))
+        (should (= asked 2)))
+      (let ((inhibit-read-only t))
+        (remove-text-properties (point-min) (point-max) '(read-only nil))))))
+
+(ert-deftest donkey-split-cursors-reminder-says-when-one-is-selecting ()
+  "The reminder says selecting while a cursor holds a selection, and not after."
+  (donkey-split-test--keys "*cursors-reminder*" donkey-split-test--column "t t m w"
+    (should (string-match-p "selecting" (donkey--split-hint)))
+    (execute-kbd-macro (kbd "C-g"))
+    (should (= (length donkey--split-places) 3))
+    (should-not (string-match-p "selecting" (donkey--split-hint)))))
+
 (defvar donkey-split-test--changes nil
   "Every change seen by `donkey-split-test--note-change', newest last.")
 
