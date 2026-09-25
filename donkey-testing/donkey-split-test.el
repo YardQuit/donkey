@@ -970,6 +970,19 @@ this a verb elsewhere acts on nothing at all."
     (should (bound-and-true-p donkey-normal-mode))
     (should (equal (donkey-split-test--cursors) '(4 16 29)))))
 
+(ert-deftest donkey-split-cursors-type-after-the-character-with-a ()
+  "`a' types after the character under each cursor, `i' before it."
+  (dolist (case '(("T T a X C-g"
+                   "aXlpha beta\ngXamma delta\neXpsilon zeta\nlast\n")
+                  ("T T i X C-g"
+                   "Xalpha beta\nXgamma delta\nXepsilon zeta\nlast\n")
+                  ("T T g l a X C-g"
+                   "alpha betaX\ngamma deltaX\nepsilon zetaX\nlast\n")
+                  ("T T v w a X C-g"
+                   "alphaX beta\ngammaX delta\nepsilonX zeta\nlast\n")))
+    (donkey-split-test--keys "*cursors-a*" donkey-split-test--column (car case)
+      (should (equal (list (car case) (buffer-string)) case)))))
+
 (ert-deftest donkey-split-cursors-type-at-line-ends-and-starts ()
   "`A' and `I' type at every cursor's line end and line start."
   (dolist (case '(("T T A ; C-g"
@@ -1330,6 +1343,121 @@ minibuffer as text, and every cursor's line is searched."
     (should (equal (donkey-split-test--texts)
                    '("one two three four" "five six seven eight"
                      "nine ten eleven")))))
+
+(ert-deftest donkey-split-cursors-change-case-at-every-cursor ()
+  "`M-u', `M-l' and `M-c' act on each selection, or the word at each cursor."
+  (dolist (case '(("T T M-u" "ALPHA beta\nGAMMA delta\nEPSILON zeta\nlast\n")
+                  ("T T M-c" "Alpha beta\nGamma delta\nEpsilon zeta\nlast\n")
+                  ("T T C-u 2 M-u"
+                   "ALPHA BETA\nGAMMA DELTA\nEPSILON ZETA\nlast\n")
+                  ("T T v w M-u" "ALPHA beta\nGAMMA delta\nEPSILON zeta\nlast\n")
+                  ("T T V M-u" "ALPHA BETA\nGAMMA DELTA\nEPSILON ZETA\nlast\n")
+                  ("T T M-u M-b M-l"
+                   "alpha beta\nGAMMA delta\nEPSILON zeta\nlast\n")))
+    (donkey-split-test--keys "*cursors-case*" donkey-split-test--column
+        (car case)
+      (should (equal (list (car case) (buffer-string)) case)))))
+
+(ert-deftest donkey-split-cursors-answer-a-case-key-the-reader-bound ()
+  "A key the reader gave `upcase-region' in Normal state works at the cursors."
+  (let ((was (keymap-lookup donkey-leader-map "U")))
+    (unwind-protect
+        (progn
+          (keymap-set donkey-leader-map "U" #'upcase-region)
+          (donkey-split-test--keys "*cursors-case-leader*"
+              donkey-split-test--column "T T SPC U"
+            (should (equal (buffer-string)
+                           "ALPHA beta\nGAMMA delta\nEPSILON zeta\nlast\n"))
+            (should (= (length donkey--split-places) 3))))
+      (if was
+          (keymap-set donkey-leader-map "U" was)
+        (keymap-unset donkey-leader-map "U" t)))))
+
+(ert-deftest donkey-split-cursors-change-case-without-leaving-the-line ()
+  "At a line's end there is no word to change, and the next line is untouched."
+  (donkey-split-test--keys "*cursors-case-eol*" donkey-split-test--column
+      "T T g l M-u"
+    (should (equal (buffer-string) donkey-split-test--column))))
+
+(ert-deftest donkey-split-cursors-keep-their-place-through-a-line-edit ()
+  "An edit over a whole-line selection leaves every cursor where it was."
+  (donkey-split-test--keys "*cursors-case-V*" "ab cd\nef gh\n" "l l l T V M-u"
+    (should (equal (buffer-string) "AB CD\nEF GH\n"))
+    (should (equal (donkey-split-test--cursors) '(4 10)))))
+
+(ert-deftest donkey-split-cursors-repeat-their-last-command ()
+  "`.' runs the cursors' last command again at every cursor."
+  (dolist (case '(("l T T x ." "aha beta\ngma delta\neilon zeta\nlast\n")
+                  ("T T C-u 2 x ." "a beta\na delta\nlon zeta\nlast\n")
+                  ("T T M-u ." "ALPHA BETA\nGAMMA DELTA\nEPSILON ZETA\nlast\n")))
+    (donkey-split-test--keys "*cursors-repeat*" donkey-split-test--column
+        (car case)
+      (should (equal (list (car case) (buffer-string)) case))
+      (should (= (length donkey--split-places) 3))))
+  (donkey-split-test--keys "*cursors-repeat-w*" donkey-split-test--column
+      "T T w ."
+    (should (equal (donkey-split-test--cursors) '(11 23 36))))
+  (donkey-split-test--keys "*cursors-repeat-none*" donkey-split-test--column
+      "T T"
+    (condition-case nil (execute-kbd-macro (kbd ".")) (error nil))
+    (should (= (length donkey--split-places) 3))
+    (should (equal (buffer-string) donkey-split-test--column))))
+
+(ert-deftest donkey-split-cursors-undo-and-redo-keeping-the-cursors ()
+  "`u' takes an edit back at every cursor at once, `U' puts it back."
+  (dolist (case '(("l T T x u" nil) ("l T T x x u u" nil)
+                  ("l T T x u U" "apha beta\ngmma delta\nesilon zeta\nlast\n")))
+    (donkey-split-test--keys "*cursors-undo*" donkey-split-test--column
+        (car case)
+      (should (equal (list (car case) (buffer-string))
+                     (list (car case)
+                           (or (cadr case) donkey-split-test--column))))
+      (should (= (length donkey--split-places) 3)))))
+
+(ert-deftest donkey-split-cursors-stay-through-a-recenter ()
+  "`z z' and `C-l' move the view, not the cursors, and keep them."
+  (dolist (keys '("T T z z" "T T C-l"))
+    (donkey-split-test--keys "*cursors-recenter*" donkey-split-test--column keys
+      (should (equal (donkey-split-test--cursors) '(1 12 24))))))
+
+(ert-deftest donkey-split-cursors-indent-and-comment-their-lines ()
+  "`>' indents and `C' comments every cursor's line, `C' again uncomments."
+  (dolist (case '(("j T >" "(a\nb\nc)\n" "(a\n b\n c)\n")
+                  ("T T C" "(a)\n(b)\n(c)\n" ";; (a)\n;; (b)\n;; (c)\n")
+                  ("T T C C" "(a)\n(b)\n(c)\n" "(a)\n(b)\n(c)\n")))
+    (donkey-test-keys--harness "*cursors-lisp*" #'emacs-lisp-mode ()
+        (nth 1 case) (car case)
+      (should (equal (list (car case) (buffer-string))
+                     (list (car case) (nth 2 case)))))))
+
+(ert-deftest donkey-split-cursors-refuse-to-comment-in-an-org-source-block ()
+  "`C' at the cursors inside an Org source block refuses and changes nothing."
+  (let ((text "#+begin_src emacs-lisp\n(a)\n(b)\n#+end_src\n"))
+    (donkey-test-keys--harness "*cursors-org*" #'org-mode () text "j T"
+      (should (equal (should-error (execute-kbd-macro (kbd "C"))
+                                   :type 'user-error)
+                     '(user-error "Not at the cursors inside an Org source block")))
+      (should (equal (buffer-string) text))
+      (should (= (length donkey--split-places) 2)))))
+
+(ert-deftest donkey-split-cursors-take-back-an-edit-that-fails-at-one ()
+  "An edit that fails at one cursor is undone at the cursors before it."
+  (donkey-split-test--keys "*cursors-rollback*" "ab\ncd\n" "T"
+    (put-text-property 4 6 'read-only t)
+    (should-error (execute-kbd-macro (kbd "M-u")))
+    (should (equal (buffer-string) "ab\ncd\n"))
+    (should (equal (donkey-split-test--cursors) '(1 4)))))
+
+(ert-deftest donkey-split-cursors-open-lines-and-type-on-them ()
+  "`o' and `O' open a line at every cursor and type there, then come back."
+  (dolist (case '(("T T o X C-g"
+                   "alpha beta\nX\ngamma delta\nX\nepsilon zeta\nX\nlast\n")
+                  ("T T O X C-g"
+                   "X\nalpha beta\nX\ngamma delta\nX\nepsilon zeta\nlast\n")))
+    (donkey-split-test--keys "*cursors-open*" donkey-split-test--column
+        (car case)
+      (should (equal (list (car case) (buffer-string)) case))
+      (should (= (length donkey--split-places) 3)))))
 
 (ert-deftest donkey-split-add-cursor-is-bound-to-T-in-normal-state ()
   "The key the README names reaches the command."

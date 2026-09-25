@@ -872,8 +872,18 @@ what the real one does:
 | a pair                                 | wrap, or put the pair in               |
 | =M=, then =w= =b= =s= =h= =l= =g h=    | a mark run at every cursor             |
 | =m l=, =m u=                           | bank or unbank each cursor's line      |
+| =M-u= =M-l= =M-c=                      | case of each selection, or the word    |
+| =o= =O=                                | open a line at each cursor and type    |
+| =>= =C=                                | indent, comment each cursor's line     |
+| =.=                                    | the cursors' last command, again       |
+| =u= =U=                                | undo, redo — the cursors stay          |
 | =f=                                    | search each cursor's selection or line |
 | =C-g=                                  | let go of the selections, then end     |
+
+With nothing selected, =a= types after the character under each
+cursor and =i= before it, as they do with one cursor; a cursor at its
+line's end types there rather than on the next line. With a selection,
+=a= types after the whole of it.
 
 =d=, =D=, =y= and =p= keep the cursors. What they take reaches the kill
 ring as one kill, one line per cursor, and =p= gives each cursor its
@@ -887,6 +897,12 @@ adjust every selection at once — =M w d= takes two words from every
 line. The run's keys that would leave the line, =j= =k= =J= =K= =g g=
 =g e=, and its =u= and =U=, beep and keep the run. Any other key ends
 the run, and a key the cursors answer does its job at every cursor.
+
+The case keys are Emacs's own, and a key you gave =upcase-region= or
+=downcase-region= in Normal state works at the cursors too. An edit at
+the cursors is one change: =u= takes it back everywhere at once, and
+an edit that fails at one cursor is taken back at all of them. =z z=
+and =C-l= move the view and keep the cursors.
 
 Three limits keep the cursors out of each other's way. A cursor never
 leaves its own line: a motion that would cross stops at the line's
