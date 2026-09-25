@@ -775,7 +775,9 @@ for you to say what to do:
 | =w=, or a pair  | wrap every match, or take the pair off    |
 | =C-g=           | end it                                    |
 
-While you type, what you write appears at every match at once.
+A cursor is drawn at every match, in the shape and place of the real
+one, so you can see where each of them is. While you type, what you
+write appears at every match at once.
 Backspace, retype, keep going: it is ordinary INSERT state, and =C-g=
 ends it keeping what you typed, exactly as =C-g= does anywhere else.
 

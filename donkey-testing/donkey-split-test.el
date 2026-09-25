@@ -914,6 +914,38 @@ this a verb elsewhere acts on nothing at all."
                                (overlays-in (point-min) (point-max)))))))))
       (kill-buffer other))))
 
+(defun donkey-split-test--marks ()
+  "Return where the drawn cursors are, in buffer order."
+  (sort (mapcar #'overlay-start donkey--split-cursor-marks) #'<))
+
+(ert-deftest donkey-split-draws-a-cursor-at-every-match-but-the-real-one ()
+  "Choosing a verb, a cursor is drawn at the start of every other match."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-drawn*" "a foo b\nc foo d\ne foo f\n"
+        "v G f"
+      (should (= (point) 3))
+      (should (equal (donkey-split-test--marks) '(11 19))))))
+
+(ert-deftest donkey-split-draws-each-cursor-where-typing-lands ()
+  "While typing, each match shows a cursor as far in as the real one is."
+  (dolist (case '(("v G f i X" (13 22)) ("v G f a X" (16 25))))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-drawn-typing*"
+          "a foo b\nc foo d\ne foo f\n" (car case)
+        (should (equal (list (car case) (donkey-split-test--marks))
+                       case))))))
+
+(ert-deftest donkey-split-draws-no-cursor-once-it-ends ()
+  "Ending a split takes every drawn cursor with it."
+  (dolist (keys '("v G f C-g" "v G f i X C-g" "v G f d"))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-drawn-end*" "a foo b\nc foo d\n" keys
+        (should (null donkey--split-cursor-marks))
+        (should (null (seq-filter
+                       (lambda (o) (eq (overlay-get o 'face)
+                                       'donkey-split-cursor-face))
+                       (overlays-in (point-min) (point-max)))))))))
+
 (ert-deftest donkey-split-is-bound-to-f-in-normal-state ()
   "The key the README and the tutor name reaches the command."
   (should (eq (keymap-lookup donkey-normal-mode-map "f") #'donkey-split)))

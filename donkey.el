@@ -7707,18 +7707,19 @@ outline on a graphical frame and a box in a terminal."
     mark))
 
 (defun donkey--split-draw-cursors ()
-  "Draw every cursor of a split of cursors but the one point is.
+  "Draw a cursor at every place of the split but the one point is in.
 
+In a split of cursors each is drawn where its cursor is; in a split made
+with \\[donkey-split], at the start of each match, where \\`i' types.
 Each is drawn in the shape the real cursor has now, so it changes as
 the real one does between Normal and Insert state; see
-`donkey--split-cursor-mark'.  While choosing, each cursor is drawn
-where it is.  While writing, each is drawn as far into its place as
-point is into the place it writes.  Only the cursors a window could
+`donkey--split-cursor-mark'.  While writing, each is drawn as far into
+its place as point is into the place it writes.  Only the cursors a window could
 show are drawn, so drawing costs the same however many there are; see
 `donkey--split-draw-spans'."
   (mapc #'delete-overlay donkey--split-cursor-marks)
   (setq donkey--split-cursor-marks nil)
-  (when (and donkey--split-cursors donkey--split-primary
+  (when (and donkey--split-places donkey--split-primary
              (overlay-buffer donkey--split-primary))
     (let ((offset (and (eq donkey--split-phase 'edit)
                        (- (point) (overlay-start donkey--split-primary))))
