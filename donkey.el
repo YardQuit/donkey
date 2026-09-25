@@ -9549,14 +9549,19 @@ block, where that command edits the block in a buffer of its own."
 (defun donkey--split-cursors-open (above)
   "Open a line below every cursor\\='s line, or ABOVE it, and type there.
 
-The opening is one undo entry whatever the number of cursors, each
+Top down, so that the mode\\='s indentation of each new line parses on
+from where the line before left it; opened from the bottom up, every
+line was parsed from up to twenty thousand characters back.  The
+opening is one undo entry whatever the number of cursors, each
 cursor\\='s line recorded before and after."
   (donkey--split-live-p)
   (barf-if-buffer-read-only)
   (let ((head buffer-undo-list)
         (ops nil))
     (atomic-change-group
-      (dolist (place (reverse donkey--split-places))
+      ;; Each cursor is read from its overlay, which the lines opened
+      ;; above it have moved, so the order costs no bookkeeping.
+      (dolist (place donkey--split-places)
         (goto-char (donkey--split-cursor place))
         (let* ((start (line-beginning-position))
                (finish (min (point-max) (1+ (line-end-position))))
@@ -9575,7 +9580,7 @@ cursor\\='s line recorded before and after."
                        start (+ finish (- (buffer-size) size))))
                 ops)
           (donkey--split-cursor-set place (point) nil nil nil))))
-    (donkey--split-record-ops head (nreverse ops) t))
+    (donkey--split-record-ops head (nreverse ops)))
   (donkey--split-cursors-settle)
   (donkey--split-enter-edit nil 'start))
 

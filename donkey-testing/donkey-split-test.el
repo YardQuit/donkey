@@ -2126,6 +2126,29 @@ compared by their text, not by their size."
     (should (equal (buffer-string)
                    "alpha\nz\ngamma\nz\nepsilon\nz\nlast\n"))))
 
+(defvar donkey-split-test--changes nil
+  "Every change seen by `donkey-split-test--note-change', newest last.")
+
+(defun donkey-split-test--note-change (beg end _length)
+  "Keep the bounds of a change, BEG to END, in `donkey-split-test--changes'."
+  (setq donkey-split-test--changes
+        (append donkey-split-test--changes (list (cons beg end)))))
+
+(ert-deftest donkey-split-cursors-open-their-lines-top-down ()
+  "The o and O keys open the cursors' lines from the first cursor to the last.
+
+The mode's indentation parses on from the line before that way; from
+the bottom up every line is parsed from far back."
+  (dolist (key '("o" "O"))
+    (let ((donkey-split-test--changes nil))
+      (donkey-test-keys--harness "*cursors-open-order*" #'emacs-lisp-mode
+          ((after-change-functions (list #'donkey-split-test--note-change)))
+          "(a)\n(b)\n(c)\n(d)\n" (concat "t t t " key)
+        (let ((starts (mapcar #'car donkey-split-test--changes)))
+          (should (>= (length starts) 4))
+          (should (equal (list key starts)
+                         (list key (sort (copy-sequence starts) #'<)))))))))
+
 (ert-deftest donkey-split-cursors-open-above-is-one-entry ()
   "O at the cursors is one entry, and undo closes every line it opened."
   (donkey-split-test--keys "*cursors-O-entry*" donkey-split-test--column
