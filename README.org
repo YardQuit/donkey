@@ -23,7 +23,7 @@
 - [[#pairing-as-you-type][Pairing as you type]] — closing a delimiter for you
 - [[#the-enter-key][The Enter key]]
 - [[#search-and-replace][Search and replace]]
-- [[#split-mode][Editing every match at once: =f=]]
+- [[#editing-every-match-at-once-f][Editing every match at once: =f=]]
 - [[#typing-characters-your-keyboard-lacks][Typing characters your keyboard lacks]]
 - [[#other-languages][Other languages]]
 - [[#suppressed-keys][Suppressed keys]]
@@ -743,7 +743,7 @@ everything else Emacs binds to a control or meta key.
 
 * Editing every match at once: =f=
 :PROPERTIES:
-:CUSTOM_ID: split-mode
+:CUSTOM_ID: editing-every-match-at-once-f
 :END:
 
 =f= (=donkey-split=) asks for a regexp and holds every match in the
