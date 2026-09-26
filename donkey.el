@@ -9672,10 +9672,11 @@ one kill, as \\[donkey-split-change] puts it; characters do not."
 
 The split\\='s `donkey-delete'.  A whole line selected with
 \\[donkey-split-cursors-select-lines] goes with its newline.  What was
-selected goes on the `kill-ring' as one kill; see
-`donkey--split-cursors-kill-text'.  Characters do not, as they do not
-for `donkey-delete'.  Every cursor deletes or none does, one undo entry
-whatever the number of cursors, and the cursors stay."
+selected goes on the `kill-ring' as one kill, an empty selection as an
+empty line, so \\[donkey-split-cursors-yank] gives each cursor its own
+back; see `donkey--split-cursors-kill-text'.  Characters do not, as
+they do not for `donkey-delete'.  Every cursor deletes or none does,
+one undo entry whatever the number of cursors, and the cursors stay."
   (interactive "p")
   (donkey--split-live-p)
   (barf-if-buffer-read-only)
@@ -9685,7 +9686,6 @@ whatever the number of cursors, and the cursors stay."
                           donkey--split-places))
            (kills (delq nil (mapcar (lambda (span)
                                       (and (nth 2 span)
-                                           (< (car span) (cadr span))
                                            (buffer-substring (car span)
                                                              (cadr span))))
                                     spans))))

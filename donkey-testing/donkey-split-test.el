@@ -1130,6 +1130,15 @@ this a verb elsewhere acts on nothing at all."
                    (concat "alpha betaalpha\ngamma deltagamma\n"
                            "epsilon zetaepsilon\nlast\n")))))
 
+(ert-deftest donkey-split-cursors-delete-keeps-an-empty-selection-as-a-line ()
+  "`d' over selections of which one is empty kills a line for each cursor."
+  (donkey-split-test--keys "*cursors-d-empty*" "alpha\n...\nNil.\nbeta\n"
+      "t t t M d"
+    (should (equal (buffer-string) "\n...\n.\n\n"))
+    (should (equal (car kill-ring) "alpha\n\nNil\nbeta"))
+    (execute-kbd-macro (kbd "p"))
+    (should (equal (buffer-string) "alpha\n...\nNil.\nbeta\n"))))
+
 (ert-deftest donkey-split-cursors-kill-to-each-line-s-end ()
   "`D' kills from every cursor to its line's end, and no newline."
   (donkey-split-test--keys "*cursors-D*" donkey-split-test--column "l l t t D"
