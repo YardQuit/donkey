@@ -200,6 +200,34 @@ seed until one landed on it."
 ;;; donkey-mark-word
 ;;; ---------------------------------------------------------------------------
 
+(ert-deftest donkey-mark-word-from-a-symbol-character-takes-the-word-beside-it ()
+  "A dash with no word at it is a gap: the word ahead is marked, or the one behind it."
+  (dolist (case '(("-Nil." 1 donkey-mark-word "Nil")
+                  ("-Nil." 1 donkey-mark-word-backward "Nil")
+                  ("word.\n-----\nnext" 7 donkey-mark-word "next")
+                  ("word.\n-----\nnext" 7 donkey-mark-word-backward "word")
+                  ;; A dash between two words keeps the word it touches.
+                  ("foo-bar" 4 donkey-mark-word "foo")
+                  ("foo-bar" 4 donkey-mark-word-backward "foo")))
+    (with-temp-buffer
+      (text-mode)
+      (insert (nth 0 case))
+      (goto-char (nth 1 case))
+      (funcall (nth 2 case))
+      (should (equal (list case (buffer-substring-no-properties
+                                 (region-beginning) (region-end)))
+                     (list case (nth 3 case)))))))
+
+(ert-deftest donkey-mark-word-still-refuses-a-buffer-with-no-word ()
+  "Dashes alone are no word, and the cursor stays where it was."
+  (with-temp-buffer
+    (text-mode)
+    (insert "-----\n---")
+    (goto-char 3)
+    (should-error (donkey-mark-word) :type 'user-error)
+    (should (= (point) 3))
+    (should-not (use-region-p))))
+
 (ert-deftest donkey-mark-word-point-in-middle ()
   "Point in middle of word selects entire word."
   (with-temp-buffer

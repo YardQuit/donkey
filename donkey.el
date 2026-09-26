@@ -5758,7 +5758,8 @@ mark the buffer held."
   "Select the entire word at or adjacent to point.
 
 From the gap between two words the one AHEAD is marked, and from the
-gap at the end of the buffer, where nothing is ahead, the last one.
+gap at the end of the buffer, where nothing is ahead, the last one; a
+symbol character with no word at it, such as a dash, is a gap too.
 `donkey-mark-word-backward' takes the one BEHIND from the same gap, so
 from a space the two keys are the two words on either side of it; see
 `donkey--mark-reach' for the rule.  `donkey-mark-symbol',
@@ -5782,8 +5783,11 @@ a bare press does -- see `donkey--object-count'."
     (unless extend
      (let ((origin (point)))
       ;; From a gap, onto the word ahead or, for a backward press and
-      ;; at the end of a buffer, onto the word behind.
-      (unless (donkey--point-on-word-or-symbol-char-p)
+      ;; at the end of a buffer, onto the word behind.  A symbol
+      ;; character with no word at it -- a dash before a word, a line
+      ;; of dashes -- is a gap for the word key too.
+      (unless (and (donkey--point-on-word-or-symbol-char-p)
+                   (donkey--real-thing-at-point 'word))
         (donkey--mark-reach-from-gap
          (lambda () (skip-syntax-forward "^w") (not (eobp)))
          (lambda () (backward-word 1))))

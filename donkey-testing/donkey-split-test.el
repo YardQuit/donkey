@@ -1192,6 +1192,18 @@ minibuffer as text, and every cursor's line is searched."
     (should (equal (donkey-split-test--cursors) '(1 12 24)))
     (should (equal (buffer-string) donkey-split-test--column))))
 
+(ert-deftest donkey-split-cursors-mark-run-starts-over-a-row-of-dashes ()
+  "M at the cursors marks every word, and a row of dashes among them holds an empty selection."
+  (donkey-split-test--keys "*cursors-dashes*" "alpha beta\n-----\ngamma delta\n-Nil.\n"
+      "t t t M"
+    (should donkey--split-running)
+    (should (equal (mapcar #'donkey--split-place-text donkey--split-places)
+                   '("alpha" "" "gamma" "Nil")))
+    (execute-kbd-macro (kbd "w"))
+    (should donkey--split-running)
+    (should (equal (mapcar #'donkey--split-place-text donkey--split-places)
+                   '("alpha beta" "" "gamma delta" "Nil.")))))
+
 (ert-deftest donkey-split-cursors-undo-a-command-that-fails-at-one ()
   "A selection that fails at one cursor leaves every cursor where it was."
   (donkey-split-test--keys "*cursors-fail*" "(ab) x\nno pair\n" "l t"
