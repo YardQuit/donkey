@@ -29,6 +29,12 @@
 ;; along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
+
+;; DONKEY gives Emacs two states.  In INSERT state Emacs is exactly the
+;; Emacs you know.  In NORMAL state the letter keys run editing commands
+;; instead of typing letters: `j' moves down, `d' deletes, `y' copies.
+;; `C-g' takes you from INSERT to NORMAL; `i' takes you back.
+;;
 ;; Philosophy: Leverage Emacs Native Commands and built-in functions
 ;; wherever possible.  Custom commands only where beneficial.
 ;;
@@ -49,12 +55,30 @@
 ;; test suite walks the keymaps against a plain Emacs buffer to keep
 ;; each of these sentences true.
 ;;
+;; What the letters do: `h' `j' `k' `l' and the word, line and
+;; paragraph motions; `v', `V' and the `m' objects to select -- a
+;; word, a sentence, what a pair of delimiters holds, a rectangle --
+;; and `M' to grow a selection a key at a time; `d', `c', `y' and `p'
+;; on whatever is selected; a delimiter typed over a selection to wrap
+;; it, and the same key again to take the pair off; `f' to hold every
+;; match of a regexp in the selection and type, change, delete or wrap
+;; at all of them at once; `t' to put a cursor on the line below, with
+;; the motions, selections and edits then running at every cursor; `u'
+;; and `U' to undo and redo.  `?' lists every binding, and `M-x
+;; donkey-tutor' teaches the keys in a buffer you can practice in.
+;;
+;; A buffer a program made for you -- Dired, Ibuffer, help, a
+;; compilation log, the package menu -- is a support mode: `h' `j' `k'
+;; `l' and the leader are DONKEY's and every other key is the mode's.
+;; In a terminal, a REPL, Magit or Info, DONKEY steps aside entirely.
+;; The README says which buffers are which and how to change it.
+;;
 ;; Optional Smartparens Integration:
 ;; If you use smartparens, call `(donkey-setup-smartparens)' in
 ;; your config after loading smartparens to bind C-g in smartparens
 ;; overlay keymaps.  This improves reliability of C-g escape in terminal
 ;; mode when inside nested smartparens overlays.
-
+;;
 ;; Usage:
 ;; - Press C-g to enter DONKEY-NORMAL state.
 ;; - In NORMAL: h,j,k,l navigate; i,I,a,A,o,O,c enter INSERT state.
