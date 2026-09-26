@@ -1191,6 +1191,49 @@ this a verb elsewhere acts on nothing at all."
                    "aXlpha beta\ngXamma delta\nepsilon zeta\nlast\n"))
     (should (equal (donkey-split-test--selections) '("lp" "am")))))
 
+(ert-deftest donkey-split-cursors-selection-found-on-another-line-is-none ()
+  "A cursor whose word is on another line stays put, selecting nothing."
+  (dolist (case '(("t t m w" "alpha\n-----\nbeta\n" (1 7 13) ("alpha" "" "beta"))
+                  ("t t m b" "alpha\n-----\nbeta\n" (1 7 13) ("alpha" "" "beta"))))
+    (cl-destructuring-bind (keys text cursors selections) case
+      (donkey-split-test--keys "*cursors-beyond*" text keys
+        (should (equal (list keys (donkey-split-test--cursors))
+                       (list keys cursors)))
+        (should (equal (list keys (donkey-split-test--selections))
+                       (list keys selections)))
+        (execute-kbd-macro (kbd "c X C-g"))
+        (should (equal (list keys (buffer-string))
+                       (list keys "X\nX-----\nX\n")))))))
+
+(ert-deftest donkey-split-cursors-selection-across-the-line-keeps-its-part ()
+  "A selection running past both ends of the line is the line's part of it."
+  (donkey-split-test--keys "*cursors-across*" "one two\nthree four\nfive six.\n"
+      "j t m s"
+    (should (equal (donkey-split-test--selections) '("three four" "five six.")))))
+
+(ert-deftest donkey-split-cursors-run-still-grows-to-the-line-end ()
+  "`w' in the run reaches the line's end when the next word is on another line."
+  (donkey-split-test--keys "*cursors-run-w*" "Nil.\nbeta\n" "t M w"
+    (should (equal (donkey-split-test--selections) '("Nil." "beta")))))
+
+(ert-deftest donkey-split-add-cursor-with-a-negative-count-adds-the-other-way ()
+  "A negative count at the t key adds above, as T does, and at T below."
+  (dolist (case '(("j j C-u - 2 t" (1 12 24))
+                  ("C-u - 1 T" (1 12))
+                  ("j C-u - 1 t" (1 12))))
+    (cl-destructuring-bind (keys cursors) case
+      (donkey-split-test--keys "*cursors-negative*" donkey-split-test--column keys
+        (should (equal (list keys (donkey-split-test--cursors))
+                       (list keys cursors)))))))
+
+(ert-deftest donkey-split-add-cursor-with-a-count-of-zero-is-a-bare-press ()
+  "A count of zero at the t key or at T adds one cursor, as no count does."
+  (dolist (case '(("C-u 0 t" (1 12)) ("j C-u 0 T" (1 12))))
+    (cl-destructuring-bind (keys cursors) case
+      (donkey-split-test--keys "*cursors-zero*" donkey-split-test--column keys
+        (should (equal (list keys (donkey-split-test--cursors))
+                       (list keys cursors)))))))
+
 (ert-deftest donkey-split-cursors-wrap-only-what-is-selected ()
   "A delimiter wraps each cursor's selection, and nothing where none is."
   (dolist (case '(("l l t t v l ("
@@ -1248,16 +1291,17 @@ minibuffer as text, and every cursor's line is searched."
     (should (equal (buffer-string) donkey-split-test--column))))
 
 (ert-deftest donkey-split-cursors-mark-run-starts-over-a-row-of-dashes ()
-  "M at the cursors marks every word, and a row of dashes among them holds an empty selection."
+  "M at the cursors marks every word; a row of dashes holds an empty selection at its start, which `w' then grows over the dashes."
   (donkey-split-test--keys "*cursors-dashes*" "alpha beta\n-----\ngamma delta\n-Nil.\n"
       "t t t M"
     (should donkey--split-running)
     (should (equal (mapcar #'donkey--split-place-text donkey--split-places)
                    '("alpha" "" "gamma" "Nil")))
+    (should (equal (donkey-split-test--cursors) '(1 12 18 31)))
     (execute-kbd-macro (kbd "w"))
     (should donkey--split-running)
     (should (equal (mapcar #'donkey--split-place-text donkey--split-places)
-                   '("alpha beta" "" "gamma delta" "Nil.")))))
+                   '("alpha beta" "-----" "gamma delta" "Nil.")))))
 
 (ert-deftest donkey-split-cursors-undo-a-command-that-fails-at-one ()
   "A selection that fails at one cursor leaves every cursor where it was."

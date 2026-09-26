@@ -9039,8 +9039,10 @@ touches.  Nil without an active region."
 
 The first press makes a split of cursors: one at point and one on the
 line below.  Each press after adds one more below the last.  COUNT adds
-that many.  A line shorter than the column gets its cursor at its end.
-Nothing is added where there are not COUNT lines below.  With a
+that many, and a negative COUNT adds above instead, as
+\\[donkey-split-add-cursor-above] does.  A line shorter than the column
+gets its cursor at its end.  Nothing is added where there are not
+COUNT lines below.  With a
 selection over two lines or more, the first press puts a cursor on
 every line it covers instead, the real one staying on point\\='s line:
 at point\\='s column, or at each line\\='s start for a whole-line
@@ -9086,16 +9088,18 @@ the selections, and with none ends the split."
           (donkey--split-cursors-refuse-p (1+ (length spots)))
           (donkey--split-cursors-start column)
           (donkey--split-cursors-add spots))
-      (let ((spots (donkey--split-cursor-spots
-                    (if live
-                        (donkey--split-cursor (car (last donkey--split-places)))
-                      (point))
-                    column n)))
-        (donkey--split-cursors-refuse-p
-         (+ (length spots) (if live (length donkey--split-places) 1)))
-        (unless live
-          (donkey--split-cursors-start column))
-        (donkey--split-cursors-add spots)))))
+      (if (and count (< count 0))
+          (donkey-split-add-cursor-above (- count))
+        (let ((spots (donkey--split-cursor-spots
+                      (if live
+                          (donkey--split-cursor (car (last donkey--split-places)))
+                        (point))
+                      column n)))
+          (donkey--split-cursors-refuse-p
+           (+ (length spots) (if live (length donkey--split-places) 1)))
+          (unless live
+            (donkey--split-cursors-start column))
+          (donkey--split-cursors-add spots))))))
 
 (defun donkey--change-rectangle ()
   "Empty every row of the rectangle selection and type on all of them.
@@ -9177,22 +9181,25 @@ through `string-rectangle'."
 
 The upward half of \\[donkey-split-add-cursor]: the first press makes a
 split of cursors, one at point and one on the line above, and each
-press after adds one more above the first.  COUNT adds that many.
-Nothing is added where there are not COUNT lines above."
+press after adds one more above the first.  COUNT adds that many, and
+a negative COUNT adds below instead, as \\[donkey-split-add-cursor]
+does.  Nothing is added where there are not COUNT lines above."
   (interactive "p")
-  (let* ((n (max 1 (or count 1)))
-         (live (donkey--split-cursors-live-p))
-         (column (if live donkey--split-column (current-column)))
-         (spots (donkey--split-cursor-spots
-                 (if live
-                     (donkey--split-cursor (car donkey--split-places))
-                   (point))
-                 column n t)))
-    (donkey--split-cursors-refuse-p
-     (+ (length spots) (if live (length donkey--split-places) 1)))
-    (unless live
-      (donkey--split-cursors-start column))
-    (donkey--split-cursors-add spots)))
+  (if (and count (< count 0))
+      (donkey-split-add-cursor (- count))
+    (let* ((n (max 1 (or count 1)))
+           (live (donkey--split-cursors-live-p))
+           (column (if live donkey--split-column (current-column)))
+           (spots (donkey--split-cursor-spots
+                   (if live
+                       (donkey--split-cursor (car donkey--split-places))
+                     (point))
+                   column n t)))
+      (donkey--split-cursors-refuse-p
+       (+ (length spots) (if live (length donkey--split-places) 1)))
+      (unless live
+        (donkey--split-cursors-start column))
+      (donkey--split-cursors-add spots))))
 
 (defun donkey-split-drop-cursor ()
   "Take back the cursor added last, keeping the others.
@@ -9226,7 +9233,9 @@ and \\`C-g' ends the split."
 Point, the mark and the state in `donkey--split-cursor-memory' are the
 cursor\\='s own while COMMAND runs.  What it leaves is kept inside the
 cursor\\='s line.  Running into the buffer\\='s edge leaves the cursor
-where it was.
+where it was, and so does a selection made wholly beyond the line, on
+one side of it: the object was found on another line, so the cursor
+has none and selects nothing.
 
 EDIT non-nil says COMMAND changes text: the cursor is left where
 COMMAND leaves it and lets go of its selection.  EDIT `line' runs
@@ -9270,14 +9279,20 @@ that would otherwise reach the next one."
           (dolist (marker global-mark-ring)
             (set-marker marker nil)))
         ;; Kept inside the cursor's line, as it stood when COMMAND ran.
-        (let ((mark (and mark-active (not edit) (mark t))))
+        (let* ((mark (and mark-active (not edit) (mark t)))
+               (beyond (and mark
+                            (or (and (< (point) beg) (< mark beg))
+                                (and (> (point) end) (> mark end)))))
+               (was (and beyond (donkey--split-cursor place))))
           (donkey--split-cursor-set
            place
            (cond ((and edit (overlay-get place 'donkey-line))
                   (donkey--split-cursor place))
                  (edit (point))
+                 (beyond was)
                  (t (max beg (min end (point)))))
-           (and mark (max beg (min end mark)))
+           (cond (beyond was)
+                 (mark (max beg (min end mark))))
            (and (not mark) (not edit) (overlay-get place 'donkey-line))
            (donkey--split-cursor-memory-now)))))))
 
