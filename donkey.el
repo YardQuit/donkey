@@ -8044,8 +8044,48 @@ sets `donkey--split-strayed'.  Never signals, for the reason
                     (push (cons 'after (substring text
                                                   (- (max old-beg finish)
                                                      old-beg)))
-                          donkey--split-edge-edits))))))
+                          donkey--split-edge-edits))))
+              ;; A line break typed at the written place's end takes
+              ;; the blanks opening the new line into every place, so
+              ;; the mode's indentation of that line is made inside.
+              (when (and (> end beg)
+                         (eq (char-before end) ?\n)
+                         (= end (overlay-end donkey--split-primary)))
+                (donkey--split-take-blanks))))
         (error (setq donkey--split-strayed t))))))
+
+(defun donkey--split-take-blanks ()
+  "Take the blanks just after each place into it, noted for undo.
+
+For a line break typed at the written place\\='s end: the spaces and
+tabs that open the new line are then inside every place, so what the
+major mode\\='s indentation does to them is an edit inside the place,
+copied to the others like any other.  What each place takes is noted
+in `donkey--split-edge-texts' as text past its end, so the writing\\='s
+undo entry puts it back.  A place stops a character short of the next."
+  (let ((texts (donkey--split-edge-texts-copy (length donkey--split-places)))
+        (index -1)
+        (taken nil))
+    (dolist (place donkey--split-places)
+      (setq index (1+ index))
+      (when (overlay-buffer place)
+        (let* ((end (overlay-end place))
+               (stop (save-excursion
+                       (goto-char end)
+                       (skip-chars-forward " \t")
+                       (point))))
+          (dolist (other (overlays-in end (1+ stop)))
+            (when (and (not (eq other place))
+                       (overlay-get other 'donkey-split)
+                       (> (overlay-start other) end))
+              (setq stop (min stop (1- (overlay-start other))))))
+          (when (> stop end)
+            (donkey--split-edge-note texts index t
+                                     (buffer-substring-no-properties end stop))
+            (move-overlay place (overlay-start place) stop)
+            (setq taken t)))))
+    (when taken
+      (setq donkey--split-edge-texts texts))))
 
 (defun donkey--split-dissolve (&optional quiet)
   "Take the split down, saying so unless QUIET.

@@ -2423,6 +2423,46 @@ compared by their text, not by their size."
       (execute-kbd-macro (kbd "C-/"))
       (should (equal (buffer-string) "a foo b\nc foo d\n")))))
 
+(ert-deftest donkey-split-cursors-a-line-break-keeps-the-cursors-in-code ()
+  "RET at the cursors in a programming mode breaks and indents every line alike."
+  (dolist (case '((emacs-lisp-mode "(a b)\n" "l l t i RET x")
+                  (js-mode "f(a, b);\n" "l l l l t i RET x")
+                  (python-mode "x = f(a, b)\n" "l l l l l l l l t i RET x")))
+    (pcase-let ((`(,mode ,line ,keys) case))
+      (donkey-test-keys--harness "*cursors-ret*" mode () (concat line line) keys
+        (should (eq donkey--split-phase 'edit))
+        (let* ((text (buffer-string))
+               (half (/ (length text) 2)))
+          (should (equal (list mode (substring text 0 half))
+                         (list mode (substring text half))))
+          (should (string-match-p "\n[ \t]*xb" text)))
+        (execute-kbd-macro (kbd "C-g u"))
+        (should (equal (list mode (buffer-string))
+                       (list mode (concat line line))))))))
+
+(ert-deftest donkey-split-cursors-a-line-break-puts-each-lines-blanks-back ()
+  "Undo after RET at the cursors gives every line its own blanks again."
+  (donkey-test-keys--harness "*cursors-ret-blanks*" #'emacs-lisp-mode ()
+      "(a b)\n(x  y)\n" "l l t i RET"
+    (should (equal (buffer-string) "(a\n b)\n(x\n y)\n"))
+    (execute-kbd-macro (kbd "C-g u"))
+    (should (equal (buffer-string) "(a b)\n(x  y)\n")))
+  (donkey-test-keys--harness "*cursors-ret-c-slash*" #'emacs-lisp-mode ()
+      "(a b)\n(a b)\n" "l l t i RET C-/"
+    (should (eq donkey--split-phase 'edit))
+    (should (equal (buffer-string) "(a b)\n(a b)\n"))))
+
+(ert-deftest donkey-split-a-line-break-takes-blanks-short-of-the-next-place ()
+  "Blanks taken after a line break stop a character short of the next place."
+  (donkey-split-test--on "x"
+    (donkey-test-keys--harness "*split-ret-short*" #'text-mode ()
+        "x   x\n" ""
+      (electric-indent-local-mode -1)
+      (execute-kbd-macro (kbd "f a RET"))
+      (should (eq donkey--split-phase 'edit))
+      (should (= (length donkey--split-places) 2))
+      (should-not (donkey--split-touching-p)))))
+
 (ert-deftest donkey-split-cursors-write-above-the-real-one-with-undo-off ()
   "Writing at cursors above the real one works in a buffer that keeps no undo."
   (donkey-split-test--keys "*cursors-no-undo*" donkey-split-test--column ""
