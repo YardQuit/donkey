@@ -807,9 +807,13 @@ differ.
 | =m v=            | inside the block                      |
 | =C-u= then =f=   | with =m v=, each row's whole line     |
 | banked (=m l=)   | the banked lines, plus a live =v=     |
+| any, =%foo=      | the whole buffer, the bank left alone |
 
 There is no whole-buffer default on purpose: press =%= first and the
-buffer is a selection like any other, so you reach it by choosing it.
+buffer is a selection like any other, or type the regexp with =%= in
+front — =f %foo RET= — and the whole buffer is searched whatever is
+selected. Either way you reach it by choosing it. The =%= is not part
+of the search; =\%= or =[%]= at the start searches for a percent sign.
 
 Banked lines are how the split reaches lines that are not next to each
 other. Each run of banked lines is searched up to the end of its last

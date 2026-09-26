@@ -6500,6 +6500,11 @@ end it.")
 (defvar donkey--split-wide nil
   "Bound non-nil while a split should search each row\\='s whole line.")
 
+(defvar donkey--split-whole nil
+  "Bound non-nil while a split should search the whole buffer.
+
+Whatever is selected; see `donkey-split'.")
+
 (defvar donkey--split-banked nil
   "The banked spans a split is searching, bound while it is made.
 
@@ -6724,8 +6729,15 @@ and line start, so on a row whose block stops mid-line they match
 nothing.
 
 Where the split is a column of cursors, each cursor\\='s selection is a
-range, or each cursor\\='s whole line when no cursor has one."
+range, or each cursor\\='s whole line when no cursor has one.
+
+When `donkey--split-whole' is non-nil the one range is the whole
+buffer, as far as a narrowing leaves it, whatever is selected, and a
+bank is neither searched nor spent."
   (cond
+   (donkey--split-whole
+    (setq donkey--split-scope "the buffer")
+    (list (cons (point-min) (point-max))))
    ((donkey--split-cursors-live-p)
     (let ((selected (seq-some (lambda (place)
                                 (< (overlay-start place) (overlay-end place)))
@@ -8564,7 +8576,7 @@ ends the split."
                              (unless donkey--split-keeping
                                (donkey--split-dissolve))))))
 
-(defun donkey-split (regexp &optional wide)
+(defun donkey-split (regexp &optional wide whole)
   "Hold every REGEXP match in the selection, then wait for a verb.
 
 The split itself changes nothing.  With the places held, \\`i' types
@@ -8579,6 +8591,12 @@ row\\='s whole line is searched, which can match outside the block.  Any
 other selection is searched entire.  With no selection the current line
 is searched: \\[donkey-mark-whole-buffer] first is how the whole buffer
 is reached, so that it is chosen rather than fallen into.
+
+With WHOLE non-nil the whole buffer is searched instead, as far as a
+narrowing leaves it, whatever is selected, and a bank is left
+standing.  Interactively a regexp typed with `%' in front is WHOLE:
+the `%' is not part of the search, and `\\%' or `[%]' at the start
+searches for a percent sign.
 
 Banked lines are searched too, along with any live region exactly as
 it is selected, and opening the split spends the bank, as \\`y' and
@@ -8604,11 +8622,16 @@ its writing is one undo entry, whatever the number of matches; see
 `donkey--split-close-edit'.
 
 Bound to \\`f' in Normal state."
-  (interactive (list (read-regexp "Split on regexp: ") current-prefix-arg))
+  (interactive
+   (let ((regexp (read-regexp "Split on regexp: ")))
+     (if (string-prefix-p "%" regexp)
+         (list (substring regexp 1) current-prefix-arg t)
+       (list regexp current-prefix-arg nil))))
   (when (string-empty-p regexp)
     (user-error "Nothing to split on"))
   (let* ((map (donkey--split-chooser-map))
          (donkey--split-wide wide)
+         (donkey--split-whole whole)
          (donkey--split-banked nil)
          (n (donkey--split-make regexp)))
     (if (zerop n)
@@ -12340,6 +12363,13 @@ and that way you reach it by choosing it.
 
    ---> 2026/09/24
    ---> 2026/09/25
+
+Or type the regexp with % in front, and the whole buffer is searched,
+whatever is selected; the % is not part of the search, and \\% at the
+start searches for a percent sign.
+
+>> Press \\[donkey-split], type %split and RET.  The reminder counts every split
+   in this buffer, not only this line's.  \\`C-g' lets them go.
 
 Under \\[donkey-rectangle-mark-mode] the search stays INSIDE the block; a count before
 \\[donkey-split] widens it to each row's whole line.

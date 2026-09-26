@@ -237,6 +237,51 @@ split can be driven by real keys without a minibuffer."
         "m v j l l l l l l C-u f a !"
       (should (equal (buffer-string) "ab foo zz!\ncd foo zz!\n")))))
 
+(defconst donkey-split-test--three "a foo b\nc foo d\ne foo f\n"
+  "Three lines that each hold one match.")
+
+(ert-deftest donkey-split-with-a-percent-first-searches-the-whole-buffer ()
+  "A regexp typed with % in front searches the whole buffer, whatever is selected."
+  (donkey-split-test--on "%foo"
+    (donkey-split-test--keys "*split-percent*" donkey-split-test--three "f"
+      (should (= (length donkey--split-places) 3))
+      (should (equal donkey--split-scope "the buffer")))
+    (dolist (keys '("f a X" "v l f a X" "m v j l f a X" "t f a X"))
+      (donkey-split-test--keys "*split-percent-from*" donkey-split-test--three
+          keys
+        (should (equal (list keys (buffer-string))
+                       (list keys "a fooX b\nc fooX d\ne fooX f\n")))))))
+
+(ert-deftest donkey-split-with-a-percent-first-leaves-the-bank-standing ()
+  "The whole buffer is searched past a bank, and the bank is not spent."
+  (donkey-split-test--on "%foo"
+    (donkey-split-test--keys "*split-percent-bank*" donkey-split-test--three
+        "V m l f a X"
+      (should (equal (buffer-string) "a fooX b\nc fooX d\ne fooX f\n"))
+      (should (= (length (donkey--banked-spans)) 1)))))
+
+(ert-deftest donkey-split-with-a-percent-first-keeps-to-a-narrowing ()
+  "The whole buffer is what a narrowing leaves of it."
+  (donkey-split-test--on "%foo"
+    (donkey-split-test--keys "*split-percent-narrow*" donkey-split-test--three ""
+      (narrow-to-region (point-min) (save-excursion (forward-line 2) (point)))
+      (execute-kbd-macro (kbd "f a X C-g"))
+      (widen)
+      (should (equal (buffer-string) "a fooX b\nc fooX d\ne foo f\n")))))
+
+(ert-deftest donkey-split-reads-a-backslashed-percent-as-a-percent-sign ()
+  "A regexp starting with \\% searches this line for a percent sign."
+  (donkey-split-test--on "\\%foo"
+    (donkey-split-test--keys "*split-percent-sign*" "a %foo b\nc %foo d\n"
+        "f a X"
+      (should (equal (buffer-string) "a %fooX b\nc %foo d\n")))))
+
+(ert-deftest donkey-split-reads-a-percent-first-through-the-prompt ()
+  "The % is read from the minibuffer and is not part of the search."
+  (donkey-split-test--keys "*split-percent-prompt*" donkey-split-test--three
+      "f % f o o RET a X C-g"
+    (should (equal (buffer-string) "a fooX b\nc fooX d\ne fooX f\n"))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Banked lines
 ;;; ---------------------------------------------------------------------------
@@ -588,12 +633,13 @@ every place has to reach the hooks, or the copy and the buffer part."
              (save-restriction (widen) (overlays-in (point-min) (point-max)))))
 
 (ert-deftest donkey-split-refuses-an-empty-regexp ()
-  "An empty regexp is refused, and the selection it was given stays."
-  (donkey-split-test--on ""
-    (donkey-split-test--keys "*split-empty*" "a foo b\nc foo d\n" "v G"
-      (should-error (call-interactively #'donkey-split) :type 'user-error)
-      (should (region-active-p))
-      (should (zerop (donkey-split-test--painted))))))
+  "An empty regexp, or a % alone, is refused, and the selection stays."
+  (dolist (regexp '("" "%"))
+    (donkey-split-test--on regexp
+      (donkey-split-test--keys "*split-empty*" "a foo b\nc foo d\n" "v G"
+        (should-error (call-interactively #'donkey-split) :type 'user-error)
+        (should (region-active-p))
+        (should (zerop (donkey-split-test--painted)))))))
 
 (ert-deftest donkey-split-reads-a-mis-set-pair-table-anyway ()
   "A pair table that is not all pairs, or not a list, still gives a split.
