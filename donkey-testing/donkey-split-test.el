@@ -1025,6 +1025,58 @@ this a verb elsewhere acts on nothing at all."
         (car case)
       (should (equal (list (car case) (buffer-string)) case)))))
 
+(ert-deftest donkey-split-cursors-g-l-puts-every-cursor-at-its-line-end ()
+  "`g l' moves every cursor to its line's end, keeping an anchor or a whole line."
+  (dolist (case '(("t t g l" (11 23 36) (nil nil nil))
+                  ("t t C-u 3 g l" (11 23 36) (nil nil nil))
+                  ("t t l v g l" (11 23 36) (2 13 25))
+                  ("t t V g l" (11 23 36) (line line line))))
+    (donkey-split-test--keys "*cursors-g-l*" donkey-split-test--column (car case)
+      (should (equal (list (car case) (donkey-split-test--cursors))
+                     (list (car case) (cadr case))))
+      (should (equal (mapcar (lambda (place)
+                               (if (overlay-get place 'donkey-line)
+                                   'line
+                                 (donkey--split-cursor-anchor place)))
+                             donkey--split-places)
+                     (nth 2 case)))
+      (should (equal (buffer-string) donkey-split-test--column)))))
+
+(ert-deftest donkey-split-cursors-g-l-ends-a-mark-run-like-any-motion ()
+  "A mark key after `g l' marks afresh at every cursor, as after any other motion."
+  (donkey-split-test--keys "*cursors-g-l-run*" donkey-split-test--column
+      "t t m w g l m b"
+    (should (equal (donkey-split-test--cursors) '(7 18 32)))
+    (should (equal (mapcar #'donkey--split-cursor-anchor donkey--split-places)
+                   '(11 23 36)))
+    (should (equal (mapcar (lambda (place)
+                             (buffer-substring-no-properties
+                              (overlay-start place) (overlay-end place)))
+                           donkey--split-places)
+                   '("beta" "delta" "zeta")))))
+
+(ert-deftest donkey-split-cursors-o-and-g-l-leave-the-display-engine-alone ()
+  "Opening lines and moving to line ends at the cursors never call `vertical-motion'."
+  (dolist (keys '("o" "O" "g l" "v g l"))
+    (donkey-split-test--keys "*cursors-no-engine*" donkey-split-test--column "t t"
+      (let ((calls 0))
+        (cl-letf* ((motion (symbol-function 'vertical-motion))
+                   ((symbol-function 'vertical-motion)
+                    (lambda (&rest args) (setq calls (1+ calls)) (apply motion args))))
+          (execute-kbd-macro (kbd keys)))
+        (should (equal (list keys calls) (list keys 0)))))))
+
+(ert-deftest donkey-split-cursors-replay-runs-without-line-numbers ()
+  "While a command runs at every cursor `display-line-numbers' is nil, and back after."
+  (donkey-split-test--keys "*cursors-no-numbers*" donkey-split-test--column "t t"
+    (setq-local display-line-numbers 'visual)
+    (let ((seen nil))
+      (cl-letf (((symbol-function 'donkey-split-test--probe-command)
+                 (lambda () (interactive) (push display-line-numbers seen))))
+        (donkey--split-cursors-run 'donkey-split-test--probe-command nil))
+      (should (equal seen '(nil nil nil)))
+      (should (eq display-line-numbers 'visual)))))
+
 (ert-deftest donkey-split-cursors-move-and-stop-at-their-line-s-end ()
   "A motion moves every cursor, and none crosses into the next line."
   (dolist (case '(("t t w" (6 17 31)) ("t t w w w w" (11 23 36))

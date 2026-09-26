@@ -8106,6 +8106,7 @@ typo; see `donkey--split-inert-commands'.")
     donkey-split-cursors-upcase donkey-split-cursors-downcase
     donkey-split-cursors-capitalize donkey-split-cursors-append
     donkey-split-drop-cursor donkey-split-cursors-align
+    donkey-split-cursors-line-end
     donkey-split-cursors-run-step-back
     donkey-split-cursors-run-step-forward)
   "The commands that keep Split mode armed.")
@@ -8262,7 +8263,7 @@ Bound to \\`f' in Normal state."
 
 (defconst donkey--split-cursor-replayed
   '(backward-char forward-char backward-word forward-word
-    backward-sexp forward-sexp beginning-of-line move-end-of-line
+    backward-sexp forward-sexp beginning-of-line
     donkey-mark-word donkey-mark-word-backward
     donkey-mark-symbol donkey-mark-symbol-backward
     donkey-mark-sentence donkey-mark-sentence-backward
@@ -8282,6 +8283,7 @@ the split and does its ordinary job, except the ones
     (donkey-insert-after . donkey-split-cursors-append)
     (donkey-insert-beginning-of-line . donkey-split-cursors-insert-line)
     (donkey-insert-end-of-line . donkey-split-cursors-append-line)
+    (move-end-of-line . donkey-split-cursors-line-end)
     (donkey-change . donkey-split-cursors-change)
     (donkey-delete . donkey-split-cursors-delete)
     (donkey-copy . donkey-split-cursors-copy)
@@ -9109,28 +9111,36 @@ messages are shown."
                              (setq answers (append answers (list answer)))
                              answer)))))
               (atomic-change-group
-                (dolist (place donkey--split-places)
-                  (setq queue (copy-sequence answers))
-                  ;; An edit is recorded as its cursor's whole line
-                  ;; before and after, since what it changes inside
-                  ;; the line is the command's to know.
-                  (let* ((inhibit-message (not (eq place last)))
-                         (message-log-max (and (eq place last)
-                                               message-log-max))
-                         (line (and edit (donkey--split-cursor-line place)))
-                         (start (car line))
-                         (finish (and line
-                                      (min (point-max) (1+ (cdr line)))))
-                         (size (buffer-size))
-                         (was (and line (buffer-substring-no-properties
-                                         start finish))))
-                    (donkey--split-cursors-replay-at place command arg
-                                                     edit)
-                    (when line
-                      (push (list start was
-                                  (buffer-substring-no-properties
-                                   start (+ finish (- (buffer-size) size))))
-                            ops)))))
+                ;; Nothing is displayed until every cursor has run, so
+                ;; a command that asks the display engine on its way --
+                ;; `vertical-motion' under `line-move' -- need not have
+                ;; it number the lines at every cursor.
+                (let ((display-line-numbers nil))
+                  (dolist (place donkey--split-places)
+                    (setq queue (copy-sequence answers))
+                    ;; An edit is recorded as its cursor's whole line
+                    ;; before and after, since what it changes inside
+                    ;; the line is the command's to know.
+                    (let* ((inhibit-message (not (eq place last)))
+                           (message-log-max (and (eq place last)
+                                                 message-log-max))
+                           (line (and edit
+                                      (donkey--split-cursor-line place)))
+                           (start (car line))
+                           (finish (and line
+                                        (min (point-max)
+                                             (1+ (cdr line)))))
+                           (size (buffer-size))
+                           (was (and line (buffer-substring-no-properties
+                                           start finish))))
+                      (donkey--split-cursors-replay-at place command arg
+                                                       edit)
+                      (when line
+                        (push (list start was
+                                    (buffer-substring-no-properties
+                                     start
+                                     (+ finish (- (buffer-size) size))))
+                              ops))))))
               (when edit
                 (donkey--split-record-ops head (nreverse ops))
                 (setq donkey--split-did 'edited))
@@ -9418,6 +9428,27 @@ The split\\='s `donkey-insert-end-of-line'."
   (interactive)
   (donkey--split-cursors-type-at-line 'end))
 
+(defun donkey-split-cursors-line-end (&optional _count)
+  "Put every cursor at the end of its line, keeping any selection.
+
+The split\\='s `move-end-of-line'.  A cursor holding a selection keeps
+its anchor, so the selection reaches the line\\='s end; one selecting
+its whole line keeps the line.  A COUNT, which would move down lines,
+is ignored: a cursor never leaves its line."
+  (interactive "p")
+  (donkey--split-live-p)
+  (dolist (place donkey--split-places)
+    (let ((end (donkey--split-cursors-edge place 'end))
+          (memory (overlay-get place 'donkey-memory)))
+      (if (overlay-get place 'donkey-line)
+          (donkey--split-cursor-set place end nil t memory)
+        (donkey--split-cursor-set place end (donkey--split-cursor-anchor place)
+                                  nil memory))))
+  ;; What the replay of the same motion would leave for the next
+  ;; replay to read as its `last-command'.
+  (setq donkey--split-cursor-last 'move-end-of-line)
+  (donkey--split-cursors-settle))
+
 (defun donkey--split-cursor-span (place count whole-lines)
   "Return (BEG END SELECTED) for what PLACE\\='s cursor acts on.
 
@@ -9653,7 +9684,9 @@ cursor\\='s line recorded before and after."
                 (newline-and-indent)
                 (forward-line -1)
                 (indent-according-to-mode))
-            (move-end-of-line 1)
+            ;; The place `move-end-of-line' reaches, without the
+            ;; display engine it runs in a live frame at every cursor.
+            (end-of-visible-line)
             (newline-and-indent))
           (push (list start was
                       (buffer-substring-no-properties
