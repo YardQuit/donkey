@@ -9,6 +9,136 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.17.0 — 2026-09-27
+
+=t= puts cursors down a column, and editing happens at every one.
+The split of 1.16.0 held every match of a regexp and typed at all of
+them; this release gives it cursors: =t= puts a second cursor on the
+line below, a selection of lines gets one on each, and from then on
+the motions, the selections, the edits and the mark run happen at
+every cursor at once, in NORMAL state, with the keys you already use.
+It was built by using it on a book of 87,000 lines: ten thousand
+cursors answer a key in a tenth to a fifth of a second, and a
+keystroke typed at 850,000 places takes about ten milliseconds where
+it took over a second.
+
+*Added*
+
+- =t= (=donkey-split-add-cursor=) puts a cursor on the line below at
+  the same column; each press adds one more, a count adds that many,
+  and a negative count adds above. =T= adds above, =DEL= takes back
+  the cursor added last, and ~=~ puts every cursor back under the real
+  one after a motion left them in different columns. Both keys rang
+  the bell before.
+- =t= over a selection puts a cursor on every line it covers: =V j j j
+  j t= is five cursors at their lines' starts, and a =v= selection or
+  an =m v= block gives each line a cursor at point's column.
+- Every cursor then does what the real one does: =h= =l= =w= =b= =W=
+  =B= =g h= =g l= move; =v=, =V= and the =m= objects select; =i= =a=
+  =I= =A= =c= type, with =C-g= coming back to the cursors rather than
+  ending them; =d= =x= =D= =y= =p= delete, kill, copy and paste and
+  keep the cursors; a delimiter wraps each selection and the same key
+  takes the pair off; =M= is the mark run at every cursor, =u= and =U=
+  stepping it; =m l= and =m u= bank and unbank each cursor's line;
+  =M-u= =M-l= =M-c= change case; =o= =O= open a line at each cursor;
+  =>= and =C= indent and comment each line; =.= repeats; =u= and =U=
+  undo and redo and keep the cursors; =f= searches each cursor's
+  selection or line. Any other key, =j= and =k= included, ends the
+  cursors and does its ordinary job.
+- What =d=, =D= and =y= take at the cursors is one kill, one line per
+  cursor, and =p= gives each cursor its own line back when the kill
+  has as many lines as there are cursors, so =m w y=, a move, and =p=
+  copies each cursor's word to where that cursor went.
+- Three limits keep the cursors out of each other's way: a cursor
+  never leaves its own line, cursors that come to share a line become
+  one, and a command that fails at one cursor is undone at all of
+  them. An edit at the cursors is one undo step whatever their number.
+- =donkey-split-cursor-limit= (10000) is the most cursors =t= makes;
+  it refuses past that and says so. Set it higher, or to =nil= for no
+  limit, or set =donkey-split-cursor-limit-ask= to be asked instead.
+  =f= has no limit.
+- =f= draws a cursor at every match, where before it showed one, so
+  where each match will take the typing is no longer a guess.
+- =f= with the regexp typed with =%= in front, =f %foo RET=, searches
+  the whole buffer, whatever is selected; with nothing selected it
+  searched only the current line, and the =%= was part of the search.
+  A bank is left standing. =\%= or =[%]= at the start searches for a
+  percent sign.
+- Lesson 16 of the tutor teaches the cursors by exercise, and the
+  README has a section, "Undo history at scale", on what a step at
+  thousands of places costs and the three Emacs settings that keep
+  more of them.
+
+*Changed — you will notice these*
+
+- =m v c=, change on a rectangle, used to ask for the replacement in
+  the minibuffer through =string-rectangle= and stay in NORMAL state.
+  It now empties the block on every row and puts a cursor on each, in
+  INSERT state, so the text is typed on every row at once and can be
+  edited as it is typed; =C-g= comes back to the cursors and =C-g=
+  again ends them. =RET=, which used to end the prompt, now types a
+  line break on every row, so =m v c x RET= that gave =x= on each row
+  gives =x= and a new line on each; =C-/= takes the line break back on
+  every row. The block still goes to =killed-rectangle=, where =P=
+  pastes it back, and a row too short to reach the block is still
+  padded out to its column. A block one row high is a plain change,
+  and one taller than =donkey-split-cursor-limit= still asks in the
+  minibuffer.
+- =m w= on a dash, or on any symbol character with no word at it,
+  used to refuse with "No word at or before point". It now takes the
+  word ahead, or the one behind where nothing is ahead, as it does
+  from a space. A dash between two words still gives the word it
+  touches, and =m b= follows.
+- =u= after a split: once the writing at the places ends, one =u=
+  takes back everything typed there, at every place, and =U= puts it
+  back. 1.16.0 took it back about twenty characters at a time, the way
+  Emacs groups typing.
+
+*Fixed*
+
+- The tutor's last section said DONKEY steps aside altogether in
+  Dired, Ibuffer and the tabulated lists, and that its letters win in
+  the read-only buffers it does not leave. Those have been support
+  modes since 1.12.0, where =h= =j= =k= =l= and the leader are
+  DONKEY's and every other key is the mode's; the tutor now says so,
+  and names the buffers DONKEY does leave: Magit, a rebase todo, Info,
+  terminals and REPLs.
+- The README had the two directions of a wrap key the wrong way
+  round, and the docstring of =donkey-mark-inner= said the delimiter
+  typed after =m i= does nothing: with what the pair holds selected
+  the pair comes off, and with the pair selected as well another goes
+  on.
+- The Commentary at the top of =donkey.el=, the package's long
+  description, still described DONKEY as it was before the mark run;
+  it now says what the README says.
+
+*Under the hood*
+
+- Typing at many places is written where a window can show it first
+  and the rest is swept in between keystrokes, and the writing, like
+  each verb, records one compact undo entry. Before, every keystroke
+  at 850,000 places took over a second and recorded 27 MB of undo,
+  which Emacs discarded at the next collection with a warning.
+- A tall rectangle is highlighted only where a window could show it,
+  and its PRIMARY selection is claimed lazily and made only when a
+  program asks, so a motion over 87,000 rows no longer takes most of
+  a second.
+
+*Upgrading*
+
+Nothing to do, unless a regexp you give =f= starts with a percent
+sign: write =\%= there now, since a leading =%= means the whole
+buffer. =t= and =T= were unbound keys in NORMAL state, so no binding
+of DONKEY's moves; if you had put something of your own on either, it
+stays yours, and the commands are =donkey-split-add-cursor= and
+=donkey-split-add-cursor-above=. DONKEY's startup report now names
+such a key, with a line like "DONKEY: t is my-command now, was
+donkey-split-add-cursor": that is the report noticing a key you have
+taken, and setting =donkey-report-binding-changes= to nil turns it
+off. If you work with thousands of cursors or places, the README's
+"Undo history at scale" says which three =undo-= limits to raise so
+that more than a step or two is kept.
+
 * 1.16.0 — 2026-09-24
 
 =f= edits every match at once. It asks for a regexp, holds every match
