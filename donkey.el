@@ -7261,6 +7261,14 @@ recorded where undo is off in the buffer, or POSITIONS is empty."
         (push entry buffer-undo-list)
         (donkey--split-truncate-undo)))))
 
+(defvar donkey--split-put-back-places nil
+  "The live places from the position being put back downward, last first.
+
+Bound by `donkey--split-put-back' around its rewrites, in buffer order
+reversed, and shortened by `donkey--split-put-back-at' as it goes: the
+rewrites run from the last position to the first, so a place above the
+position in hand is never wanted again.")
+
 (defun donkey--split-put-back (positions now then end)
   "Put THEN back where NOW stands at each of POSITIONS, the last first.
 
@@ -7271,7 +7279,10 @@ what differs between the two is rewritten, see
 `donkey--split-put-back-at'.  The reverse is recorded the same way, at
 the positions the texts then stand at, so the change can be undone
 again.  Refuses, changing nothing, where a position does not hold NOW:
-the buffer is no longer what the entry was made from."
+the buffer is no longer what the entry was made from.  Where a split
+is live, what is put in beside one of its places stays outside the
+place, so no place holds anything but what it held; see
+`donkey--split-put-back-at'."
   (donkey--split-holding-gc
     (let ((n (length positions))
           (end-marker (copy-marker end t))
@@ -7312,7 +7323,12 @@ written at them"))
                               length))))
           (setq i (1+ i))))
       (let ((buffer-undo-list t)
-            (deactivate-mark nil))
+            (deactivate-mark nil)
+            (donkey--split-put-back-places
+             (and donkey--split-places
+                  (reverse (if donkey--split-cursors
+                               (donkey--split-cursors-in-order)
+                             donkey--split-places)))))
         (save-excursion
           (while (> i 0)
             (setq i (1- i))
@@ -7335,7 +7351,14 @@ The end the two share is found first and the beginning after it, so
 where the same characters could be taken as either -- a line break
 put in beside a line break -- the change is made at the earlier
 position, which is where a command inserting them made it, and an
-undo leaves point and the cursors as Emacs\\='s own record would."
+undo leaves point and the cursors as Emacs\\='s own record would.
+
+What is put in stays outside a live place with an edge there: a place
+beginning where the text goes in begins after it, one ending there
+still ends before it, and an empty one stays before it.  So a pair an
+undo takes off a selection and a redo puts back stands around the
+selection again, not inside it, and the same key takes it off once
+more."
   (let* ((now-length (length now))
          (then-length (length then))
          (room (min now-length then-length))
@@ -7343,10 +7366,30 @@ undo leaves point and the cursors as Emacs\\='s own record would."
          (suffix (if (eq back t) room (1- (abs back))))
          (front (compare-strings now 0 (- now-length suffix)
                                  then 0 (- then-length suffix)))
-         (prefix (if (eq front t) (- room suffix) (1- (abs front)))))
-    (delete-region (+ pos prefix) (+ pos (- now-length suffix)))
-    (goto-char (+ pos prefix))
-    (insert (substring then prefix (- then-length suffix)))))
+         (prefix (if (eq front t) (- room suffix) (1- (abs front))))
+         (at (+ pos prefix))
+         (text (substring then prefix (- then-length suffix)))
+         place)
+    (delete-region at (+ pos (- now-length suffix)))
+    (goto-char at)
+    ;; The place with the greatest start at or below AT, once those
+    ;; above it are dropped: places do not overlap, so it is the only
+    ;; one that can begin or end at AT.
+    (while (and donkey--split-put-back-places
+                (> (overlay-start (car donkey--split-put-back-places)) at))
+      (setq donkey--split-put-back-places
+            (cdr donkey--split-put-back-places)))
+    (setq place (car donkey--split-put-back-places))
+    (let ((empty (and place (= (overlay-start place) (overlay-end place) at)))
+          (starting (and place (= (overlay-start place) at)))
+          (ending (and place (= (overlay-end place) at))))
+      (insert text)
+      (unless (string-empty-p text)
+        (cond
+         ;; The place took the text in at its end; give it back.
+         (empty (move-overlay place at at))
+         (starting (move-overlay place (point) (overlay-end place)))
+         (ending (move-overlay place (overlay-start place) at)))))))
 
 (defun donkey--split-undo-reachable-p (head)
   "Return non-nil where HEAD is still a tail of `buffer-undo-list'.

@@ -958,6 +958,13 @@ this a verb elsewhere acts on nothing at all."
   "alpha beta\ngamma delta\nepsilon zeta\nlast\n"
   "Four lines for the column-cursor tests.")
 
+(defun donkey-split-test--selections ()
+  "Return the text under every cursor's selection, in buffer order."
+  (mapcar (lambda (place)
+            (buffer-substring-no-properties (overlay-start place)
+                                            (overlay-end place)))
+          (donkey--split-cursors-in-order)))
+
 (defun donkey-split-test--cursors ()
   "Return where every cursor of the live split is, top first."
   (mapcar #'donkey--split-cursor donkey--split-places))
@@ -1144,6 +1151,45 @@ this a verb elsewhere acts on nothing at all."
   (donkey-split-test--keys "*cursors-D*" donkey-split-test--column "l l t t D"
     (should (equal (buffer-string) "al\nga\nep\nlast\n"))
     (should (equal (car kill-ring) "pha beta\nmma delta\nsilon zeta"))))
+
+(ert-deftest donkey-split-cursors-undo-and-redo-keep-a-pair-outside-the-selection ()
+  "After `u' and `U' of a wrap at the cursors, the same key takes it off."
+  (dolist (case '(("t m w ( u U"
+                   "(alpha) beta\n(gamma) delta\nepsilon zeta\nlast\n"
+                   ("alpha" "gamma") "("
+                   "alpha beta\ngamma delta\nepsilon zeta\nlast\n")
+                  ("t m w ( ( u"
+                   "(alpha) beta\n(gamma) delta\nepsilon zeta\nlast\n"
+                   ("alpha" "gamma") "("
+                   "alpha beta\ngamma delta\nepsilon zeta\nlast\n")
+                  ("t m w ( [ u U"
+                   "([alpha]) beta\n([gamma]) delta\nepsilon zeta\nlast\n"
+                   ("alpha" "gamma") "["
+                   "(alpha) beta\n(gamma) delta\nepsilon zeta\nlast\n")))
+    (cl-destructuring-bind (keys text selections key text-after) case
+      (donkey-split-test--keys "*cursors-redo*" donkey-split-test--column keys
+        (should (equal (list keys (buffer-string)) (list keys text)))
+        (should (equal (list keys (donkey-split-test--selections))
+                       (list keys selections)))
+        (execute-kbd-macro (kbd key))
+        (should (equal (list keys (buffer-string)) (list keys text-after)))))))
+
+(ert-deftest donkey-split-cursors-undo-of-an-unwrap-keeps-the-pair-outside ()
+  "`u' after the pair came off puts it back around the selection, not in it."
+  (donkey-split-test--keys "*cursors-unwrap-undo*" "(a (b) c)\n((d) x)\n"
+      "l l l t m i ( u"
+    (should (equal (buffer-string) "(a (b) c)\n((d) x)\n"))
+    (should (equal (donkey-split-test--selections) '("b" "d")))
+    (execute-kbd-macro (kbd "("))
+    (should (equal (buffer-string) "(a b c)\n(d x)\n"))))
+
+(ert-deftest donkey-split-cursors-redo-keeps-text-typed-beside-a-selection-outside ()
+  "Text a redo puts back at a selection's edge is not taken into it."
+  (donkey-split-test--keys "*cursors-redo-edge*" donkey-split-test--column
+      "t a X C-g u v l l U"
+    (should (equal (buffer-string)
+                   "aXlpha beta\ngXamma delta\nepsilon zeta\nlast\n"))
+    (should (equal (donkey-split-test--selections) '("lp" "am")))))
 
 (ert-deftest donkey-split-cursors-wrap-only-what-is-selected ()
   "A delimiter wraps each cursor's selection, and nothing where none is."
