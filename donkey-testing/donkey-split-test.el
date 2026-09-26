@@ -2048,10 +2048,15 @@ compared by their text, not by their size."
   (donkey-split-test--keys "*cursors-gc-note*" donkey-split-test--column "t t"
     (should (memq #'donkey--split-note-gc post-gc-hook))
     (should (vectorp donkey--split-gc-note))
-    (ignore (make-list 100000 nil))
-    (should (> (donkey--split-consed-since-gc) 1000000))
-    (garbage-collect)
-    (should (< (donkey--split-consed-since-gc) 100000))
+    ;; Collect first: Emacs sets the budget from the threshold at a
+    ;; collection, so the list below cannot bring one of its own
+    ;; before the count is read, whatever the heap is.
+    (let ((gc-cons-threshold (* 64 1024 1024)))
+      (garbage-collect)
+      (ignore (make-list 100000 nil))
+      (should (> (donkey--split-consed-since-gc) 1000000))
+      (garbage-collect)
+      (should (< (donkey--split-consed-since-gc) 100000)))
     (execute-kbd-macro (kbd "C-g"))
     (should-not (memq #'donkey--split-note-gc post-gc-hook))
     (should (null donkey--split-gc-note))))
