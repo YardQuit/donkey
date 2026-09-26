@@ -959,6 +959,33 @@ one. And a command that fails at one cursor is undone at all of them.
 Any key not in the table, =j= and =k= included, ends the cursors and
 does its ordinary job.
 
+** Undo history at scale
+
+Every step a split takes — a wrap, a deletion, the writing between =i=
+and =C-g=, a key at the cursors — is one undo entry, and =u= takes it
+back everywhere at once. The entry holds a position for every place
+and the text that changed, so a step is about 8 bytes a place plus
+the text: 100 KB at ten thousand places, 0.8 MB at a hundred
+thousand. Emacs keeps history up to =undo-limit=, 160 KB by default,
+and always keeps the newest step whole, so at those sizes the history
+is a step or two. DONKEY counts its entries at their true size, where
+Emacs's own count would take each for 32 bytes and let the history
+grow until a garbage collection threw all of it away at once.
+
+To keep more, raise the limits. The cost is the memory the kept
+records take, and a garbage collection that is longer by about a
+quarter of a millisecond per megabyte kept — some 25 ms more with a
+hundred megabytes of history; typing, the split's keys and undo itself
+are no slower. =undo-strong-limit= must stay above =undo-limit=, and a
+single step larger than =undo-outer-limit= (24 MB by default) is not
+recorded at all, and the split says so.
+
+#+begin_src emacs-lisp
+  (setopt undo-limit (* 100 1024 1024)          ; history kept, per buffer
+          undo-strong-limit (* 120 1024 1024)   ; must stay above undo-limit
+          undo-outer-limit (* 200 1024 1024))   ; the largest single step recorded
+#+end_src
+
 * Typing characters your keyboard lacks
 :PROPERTIES:
 :CUSTOM_ID: typing-characters-your-keyboard-lacks
@@ -2770,6 +2797,16 @@ Using =setopt= for everything means never having to know which is which.
     (setopt donkey-split-cursor-limit 10000)                     ; default
     ;; Ask past the limit instead of refusing.
     (setopt donkey-split-cursor-limit-ask nil)                   ; default
+
+    ;;; Undo history
+
+    ;; Emacs's own limits, not DONKEY's.  A split's step is one undo
+    ;; entry of about 8 bytes a place plus the text, so Emacs's 160 KB
+    ;; keeps a step or two at ten thousand places; these keep about a
+    ;; thousand there, or a hundred and thirty at a hundred thousand.
+    (setopt undo-limit (* 100 1024 1024))
+    (setopt undo-strong-limit (* 120 1024 1024))
+    (setopt undo-outer-limit (* 200 1024 1024))
 
     ;;; Selecting and wrapping
 
