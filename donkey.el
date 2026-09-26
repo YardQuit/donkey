@@ -4285,8 +4285,8 @@ The selection standing before the press is cleared only once the pair
 has been FOUND -- see the comment at the marking below."
   ;; A repeat re-runs the original search one level wider from the
   ;; same anchor, so repeating agrees with counting; it never prompts,
-  ;; so the delimiter typed next is loose and swallowed once the pair
-  ;; is found.
+  ;; so a delimiter typed next is a loose key, and wraps or unwraps
+  ;; what the repeat selected.
   (let* ((state (and (donkey--mark-extending-p) donkey--mark-pair-state))
          (anchor (if state (nth 0 state) (point)))
          (spec (if state
@@ -4334,8 +4334,10 @@ character; otherwise prompts via `read-char'.  EITHER half of a pair
 answers that prompt: \\=`m i )\\=' means what \\=`m i (\\=' means, the closer
 resolving to its opener the same way point sitting on one always has.
 
-The delimiter key is harmless when the prompt was skipped.  For
-asymmetric pairs (e.g. `(' and `)'), nested occurrences of the SAME
+A delimiter typed after that is a wrap key and acts as one: it takes
+the pair off what \\=`m i\\=' selected, or puts another round what
+\\=`m a\\=' selected; see `donkey-wrap-region'.  For asymmetric
+pairs (e.g. `(' and `)'), nested occurrences of the SAME
 pair resolve to the correctly balanced match -- e.g. the outer `(' of
 \"(a(b)c)\" selects \"a(b)c\", not just up to the first `)' found.
 

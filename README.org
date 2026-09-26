@@ -551,8 +551,8 @@ just as =(= does.
 
 Press the same delimiter with the pair *already* around the selection
 and it comes off again. Which one you get is decided by what you
-selected: select what the pair holds and the pair goes on; select the
-pair as well and it comes off.
+selected: select what the pair holds and the pair comes off; select
+the pair as well and another goes on around it.
 
 Characters your keyboard cannot reach are available too — see
 [[#typing-characters-your-keyboard-lacks][Typing characters your keyboard lacks]] — and rectangles can be wrapped
