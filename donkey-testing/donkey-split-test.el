@@ -1932,6 +1932,99 @@ compared by their text, not by their size."
       (execute-kbd-macro (kbd "U"))
       (should (equal (buffer-string) "a fooX b\nc fooX d\nZ")))))
 
+(ert-deftest donkey-split-holding-gc-raises-the-threshold-and-collects-once-when-due ()
+  "Inside the hold the threshold is raised, and it collects once when the consing since the last is past it, never below, once when nested."
+  (let ((collected 0)
+        (inside nil)
+        (donkey--split-gc-live nil)
+        (donkey--split-gc-note nil))
+    ;; The stub notes the counters as the real collection's hook would.
+    (cl-letf (((symbol-function 'garbage-collect)
+               (lambda () (setq collected (1+ collected)) (donkey--split-note-gc) nil)))
+      (donkey--split-note-gc)
+      (let ((gc-cons-threshold 200000))
+        (donkey--split-holding-gc (setq inside gc-cons-threshold))
+        (should (= inside donkey--split-gc-hold))
+        (should (= collected 0))
+        (donkey--split-holding-gc (ignore (make-list 100000 nil)))
+        (should (= collected 1))
+        (donkey--split-holding-gc (ignore (make-list 1000 nil)))
+        (should (= collected 1))
+        (donkey--split-holding-gc
+          (donkey--split-holding-gc (ignore (make-list 100000 nil)))
+          (should (= collected 1)))
+        (should (= collected 2))
+        ;; Consing before the hold counts too: it is due at the next key.
+        (ignore (make-list 100000 nil))
+        (donkey--split-holding-gc (ignore (make-list 1000 nil)))
+        (should (= collected 3)))
+      ;; A reader's larger threshold is kept, and taken as the measure.
+      (let ((gc-cons-threshold (* 2 donkey--split-gc-hold)))
+        (donkey--split-holding-gc (setq inside gc-cons-threshold))
+        (should (= inside (* 2 donkey--split-gc-hold)))
+        (donkey--split-holding-gc (ignore (make-list 100000 nil)))
+        (should (= collected 3)))
+      ;; And `gc-cons-percentage' of the live data where that is more.
+      (let ((gc-cons-threshold 200000)
+            (gc-cons-percentage 0.5)
+            (donkey--split-gc-live 100000000))
+        (donkey--split-holding-gc (ignore (make-list 100000 nil)))
+        (should (= collected 3)))
+      ;; With nothing noted, nothing is collected.
+      (let ((gc-cons-threshold 200000)
+            (donkey--split-gc-note nil))
+        (donkey--split-holding-gc (ignore (make-list 100000 nil)))
+        (should (= collected 3))))))
+
+(ert-deftest donkey-split-notes-every-collection-while-a-split-is-live ()
+  "A split installs the collection note on `post-gc-hook' and takes it down with it."
+  (donkey-split-test--keys "*cursors-gc-note*" donkey-split-test--column "t t"
+    (should (memq #'donkey--split-note-gc post-gc-hook))
+    (should (vectorp donkey--split-gc-note))
+    (ignore (make-list 100000 nil))
+    (should (> (donkey--split-consed-since-gc) 1000000))
+    (garbage-collect)
+    (should (< (donkey--split-consed-since-gc) 100000))
+    (execute-kbd-macro (kbd "C-g"))
+    (should-not (memq #'donkey--split-note-gc post-gc-hook))
+    (should (null donkey--split-gc-note))))
+
+(ert-deftest donkey-split-cursors-keep-their-own-selection-memory ()
+  "What a command leaves in a cursor's memory comes back to that cursor alone."
+  (donkey-split-test--keys "*cursors-memory*" donkey-split-test--column "t t"
+    (let ((seen nil))
+      (cl-letf (((symbol-function 'donkey-split-test--remember)
+                 (lambda ()
+                   (interactive)
+                   (setq donkey-visual-anchor (point)
+                         donkey--mark-pair-state (list 'pair (point)))))
+                ((symbol-function 'donkey-split-test--recall)
+                 (lambda ()
+                   (interactive)
+                   (push (list (point) donkey-visual-anchor
+                               donkey--mark-pair-state)
+                         seen))))
+        (donkey--split-cursors-run 'donkey-split-test--remember nil)
+        (donkey--split-cursors-run 'donkey-split-test--recall nil))
+      (should (equal (nreverse seen)
+                     '((1 1 (pair 1)) (12 12 (pair 12)) (24 24 (pair 24)))))
+      (should (null donkey-visual-anchor))
+      (should (null donkey--mark-pair-state)))))
+
+(ert-deftest donkey-split-refuses-to-undo-over-a-place-whose-case-changed ()
+  "The writing's undo entry refuses a place holding its letters in another case."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-undo-case*" "a foo b\nc foo d\n"
+        "v G f a X C-g"
+      (let ((buffer-undo-list t))
+        (save-excursion
+          (goto-char (point-max))
+          (search-backward "X")
+          (delete-char 1)
+          (insert "x")))
+      (should-error (execute-kbd-macro (kbd "u")))
+      (should (equal (buffer-string) "a fooX b\nc foox d\n")))))
+
 (ert-deftest donkey-split-refuses-to-undo-over-text-that-changed-since ()
   "The writing's undo entry changes nothing where a place no longer holds what it wrote."
   (donkey-split-test--on "foo"
