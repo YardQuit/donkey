@@ -12314,6 +12314,22 @@ at once.
    ---> old green pear
    ---> old blue plum
 
+A delimiter wraps what each cursor has selected, and the same key
+takes the pair off again, as it does with one cursor; with nothing
+selected it does nothing.
+
+>> Put the cursor on the first flower below and press \\[donkey-split-add-cursor] twice,
+   then \\[donkey-mark-word] and \\`\"': every flower is quoted.  Press \\`\"' again
+   and the quotes come off.  \\`C-g' twice.
+
+   ---> rose
+   ---> iris
+   ---> lily
+
+DONKEY-DELETE-KEYS and \\[kill-line] delete at every cursor and keep the
+cursors, \\`V' selects every cursor's line, and \\[donkey-bank-selection] and
+\\[donkey-unbank-line] bank and unbank those lines.
+
 Emacs\\=' own case keys work at the cursors too: \\`M-u' upcases each
 selection, or the word at each cursor, and \\`M-l' and \\`M-c' lower it and
 capitalize it.  \\[donkey-open-below] and \\[donkey-open-above] open a line at every cursor, \\[donkey-indent-region-or-line] and \\[donkey-comment-dwim] indent
@@ -12393,17 +12409,20 @@ of what DONKEY does not touch.  This one covers only what DONKEY
 changed.
 
 Some buffers are really applications, and DONKEY steps aside in them
-altogether: magit and dired, ibuffer, Info, the tabulated lists
-(the package menu, the buffer menu), a rebase todo, and every terminal
-and REPL.  There every key is the mode's, \\`C-g' quits the way stock
-Emacs does instead of switching state, and the modeline says DONKEY[E]
-rather than DONKEY[I].  DONKEY-EXCLUDED-MODES is that list; add a mode
-to it and the same is true there.
+altogether: Magit, a rebase todo, Info, and every terminal and REPL.
+There every key is the mode's, \\`C-g' quits the way stock Emacs does
+instead of switching state, and the modeline says DONKEY[E] rather
+than DONKEY[I].  DONKEY-EXCLUDED-MODES is that list; add a mode to it
+and the same is true there.
 
-In the read-only buffers NOT on that list -- a help buffer, an Occur
-list, a compilation log, the Org agenda -- DONKEY is on and its letters
-win where they collide, though a key the mode bound that DONKEY does
-not use still works.
+Every other buffer a program made for you -- Dired, Ibuffer, a help
+buffer, an Occur list, a compilation log, the package menu, the Org
+agenda -- is a SUPPORT mode: \\`h' \\`j' \\`k' \\`l' and the SPC leader
+are DONKEY's, and every other key is the mode's, as it always was.
+Where the mode has somewhere to go, \\`h' and \\`l' go there -- up a
+directory and into a file in Dired -- and a key of the mode's that
+those four displaced is moved rather than dropped: Dired's own \\`j'
+and \\`k' are on \\`J' and \\`K'.  The modeline says DONKEY[S].
 
 
 That is the working set
