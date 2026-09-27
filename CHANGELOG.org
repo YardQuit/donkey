@@ -9,6 +9,59 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.17.1 — 2026-09-27
+
+A key taken out of NORMAL state no longer reaches the major mode. A
+key in NORMAL state is DONKEY's, one you bound, or nothing: taking one
+of DONKEY's keys away with =keymap-unset= used to hand it to whatever
+the major mode put there, where it could type or run the mode's own
+command. The tutor stops erasing itself on the first =u=, and shows
+its keys, its states and the lines to practice on in colors of their
+own.
+
+*Fixed — you will notice these*
+
+- =keymap-unset= on a key of =donkey-normal-mode-map=: the key used to
+  fall through to the major mode, with or without =REMOVE=. Measured
+  over sixteen stock modes with every printable key, =RET= and =DEL=
+  unset: =/= typed in =html-mode= and =nxml-mode=, ="= typed in
+  =texinfo-mode= and =latex-mode=, and =RET= and =DEL= edited in all
+  sixteen. Now every printable key, =SPC=, =RET= and the delete keys
+  do nothing once taken away. =TAB= and every key NORMAL state never
+  bound — =C-x=, =C-c=, =M-x=, the arrows — reach Emacs as before. The
+  README gave the fall-through as the way to give a key back to the
+  buffer; its own example, =;=, gave nothing back in any stock mode,
+  and the section is now "Taking a key away".
+- =g=, =m=, =r=, =z= and =SPC=: a sequence a major or minor mode bound
+  under one of those keys ran in NORMAL state, merged in under
+  DONKEY's own. Only DONKEY's keys and yours answer there now.
+- =u= in the tutor: in a tutor just opened, one =u= emptied the
+  buffer, because the lesson itself was on the undo list. Undo now
+  stops at the lesson as it opened.
+- The tutor wrote =RET= and =SPC= as plain text beside keys drawn as
+  keys. They, the =C-u= of a count, and Backspace and Delete, which it
+  now names =DEL= and =<delete>= as Emacs does, are drawn as keys too.
+
+*Changed — you will notice these*
+
+- The tutor colors the names of the states — NORMAL, INSERT, SUPPORT,
+  and the modeline's DONKEY[N], DONKEY[I], DONKEY[S] and DONKEY[E] —
+  in the face =donkey-tutor-state=, and marks each line to practice on
+  with =---->=, four dashes where there were three, in
+  =donkey-tutor-arrow=. The faces inherit =font-lock-keyword-face= and
+  =font-lock-builtin-face=; customize either to change it. A font with
+  arrow ligatures, Cascadia Code among them, draws =--->= as a double
+  dash and a short arrow, and =---->= as one arrow.
+
+*Upgrading*
+
+Nothing to do, unless you took a key out of =donkey-normal-mode-map= to
+reach the major mode's command in NORMAL state: that key now does
+nothing. Bind the command to the key in =donkey-normal-mode-map=, or,
+for one mode only, remap DONKEY's command in that mode's own map, as
+the README's "If a Key Is Not Doing What You Want" shows. A tutor
+buffer already open keeps its old text until you kill it.
+
 * 1.17.0 — 2026-09-27
 
 =t= puts cursors down a column, and editing happens at every one.
