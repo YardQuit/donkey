@@ -3966,6 +3966,10 @@ itself, which a program asking for it is answered from; see
    ((not rectangle-mark-mode)
     (donkey--rectangle-primary-freeze))))
 
+;;; ---------------------------------------------------------------------------
+;;; Mark and Text Object Selection Commands, continued
+;;; ---------------------------------------------------------------------------
+
 (defcustom donkey-mark-pair-delimiters
   '((?\{ . ?\}) (?\[ . ?\]) (?\( . ?\)) (?\< . ?>)
     (?\" . ?\") (?\' . ?\') (?\` . ?\`) (?‘ . ?’) (?“ . ?”)
@@ -11523,7 +11527,6 @@ ampersand in front of it.\n\n"))
         (donkey--digraph-pad-rows window)))))
 
 ;;; ---------------------------------------------------------------------------
-
 ;;; Donkey Tutor
 ;;; ---------------------------------------------------------------------------
 
