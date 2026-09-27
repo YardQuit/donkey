@@ -260,6 +260,11 @@ The keys it names are *your* keys: the lessons are written with
 =substitute-command-keys= escapes, so anyone who has rebound something
 is taught the binding they actually have rather than the default.
 
+Every key stands out in the face Emacs's own help gives keys, the names
+of the states in =donkey-tutor-state=, and the arrow before each line
+to practice on in =donkey-tutor-arrow=; customize either face to change
+its color.
+
 Running =M-x donkey-tutor= again returns you to the buffer as you left
 it. Kill the buffer to start over — nothing is written to disk.
 

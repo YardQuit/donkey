@@ -11527,6 +11527,19 @@ ampersand in front of it.\n\n"))
 ;;; Donkey Tutor
 ;;; ---------------------------------------------------------------------------
 
+(defface donkey-tutor-arrow
+  '((t :inherit font-lock-builtin-face))
+  "Face for the arrow that marks a line to practice on in the tutor."
+  :group 'donkey)
+
+(defface donkey-tutor-state
+  '((t :inherit font-lock-keyword-face))
+  "Face for the name of a state in the tutor: NORMAL, INSERT, SUPPORT.
+
+The modeline's names for the states, DONKEY[N] and the others, take
+it too."
+  :group 'donkey)
+
 (defconst donkey--tutor-content
   "DONKEY tutor
 =============
@@ -11564,10 +11577,10 @@ Movement sits on the home row:
 
     \\[backward-char] left    \\[next-line] down    \\[previous-line] up    \\[forward-char] right
 
->> Walk the cursor down to the ---> line, along it, and back, using only
-   those four keys.
+>> Walk the cursor down to the ----> line, along it, and back, using
+   only those four keys.
 
-   ---> Move along this line and back again before going on.
+   ----> Move along this line and back again before going on.
 
 Bigger jumps:
 
@@ -11594,7 +11607,7 @@ Lesson 2 -- counts
 ------------------
 
 A count works wherever \"how many\" means something, and it always means
-exactly that.  Give it as C-u N before the key.
+exactly that.  Give it as \\`C-u' N before the key.
 
 Every motion takes one, and so does every \\`m' key that selects a thing,
 along with DONKEY-DELETE-KEYS, \\[donkey-copy], \\[donkey-change], \\[donkey-yank], \\[donkey-open-below], \\[donkey-open-above] and \\[donkey-visual-line-toggle].  The keys with no \"how many\" in them
@@ -11614,7 +11627,7 @@ obeyed.  \\`C-u 3' \\[next-line] is how it is said.
    one go, leaving the cursor just after \"five\".  \\[forward-word] lands at the END
    of each word, so counting stops there rather than on the next one.
 
-   ---> one two three four five six seven eight nine ten
+   ----> one two three four five six seven eight nine ten
 
 Counts work the same way on the editing commands you are about to meet.
 Lessons 4 and 5 each end with a line to try one on, once the command
@@ -11655,7 +11668,7 @@ one.
 >> Put the cursor on the full stop below, press \\[donkey-insert-here], type the missing
    word -- it is \"dog\" -- then press \\`C-g' to return to NORMAL.
 
-   ---> The quick brown fox jumps over the lazy .
+   ----> The quick brown fox jumps over the lazy .
 
 
 Lesson 4 -- deleting and changing
@@ -11664,15 +11677,15 @@ Lesson 4 -- deleting and changing
     DONKEY-DELETE-KEYS delete the character under the cursor, or the selection
     \\[donkey-change]   change it -- deletes, then drops you into INSERT
 
->> Fix the doubled letters on the ---> line using DONKEY-DELETE-KEYS.
+>> Fix the doubled letters on the ----> line using DONKEY-DELETE-KEYS.
 
-   ---> Thiis liine haas extraa letterss in itt.
+   ----> Thiis liine haas extraa letterss in itt.
 
 >> Put the cursor on the \"w\" of \"wrong\" below -- the FIRST character, not
    just somewhere in the word -- then press \\`C-u 5' \\[donkey-change], type \"right\",
    and press \\`C-g'.
 
-   ---> This word is wrong and needs replacing.
+   ----> This word is wrong and needs replacing.
 
    One character off and you replace the wrong five: starting on the
    \"r\" gives \"wrightand\".  Lesson 5 shows the way round that.
@@ -11682,7 +11695,7 @@ Both take a count, the same one Lesson 2 described.
 >> Put the cursor on the first \"x\" below and press \\`C-u 3' DONKEY-DELETE-KEYS.
    All three go at once.
 
-   ---> xxxand the rest of the line stays
+   ----> xxxand the rest of the line stays
 
 
 Lesson 5 -- selecting things
@@ -11695,11 +11708,11 @@ Pressing \\[donkey-set-mark] a second time does not let go.  It drops a fresh ma
 where you are standing and starts a new selection from there, so the
 one you had is gone but you are still selecting.
 
->> Put the cursor at the start of the ---> line, press \\[donkey-set-mark], then move
+>> Put the cursor at the start of the ----> line, press \\[donkey-set-mark], then move
    right with \\[forward-char] and down with \\[next-line].  Press \\`C-g' to drop the
    selection.
 
-   ---> Select part of this line by hand before meeting the shortcuts.
+   ----> Select part of this line by hand before meeting the shortcuts.
 
 That is the manual way.  Usually it is quicker to select the thing you
 mean:
@@ -11708,11 +11721,11 @@ mean:
     \\[donkey-mark-sentence] a sentence    \\[donkey-mark-paragraph] a paragraph
     \\[donkey-mark-whole-buffer] the whole buffer
 
->> Put the cursor anywhere in the first ---> sentence and press \\[donkey-mark-sentence].  The
+>> Put the cursor anywhere in the first ----> sentence and press \\[donkey-mark-sentence].  The
    whole sentence is selected, however long it is.  Press \\[donkey-mark-sentence] again:
    the selection GROWS to take the second sentence as well.
 
-   ---> Selecting by meaning beats counting characters.  It also reads better.
+   ----> Selecting by meaning beats counting characters.  It also reads better.
 
 All four of these grow on a second press, and keep growing until the
 buffer runs out.  A count says the same thing in one go, so \\[donkey-mark-word] \\[donkey-mark-word]
@@ -11737,7 +11750,7 @@ the first of them.  A reminder of the object keys stays in the echo
 area for as long as the mode is on, and goes when the mode does -- as
 one does for v, V and m v too, each naming what its own selection
 answers to.  It names the keys whose SUBJECT the mode changes and no
-others -- w moves by a word in normal state and marks one here --
+others -- w moves by a word in NORMAL state and marks one here --
 while a key that keeps its subject is left out: h j k l still move,
 J and K still work on lines, \\`.' still repeats, u and U still step
 back and forward.  All of them are below.
@@ -11749,12 +11762,12 @@ a gap the one ahead of it, so the two keys never disagree.  The word is
 the run's first press, and every letter after it grows: \\`M' is m w,
 and \\`M' \\`w' is two words.
 
->> Put the cursor on \"three\" in the ---> line and press \\[donkey-mark-run-toggle]: one
+>> Put the cursor on \"three\" in the ----> line and press \\[donkey-mark-run-toggle]: one
    word is selected.  Press \\`w': two words, no prefix in sight.  Press
    \\`b' and the word before joins them.  Now press DONKEY-DELETE-KEYS to take all
    three.
 
-   ---> one two three four five six
+   ----> one two three four five six
 
 J and K grow the selection by lines, J at the bottom end and K at the
 top, each finishing its own end's line first: from a word, \\`J' reaches
@@ -11776,7 +11789,7 @@ are the same idea one level down -- of the run rather than the buffer.
 \\`.' repeats the last press, as it does everywhere: \\`M' \\`w' \\`.' is three
 words, and each \\`.' is one step for \\`u' to take back.
 
->> Press \\[donkey-mark-run-toggle] on \"three\" in the ---> line above, then
+>> Press \\[donkey-mark-run-toggle] on \"three\" in the ----> line above, then
    \\`w' \\`w' \\`w': four words.  Too many?  Press \\`u' twice to take two
    of them back, and \\`U' once if you went one step too far.
 
@@ -11785,7 +11798,7 @@ keys inside the mode: m p and m P grow a run just as the bare letters
 do.  A selection you already have -- from \\[donkey-set-mark], \\[donkey-visual-line-toggle] or the mark keys -- is
 ADOPTED by \\[donkey-mark-run-toggle] rather than dropped, and the object keys grow it from there.
 
-Any other key returns to normal state and does its ordinary job in the
+Any other key returns to NORMAL state and does its ordinary job in the
 same press, so \\[donkey-mark-run-toggle] \\`w' \\`w' DONKEY-DELETE-KEYS selects two words and deletes them with
 no explicit exit.  Two presses are held back from that: a key that
 does nothing -- one that is unbound -- leaves the run standing, so a
@@ -11797,12 +11810,12 @@ A word stops at a hyphen or underscore; a symbol runs straight through
 one.  On a name held together by them the two select very different
 things, which is why both keys exist.
 
->> Put the cursor on the \"m\" of \"mail\" in the ---> line and press \\[donkey-mark-word]:
+>> Put the cursor on the \"m\" of \"mail\" in the ----> line and press \\[donkey-mark-word]:
    only that one word is selected.  Press \\`C-g', then press \\[donkey-mark-symbol]
    from the same spot: the whole name is selected, hyphen, underscore
    and all.
 
-   ---> Call send-mail_to when the queue drains.
+   ----> Call send-mail_to when the queue drains.
 
 Which characters hold a name together is the major mode's decision, not
 DONKEY's.  Hyphen and underscore usually do.  Period and comma do in
@@ -11823,14 +11836,14 @@ character under the cursor.
    \"change\", and press \\`C-g'.  Selecting first means you never count
    the characters.
 
-   ---> Words to replace without counting anything.
+   ----> Words to replace without counting anything.
 
 These take a count too -- the same one Lesson 2 described.
 
 >> Put the cursor on \"alpha\" below and press \\`C-u 2' \\[donkey-mark-word].  Two words
    are selected instead of one.
 
-   ---> alpha beta gamma delta
+   ----> alpha beta gamma delta
 
 You can also select by delimiter.  \\[donkey-mark-inner] asks for a character and selects
 what is INSIDE the nearest pair; \\[donkey-mark-outer] includes the delimiters too.
@@ -11838,14 +11851,14 @@ what is INSIDE the nearest pair; \\[donkey-mark-outer] includes the delimiters t
 >> Put the cursor between the parentheses below and press \\[donkey-mark-inner] then \\`(' --
    the text inside is selected.  Try \\[donkey-mark-outer] then \\`(' to include the brackets.
 
-   ---> call(this argument here)
+   ----> call(this argument here)
 
 Standing ON a delimiter, either end of the pair, nothing is asked: the
 character under the cursor is the answer, so \\[donkey-mark-inner] alone is enough
 there.  A delimiter typed after it is a key of its own and acts at
 once: it wraps what is selected, or takes that pair off again.
 
->> Put the cursor on the \"(\" of the ---> line above and press \\[donkey-mark-inner] by
+>> Put the cursor on the \"(\" of the ----> line above and press \\[donkey-mark-inner] by
    itself.  The same text is selected, with no question asked.
 
 >> Press \\`(' now.  The parentheses come off, since they are the pair
@@ -11856,7 +11869,7 @@ outer one.
 
 >> Put the cursor on \"deep\" below and press \\`C-u 2' \\[donkey-mark-inner] then \\`('.
 
-   ---> outer (middle (deep) middle) outer
+   ----> outer (middle (deep) middle) outer
 
 The pairs \\[donkey-mark-inner] and \\[donkey-mark-outer] know are a FIXED list: the brackets, quotes
 straight and curly, and a row of markup characters such as * = ~ and
@@ -11886,13 +11899,13 @@ are a pair to \\[donkey-mark-sexp-inner], and in plain text or C they are not.
    spot: it refuses, since this is a plain-text buffer and \"<\" is no
    bracket here.
 
-   ---> a <tag with attributes> in text
+   ----> a <tag with attributes> in text
 
 >> Put the cursor on the \"2\" below and press \\[donkey-mark-sexp-inner].  \"1 2 3\" is selected
    without you naming the bracket.  Press \\[donkey-mark-sexp-outer] instead and the square
    brackets come with it.
 
-   ---> (defun f (a b) [1 2 3])
+   ----> (defun f (a b) [1 2 3])
 
 Counts go outward here too, and cross bracket types on the way out.
 
@@ -11907,12 +11920,12 @@ Lesson 6 -- whole lines
 \\[donkey-visual-previous-line] then grow it a whole line at a time, and they take counts too.
 So does \\[donkey-visual-line-toggle] itself: \\`C-u 3' \\[donkey-visual-line-toggle] selects three lines in one press.
 
->> Put the cursor on the first ---> line, press \\[donkey-visual-line-toggle], then \\[donkey-visual-next-line] twice, then DONKEY-DELETE-KEYS.
+>> Put the cursor on the first ----> line, press \\[donkey-visual-line-toggle], then \\[donkey-visual-next-line] twice, then DONKEY-DELETE-KEYS.
    All three lines go, leaving no blank behind.
 
-   ---> first line to remove
-   ---> second line to remove
-   ---> third line to remove
+   ----> first line to remove
+   ----> second line to remove
+   ----> third line to remove
 
 The highlight stops at the end of the last line, so the newline that ends
 it never LOOKS selected -- but \\[donkey-copy] and DONKEY-DELETE-KEYS take it anyway.  That
@@ -11932,12 +11945,12 @@ line BELOW up onto the one you are on, tidying the whitespace at the
 join -- the direction you want when you are sitting on a line deciding
 to absorb what follows.
 
->> Put the cursor on the first ---> line below and press \\[donkey-join-line].  The
+>> Put the cursor on the first ----> line below and press \\[donkey-join-line].  The
    second line joins it.  Press it again and the third comes up too.
 
-   ---> a sentence broken
-   ---> across three
-   ---> separate lines
+   ----> a sentence broken
+   ----> across three
+   ----> separate lines
 
 A count joins that many lines at once, so \\`C-u 2' \\[donkey-join-line] from the first
 line would have done both in one go.  On the last line there is nothing
@@ -11966,7 +11979,7 @@ A count on \\[donkey-yank] pastes that many copies.
 >> Copy the word \"echo\" below with \\[donkey-mark-word] then \\[donkey-copy], then press \\`C-u 3' \\[donkey-yank] at the
    end of the line.
 
-   ---> echo
+   ----> echo
 
 Pasting REPLACES whatever is selected, rather than inserting alongside
 it.  That is worth knowing before the next lesson, where it is how a
@@ -11999,9 +12012,9 @@ in for whatever you copied.
    selection, as Lesson 7 showed.  Without it the two lines would simply
    have been inserted, leaving the marker sitting underneath them.
 
-   ---> milk
-   ---> nails
-   ---> bread
+   ----> milk
+   ----> nails
+   ----> bread
 
    (paste here)
 
@@ -12029,9 +12042,9 @@ a table, or the leading characters of a block of lines.
    the anchor column counts as one, so reaching the third digit takes two
    presses and not three.
 
-   ---> 111 alpha
-   ---> 222 beta
-   ---> 333 gamma
+   ----> 111 alpha
+   ----> 222 beta
+   ----> 333 gamma
 
 The selection is released by the cut, so you can put the cursor back on
 the first line and press \\[donkey-yank-rectangle] straight away -- the block goes back where
@@ -12047,9 +12060,9 @@ and \\`C-g' again ends them.
    and \\[forward-char] twice.  Press \\[donkey-change], type \"##\" and press \\`C-g' twice.
    All three rows lose their digits together.
 
-   ---> 777 red
-   ---> 888 green
-   ---> 999 blue
+   ----> 777 red
+   ----> 888 green
+   ----> 999 blue
 
 \\[donkey-rectangle-mark-mode] on its own selects one CHARACTER on one line, so pressing \\[donkey-change]
 right after it changes that single character -- correct, but rarely
@@ -12061,7 +12074,7 @@ both have to happen before \\[donkey-change].
    type in its place as \\[donkey-change] always does; \\`C-g' once is enough.  That is
    the whole difference between the two exercises.
 
-   ---> 555 solo
+   ----> 555 solo
 
 The block does not have to cover any text at all.  A rectangle with NO
 width empties nothing, so what you type is inserted, which is how the
@@ -12071,7 +12084,7 @@ same text goes at the front, or the end, of a run of lines at once.
 width straight back off with \\[backward-char] before going down.
 
 A rectangle measures COLUMNS, though, and one character is not always
-one column.  On a TAB it is eight, and on a wide character -- CJK, say
+one column.  On a tab it is eight, and on a wide character -- CJK, say
 -- it is two, so \\[donkey-rectangle-mark-mode] followed by \\[donkey-change] on a tab-indented line replaces
 the whole indent rather than one space of it.  Start from a character
 you can see if you want to change just it.
@@ -12080,9 +12093,9 @@ you can see if you want to change just it.
    then \\[next-line] twice.  Press \\[donkey-change], type \"// \" and press \\`C-g' twice.
    Nothing is replaced; every row simply gains a front.
 
-   ---> red
-   ---> green
-   ---> blue
+   ----> red
+   ----> green
+   ----> blue
 
 For a suffix, start from the end of the line instead.  There is nothing
 to the right to widen into, so the rectangle is already zero-width and
@@ -12092,9 +12105,9 @@ to the right to widen into, so the rectangle is already zero-width and
    \\[donkey-rectangle-mark-mode], then \\[next-line] twice.  Press \\[donkey-change], type \" ;\" and press
    \\`C-g' twice.
 
-   ---> aaaaa
-   ---> bbbbb
-   ---> ccccc
+   ----> aaaaa
+   ----> bbbbb
+   ----> ccccc
 
 A suffix lands on a COLUMN, though, not at the end of each line -- the
 column the FIRST row happened to end on.  On rows of equal length, as
@@ -12127,12 +12140,12 @@ selection you already had is the whole of what there is to know.
     \\`v'     RE-ANCHORS.  What you had is dropped and a new selection
           starts, empty, where the cursor stands.
 
->> Put the cursor on \"beta\" in the ---> line and press \\`v', then \\`l' three
+>> Put the cursor on \"beta\" in the ----> line and press \\`v', then \\`l' three
    times, which selects \"bet\".  Now press \\[donkey-mark-run-toggle] and then \\`w': the run
    ADOPTED those three characters and grew them to the end of the word
    they were part of.
 
-   ---> alpha beta gamma delta
+   ----> alpha beta gamma delta
 
 Three exceptions are worth knowing.
 
@@ -12150,8 +12163,8 @@ run starts on the word under the cursor.
 >> Draw a rectangle with \\`m' \\`v' \\`j' \\`l', then press \\[donkey-mark-run-toggle].  The block
    is gone and a single word is selected in its place.
 
-   ---> one two three
-   ---> four five six
+   ----> one two three
+   ----> four five six
 
 And coming to \\`m' \\`v' FROM \\`V' gives a FULL-WIDTH block.  \\`V' selects
 whole lines, so the corners the rectangle inherits are the whole line's
@@ -12192,9 +12205,9 @@ and it says so.
 >> Put the cursor on the \"col two\" line below and press \\[donkey-visual-line-toggle] then \\[donkey-copy].
    That is an ordinary whole-line copy, on the kill ring where \\[donkey-yank] looks.
 
-   ---> keep this banked
-   ---> col one
-   ---> col two
+   ----> keep this banked
+   ----> col one
+   ----> col two
 
 >> Now bank the \"keep\" line with \\[donkey-bank-selection], draw a rectangle over the first
    three characters of both \"col\" lines, and press \\[donkey-copy].  The rectangle
@@ -12233,11 +12246,11 @@ Select the same text once more and press the same key: this time it
 comes off.  One key, both directions, and what you have selected says
 which of the two you get.
 
->> Put the cursor on \"middle\" in the ---> line, press \\`m' \\`w' to select
+>> Put the cursor on \"middle\" in the ----> line, press \\`m' \\`w' to select
    it, then press \\`('.  Now press \\`m' \\`w' \\`(' again and the parentheses
    come off.
 
-   ---> one middle three
+   ----> one middle three
 
 Either half of a pair does the same thing, so \\`)' wraps as \\`(' does and
 you can reach for whichever is nearer.  The delimiters are the pairs
@@ -12255,7 +12268,7 @@ and selecting what is inside takes one off again.
 >> Put the cursor inside the quotes below and press \\[donkey-mark-inner] \\`\"' -- the
    word is selected without the quotes.  Press \\`\"' and they come off.
 
-   ---> she said \"probably\" and left
+   ----> she said \"probably\" and left
 
 After \\[donkey-mark-inner] or \\[donkey-mark-outer] the selection is still live, so the delimiter you
 type next acts at once, with no second press and nothing to select
@@ -12274,8 +12287,8 @@ rectangle is never unwrapped: the pair goes on, row by row.
 >> Put the cursor on the \"a\" of \"alpha\", press \\[donkey-rectangle-mark-mode], then \\`j' and
    \\`l' \\`l', and press \\`['.  Each row is wrapped where the block stood.
 
-   ---> alpha one
-   ---> bravo two
+   ----> alpha one
+   ----> bravo two
 
 
 Lesson 13 -- characters your keyboard does not have
@@ -12285,11 +12298,11 @@ Lesson 13 -- characters your keyboard does not have
 method turned on and nothing to turn off afterwards.  It works from
 NORMAL state, and a count repeats the character.
 
->> Put the cursor at the end of the ---> line and press \\[donkey-insert-digraph], then
+>> Put the cursor at the end of the ----> line and press \\[donkey-insert-digraph], then
    \\`E' \\`u'.  A euro sign appears.  Press \\`C-u' \\`3' \\[donkey-insert-digraph] \\`-' \\`M' for three
    em dashes.
 
-   ---> the price is
+   ----> the price is
 
 The two keys are the rfc1345 mnemonic, the same ones Emacs' own method
 takes after an ampersand.  \\[donkey-digraph] lists every one of them
@@ -12304,7 +12317,7 @@ looked up the way a wrap key looks it up, so a pair stays a pair.
    \\`<' \\`<'.  The word is wrapped in guillemets.  Press \\`m' \\`w' and
    \\[donkey-insert-digraph] \\`\"' \\`6' for curved double quotes instead.
 
-   ---> make this quoted please
+   ----> make this quoted please
 
 That is the whole of it: \\`&' and two keys for one character, a selection
 first if you want it wrapped.  To type MANY of them, turn the method
@@ -12328,25 +12341,26 @@ types after the character under the cursor and \\`i' before it,
 wherever in the selection the cursor is.
 
 While you type, what you write appears at every match together.
-Backspace and retype as you like: it is ordinary INSERT state, and
-\\`C-g' ends it KEEPING what you typed, exactly as it does everywhere
-else.  A Backspace just before the matches, or a \\`C-d' just after
-them, is made at every one of them too.  Once the split has ended,
-\\`u' takes back everything it wrote, at every match, in one step.
+Erase with \\`DEL', the Backspace key, and retype as you like: it is
+ordinary INSERT state, and \\`C-g' ends it KEEPING what you typed,
+exactly as it does everywhere else.  A \\`DEL' just before the
+matches, or a \\`C-d' just after them, is made at every one of them
+too.  Once the split has ended, \\`u' takes back everything it wrote,
+at every match, in one step.
 
 >> Put the cursor on the first price line below and press \\`v' \\`j' \\`j'
    \\[move-end-of-line] to select all three.  Press \\[donkey-split], type price and
-   RET.  Press \\`i' and type unit_ -- every price becomes unit_price as
+   \\`RET'.  Press \\`i' and type unit_ -- every price becomes unit_price as
    you type.  Press \\`C-g' when you are done.
 
-   ---> total = price + tax
-   ---> total = price - discount
-   ---> total = price * rate
+   ----> total = price + tax
+   ----> total = price - discount
+   ----> total = price * rate
 
->> Select the same three lines, press \\[donkey-split], type total and RET,
+>> Select the same three lines, press \\[donkey-split], type total and \\`RET',
    then \\`a' and type _cost.  \\`C-g'.
 
->> Once more: \\[donkey-split], = and RET, then \\`c' and type :=.  Every =
+>> Once more: \\[donkey-split], = and \\`RET', then \\`c' and type :=.  Every =
    changes at once.  \\`C-g'.
 
 What \\`c' and \\`d' remove reaches the kill ring as ONE kill: a single
@@ -12354,26 +12368,26 @@ copy when the matches agree, so \\[donkey-yank] pastes what was there rather
 than a column of copies, and every match on a line of its own when they
 differ.
 
->> Select the three DRAFT lines, press \\[donkey-split], type DRAFT: and SPC
-   and RET, then \\`d'.  The label leaves all three lines at once.
+>> Select the three DRAFT lines, press \\[donkey-split], type DRAFT: and \\`SPC'
+   and \\`RET', then \\`d'.  The label leaves all three lines at once.
 
-   ---> DRAFT: open the window
-   ---> DRAFT: close the door
-   ---> DRAFT: feed the cat
+   ----> DRAFT: open the window
+   ----> DRAFT: close the door
+   ----> DRAFT: feed the cat
 
 A wrap is the one verb that leaves the split standing: the matches keep
 their highlight and the reminder still offers every verb.  So a second
 pair goes inside the first, the same pair again takes it off, and any
 other verb can follow.
 
->> Select the three apple lines, press \\[donkey-split], type apple and RET,
+>> Select the three apple lines, press \\[donkey-split], type apple and \\`RET',
    then press \\`(' -- every apple is (apple), and the split is still
    there.  Press \\`[' for ([apple]), and \\`[' again to take the brackets
    off.  Now press \\`a' and type s: (apples).  \\`C-g'.
 
-   ---> apple pie
-   ---> apple juice
-   ---> apple tree
+   ----> apple pie
+   ----> apple juice
+   ----> apple tree
 
 \\`w' does the same with a pair it asks you to name: \\`w' then \\`\"'
 wraps every match in quotes.
@@ -12382,13 +12396,13 @@ A match can be empty, which is how you reach the end of every line:
 \\`$' holds a place at each line end whatever the line holds, and \\`^'
 holds one at each start.
 
->> Select the three lines below, press \\[donkey-split], type $ and RET, then
+>> Select the three lines below, press \\[donkey-split], type $ and \\`RET', then
    \\`a' and \\`;'.  Every line gains a semicolon, ragged right edge and
    all.
 
-   ---> int a = 1
-   ---> long bb = 22
-   ---> char ccc = 333
+   ----> int a = 1
+   ----> long bb = 22
+   ----> char ccc = 333
 
 Lesson 15 -- choosing what a split holds
 ----------------------------------------
@@ -12399,16 +12413,16 @@ default, because \\[donkey-mark-whole-buffer] makes the buffer a selection like 
 and that way you reach it by choosing it.
 
 >> Put the cursor on the first date below, press \\[donkey-split], type / and
-   RET, then \\`c' and \\`-'.  Only that line's slashes change.  \\`C-g'.
+   \\`RET', then \\`c' and \\`-'.  Only that line's slashes change.  \\`C-g'.
 
-   ---> 2026/09/24
-   ---> 2026/09/25
+   ----> 2026/09/24
+   ----> 2026/09/25
 
 Or type the regexp with % in front, and the whole buffer is searched,
 whatever is selected; the % is not part of the search, and \\% at the
 start searches for a percent sign.
 
->> Press \\[donkey-split], type %split and RET.  The reminder counts every split
+>> Press \\[donkey-split], type %split and \\`RET'.  The reminder counts every split
    in this buffer, not only this line's.  \\`C-g' lets them go.
 
 Under \\[donkey-rectangle-mark-mode] the search stays INSIDE the block; a count before
@@ -12419,49 +12433,49 @@ other.  Every banked line is searched, and opening the split spends the
 bank, as \\[donkey-copy] and DONKEY-DELETE-KEYS do.
 
 >> Bank the two keep lines below with \\[donkey-bank-selection] on each, leaving the
-   skip lines alone.  Press \\[donkey-split], type : and RET, then \\`c' and
-   type SPC and =.  Only the banked lines change, and the bank is gone.
+   skip lines alone.  Press \\[donkey-split], type : and \\`RET', then \\`c' and
+   type \\`SPC' and =.  Only the banked lines change, and the bank is gone.
    \\`C-g'.
 
-   ---> keep: red
-   ---> skip: green
-   ---> keep: blue
-   ---> skip: yellow
+   ----> keep: red
+   ----> skip: green
+   ----> keep: blue
+   ----> skip: yellow
 
 A \\`v' selection made after banking is searched along with the bank,
 exactly as it is selected -- the part you chose, not its whole line.
 
 >> Bank the first pear line.  On the third, put the cursor on the
    second pear and press \\`v' \\[move-end-of-line].  Now press \\[donkey-split], type pear
-   and RET, then \\`c' and type fig: both pears on the banked line
+   and \\`RET', then \\`c' and type fig: both pears on the banked line
    change, and on the third only the one you selected.  \\`C-g'.
 
-   ---> pear, apple, pear
-   ---> pear, apple, pear
-   ---> pear, apple, pear
+   ----> pear, apple, pear
+   ----> pear, apple, pear
+   ----> pear, apple, pear
 
 The regexp is Emacs's own, the one \\[replace-regexp] and \\`C-M-s' read.  Case is
 ignored while it holds no capital letter, and a capital makes it exact.
 
->> Select the three lines below, press \\[donkey-split], type todo and RET,
-   then \\`i' and type [x] and SPC.  All three are marked, whatever their
+>> Select the three lines below, press \\[donkey-split], type todo and \\`RET',
+   then \\`i' and type [x] and \\`SPC'.  All three are marked, whatever their
    case.  \\`C-g', \\`u' to take the marks back, and try Todo instead:
    only the line written that way is held.
 
-   ---> TODO fix the door
-   ---> Todo paint the fence
-   ---> todo wash the car
+   ----> TODO fix the door
+   ----> Todo paint the fence
+   ----> todo wash the car
 
 The matches do not have to agree.
 
->> Select the three item lines, press \\[donkey-split], type [0-9]+ and RET,
+>> Select the three item lines, press \\[donkey-split], type [0-9]+ and \\`RET',
    and press \\`(': every number is wrapped, whatever its length.  Then
-   \\`a' and type SPC and pcs, for (7 pcs), (42 pcs) and (365 pcs).
+   \\`a' and type \\`SPC' and pcs, for (7 pcs), (42 pcs) and (365 pcs).
    \\`C-g'.
 
-   ---> item 7
-   ---> item 42
-   ---> item 365
+   ----> item 7
+   ----> item 42
+   ----> item 365
 
 Where the matches differ, what you type goes at their edges: moving
 into one ends the split, since there is no one text to edit in all of
@@ -12488,12 +12502,12 @@ the cursor does: the motions, the selections, typing, deleting,
 copying and pasting all happen at each of them.
 
 >> Put the cursor at the start of the milk line and press \\[donkey-split-add-cursor] twice.
-   Press \\[donkey-insert-beginning-of-line], type - and SPC, and press \\`C-g': the three lines are a list,
+   Press \\[donkey-insert-beginning-of-line], type - and \\`SPC', and press \\`C-g': the three lines are a list,
    and the cursors are still there.  \\`C-g' once more ends them.
 
-   ---> milk
-   ---> eggs
-   ---> bread
+   ----> milk
+   ----> eggs
+   ----> bread
 
 With lines selected, \\[donkey-split-add-cursor] gives every one of them a cursor at once.
 \\[donkey-split-add-cursor-above] adds a cursor above instead of below, and \\`DEL' takes back
@@ -12501,21 +12515,21 @@ the one added last.
 
 >> Put the cursor on the mercury line, press \\`V' \\`j' \\`j' to select
    three lines, and \\[donkey-split-add-cursor].  Every line starts with a cursor.  Press
-   \\`i', type * and SPC, and \\`C-g' twice.
+   \\`i', type * and \\`SPC', and \\`C-g' twice.
 
-   ---> mercury
-   ---> venus
-   ---> earth
+   ----> mercury
+   ----> venus
+   ----> earth
 
 >> Put the cursor at the start of the neptune line and press
    \\[donkey-split-add-cursor-above] three times: the cursors climb to jupiter.  One is too many, so
-   press \\`DEL' and the jupiter cursor goes.  Press \\`i', type > and SPC,
+   press \\`DEL' and the jupiter cursor goes.  Press \\`i', type > and \\`SPC',
    and \\`C-g' twice.  Jupiter is left as it was.
 
-   ---> jupiter
-   ---> saturn
-   ---> uranus
-   ---> neptune
+   ----> jupiter
+   ----> saturn
+   ----> uranus
+   ----> neptune
 
 Words differ in length, so after a motion the cursors can stand in
 different columns.  \\`=' puts every cursor back under the real one.
@@ -12525,20 +12539,20 @@ different columns.  \\`=' puts every cursor back under the real one.
    its own first word.  Press \\`=' and they line up under the real
    one.  Press \\`i', type |, and \\`C-g' twice.
 
-   ---> one two three
-   ---> x yy zzz
-   ---> alpha beta
+   ----> one two three
+   ----> x yy zzz
+   ----> alpha beta
 
 \\`C-g' in INSERT state brings you back to the cursors rather than ending
 them, so one set of cursors can do several things in turn.
 
 >> Put the cursor on ada and press \\[donkey-split-add-cursor] twice.  \\[donkey-mark-word] selects the word at
-   every cursor and \\[donkey-copy] copies all three.  Press \\[donkey-insert-end-of-line], type SPC = SPC and
+   every cursor and \\[donkey-copy] copies all three.  Press \\[donkey-insert-end-of-line], type \\`SPC' = \\`SPC' and
    \\`C-g', then \\[donkey-yank]: each line gets its own name back, for ada = ada.  \\`C-g'.
 
-   ---> ada
-   ---> alan
-   ---> grace
+   ----> ada
+   ----> alan
+   ----> grace
 
 \\[donkey-mark-run-toggle] at the cursors is the mark run from Lesson 5 at every cursor:
 each cursor selects its word, and the run's keys grow every selection
@@ -12548,9 +12562,9 @@ at once.
    \\[donkey-split-add-cursor] twice.  Press \\[donkey-mark-run-toggle] and \\`w': every cursor holds two
    words.  Press \\`c', type fresh, and \\`C-g' twice.
 
-   ---> old red apple
-   ---> old green pear
-   ---> old blue plum
+   ----> old red apple
+   ----> old green pear
+   ----> old blue plum
 
 A delimiter wraps what each cursor has selected, and the same key
 takes the pair off again, as it does with one cursor; with nothing
@@ -12560,9 +12574,9 @@ selected it does nothing.
    then \\[donkey-mark-word] and \\`\"': every flower is quoted.  Press \\`\"' again
    and the quotes come off.  \\`C-g' twice.
 
-   ---> rose
-   ---> iris
-   ---> lily
+   ----> rose
+   ----> iris
+   ----> lily
 
 DONKEY-DELETE-KEYS and \\[kill-line] delete at every cursor and keep the
 cursors, \\`V' selects every cursor's line, and \\[donkey-bank-selection] and
@@ -12582,13 +12596,13 @@ paste with as many lines as there are cursors gives each its own.
 when they have them.
 
 >> Put the cursor on the first number line and press \\[donkey-split-add-cursor] twice.  Press
-   \\[donkey-split], type , and RET, then \\`c' and type ;.  The commas change on the
+   \\[donkey-split], type , and \\`RET', then \\`c' and type ;.  The commas change on the
    three lines and not on the fourth.  \\`C-g'.
 
-   ---> 1,2,3
-   ---> 4,5,6
-   ---> 7,8,9
-   ---> 0,0,0
+   ----> 1,2,3
+   ----> 4,5,6
+   ----> 7,8,9
+   ----> 0,0,0
 
 A cursor never leaves its own line: a motion that would cross stops at
 the line's edge.  Cursors that come to share a line become one, and a
@@ -12622,15 +12636,15 @@ In NORMAL state, four things differ:
 
   - Letters run commands instead of typing.  That is the whole idea.
   - Digits are not counts.  \\`3 j' does nothing; \\`C-u 3' \\[next-line] moves down three.
-  - RET does nothing in a buffer you are editing -- a stray newline in
+  - \\`RET' does nothing in a buffer you are editing -- a stray newline in
     NORMAL state is rarely what was meant.  In a buffer you are NOT
     editing it is not inert: in the Org agenda it visits the entry, in
     a compilation log it jumps to the error, because the key is handed
     back to the mode that owns it.
-  - BACKSPACE and DELETE do nothing, so a slip cannot damage the buffer
-    from NORMAL state.  Use DONKEY-DELETE-KEYS.
+  - \\`DEL' and \\`<delete>' do nothing, so a slip cannot damage the
+    buffer from NORMAL state.  Use DONKEY-DELETE-KEYS.
 
->> Try it: press \\`C-x' \\`C-s' below, or \\[execute-extended-command] and then RET to abort.  Neither is
+>> Try it: press \\`C-x' \\`C-s' below, or \\[execute-extended-command] and then \\`RET' to abort.  Neither is
    DONKEY's, and both work from NORMAL state exactly as usual.
 
 Searching is Emacs' own and DONKEY leaves it alone: \\`C-s' forward,
@@ -12655,7 +12669,7 @@ and the same is true there.
 
 Every other buffer a program made for you -- Dired, Ibuffer, a help
 buffer, an Occur list, a compilation log, the package menu, the Org
-agenda -- is a SUPPORT mode: \\`h' \\`j' \\`k' \\`l' and the SPC leader
+agenda -- is a SUPPORT mode: \\`h' \\`j' \\`k' \\`l' and the \\`SPC' leader
 are DONKEY's, and every other key is the mode's, as it always was.
 Where the mode has somewhere to go, \\`h' and \\`l' go there -- up a
 directory and into a file in Dired -- and a key of the mode's that
@@ -12696,11 +12710,34 @@ no key at all the command is named instead."
      ((null (cdr keys)) (car keys))
      (t (mapconcat #'identity keys "/")))))
 
+(defun donkey--tutor-paint ()
+  "Give the tutor's arrows and the names of its states their faces.
+
+Every ----> takes `donkey-tutor-arrow'.  NORMAL, INSERT and SUPPORT,
+written in capitals, and the modeline names DONKEY[N], DONKEY[I],
+DONKEY[S] and DONKEY[E] take `donkey-tutor-state'.  Text typed right
+after one does not take its face, and painting is neither an edit
+nor an undo step."
+  (with-silent-modifications
+    (let ((case-fold-search nil))
+      (pcase-dolist (`(,regexp . ,face)
+                     '(("---->" . donkey-tutor-arrow)
+                       ("\\<\\(?:NORMAL\\|INSERT\\|SUPPORT\\)\\>\\|DONKEY\\[[NISE]]"
+                        . donkey-tutor-state)))
+        (goto-char (point-min))
+        (while (re-search-forward regexp nil t)
+          (add-text-properties (match-beginning 0) (match-end 0)
+                               (list 'face face 'font-lock-face face
+                                     'rear-nonsticky t)))))))
+
 (defun donkey-tutor ()
   "Open the DONKEY tutor: a buffer to learn DONKEY by editing it.
 
 The tutor is an ordinary editable buffer holding its own instructions,
-the way \\[help-with-tutorial] and vimtutor both work.
+the way \\[help-with-tutorial] and vimtutor both work.  Keys are shown
+in the face `help-key-binding', the names of the states in
+`donkey-tutor-state', and the arrow before each line to practice on
+in `donkey-tutor-arrow'.
 
 Returns to an existing tutor buffer rather than rebuilding it, so the
 lesson survives being buried behind other windows; killing the buffer is
@@ -12731,6 +12768,7 @@ what starts over."
                     "DONKEY-DELETE-KEYS"
                     (donkey--tutor-delete-keys)
                     donkey--tutor-content t t)))
+          (donkey--tutor-paint)
           (goto-char (point-min))
           (set-buffer-modified-p nil))
         (pop-to-buffer buf)))))

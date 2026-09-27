@@ -1612,6 +1612,131 @@ came out as."
             (should (equal bare nil)))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
+(defun donkey-tutor-test--faces-of (regexp)
+  "Return (TEXT . FACE) for group 1 of every REGEXP match, matched with case."
+  (let ((case-fold-search nil)
+        (found nil))
+    (goto-char (point-min))
+    (while (re-search-forward regexp nil t)
+      (push (cons (match-string-no-properties 1)
+                  (get-text-property (match-beginning 1) 'face))
+            found)
+      (goto-char (match-end 1)))
+    (nreverse found)))
+
+(ert-deftest donkey-tutor-shows-every-key-it-writes-out-as-a-key ()
+  "RET, SPC, DEL and every other key written out carry `help-key-binding'.
+No key is written as a word, such as BACKSPACE."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((keys (donkey-tutor-test--faces-of
+                       (concat "\\(?:^\\|[^[:alnum:]-]\\)"
+                               "\\(RET\\|SPC\\|DEL\\|TAB\\|ESC\\|<[a-z]+>"
+                               "\\|[CM]-[[:alnum:]]\\)"
+                               "\\(?:$\\|[^[:alnum:]-]\\)"))))
+            (should (member "RET" (mapcar #'car keys)))
+            (should (member "SPC" (mapcar #'car keys)))
+            (should (> (length keys) 50))
+            (should (equal (seq-remove (lambda (key)
+                                         (eq (cdr key) 'help-key-binding))
+                                       keys)
+                           nil))
+            (should (equal (donkey-tutor-test--faces-of
+                            (concat "\\<\\(BACKSPACE\\|DELETE\\|ENTER"
+                                    "\\|RETURN\\|ESCAPE\\|SPACE\\)\\>"))
+                           nil)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-marks-each-line-to-practice-on-with-a-painted-arrow ()
+  "Every arrow is four dashes and a head, in `donkey-tutor-arrow'."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((arrows (donkey-tutor-test--faces-of "\\(--+>\\)")))
+            (should (> (length arrows) 100))
+            (should (equal (seq-remove (lambda (arrow)
+                                         (equal arrow
+                                                '("---->" . donkey-tutor-arrow)))
+                                       arrows)
+                           nil)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-paints-the-names-of-the-states ()
+  "NORMAL, INSERT, SUPPORT and DONKEY[N] and its kin carry `donkey-tutor-state'.
+The same words in lower case do not, and no state is named in them."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (let ((states (donkey-tutor-test--faces-of
+                         (concat "\\(\\<\\(?:NORMAL\\|INSERT\\|SUPPORT\\)\\>"
+                                 "\\|DONKEY\\[[NISE]]\\)")))
+                (lower (donkey-tutor-test--faces-of
+                        "\\(\\<\\(?:normal\\|insert\\|support\\)\\>\\)")))
+            (should (> (length states) 20))
+            (should (member "SUPPORT" (mapcar #'car states)))
+            (should (member "DONKEY[S]" (mapcar #'car states)))
+            (should (equal (seq-remove (lambda (state)
+                                         (eq (cdr state) 'donkey-tutor-state))
+                                       states)
+                           nil))
+            (should lower)
+            (should (equal (seq-filter (lambda (word)
+                                         (eq (cdr word) 'donkey-tutor-state))
+                                       lower)
+                           nil))
+            (should (equal (donkey-tutor-test--faces-of
+                            (concat "\\(\\<\\(?:normal\\|insert\\|support\\)"
+                                    " \\(?:state\\|mode\\)\\>\\)"))
+                           nil)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-paint-stays-off-what-is-typed-after-it ()
+  "Text typed right after an arrow or a state name carries neither face."
+  (donkey-tutor-test--live
+   (dolist (needle '("---->" "NORMAL"))
+     (goto-char (point-min))
+     (search-forward needle)
+     (let ((at (point)))
+       (donkey-tutor-test--keys "i x C-g")
+       (should (equal (buffer-substring-no-properties at (1+ at)) "x"))
+       (should (null (get-text-property at 'face)))))))
+
+(ert-deftest donkey-tutor-paint-survives-font-lock ()
+  "An arrow and a state name keep their faces once font-lock fontifies them."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (font-lock-add-keywords nil '(("\\<zzz\\>" . 'bold)))
+          ;; Font Lock mode will not turn on in batch otherwise.
+          (let ((noninteractive nil))
+            (font-lock-mode 1))
+          (should font-lock-mode)
+          (font-lock-ensure)
+          (dolist (spec '(("---->" . donkey-tutor-arrow)
+                          ("NORMAL" . donkey-tutor-state)))
+            (goto-char (point-min))
+            (search-forward (car spec))
+            (should (eq (get-char-property (match-beginning 0) 'face)
+                        (cdr spec))))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
+(ert-deftest donkey-tutor-paint-is-not-an-undo-step ()
+  "Opening the tutor records no change of text property for `undo'."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (should (listp buffer-undo-list))
+          (should-not (seq-find (lambda (entry)
+                                  (and (consp entry) (null (car entry))))
+                                buffer-undo-list))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
+
 (defvar donkey-tutor-test--regexp nil
   "What the stubbed `read-regexp' answers in a Split exercise.")
 
@@ -1635,116 +1760,116 @@ The regexp is typed into the minibuffer in the lesson; batch has none."
 (ert-deftest donkey-tutor-lesson-14-types-at-every-match ()
   "The price, total and = exercises change all three lines, as the lesson says."
   (dolist (case '(("price" "i u n i t _ C-g"
-                   ("---> total = unit_price + tax"
-                    "---> total = unit_price - discount"
-                    "---> total = unit_price * rate"))
+                   ("----> total = unit_price + tax"
+                    "----> total = unit_price - discount"
+                    "----> total = unit_price * rate"))
                   ("total" "a _ c o s t C-g"
-                   ("---> total_cost = price + tax"
-                    "---> total_cost = price - discount"
-                    "---> total_cost = price * rate"))
+                   ("----> total_cost = price + tax"
+                    "----> total_cost = price - discount"
+                    "----> total_cost = price * rate"))
                   ("=" "c : = C-g"
-                   ("---> total := price + tax"
-                    "---> total := price - discount"
-                    "---> total := price * rate"))))
+                   ("----> total := price + tax"
+                    "----> total := price - discount"
+                    "----> total := price * rate"))))
     (donkey-tutor-test--live
-     (donkey-tutor-test--goline "---> total = price + tax")
+     (donkey-tutor-test--goline "----> total = price + tax")
      (donkey-tutor-test--split (car case) (concat "v j j g l f " (cadr case)))
-     (should (equal (donkey-tutor-test--lines "---> total" 3) (nth 2 case))))))
+     (should (equal (donkey-tutor-test--lines "----> total" 3) (nth 2 case))))))
 
 (ert-deftest donkey-tutor-lesson-14-deletes-every-label ()
   "The DRAFT exercise takes the label off all three lines, and the kill ring holds one copy."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> DRAFT: open the window")
+   (donkey-tutor-test--goline "----> DRAFT: open the window")
    (donkey-tutor-test--split "DRAFT: " "v j j g l f d")
-   (should (equal (donkey-tutor-test--lines "---> open the window" 3)
-                  '("---> open the window" "---> close the door"
-                    "---> feed the cat")))
+   (should (equal (donkey-tutor-test--lines "----> open the window" 3)
+                  '("----> open the window" "----> close the door"
+                    "----> feed the cat")))
    (should (equal kill-ring '("DRAFT: ")))))
 
 (ert-deftest donkey-tutor-lesson-14-a-wrap-keeps-the-split ()
   "The apple exercise: a wrap leaves the split standing, pairs nest and come off."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> apple pie")
+   (donkey-tutor-test--goline "----> apple pie")
    (donkey-tutor-test--split "apple" "v j j g l f (")
-   (should (equal (donkey-tutor-test--lines "---> (apple) pie" 1)
-                  '("---> (apple) pie")))
+   (should (equal (donkey-tutor-test--lines "----> (apple) pie" 1)
+                  '("----> (apple) pie")))
    (should (eq donkey--split-phase 'select))
    (donkey-tutor-test--keys "[")
-   (should (equal (donkey-tutor-test--lines "---> ([apple]) pie" 1)
-                  '("---> ([apple]) pie")))
+   (should (equal (donkey-tutor-test--lines "----> ([apple]) pie" 1)
+                  '("----> ([apple]) pie")))
    (donkey-tutor-test--keys "[")
    (donkey-tutor-test--keys "a s C-g")
-   (should (equal (donkey-tutor-test--lines "---> (apples) pie" 3)
-                  '("---> (apples) pie" "---> (apples) juice"
-                    "---> (apples) tree"))))
+   (should (equal (donkey-tutor-test--lines "----> (apples) pie" 3)
+                  '("----> (apples) pie" "----> (apples) juice"
+                    "----> (apples) tree"))))
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> apple pie")
+   (donkey-tutor-test--goline "----> apple pie")
    (donkey-tutor-test--split "apple" "v j j g l f w \"")
-   (should (equal (donkey-tutor-test--lines "---> \"apple\" pie" 1)
-                  '("---> \"apple\" pie")))))
+   (should (equal (donkey-tutor-test--lines "----> \"apple\" pie" 1)
+                  '("----> \"apple\" pie")))))
 
 (ert-deftest donkey-tutor-lesson-14-ends-every-line ()
   "The $ exercise puts a semicolon at every line end, ragged edge and all."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> int a = 1")
+   (donkey-tutor-test--goline "----> int a = 1")
    (donkey-tutor-test--split "$" "v j j g l f a ; C-g")
-   (should (equal (donkey-tutor-test--lines "---> int a = 1" 3)
-                  '("---> int a = 1;" "---> long bb = 22;"
-                    "---> char ccc = 333;")))))
+   (should (equal (donkey-tutor-test--lines "----> int a = 1" 3)
+                  '("----> int a = 1;" "----> long bb = 22;"
+                    "----> char ccc = 333;")))))
 
 (ert-deftest donkey-tutor-lesson-15-searches-this-line-alone ()
   "With nothing selected, the date exercise changes only the cursor's line."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> 2026/09/24")
+   (donkey-tutor-test--goline "----> 2026/09/24")
    (donkey-tutor-test--split "/" "f c - C-g")
-   (should (equal (donkey-tutor-test--lines "---> 2026-09-24" 2)
-                  '("---> 2026-09-24" "---> 2026/09/25")))))
+   (should (equal (donkey-tutor-test--lines "----> 2026-09-24" 2)
+                  '("----> 2026-09-24" "----> 2026/09/25")))))
 
 (ert-deftest donkey-tutor-lesson-15-searches-the-banked-lines ()
   "The keep exercise changes the banked lines alone, and spends the bank."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> keep: red")
+   (donkey-tutor-test--goline "----> keep: red")
    (donkey-tutor-test--split ":" "m l j j m l f c SPC = C-g")
-   (should (equal (donkey-tutor-test--lines "---> keep = red" 4)
-                  '("---> keep = red" "---> skip: green" "---> keep = blue"
-                    "---> skip: yellow")))
+   (should (equal (donkey-tutor-test--lines "----> keep = red" 4)
+                  '("----> keep = red" "----> skip: green" "----> keep = blue"
+                    "----> skip: yellow")))
    (should (null (donkey--banked-spans)))))
 
 (ert-deftest donkey-tutor-lesson-15-searches-a-bank-and-part-of-a-line ()
   "The pear exercise: the whole banked line, and only the selected part of the third."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> pear, apple, pear")
+   (donkey-tutor-test--goline "----> pear, apple, pear")
    (donkey-tutor-test--keys "m l")
-   (donkey-tutor-test--goline "---> pear, apple, pear" 3)
+   (donkey-tutor-test--goline "----> pear, apple, pear" 3)
    (search-forward "pear")
    (search-forward "pear")
    (goto-char (match-beginning 0))
    (donkey-tutor-test--split "pear" "v g l f c f i g C-g")
-   (should (equal (donkey-tutor-test--lines "---> fig, apple, fig" 3)
-                  '("---> fig, apple, fig" "---> pear, apple, pear"
-                    "---> pear, apple, fig")))))
+   (should (equal (donkey-tutor-test--lines "----> fig, apple, fig" 3)
+                  '("----> fig, apple, fig" "----> pear, apple, pear"
+                    "----> pear, apple, fig")))))
 
 (ert-deftest donkey-tutor-lesson-15-ignores-case-without-a-capital ()
   "The todo exercise marks all three lines; Todo holds only its own."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> TODO fix the door")
+   (donkey-tutor-test--goline "----> TODO fix the door")
    (donkey-tutor-test--split "todo" "v j j g l f i [ x ] SPC C-g")
-   (should (equal (donkey-tutor-test--lines "---> [x] TODO fix the door" 3)
-                  '("---> [x] TODO fix the door" "---> [x] Todo paint the fence"
-                    "---> [x] todo wash the car")))
+   (should (equal (donkey-tutor-test--lines "----> [x] TODO fix the door" 3)
+                  '("----> [x] TODO fix the door" "----> [x] Todo paint the fence"
+                    "----> [x] todo wash the car")))
    (donkey-tutor-test--keys "u")
-   (donkey-tutor-test--goline "---> TODO fix the door")
+   (donkey-tutor-test--goline "----> TODO fix the door")
    (donkey-tutor-test--split "Todo" "v j j g l f")
    (should (= (length donkey--split-places) 1))))
 
 (ert-deftest donkey-tutor-lesson-15-wraps-numbers-of-every-length ()
   "The item exercise wraps each number, whatever its length, then types after each."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> item 7")
+   (donkey-tutor-test--goline "----> item 7")
    (donkey-tutor-test--split "[0-9]+" "v j j g l f ( a SPC p c s C-g")
-   (should (equal (donkey-tutor-test--lines "---> item (7 pcs)" 3)
-                  '("---> item (7 pcs)" "---> item (42 pcs)"
-                    "---> item (365 pcs)")))))
+   (should (equal (donkey-tutor-test--lines "----> item (7 pcs)" 3)
+                  '("----> item (7 pcs)" "----> item (42 pcs)"
+                    "----> item (365 pcs)")))))
 
 (ert-deftest donkey-tutor-lesson-15-shows-the-emacs-spellings ()
   "The five regexp spellings render with one backslash each, as typed."
@@ -1769,26 +1894,26 @@ promises one key in both directions, and the promise is the exercise."
    (goto-char (point-min))
    (should (search-forward "press m w to select\n   it, then press (." nil t))
    (should (search-forward "Now press m w ( again and the parentheses" nil t))
-   (donkey-tutor-test--goline "---> one middle three")
+   (donkey-tutor-test--goline "----> one middle three")
    (search-forward "middle")
    (backward-char 3)
    (donkey-tutor-test--keys "m w (")
-   (should (equal (donkey-tutor-test--line) "   ---> one (middle) three"))
+   (should (equal (donkey-tutor-test--line) "   ----> one (middle) three"))
    ;; The wrap drops the selection, so the pair comes off by selecting
    ;; again -- which is what the lesson now says, having said otherwise
    ;; until this test was run.
    (donkey-tutor-test--keys "m w (")
-   (should (equal (donkey-tutor-test--line) "   ---> one middle three"))))
+   (should (equal (donkey-tutor-test--line) "   ----> one middle three"))))
 
 (ert-deftest donkey-tutor-lesson-12-takes-a-pair-off-from-inside ()
   "`m i \" then \" removes the quotes the lesson says it removes."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> she said")
+   (donkey-tutor-test--goline "----> she said")
    (search-forward "probably")
    (backward-char 3)
    (donkey-tutor-test--keys "m i \" \"")
    (should (equal (donkey-tutor-test--line)
-                  "   ---> she said probably and left"))))
+                  "   ----> she said probably and left"))))
 
 (ert-deftest donkey-tutor-lesson-13-wraps-in-a-character-no-key-types ()
   "The digraph lesson's wrap exercise really wraps in guillemets.
@@ -1802,20 +1927,20 @@ and the wrap -- so the exercise is run rather than read."
    ;; something else.
    (goto-char (point-min))
    (should (search-forward "press m w, then SPC i & and\n   < <." nil t))
-   (donkey-tutor-test--goline "---> make this quoted please")
+   (donkey-tutor-test--goline "----> make this quoted please")
    (search-forward "quoted")
    (backward-char 3)
    (donkey-tutor-test--keys "m w SPC i & < <")
    (should (equal (donkey-tutor-test--line)
-                  "   ---> make this «quoted» please"))))
+                  "   ----> make this «quoted» please"))))
 
 (ert-deftest donkey-tutor-lesson-13-inserts-one-character-with-nothing-on ()
   "`SPC i &' types the character it names without turning a method on."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> the price is")
+   (donkey-tutor-test--goline "----> the price is")
    ;; `g l' is the end-of-line key; `$' is a wrap key here.
    (donkey-tutor-test--keys "g l SPC i & E u")
-   (should (equal (donkey-tutor-test--line) "   ---> the price is€"))
+   (should (equal (donkey-tutor-test--line) "   ----> the price is€"))
    (should-not current-input-method)))
 
 (ert-deftest donkey-tutor-banking-paste-over-a-selection-works ()
@@ -1826,12 +1951,12 @@ banked lines arrive together, AND a paste replaces whatever is selected.
 Without it the marker line survives underneath the pasted pair, which is
 tidier to read about than to look at."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> milk")
+   (donkey-tutor-test--goline "----> milk")
    (donkey-tutor-test--keys "m l")
-   (donkey-tutor-test--goline "---> bread")
+   (donkey-tutor-test--goline "----> bread")
    (donkey-tutor-test--keys "m l")
    (donkey-tutor-test--keys "y")
-   (should (equal (car kill-ring) "   ---> milk\n   ---> bread\n"))
+   (should (equal (car kill-ring) "   ----> milk\n   ----> bread\n"))
    ;; the practice line is the SECOND "(paste here)" -- the first is in
    ;; the instruction text above it
    (donkey-tutor-test--goline "(paste here)" 2)
@@ -1841,10 +1966,10 @@ tidier to read about than to look at."
    (should (= 1 (save-excursion
                   (goto-char (point-min))
                   (cl-loop while (search-forward "(paste here)" nil t) count t))))
-   (donkey-tutor-test--goline "---> milk" 2)
-   (should (equal (donkey-tutor-test--line) "   ---> milk"))
+   (donkey-tutor-test--goline "----> milk" 2)
+   (should (equal (donkey-tutor-test--line) "   ----> milk"))
    (forward-line 1)
-   (should (equal (donkey-tutor-test--line) "   ---> bread"))))
+   (should (equal (donkey-tutor-test--line) "   ----> bread"))))
 
 (ert-deftest donkey-tutor-lessons-are-in-dependency-order ()
   "No lesson uses a key that a later lesson introduces.
@@ -1888,7 +2013,7 @@ with a message and the motion then runs on its own, so the reader moves
 ONE line while believing they asked for three -- a silently wrong result
 rather than a visibly absent one."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> one two three four five")
+   (donkey-tutor-test--goline "----> one two three four five")
    (let ((l0 (line-number-at-pos)))
      ;; Two separate macros, because that is what two keypresses are.
      ;; Driven as ONE macro this passed in batch and failed in a live
@@ -1915,8 +2040,8 @@ rather than a visibly absent one."
 stops after the fifth.  The lesson first claimed it landed ON the sixth,
 which running it disproved."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> one two three")
-   (search-forward "---> ")
+   (donkey-tutor-test--goline "----> one two three")
+   (search-forward "----> ")
    (donkey-tutor-test--keys "C-u 5 w")
    (should (string-suffix-p "five"
                             (buffer-substring-no-properties
@@ -1933,7 +2058,7 @@ from the cursor: one place off replaces the wrong five.  The lesson now
 names the \"w\", and the failure it warns about is the real one."
   ;; the exercise as written
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> This word is wrong")
+   (donkey-tutor-test--goline "----> This word is wrong")
    (search-forward "wrong")
    (backward-char 5)                    ; on the "w", as instructed
    (donkey-tutor-test--keys "c")        ; C-u 5 c
@@ -2012,11 +2137,11 @@ does not is stuck on the third lesson with no way forward."
   "Lesson 4's count row works on both delete keys."
   (dolist (key '("C-u 3 d" "C-u 3 x"))
     (donkey-tutor-test--live
-     (donkey-tutor-test--goline "---> xxxand the rest")
-     (search-forward "---> ")
+     (donkey-tutor-test--goline "----> xxxand the rest")
+     (search-forward "----> ")
      (donkey-tutor-test--keys key)
      (should (equal (donkey-tutor-test--line)
-                    "   ---> and the rest of the line stays")))))
+                    "   ----> and the rest of the line stays")))))
 
 (ert-deftest donkey-tutor-lesson-5-select-then-change-really-works ()
   "`m w' then `c' replaces the whole selection, not one character.
@@ -2024,7 +2149,7 @@ does not is stuck on the third lesson with no way forward."
 The point of the exercise: selecting first means never counting
 characters, which is what the counted `c' in Lesson 4 required."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> Words to replace")
+   (donkey-tutor-test--goline "----> Words to replace")
    (search-forward "replace")
    (backward-char 4)
    (donkey-tutor-test--keys "m w")
@@ -2034,13 +2159,13 @@ characters, which is what the counted `c' in Lesson 4 required."
    (insert "change")
    (donkey-tutor-test--keys "C-g")
    (should (equal (donkey-tutor-test--line)
-                  "   ---> Words to change without counting anything."))))
+                  "   ----> Words to change without counting anything."))))
 
 (ert-deftest donkey-tutor-lesson-5-count-row-selects-two-words ()
   "Lesson 5's count row selects two words rather than one."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> alpha beta gamma")
-   (search-forward "---> ")
+   (donkey-tutor-test--goline "----> alpha beta gamma")
+   (search-forward "----> ")
    (donkey-tutor-test--keys "C-u 2 m w")
    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                   "alpha beta"))))
@@ -2048,8 +2173,8 @@ characters, which is what the counted `c' in Lesson 4 required."
 (ert-deftest donkey-tutor-lesson-5-teaches-v-before-it-is-used ()
   "`v' has its own explanation and exercise, not just a passing mention."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> Select part of this line by hand")
-   (search-forward "---> ")
+   (donkey-tutor-test--goline "----> Select part of this line by hand")
+   (search-forward "----> ")
    (donkey-tutor-test--keys "v l l l l l")
    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                   "Selec"))
@@ -2079,7 +2204,7 @@ selected, and a reader who notices reports it as a bug."
         (with-current-buffer "*DONKEY Tutor*"
           (let ((text (buffer-string)))
             (should (string-match-p "Lines can be put back together" text))
-            (should (string-match-p "---> a sentence broken" text))
+            (should (string-match-p "----> a sentence broken" text))
             ;; the direction matters: it must say the line BELOW comes up
             (should (string-match-p "line BELOW up onto the one you are on" text))
             ;; and that Emacs\' own join, the other way, still works
@@ -2091,25 +2216,25 @@ selected, and a reader who notices reports it as a bug."
 (ert-deftest donkey-tutor-lesson-6-join-exercise-works-with-real-keys ()
   "The `g j' exercise and its count claim both do what the lesson says."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> a sentence broken")
+   (donkey-tutor-test--goline "----> a sentence broken")
    (donkey-tutor-test--keys "g j")
    (should (equal (donkey-tutor-test--line)
-                  "   ---> a sentence broken ---> across three"))
+                  "   ----> a sentence broken ----> across three"))
    (donkey-tutor-test--keys "g j")
    (should (equal (donkey-tutor-test--line)
-                  "   ---> a sentence broken ---> across three ---> separate lines")))
+                  "   ----> a sentence broken ----> across three ----> separate lines")))
   ;; "A count joins that many lines at once" -- same result in one press.
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> a sentence broken")
+   (donkey-tutor-test--goline "----> a sentence broken")
    (donkey-tutor-test--keys "C-u 2 g j")
    (should (equal (donkey-tutor-test--line)
-                  "   ---> a sentence broken ---> across three ---> separate lines")))
+                  "   ----> a sentence broken ----> across three ----> separate lines")))
   ;; "Selected lines join as one" -- the three lines selected with V J J.
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> a sentence broken")
+   (donkey-tutor-test--goline "----> a sentence broken")
    (donkey-tutor-test--keys "V J J g j")
    (should (equal (donkey-tutor-test--line)
-                  "   ---> a sentence broken ---> across three ---> separate lines"))
+                  "   ----> a sentence broken ----> across three ----> separate lines"))
    (should-not (region-active-p))))
 
 (ert-deftest donkey-tutor-both-delete-keys-really-work ()
@@ -2119,18 +2244,18 @@ The tutor now names them as \"d/x\" throughout, so a reader may reach for
 either.  Pinned because the prose promising both is only honest if both
 are actually bound to the same command."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> Thiis liine")
+   (donkey-tutor-test--goline "----> Thiis liine")
    (search-forward "Thi")
    (donkey-tutor-test--keys "x")
    (should (string-match-p "This liine" (donkey-tutor-test--line))))
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> Thiis liine")
+   (donkey-tutor-test--goline "----> Thiis liine")
    (search-forward "Thi")
    (donkey-tutor-test--keys "d")
    (should (string-match-p "This liine" (donkey-tutor-test--line))))
   ;; and on the whole-line exercise too
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> first line to remove")
+   (donkey-tutor-test--goline "----> first line to remove")
    (donkey-tutor-test--keys "V J J d")
    (should-not (string-match-p "line to remove" (buffer-string)))))
 
@@ -2145,19 +2270,19 @@ arithmetic is off by one.  And it claimed the rectangle stayed selected
 after the cut, so a `C-g' was needed before pasting; with real keys the
 cut releases the selection and no `C-g' is wanted."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> 111 alpha")
-   (search-forward "---> ")
+   (donkey-tutor-test--goline "----> 111 alpha")
+   (search-forward "----> ")
    (donkey-tutor-test--keys "m v j j l l x")
    (should (equal killed-rectangle '("111" "222" "333")))
    ;; Released by the cut -- the lesson must NOT tell the reader to press C-g.
    (should-not (bound-and-true-p rectangle-mark-mode))
    (should-not (use-region-p))
-   (donkey-tutor-test--goline "--->  alpha")
-   (search-forward "---> ")
+   (donkey-tutor-test--goline "---->  alpha")
+   (search-forward "----> ")
    ;; "P", not "p": the block goes back through the rectangle key now.
    (donkey-tutor-test--keys "P")
-   (donkey-tutor-test--goline "---> 111 alpha")
-   (should (equal (donkey-tutor-test--line) "   ---> 111 alpha"))))
+   (donkey-tutor-test--goline "----> 111 alpha")
+   (should (equal (donkey-tutor-test--line) "   ----> 111 alpha"))))
 
 (ert-deftest donkey-tutor-lesson-10-exercises-work-with-real-keys ()
   "All four Lesson 10 steps, in order, driven by actual keys.
@@ -2174,14 +2299,14 @@ keys read different stores, which is what makes the last step give the
 same answer whether or not the session has a system clipboard."
   (donkey-tutor-test--live
    ;; 1. an ordinary whole-line copy, so there is something to paste
-   (donkey-tutor-test--goline "---> col two")
+   (donkey-tutor-test--goline "----> col two")
    (donkey-tutor-test--keys "V y")
-   (should (equal (car kill-ring) "   ---> col two\n"))
+   (should (equal (car kill-ring) "   ----> col two\n"))
    ;; 2. bank a line, draw a rectangle, copy: rectangle wins, bank survives
-   (donkey-tutor-test--goline "---> keep this banked")
+   (donkey-tutor-test--goline "----> keep this banked")
    (donkey-tutor-test--keys "m l")
-   (donkey-tutor-test--goline "---> col one")
-   (search-forward "---> ")
+   (donkey-tutor-test--goline "----> col one")
+   (search-forward "----> ")
    (donkey-tutor-test--keys "m v j l l y")
    (should (equal killed-rectangle '("col" "col")))
    (should (= (length (donkey--banked-spans)) 1))
@@ -2194,11 +2319,11 @@ same answer whether or not the session has a system clipboard."
    (should-not (save-excursion (goto-char (point-min))
                                (search-forward "keep this banked" nil t)))
    ;; 4. "P" brings the rectangle back, from its own store
-   (donkey-tutor-test--goline "---> col one")
-   (search-forward "---> ")
+   (donkey-tutor-test--goline "----> col one")
+   (search-forward "----> ")
    (donkey-tutor-test--keys "P")
-   (donkey-tutor-test--goline "---> colcol one")
-   (should (equal (donkey-tutor-test--line) "   ---> colcol one"))))
+   (donkey-tutor-test--goline "----> colcol one")
+   (should (equal (donkey-tutor-test--line) "   ----> colcol one"))))
 
 (ert-deftest donkey-tutor-lesson-9-prose-matches-the-verified-keys ()
   "The words of Lesson 9 agree with the key sequence that was verified.
@@ -2319,7 +2444,7 @@ full-width block that comes of reaching a rectangle through `V'."
             (should (string-match-p "FULL-WIDTH block" text))
             ;; And the exercises are exercises, not prose.
             (should (<= 3 (cl-count ?> text)))
-            (should (string-match-p "---> alpha beta gamma delta" text)))))
+            (should (string-match-p "----> alpha beta gamma delta" text)))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
 (ert-deftest donkey-tutor-lesson-11-prose-establishes-a-paste-source ()
@@ -2392,7 +2517,7 @@ the exercise after it is where that is tried."
    (cl-letf (((symbol-function 'read-char)
               (lambda (&rest _)
                 (ert-fail "m i prompted with point on a delimiter"))))
-     (donkey-tutor-test--goline "---> call(this argument here)")
+     (donkey-tutor-test--goline "----> call(this argument here)")
      (let ((line (donkey-tutor-test--line)))
        (search-forward "(")
        (backward-char)
@@ -2401,7 +2526,7 @@ the exercise after it is where that is tried."
                        (region-beginning) (region-end))
                       "this argument here"))
        (donkey-tutor-test--keys "C-g")
-       (donkey-tutor-test--goline "---> call(this argument here)")
+       (donkey-tutor-test--goline "----> call(this argument here)")
        (end-of-line)
        (backward-char)
        (should (eq (char-after) ?\)))
@@ -2429,7 +2554,7 @@ nothing to close it.  Should a stray closer ever be added to the text
 below, the climb would find a pair and this test would go red, which
 is the point of pinning the refusal."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> a <tag with attributes> in text")
+   (donkey-tutor-test--goline "----> a <tag with attributes> in text")
    (search-forward "with")
    (let ((spot (point)))
      (donkey-tutor-test--keys "m i <")
@@ -2597,7 +2722,7 @@ Both halves are pinned: the corrected key clears the selection, and the
 key the lesson used to name does not."
   ;; The step as the lesson now writes it.
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> Select part of this line")
+   (donkey-tutor-test--goline "----> Select part of this line")
    (donkey-tutor-test--keys "v")
    (should (region-active-p))
    (donkey-tutor-test--keys "l l l j")
@@ -2606,7 +2731,7 @@ key the lesson used to name does not."
    (should-not (region-active-p)))
   ;; The step as it used to be written.
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> Select part of this line")
+   (donkey-tutor-test--goline "----> Select part of this line")
    (donkey-tutor-test--keys "v")
    (donkey-tutor-test--keys "l l l j")
    (let ((anchor (mark t)))
@@ -2670,7 +2795,7 @@ The lesson names the \\=`m\\=' of \"mail\" specifically.  An earlier lesson had
 to be corrected for saying \"anywhere in the word\" when the starting
 column changed the answer, so the spot the prose names is the spot tested."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> Call send-mail_to")
+   (donkey-tutor-test--goline "----> Call send-mail_to")
    ;; Captured BEFORE any command runs.  Reading `match-beginning' after
    ;; the first keypress gave "DONKEY" -- `m w' searches internally and
    ;; leaves its own match data behind.
@@ -2700,7 +2825,7 @@ Pinned because the marker line is prose and prose gets reworded: swapping
 in a plain word would leave both halves passing individually while the
 lesson taught nothing."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> Call send-mail_to")
+   (donkey-tutor-test--goline "----> Call send-mail_to")
    (let ((spot (progn (search-forward "mail") (match-beginning 0)))
          word symbol)
      (goto-char spot)
@@ -2800,7 +2925,7 @@ on -- pinned so a later edit does not turn the prose into a \">>\" step."
 (ert-deftest donkey-tutor-lesson-9-rectangle-change-exercise-really-works ()
   "The `m v'/`c' exercise changes all three rows at once, as the lesson says."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> 777 red")
+   (donkey-tutor-test--goline "----> 777 red")
    (search-forward "777")
    (goto-char (match-beginning 0))
    (donkey-tutor-test--keys "m v j j l l c")
@@ -2811,26 +2936,26 @@ on -- pinned so a later edit does not turn the prose into a \">>\" step."
    (should donkey-normal-mode)
    ;; "All three rows lose their digits together."
    (donkey-tutor-test--goline "## red")
-   (dolist (expected '("   ---> ## red" "   ---> ## green" "   ---> ## blue"))
+   (dolist (expected '("   ----> ## red" "   ----> ## green" "   ----> ## blue"))
      (should (equal (donkey-tutor-test--line) expected))
      (forward-line 1))))
 
 (ert-deftest donkey-tutor-lesson-9-bare-rectangle-change-takes-one-character ()
   "The second exercise changes exactly one character, which is its point."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> 555 solo")
+   (donkey-tutor-test--goline "----> 555 solo")
    (search-forward "555")
    (goto-char (match-beginning 0))
    (donkey-tutor-test--keys "m v c # # C-g")
    (should donkey-normal-mode)
    (should (null donkey--split-places))
    (donkey-tutor-test--goline "solo")
-   (should (equal (donkey-tutor-test--line) "   ---> ##55 solo"))))
+   (should (equal (donkey-tutor-test--line) "   ----> ##55 solo"))))
 
 (ert-deftest donkey-tutor-lesson-9-rectangle-change-differs-from-plain-change ()
   "Without a rectangle, `c' deletes one character and has no cursors."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> 555 solo")
+   (donkey-tutor-test--goline "----> 555 solo")
    (search-forward "555")
    (goto-char (match-beginning 0))
    (donkey-tutor-test--keys "m v")
@@ -2840,27 +2965,27 @@ on -- pinned so a later edit does not turn the prose into a \">>\" step."
    (should donkey-insert-mode)
    (should (null donkey--split-places))
    (donkey-tutor-test--goline "solo")
-   (should (equal (donkey-tutor-test--line) "   ---> 55 solo"))))
+   (should (equal (donkey-tutor-test--line) "   ----> 55 solo"))))
 
 (ert-deftest donkey-tutor-lesson-9-prefix-exercise-really-works ()
   "The prefix exercise adds text without replacing any."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> red")
+   (donkey-tutor-test--goline "----> red")
    (search-forward "red")
    (goto-char (match-beginning 0))
    (donkey-tutor-test--keys "m v h j j c / / SPC C-g C-g")
    (donkey-tutor-test--goline "// red")
-   (dolist (expected '("   ---> // red" "   ---> // green" "   ---> // blue"))
+   (dolist (expected '("   ----> // red" "   ----> // green" "   ----> // blue"))
      (should (equal (donkey-tutor-test--line) expected))
      (forward-line 1))))
 
 (ert-deftest donkey-tutor-lesson-9-suffix-exercise-really-works ()
   "The suffix exercise appends to every row, at the column the first ends on."
   (donkey-tutor-test--live
-   (donkey-tutor-test--goline "---> aaaaa")
+   (donkey-tutor-test--goline "----> aaaaa")
    (donkey-tutor-test--keys "g l m v j j c SPC ; C-g C-g")
    (donkey-tutor-test--goline "aaaaa")
-   (dolist (expected '("   ---> aaaaa ;" "   ---> bbbbb ;" "   ---> ccccc ;"))
+   (dolist (expected '("   ----> aaaaa ;" "   ----> bbbbb ;" "   ----> ccccc ;"))
      (should (equal (donkey-tutor-test--line) expected))
      (forward-line 1))))
 
@@ -2877,7 +3002,7 @@ reader."
         (donkey-tutor)
         (with-current-buffer "*DONKEY Tutor*"
           (goto-char (point-min))
-          (should (search-forward "---> aaaaa" nil t))
+          (should (search-forward "----> aaaaa" nil t))
           (beginning-of-line)
           (let (lengths)
             (dotimes (_ 3)
