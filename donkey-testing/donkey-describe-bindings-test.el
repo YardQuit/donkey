@@ -1737,6 +1737,16 @@ The same words in lower case do not, and no state is named in them."
                                 buffer-undo-list))))
     (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*"))))
 
+(ert-deftest donkey-tutor-undo-stops-at-the-lesson-as-it-opened ()
+  "Undo takes back what was typed into the tutor, never the lesson itself."
+  (donkey-tutor-test--live
+   (let ((lesson (buffer-string)))
+     (donkey-tutor-test--goline "----> Move along")
+     (condition-case nil
+         (donkey-tutor-test--keys "i x C-g u u")
+       (user-error nil))
+     (should (equal (buffer-string) lesson)))))
+
 (defvar donkey-tutor-test--regexp nil
   "What the stubbed `read-regexp' answers in a Split exercise.")
 

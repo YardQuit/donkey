@@ -12741,7 +12741,8 @@ in `donkey-tutor-arrow'.
 
 Returns to an existing tutor buffer rather than rebuilding it, so the
 lesson survives being buried behind other windows; killing the buffer is
-what starts over."
+what starts over.  Undo takes back what was typed into it and stops at
+the lesson as it opened."
   (interactive)
   (let ((existing (get-buffer "*DONKEY Tutor*")))
     (if existing
@@ -12770,6 +12771,8 @@ what starts over."
                     donkey--tutor-content t t)))
           (donkey--tutor-paint)
           (goto-char (point-min))
+          ;; The lesson is where undo stops, not a step it takes back.
+          (setq buffer-undo-list nil)
           (set-buffer-modified-p nil))
         (pop-to-buffer buf)))))
 
