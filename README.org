@@ -30,7 +30,7 @@
 
 *Making it yours*
 
-- [[#making-it-yours][Your own keys]] — one key, the leader, giving a key back
+- [[#making-it-yours][Your own keys]] — one key, the leader, taking a key away
 - [[#if-a-key-is-not-doing-what-you-want][If a key is not doing what you want]]
 - [[#modes-where-donkey-steps-aside][Modes where DONKEY steps aside]]
 - [[#modes-donkey-supports-rather-than-takes-over][Modes DONKEY supports rather than takes over]] — =hjkl=, and the mode keeps the rest
@@ -1196,36 +1196,30 @@ that named the prefixes you bound while saying nothing about the ones
 you named in which-key's table would be telling half the story, in a
 way that reads as a bug rather than a rule. The popup has all of them.
 
-** Giving a key back to the buffer
+** Taking a key away
 
-A key bound to =undefined= is refused. Unbind it and it falls through
-to whatever the major mode has:
-
-#+begin_src emacs-lisp
-
-  (with-eval-after-load 'donkey
-    (keymap-unset donkey-normal-mode-map ";"))   ; ; is the mode's again
-
-#+end_src
-
-That works for any printable key, not only the ones DONKEY binds:
-=keymap-unset= leaves a nil in DONKEY's map, and a nil there shadows
-what answers the key underneath.
-
-Its =REMOVE= argument does the opposite, and is worth knowing so you do
-not reach for it by mistake. It takes the binding out rather than
-nilling it, so the key goes back to being refused:
+A key in NORMAL state is DONKEY's, one you bound, or nothing: whatever
+the major mode puts on a key, NORMAL state never lets it through, so a
+key pressed by mistake does nothing you did not ask for. Take one of
+DONKEY's keys away and it does nothing:
 
 #+begin_src emacs-lisp
 
   (with-eval-after-load 'donkey
-    (keymap-unset donkey-normal-mode-map ";" t))  ; ; is refused again
+    (keymap-unset donkey-normal-mode-map "x"))   ; x does nothing now
 
 #+end_src
 
-Be aware of what you are letting through: some major modes bind
-punctuation to a command that types, which is why these keys are
-refused rather than left open in the first place.
+With or without =keymap-unset='s =REMOVE= argument, the key is refused
+rather than handed to the buffer. That holds for every printable key,
+=SPC=, =RET= and the delete keys, the keys NORMAL state answers for.
+The rest behave as they always did: =C-x=, =C-c=, =M-x=, the arrows
+and =TAB= reach Emacs and the major mode, which is how =TAB= folds a
+headline in Org.
+
+To give a key a command, bind the command, and it is a key you chose.
+For one mode only, remap DONKEY's command in that mode's own map;
+[[#if-a-key-is-not-doing-what-you-want][If a Key Is Not Doing What You Want]] shows how.
 
 * If a Key Is Not Doing What You Want
 :PROPERTIES:

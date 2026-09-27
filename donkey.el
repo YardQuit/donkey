@@ -13043,10 +13043,32 @@ itself so that the map stays as DONKEY wrote it: a key nobody has
 bound is still absent from it, which is what `keymap-set' needs to
 make that key a prefix, what the binding report reads to tell a
 reader's change from DONKEY's own, and what `donkey--claim-wrap-keys'
-restores a key to when a wrap is let go of.")
+restores a key to when a wrap is let go of.
+
+A parent answers only while the map holds nothing for the key; a key
+the map lets go of is answered by `donkey--normal-state-backstop'.")
 
 (when (null donkey--normal-state-floor)
   (setq donkey--normal-state-floor (make-sparse-keymap)))
+
+(defvar donkey--normal-state-backstop
+  (let ((map (make-sparse-keymap)))
+    (dolist (char (number-sequence ?\s ?~))
+      (define-key map (vector char) #'undefined))
+    (dolist (key '("RET" "<enter>" "DEL" "<backspace>" "<delete>" "<deletechar>"))
+      (keymap-set map key #'undefined))
+    map)
+  "The `undefined' under the keys Normal state answers for, map or no map.
+
+Every printable key, \\`SPC', the Enter keys and the delete keys.  It
+sits on `emulation-mode-map-alists' right after
+`donkey-normal-mode-map', so a key the map lets go of does nothing
+rather than reaching the major mode: `keymap-unset' leaves a nil that
+hides `donkey--normal-state-floor', and with REMOVE it takes out a key
+the floor never held.  A key the reader binds in the map answers
+before this does.  \\`TAB' is not here, and neither is any key the map
+never bound -- \\`C-x', \\`C-c', \\`M-x', the arrows -- so each still
+reaches the major mode.")
 
 (defun donkey--seal-normal-state ()
   "Answer every printable key Normal state does not bind, with `undefined'.
@@ -13397,11 +13419,12 @@ called it a loss would cry wolf in every Org buffer."
         (let ((own (donkey--binding-value (lookup-key donkey-normal-mode-map keys)))
               (effective (donkey--binding-value (key-binding keys))))
           (when (and own (not (eq own effective))
-                     ;; A PREFIX answers with a COMPOSED keymap: Normal
-                     ;; state's map is active twice -- as this mode's
-                     ;; own map, and on `emulation-mode-map-alists' --
-                     ;; and Emacs merges the prefix maps of every active
-                     ;; map rather than letting the first win.  The keys
+                     ;; A PREFIX answers with a COMPOSED keymap where a
+                     ;; map above Normal state's binds the same prefix:
+                     ;; Emacs merges the prefix maps of the active maps
+                     ;; down to the first one that binds the key to a
+                     ;; command, which for Normal state's printable keys
+                     ;; is `donkey--normal-state-backstop'.  The keys
                      ;; under it are reached all the same, so nothing was
                      ;; taken and there is nothing to report.
                      (not (and (keymapp own) (keymapp effective)
@@ -13699,7 +13722,7 @@ versa."
 
 (defvar donkey--emulation-mode-map-alist
   (list (cons 'donkey-normal-mode donkey-normal-mode-map))
-  "Normal state\\='s keymap, in the shape `emulation-mode-map-alists' takes.
+  "Normal state\\='s keymaps, in the shape `emulation-mode-map-alists' takes.
 
 Emacs reads that variable before every entry in
 `minor-mode-map-alist', so a key Normal state binds answers with
@@ -13715,9 +13738,13 @@ keyed on as well.  Insert state is untouched, and binding that one
 variable to nil still hides the whole of Normal state, which is how
 `donkey--wrap-key-would-run' asks what a key means underneath.
 
-A key Normal state does NOT bind is unaffected and still reaches the
-mode that binds it, and a mode that wants one of Normal state\\='s keys
-back remaps the command; the README says how, under which map wins.
+`donkey--install-emulation-map' puts `donkey--normal-state-backstop'
+after the map, keyed the same way.  It answers a key Normal state
+answers for once the map has let go of it, so a printable key,
+\\`SPC', Enter or a delete key never reaches the major mode.  Any other
+key the map does not bind reaches the mode that binds it, and a mode
+that wants one of Normal state\\='s commands for itself remaps it; the
+README says how, under which map wins.
 
 The map is active twice as a result, here and as this mode\\='s own
 keymap, and Emacs composes the prefix maps of every active map rather
@@ -13917,7 +13944,18 @@ same reason: the entry answers only while `donkey-normal-mode' is on,
 which the disable path turns off in every buffer, and a state switched
 on by itself afterwards -- with no `donkey-mode' anywhere, which this
 package allows -- would be left without its precedence had teardown
-taken the entry away."
+taken the entry away.
+
+Also puts `donkey--normal-state-backstop' after Normal state\\='s map
+in the default value of `donkey--emulation-mode-map-alist' wherever it
+is missing: on the first call, and after a reload over an older
+DONKEY, since `defvar' keeps a value it finds."
+  (unless (rassq donkey--normal-state-backstop
+                 (default-value 'donkey--emulation-mode-map-alist))
+    (setq-default donkey--emulation-mode-map-alist
+                  (append (default-value 'donkey--emulation-mode-map-alist)
+                          (list (cons 'donkey-normal-mode
+                                      donkey--normal-state-backstop)))))
   (add-to-list 'emulation-mode-map-alists 'donkey--emulation-mode-map-alist t))
 
 (donkey--install-emulation-map)

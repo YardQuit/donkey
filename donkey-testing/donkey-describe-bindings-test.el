@@ -3369,6 +3369,88 @@ prefix of its own."
   ;; and the floor answers it again once the sequence is gone
   (should (eq (lookup-key donkey-normal-mode-map "s") 'undefined)))
 
+(defvar donkey-backstop-test--ran nil
+  "The keys `donkey-backstop-test-mode' ran its own command for.")
+
+(defun donkey-backstop-test--run ()
+  "Note the key that reached `donkey-backstop-test-mode'."
+  (interactive)
+  (push (key-description (this-command-keys)) donkey-backstop-test--ran))
+
+(defvar donkey-backstop-test-mode-map
+  (let ((map (make-sparse-keymap)))
+    (dolist (key '("E" "/" "x" "SPC" "RET" "DEL" "TAB" "C-c x" "g 7"))
+      (keymap-set map key #'donkey-backstop-test--run))
+    map)
+  "Keys `donkey-backstop-test-mode' puts a command of its own on.")
+
+(define-derived-mode donkey-backstop-test-mode text-mode "Backstop"
+  "A mode written in, with a command on keys Normal state answers for.")
+
+(defun donkey-backstop-test--press (keys)
+  "Press each of KEYS; return the ones the major mode's command ran for."
+  (setq donkey-backstop-test--ran nil)
+  (cl-letf (((symbol-function 'ding) #'ignore))
+    (dolist (key keys)
+      (execute-kbd-macro (kbd key))))
+  (nreverse donkey-backstop-test--ran))
+
+(ert-deftest donkey-a-key-normal-state-lets-go-of-does-nothing ()
+  "A key unset in Normal state's map is `undefined', not the mode's command.
+With REMOVE and without, for a key the floor answers, a key DONKEY
+binds, SPC, Enter and a delete key."
+  (let* ((keys '("E" "/" "x" "SPC" "RET" "DEL"))
+         (own (mapcar (lambda (key)
+                        (cons key (donkey-report-test--own-binding key)))
+                      keys)))
+    (unwind-protect
+        (dolist (remove '(nil t))
+          (dolist (key keys)
+            (keymap-unset donkey-normal-mode-map key remove))
+          (donkey-test-keys--harness "*donkey-backstop*"
+              #'donkey-backstop-test-mode () "one two" ""
+            (dolist (key keys)
+              (should (equal (list key remove (key-binding (kbd key)))
+                             (list key remove 'undefined))))
+            (should (equal (donkey-backstop-test--press keys) nil))
+            (should (equal (buffer-string) "one two"))))
+      (pcase-dolist (`(,key . ,def) own)
+        (if def
+            (keymap-set donkey-normal-mode-map key def)
+          (keymap-unset donkey-normal-mode-map key t)))
+      (keymap-set donkey-normal-mode-map "SPC" (cons "leader" donkey-leader-map)))))
+
+(ert-deftest donkey-a-mode-sequence-under-a-donkey-prefix-does-not-run ()
+  "A sequence the mode binds under one of Normal state's prefixes is refused."
+  (donkey-test-keys--harness "*donkey-backstop*"
+      #'donkey-backstop-test-mode () "one two" ""
+    (should (eq (key-binding (kbd "g 7")) nil))
+    (should (equal (donkey-backstop-test--press '("g 7")) nil))
+    (should (equal (buffer-string) "one two"))))
+
+(ert-deftest donkey-normal-state-leaves-tab-and-chords-to-the-mode ()
+  "TAB, and a key Normal state never bound, reach the major mode's command."
+  (donkey-test-keys--harness "*donkey-backstop*"
+      #'donkey-backstop-test-mode () "one two" ""
+    (should (equal (donkey-backstop-test--press '("TAB" "C-c x"))
+                   '("TAB" "C-c x")))))
+
+(ert-deftest donkey-installing-again-puts-the-backstop-after-the-map-once ()
+  "An emulation list without the backstop gets it after the map, and only once."
+  (let ((was (default-value 'donkey--emulation-mode-map-alist)))
+    (unwind-protect
+        (progn
+          (setq-default donkey--emulation-mode-map-alist
+                        (list (cons 'donkey-normal-mode donkey-normal-mode-map)))
+          (donkey--install-emulation-map)
+          (donkey--install-emulation-map)
+          (let ((alist (default-value 'donkey--emulation-mode-map-alist)))
+            (should (equal (mapcar #'car alist)
+                           '(donkey-normal-mode donkey-normal-mode)))
+            (should (eq (cdr (nth 0 alist)) donkey-normal-mode-map))
+            (should (eq (cdr (nth 1 alist)) donkey--normal-state-backstop))))
+      (setq-default donkey--emulation-mode-map-alist was))))
+
 (ert-deftest donkey-a-pair-let-go-of-leaves-its-key-out-of-the-map ()
   "Letting a pair go removes its binding instead of writing the floor in.
 
@@ -4019,22 +4101,27 @@ Reported as a loss it would cry wolf in every Org buffer, three times."
       (donkey-mode -1)
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
+(defvar donkey-report-test--above nil
+  "An emulation alist a test puts ahead of Normal state's.")
+
 (ert-deftest donkey-a-composed-prefix-is-not-a-key-taken ()
   "A prefix of DONKEY\\='s own is not reported as a key something else runs.
-
-Normal state\\='s map is active twice -- as the mode\\='s own map, and on
-`emulation-mode-map-alists' -- and Emacs composes the prefix maps of
-every active map, so `SPC' answers with a keymap that is not `eq' to
-the leader.  The keys under it are reached all the same."
-  (let ((buffer (get-buffer-create "*donkey-prefix*")))
+Here a map above Normal state\\='s binds the same prefix, so `SPC'
+answers with a composed keymap rather than the leader."
+  (let ((buffer (get-buffer-create "*donkey-prefix*"))
+        (above (make-sparse-keymap)))
+    (keymap-set above "SPC 7" #'ignore)
     (unwind-protect
-        (progn
+        (let ((donkey-report-test--above (list (cons 'donkey-normal-mode above)))
+              (emulation-mode-map-alists
+               (cons 'donkey-report-test--above emulation-mode-map-alists)))
           (switch-to-buffer buffer)
           (text-mode)
           (donkey-mode 1)
           (donkey-normal-mode 1)
           (should (keymapp (key-binding (kbd "SPC"))))
           (should-not (eq (key-binding (kbd "SPC")) donkey-leader-map))
+          (should (eq (key-binding (kbd "SPC 7")) #'ignore))
           (should (eq (key-binding (kbd "SPC i .")) #'donkey-input-method-digraphs))
           ;; The report keys its rows by VECTOR, as `lookup-key' takes
           ;; them; `kbd' would answer with a string and match nothing.
