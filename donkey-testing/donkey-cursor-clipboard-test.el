@@ -93,7 +93,8 @@ on screen to say why.
 
 A bare string is read as the one prefix it looks like, since that is
 what the reader who wrote it meant; a list keeps its strings and drops
-the rest; anything else denies nothing.  None of the five signals."
+the rest; anything else, a dotted list included, denies nothing.  None
+of them signals."
   (cl-letf ((noninteractive nil)
             ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
             ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color")))
@@ -102,6 +103,7 @@ the rest; anything else denies nothing.  None of the five signals."
                     ("dumb"           . t)      ; a bare string that does not
                     ((dumb linux)     . t)      ; symbols, dropped
                     ((42 "xterm")     . nil)    ; the string in it still counts
+                    (("dumb" . "xterm") . t)    ; dotted, denies nothing
                     (t                . t)))    ; nonsense denies nothing
       (let ((donkey-decscusr-denied-terminals (car case)))
         (should (equal (cons (car case)

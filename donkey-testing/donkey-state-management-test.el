@@ -1700,10 +1700,13 @@ mistake."
   "`donkey--excluded-mode-p' never signals, whatever the option holds.
 
 `memq' and `derived-mode-p' both signal on a non-list, and this
-predicate is reached from `post-command-hook'."
+predicate is reached from `post-command-hook'.  A dotted list reads
+as the empty list."
   (with-temp-buffer
     (let ((major-mode 'text-mode))
-      (dolist (val '(dired-mode "dired-mode" 42 nil))
+      (dolist (val '(dired-mode "dired-mode" 42 nil
+                     (comint-mode . text-mode)
+                     (comint-mode text-mode . dired-mode)))
         (let ((donkey-excluded-modes val))
           (should-not (donkey--excluded-mode-p))))
       ;; The bare symbol still has to WORK, not merely fail to signal.
@@ -1737,10 +1740,21 @@ switched to rather than merely made current for the same reason
 SELECTED WINDOW's buffer, so keys sent to an undisplayed
 `with-temp-buffer' land somewhere else entirely.
 
-Both options that reach `donkey--major-mode-in-p' are covered."
-  (dolist (var '(donkey-excluded-modes donkey-editing-modes))
-    (let ((orig (symbol-value var))
-          (buf (get-buffer-create "*donkey-mode-list-test*")))
+Every option a command hook reads through
+`donkey--memo-major-mode-in-p' is covered, each with a bare symbol and
+with a dotted list, and a major mode started with the option mis-set
+must not signal either: `after-change-major-mode-hook' runs outside
+the mode function's own error handling, so a signal there fails
+`find-file'."
+  (dolist (case '((donkey-excluded-modes . dired-mode)
+                  (donkey-excluded-modes . (comint-mode . dired-mode))
+                  (donkey-excluded-mode-exceptions . dired-mode)
+                  (donkey-excluded-mode-exceptions . (comint-mode . dired-mode))
+                  (donkey-support-mode-exceptions . dired-mode)
+                  (donkey-support-mode-exceptions . (comint-mode . dired-mode))))
+    (let* ((var (car case))
+           (orig (symbol-value var))
+           (buf (get-buffer-create "*donkey-mode-list-test*")))
       (unwind-protect
           (progn
             (donkey-mode 1)
@@ -1752,10 +1766,12 @@ Both options that reach `donkey--major-mode-in-p' are covered."
             (donkey-enter-normal)
             (should (memq #'donkey--check-post-command-non-editing
                           (default-value 'post-command-hook)))
-            (set var 'dired-mode)
+            (set var (cdr case))
             (execute-kbd-macro (kbd "l"))
             (should (memq #'donkey--check-post-command-non-editing
-                          (default-value 'post-command-hook))))
+                          (default-value 'post-command-hook)))
+            (fundamental-mode)
+            (should (bound-and-true-p donkey-normal-mode)))
         (set var orig)
         (when (buffer-live-p buf) (kill-buffer buf))
         (donkey-mode -1)))))

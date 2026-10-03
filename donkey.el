@@ -231,7 +231,11 @@ CACHE-VAR names a buffer-local variable holding a cons of the key
 MODE-LIST as it was when the entry was computed.  The entry is reused
 only while the buffer's `major-mode' is `eq' and MODE-LIST is `equal'
 to that snapshot, so a mode change or any change to the user option,
-in place or not, recomputes on the next call."
+in place or not, recomputes on the next call.
+
+Never signals, whatever MODE-LIST holds: it is read through
+`donkey--mode-list', and a value that is not a proper list is kept as
+it is rather than copied."
   (let ((cache (symbol-value cache-var)))
     (if (and cache
              (eq (car (car cache)) major-mode)
@@ -239,7 +243,7 @@ in place or not, recomputes on the next call."
         (cdr cache)
       (let ((result (donkey--major-mode-in-p mode-list)))
         (set cache-var (cons (cons major-mode
-                                   (if (listp mode-list)
+                                   (if (proper-list-p mode-list)
                                        (copy-sequence mode-list)
                                      mode-list))
                              result))
@@ -14351,14 +14355,14 @@ the terminal's own default."
   "Return `donkey-decscusr-denied-terminals' as a list of strings.
 
 A bare string is read as the one prefix it looks like, and anything
-in the list that is not a string is dropped; any other value denies
-nothing.  Read down a `post-command-hook' path, where a signal costs
-the cursor its resync for the rest of the session: Emacs removes a
-hook function that errors and says so once, and the state DONKEY is
-in stops showing after that."
+in a proper list that is not a string is dropped; any other value, a
+dotted list among them, denies nothing.  Read down a
+`post-command-hook' path, where a signal costs the cursor its resync
+for the rest of the session: Emacs removes a hook function that errors
+and says so once, and the state DONKEY is in stops showing after that."
   (cond ((stringp donkey-decscusr-denied-terminals)
          (list donkey-decscusr-denied-terminals))
-        ((listp donkey-decscusr-denied-terminals)
+        ((proper-list-p donkey-decscusr-denied-terminals)
          (seq-filter #'stringp donkey-decscusr-denied-terminals))))
 
 (defun donkey--terminal-supports-decscusr-p ()
