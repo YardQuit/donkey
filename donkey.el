@@ -4904,38 +4904,44 @@ See `donkey-mark-run-left' for why the mode wraps its motions."
 
 (defun donkey-mark-run-line-start (&optional count)
   "Stretch the run back to the line start, or move there.
-With COUNT, the start of the line COUNT - 1 lines down.  Stands in
-for `g h'; see `donkey-mark-run-left' for why the mode wraps its
-motions.
+Stands in for `g h'; see `donkey-mark-run-left' for why the mode wraps
+its motions.
 
 The pair owns FIXED ENDS, the way the object keys do: this one takes
 the selection's start, `donkey-mark-run-line-end' its end, so they add
 up -- `M g h g l' is the line's text from one edge to the other, in
-either order.  With no run in progress the key is just a motion."
+either order.  A run stretches to the start of the line point is on
+whatever COUNT says, so its ends never cross.  With no run in progress
+the key is just a motion, and COUNT moves to the start of the line
+COUNT - 1 lines down."
   (interactive "p")
-  (let ((extending (donkey--mark-run-continuing-p)))
-    (beginning-of-line count)
-    ;; Moving point activates nothing; the same re-assertion the
-    ;; backward object keys make, for the same reason.
-    (when extending
-      (activate-mark))))
+  (if (donkey--mark-run-continuing-p)
+      (progn
+        (beginning-of-line)
+        ;; Moving point activates nothing; the same re-assertion the
+        ;; backward object keys make, for the same reason.
+        (activate-mark))
+    (beginning-of-line count)))
 
 (defun donkey-mark-run-line-end (&optional count)
   "Stretch the run forward to the line end, or move there.
-With COUNT, the end of the line COUNT - 1 lines down.  Stands in for
-`g l'; see `donkey-mark-run-line-start' for the pair's fixed ends.
+Stands in for `g l'; see `donkey-mark-run-line-start' for the pair's
+fixed ends.
 
 This one pushes the MARK, the forward end, so it cannot shrink what
 is selected: the end of a line is never behind the position it is
 measured from.  Measured from the MARK rather than from point, which
 is what makes it the forward end's key -- on a run already spanning
 lines it reaches the end of the line the selection stops on, not the
-end of the line the cursor happens to sit in."
+end of the line the cursor happens to sit in.  A run stretches to that
+line's end whatever COUNT says.  With no run in progress the key is
+just a motion, and COUNT moves to the end of the line COUNT - 1 lines
+down."
   (interactive "p")
   (if (donkey--mark-run-continuing-p)
       (set-mark (save-excursion
                   (goto-char (mark t))
-                  (move-end-of-line count)
+                  (move-end-of-line 1)
                   (point)))
     (move-end-of-line count)))
 

@@ -5348,6 +5348,24 @@ the mode like any foreign key."
     (should (eq (key-binding (kbd "g q")) 'fill-region))
     (should (eq (key-binding (kbd "g h")) 'donkey-mark-run-line-start))))
 
+(ert-deftest donkey-g-h-and-g-l-in-a-run-take-no-count ()
+  "With a run live, `g h' and `g l' with a count are bare presses."
+  (let ((text "zero\none two three four\nfive\n"))
+    (dolist (count '("C-u 0" "M--" "C-u 3"))
+      (donkey-mark-test--keys text (concat "j w M w " count " g l")
+        (should (equal (list count (donkey-mark-test--selection))
+                       (list count "two three four"))))
+      (donkey-mark-test--keys text (concat "j w M w " count " g h")
+        (should (equal (list count (donkey-mark-test--selection))
+                       (list count "one two three")))))
+    ;; With no run, the key is the motion and the count moves lines.
+    (donkey-mark-test--keys ",,, ;;;\n... ---\n" "M C-u 2 g l"
+      (should-not (region-active-p))
+      (should (= (point) (1- (point-max)))))
+    (donkey-mark-test--keys ",,, ;;;\n... ---\n" "M C-u 2 g h"
+      (should-not (region-active-p))
+      (should (= (point) 9)))))
+
 (ert-deftest donkey-a-mode-motion-continues-only-a-visible-run ()
   "A wrapper motion beside a stale mark does not conjure a selection.
 
