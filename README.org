@@ -500,8 +500,9 @@ leave; see [[#a-mark-run-follows-you-between-buffers][A mark run follows you bet
 
 ** Rectangles: =m v=
 
-=m v= starts a rectangle. =P= pastes one back. Rectangles work with the
-wrap keys and with banking, below.
+=m v= starts a rectangle. =P= pastes one back; over a =V= selection it
+replaces the lines with the block's rows, one row to a line.
+Rectangles work with the wrap keys and with banking, below.
 
 =c= on a rectangle empties the block on every row and puts a cursor on
 each, in INSERT state, so what you type appears on every row at once —

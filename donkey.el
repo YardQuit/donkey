@@ -2004,8 +2004,10 @@ zero."
   (dotimes (_ (max 0 n))
     (funcall inserter)))
 
-(defun donkey--paste-restoring-line-ending (n took-newline)
+(defun donkey--paste-restoring-line-ending (n took-newline &optional inserter)
   "Paste N times at point, giving back a line ending the delete took.
+
+INSERTER is what one paste calls, `donkey--yank-kill' when nil.
 
 The tail end of pasting over a line selection.  Both of DONKEY's line
 selections -- a \"V\" session and banked lines -- are removed whole,
@@ -2025,14 +2027,16 @@ line below.
 Whether anything was pasted is measured by point, not by N: a paste
 of nothing restores no newline."
   (let ((before (point)))
-    (donkey--paste-times n #'donkey--yank-kill)
+    (donkey--paste-times n (or inserter #'donkey--yank-kill))
     (when (and took-newline
                (> (point) before)
                (not (eq (char-before) ?\n)))
       (save-excursion (insert "\n")))))
 
-(defun donkey--replace-visual-lines-with-paste (n)
+(defun donkey--replace-visual-lines-with-paste (n &optional inserter)
   "Replace the visual-line selection's whole lines with N pastes.
+
+INSERTER is what one paste calls, `donkey--yank-kill' when nil.
 
 The \"V\" counterpart of `donkey--replace-banked-selection-with-paste':
 the session's lines are deleted whole -- widened exactly as `y' and `d'
@@ -2049,7 +2053,21 @@ counterpart gives its own count of zero."
     (delete-region (car span) (cdr span))
     (deactivate-mark)
     (goto-char (car span))
-    (donkey--paste-restoring-line-ending n took-newline)))
+    (donkey--paste-restoring-line-ending n took-newline inserter)))
+
+(defun donkey--replace-visual-lines-with-rows (n)
+  "Replace the `V' selection's whole lines with `killed-rectangle's rows.
+
+The rows become lines of their own, one row to a line, and replace the
+lines the way \\[donkey-yank] replaces them with text -- the same result
+as pasting the rows joined by newlines.  N widens each row to N copies
+of itself, as a count does for \\[donkey-yank-rectangle]; an N below 1
+pastes nothing, and the lines are still removed."
+  (let ((rows (mapconcat (lambda (row)
+                           (apply #'concat (make-list (max 0 n) row)))
+                         killed-rectangle "\n")))
+    (donkey--replace-visual-lines-with-paste
+     (if (> n 0) 1 0) (lambda () (insert rows)))))
 
 (defun donkey-yank (&optional count)
   "Paste clipboard content, replacing the active region if present.
@@ -2132,6 +2150,11 @@ Banked lines are not a selection here.  \\[donkey-yank] replaces them,
 because linear text can stand in for whole lines; a block of columns
 cannot, so this key leaves the bank alone and lands at point.
 
+A visual-line selection made with `V' is replaced by the rows as lines,
+one row to a line, keeping the buffer's line structure: the same text
+\\[donkey-yank] gives over it with the rows joined by newlines.  See
+`donkey--replace-visual-lines-with-rows'.
+
 COUNT repeats each ROW sideways rather than stacking copies, so the
 block gets wider.  A COUNT below 1 inserts nothing, as it does for
 \\[donkey-yank]."
@@ -2143,6 +2166,8 @@ block gets wider.  A COUNT below 1 inserts nothing, as it does for
     (message "No rectangle to paste"))
    ((bound-and-true-p rectangle-mark-mode)
     (donkey--replace-rectangle-selection-with-killed-rectangle))
+   ((donkey--visual-line-session-active-p)
+    (donkey--replace-visual-lines-with-rows (or count 1)))
    (t
     (donkey--delete-active-region-safe)
     (donkey--yank-rectangle-times (or count 1)))))

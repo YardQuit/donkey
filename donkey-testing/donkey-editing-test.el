@@ -4469,6 +4469,37 @@ loudly if it changed."
        (donkey-yank-rectangle count)
        (should (equal (buffer-string) before))))))
 
+(ert-deftest donkey-yank-rectangle-over-visual-lines-pastes-the-rows-as-lines ()
+  "`P' over a `V' selection replaces the lines with the rows, one row to a line.
+
+The same text `p' gives over the selection with the rows joined by
+newlines, so the line after the selection stays a line of its own."
+  (let (from-rows from-text)
+    (donkey-test-keys--harness "*donkey-vP-test*" #'text-mode
+        ((killed-rectangle (list "X" "Y")))
+        "aa\nbb\ncc\n" "V J P"
+      (setq from-rows (buffer-string)))
+    (donkey-test-keys--harness "*donkey-vP-test*" #'text-mode
+        ((kill-ring (list "X\nY")))
+        "aa\nbb\ncc\n" "V J p"
+      (setq from-text (buffer-string)))
+    (should (equal from-rows "X\nY\ncc\n"))
+    (should (equal from-rows from-text)))
+  ;; The last line, with no line ending to give back.
+  (donkey-test-keys--harness "*donkey-vP-test*" #'text-mode
+      ((killed-rectangle (list "X" "Y")))
+      "aa\nbb" "j V P"
+    (should (equal (buffer-string) "aa\nX\nY")))
+  ;; A count widens each row; zero removes the lines and pastes nothing.
+  (donkey-test-keys--harness "*donkey-vP-test*" #'text-mode
+      ((killed-rectangle (list "X" "Y")))
+      "aa\nbb\ncc\n" "V J C-u 2 P"
+    (should (equal (buffer-string) "XX\nYY\ncc\n")))
+  (donkey-test-keys--harness "*donkey-vP-test*" #'text-mode
+      ((killed-rectangle (list "X" "Y")))
+      "aa\nbb\ncc\n" "V C-u 0 P"
+    (should (equal (buffer-string) "bb\ncc\n"))))
+
 (ert-deftest donkey-yank-rectangle-leaves-banked-lines-alone ()
   "`P' does not treat banked lines as a selection; `p' does.
 
