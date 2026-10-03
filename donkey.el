@@ -3257,10 +3257,12 @@ use this to tell a pair from two ordinary characters."
 (defun donkey--pair-empty-pair-here-p ()
   "Return non-nil when \\`DEL' here should take a whole empty pair.
 
-`donkey--pair-between-halves-p' and a buffer
-`donkey--pair-off-here-p' leaves to DONKEY, so \\`DEL' goes back to
-the major mode everywhere else."
-  (and (donkey--pair-between-halves-p)
+`donkey--pair-between-halves-p', in a buffer that can be edited and
+that `donkey--pair-off-here-p' leaves to DONKEY, so \\`DEL' goes back
+to the major mode everywhere else -- Dired\\='s, a help buffer\\='s,
+any read-only buffer\\='s, wherever point stands."
+  (and (not buffer-read-only)
+       (donkey--pair-between-halves-p)
        (not (donkey--pair-off-here-p))))
 
 (defun donkey--pair-delete-filter (command)

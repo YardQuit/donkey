@@ -514,6 +514,31 @@ delimiter has to be one `donkey-pair-delimiters' asked for."
   (donkey-pair-test--typing "*donkey-pair-del-count*" #'text-mode () "" "i a ( C-u 2 DEL"
     (should (equal (buffer-string) ")"))))
 
+(ert-deftest donkey-pair-del-in-a-read-only-buffer-is-the-major-modes ()
+  "In a buffer that cannot be edited, \\`DEL' between \"()\" is the mode\\='s.
+
+The buffer is a listing whose own \\`DEL' does something, as Dired\\='s
+and a help buffer\\='s do.  Pressed between the halves of a pair it
+runs that command and the text stays as it was; the same buffer made
+writable takes the pair."
+  (let ((ran 0))
+    (donkey-pair-test--typing "*donkey-pair-del-read-only*"
+        (lambda ()
+          (special-mode)
+          (let ((map (make-sparse-keymap)))
+            (set-keymap-parent map special-mode-map)
+            (keymap-set map "DEL" (lambda () (interactive) (setq ran (1+ ran))))
+            (use-local-map map))
+          (let ((inhibit-read-only t)) (insert "f()"))
+          (goto-char 3))
+        () "" ""
+      (goto-char 3)
+      (execute-kbd-macro (kbd "DEL"))
+      (should (equal (list ran (buffer-string)) '(1 "f()")))
+      (setq buffer-read-only nil)
+      (execute-kbd-macro (kbd "DEL"))
+      (should (equal (list ran (buffer-string)) '(1 "f"))))))
+
 (ert-deftest donkey-pair-del-is-handed-back-where-no-pair-stands ()
   "The filter answers with nothing unless point is between the halves.
 

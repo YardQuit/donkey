@@ -636,7 +636,8 @@ With it on, as you type:
 - in overwrite mode (the =<insert>= key) nothing pairs: a delimiter
   replaces the character under the cursor, as it does in plain Emacs;
 - =DEL= between the halves of an empty pair takes both, and =DEL=
-  anywhere else is whatever your major mode bound it to;
+  anywhere else, or in a buffer you cannot edit such as Dired, is
+  whatever your major mode bound it to;
 - a count types and pairs nothing: =C-u 3 (= gives you three of them.
 
 The last two are DONKEY's own answers. Where =electric-pair-mode= is
