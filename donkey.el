@@ -10983,12 +10983,16 @@ documentation.")
       (insert (propertize (make-string 50 ?=)
                           'face 'font-lock-comment-face) "\n")
       ;; The key is looked up in `donkey-normal-mode-map' directly; no
-      ;; DONKEY map is active in this help buffer.
+      ;; DONKEY map is active in this help buffer.  With no key there,
+      ;; the command is named as it is reached.
       (insert (propertize
                (format "Live only while the mode is on -- %s starts it.\n"
-                       (key-description
-                        (where-is-internal 'donkey-mark-run-toggle
-                                           donkey-normal-mode-map t)))
+                       (let ((key (where-is-internal 'donkey-mark-run-toggle
+                                                     donkey-normal-mode-map t)))
+                         (if key
+                             (key-description key)
+                           (substitute-command-keys
+                            "\\[donkey-mark-run-toggle]"))))
                'face 'font-lock-comment-face))
       (insert (propertize (make-string 50 ?-)
                           'face 'font-lock-comment-face) "\n")

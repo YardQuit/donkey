@@ -325,6 +325,34 @@ listed again here, so a key added to the mode cannot go undocumented."
                                      text)
                                     t)))))))))
 
+(ert-deftest donkey-describe-bindings-names-the-mark-run-command-without-a-key ()
+  "With no key on `donkey-mark-run-toggle', the chart names the command.
+
+The line under the mark run\\='s title says how the mode is started,
+and with the key unbound that is the command by name, never an empty
+gap where the key would be."
+  (let ((was (keymap-lookup donkey-normal-mode-map "M"))
+        (buf (get-buffer "*DONKEY Bindings*")))
+    (when buf (kill-buffer buf))
+    (unwind-protect
+        (progn
+          (keymap-unset donkey-normal-mode-map "M" t)
+          (should-not (where-is-internal 'donkey-mark-run-toggle
+                                         donkey-normal-mode-map t))
+          (save-window-excursion
+            (donkey-describe-bindings)
+            (with-current-buffer "*DONKEY Bindings*"
+              (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+                (should (string-match-p
+                         (concat "-- "
+                                 (regexp-quote
+                                  (substitute-command-keys
+                                   "\\[donkey-mark-run-toggle]"))
+                                 " starts it")
+                         text))
+                (should (string-match-p "donkey-mark-run-toggle starts it" text))))))
+      (keymap-set donkey-normal-mode-map "M" was))))
+
 ;;; --- Pre-condition error ---
 
 (ert-deftest donkey-describe-bindings-errors-without-map ()
