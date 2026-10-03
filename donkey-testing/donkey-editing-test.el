@@ -2663,6 +2663,38 @@ governed by the count."
     (donkey-change -2)
     (should (equal (buffer-string) "adef"))))
 
+(defmacro donkey-test--cluster-keys (text cluster keys &rest body)
+  "Type KEYS into a buffer of TEXT whose CLUSTER is one glyph, then run BODY.
+
+CLUSTER is (FROM . TO), composed with `compose-region', so the
+characters count as one whatever the display composes by itself."
+  (declare (indent 3))
+  `(donkey-test-keys--harness "*donkey-cluster*"
+       (lambda ()
+         (text-mode)
+         (insert ,text)
+         (compose-region (car ,cluster) (cdr ,cluster)))
+       ()
+       "" ,keys
+     ,@body))
+
+(ert-deftest donkey-delete-copy-and-change-count-a-cluster-as-one-character ()
+  "`x', `y' and `c' with no selection take a composed cluster whole, both ways."
+  ;; e and a combining acute accent, then x and y.
+  (donkey-test--cluster-keys "éxy" '(1 . 3) "x"
+    (should (equal (buffer-string) "xy")))
+  (donkey-test--cluster-keys "éxy" '(1 . 3) "C-u 2 x"
+    (should (equal (buffer-string) "y")))
+  (donkey-test--cluster-keys "éxy" '(1 . 3) "C-u 2 y"
+    (should (equal kill-ring '("éx"))))
+  (donkey-test--cluster-keys "éxy" '(1 . 3) "c Z C-g"
+    (should (equal (buffer-string) "Zxy")))
+  ;; Backward, from the end of the buffer.
+  (donkey-test--cluster-keys "aé" '(2 . 4) "G C-u - 1 x"
+    (should (equal (buffer-string) "a")))
+  (donkey-test--cluster-keys "aé" '(2 . 4) "G C-u - 2 y"
+    (should (equal kill-ring '("aé")))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Paste: banked lines, and nothing to paste
 ;;; ---------------------------------------------------------------------------

@@ -1062,6 +1062,72 @@ opens one line, as a bare press does."
       (end-of-line)))
   (donkey-enter-insert))
 
+(defun donkey--grapheme-end (pos)
+  "Return where the character at POS ends, a grapheme cluster counting as one.
+
+Counted as `delete-forward-char' counts: characters Emacs composes into
+one glyph -- a letter and its combining marks, a joined emoji sequence
+-- are one character.  Which characters compose depends on the display,
+as it does for that command; elsewhere a character is a code point."
+  (let ((cmp (find-composition pos)))
+    (cond
+     ((null cmp) (1+ pos))
+     ;; A static composition, made by `compose-region'.
+     ((and (= (length cmp) 3) (booleanp (nth 2 cmp)))
+      (max (1+ pos) (cadr cmp)))
+     ((<= (cadr cmp) pos) (1+ pos))
+     (t (lgstring-glyph-boundary (nth 2 cmp) (car cmp) (1+ pos))))))
+
+(defun donkey--grapheme-start (pos)
+  "Return the start of the character before POS, a cluster counting as one.
+
+Counted as `donkey--grapheme-end' counts, backward."
+  (let ((cmp (find-composition (1- pos))))
+    (if (and cmp (< (car cmp) pos))
+        (let ((start (car cmp))
+              next)
+          (while (< (setq next (donkey--grapheme-end start)) pos)
+            (setq start next))
+          start)
+      (1- pos))))
+
+(defun donkey--character-target (n)
+  "Return the position N characters from point, within the accessible text.
+
+A grapheme cluster counts as one character, as in
+`donkey--grapheme-end'; a negative N counts back from point.  A count
+running past the accessible text stops at its edge.  The text is
+searched once for a composition rather than asked about at every
+character, so a large count costs one search per cluster it crosses."
+  (let ((pos (point)))
+    (if (>= n 0)
+        (while (and (> n 0) (< pos (point-max)))
+          (let* ((limit (min (point-max) (+ pos n)))
+                 (cmp (find-composition pos limit))
+                 (from (and cmp (max pos (car cmp)))))
+            (cond
+             ;; No cluster before the limit: every character is one.
+             ((or (null from) (>= from limit))
+              (setq n (- n (- limit pos)) pos limit))
+             ((> from pos)
+              (setq n (- n (- from pos)) pos from))
+             (t
+              (setq pos (min (point-max) (donkey--grapheme-end pos))
+                    n (1- n))))))
+      (while (and (< n 0) (> pos (point-min)))
+        (let* ((limit (max (point-min) (+ pos n)))
+               (cmp (find-composition (1- pos) limit))
+               (to (and cmp (min pos (cadr cmp)))))
+          (cond
+           ((or (null to) (<= to limit))
+            (setq n (+ n (- pos limit)) pos limit))
+           ((< to pos)
+            (setq n (+ n (- pos to)) pos to))
+           (t
+            (setq pos (max (point-min) (donkey--grapheme-start pos))
+                  n (1+ n)))))))
+    pos))
+
 (defun donkey--refuse-hidden-text (beg end)
   "Signal a `user-error' when any text between BEG and END is invisible.
 
@@ -1113,9 +1179,10 @@ the very end of the buffer.
 COUNT changes that many characters when no selection is active.  A
 negative COUNT changes that many characters before point, and a COUNT of
 zero changes none while still entering INSERT state, the same reading
-`donkey-delete' gives its own argument.  Where those characters include
-hidden text, such as the line break at the end of a folded heading,
-the change is refused and INSERT state is not entered."
+`donkey-delete' gives its own argument, grapheme clusters included.
+Where those characters include hidden text, such as the line break at
+the end of a folded heading, the change is refused and INSERT state is
+not entered."
   (interactive "p")
   (if (donkey--selection-to-act-on-p)
       (if (bound-and-true-p rectangle-mark-mode)
@@ -1129,8 +1196,7 @@ the change is refused and INSERT state is not entered."
         (donkey-enter-insert))
     ;; Not killed: no selection was made, so there is nothing to put
     ;; back.
-    (let ((target (max (point-min)
-                       (min (point-max) (+ (point) (or count 1))))))
+    (let ((target (donkey--character-target (or count 1))))
       (donkey--refuse-hidden-text (point) target)
       (delete-region (point) target))
     (donkey-enter-insert)))
@@ -2191,10 +2257,12 @@ is pushed onto the `kill-ring' at all.
 COUNT copies that many characters when no region is active.  A negative
 COUNT copies that many characters before point, matching how
 `delete-char' and friends read a negative argument.  A COUNT of zero
-copies nothing at all."
+copies nothing at all.  A letter with its combining marks, or a joined
+emoji sequence, is one character, as `delete-forward-char' counts it;
+see `donkey--grapheme-end'."
   (interactive "p")
   (let* ((n (or count 1))
-         (target (max (point-min) (min (point-max) (+ (point) n)))))
+         (target (donkey--character-target n)))
    ;; Only a copy that happened clears the selection.
    (let ((copied
           (cond
@@ -2251,7 +2319,9 @@ and wins, and the banks survive untouched.  See
 COUNT deletes that many characters when no region is active.
 A count larger than the text remaining stops at the end rather than
 signaling.  A negative COUNT deletes that many characters before point
-and a COUNT of zero deletes none, matching `delete-char'.  Characters
+and a COUNT of zero deletes none, matching `delete-char'.  A letter
+with its combining marks, or a joined emoji sequence, is one character,
+as `delete-forward-char' counts it.  Characters
 that include hidden text, such as the line break at the end of a
 folded heading, are refused rather than deleted unseen.
 
@@ -2267,7 +2337,7 @@ whatever was already on the ring, not the three characters just removed.
 the same place."
   (interactive "p")
   (let* ((n (or count 1))
-         (target (max (point-min) (min (point-max) (+ (point) n)))))
+         (target (donkey--character-target n)))
    (cond
     ;; Before the bank: the live selection wins.
     ((donkey--live-rectangle-p)
