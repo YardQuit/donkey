@@ -858,6 +858,25 @@ falsify a paragraph nobody thinks to re-read."
           (should (eq (key-binding (kbd (car pair))) (cadr pair)))))
     (donkey-mode -1)))
 
+(ert-deftest donkey-tutor-claim-c-g-aborts-the-prompts-it-opens ()
+  "The tutor names the quit key, not Enter, as what abandons its prompts.
+
+Enter in a prompt confirms it: the save prompt saves the buffer under
+its own name, and the command prompt runs whatever command it offers."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-min))
+          (should (search-forward "to abort" nil t))
+          (let ((line (buffer-substring-no-properties
+                       (line-beginning-position) (line-end-position))))
+            (should (string-match-p "then C-g to abort" line))
+            (should-not (string-match-p "RET to abort" line)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*")))
+  (should (memq (keymap-lookup minibuffer-local-map "C-g")
+                '(abort-minibuffers abort-recursive-edit minibuffer-keyboard-quit))))
+
 (ert-deftest donkey-tutor-claim-normal-state-costs-exactly-four-things ()
   "The four differences the tutor names, and no fifth one.
 

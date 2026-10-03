@@ -13012,7 +13012,7 @@ In NORMAL state, four things differ:
   - \\`DEL' and \\`<delete>' do nothing, so a slip cannot damage the
     buffer from NORMAL state.  Use DONKEY-DELETE-KEYS.
 
->> Try it: press \\`C-x' \\`C-s' below, or \\[execute-extended-command] and then \\`RET' to abort.  Neither is
+>> Try it: press \\`C-x' \\`C-s' below, or \\[execute-extended-command], and then \\`C-g' to abort.  Neither is
    DONKEY's, and both work from NORMAL state exactly as usual.
 
 Searching is Emacs' own and DONKEY leaves it alone: \\`C-s' forward,
