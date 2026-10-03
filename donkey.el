@@ -708,11 +708,17 @@ Both directions, because `donkey-excluded-modes' can change under a
 buffer that is already open and no major mode changes when it does:
 Normal state in a mode that is now excluded becomes Insert, and Insert
 state this package forced becomes Normal again once the mode is off
-the list.  Insert state the reader asked for is left alone.
+the list.  Insert state the reader asked for is left alone.  So can
+`buffer-read-only', which makes a buffer a support mode or stops it
+being one, so the support map is put in or taken out first, through
+`donkey--install-mode-keys', whatever the state.
 
-The second test is a buffer-local variable that is nil nearly
-everywhere, so the cost in an ordinary buffer is one `and' that fails
-at its first branch."
+The installer compares seven values and stops, and the second test
+below is a buffer-local variable that is nil nearly everywhere, so the
+cost in an ordinary buffer is those comparisons and one `and' that
+fails at its first branch."
+  (unless (minibufferp)
+    (donkey--install-mode-keys))
   (cond
    ((and (bound-and-true-p donkey-normal-mode)
          (donkey--normal-state-off-p))
@@ -14057,26 +14063,26 @@ list does not stand in its way; where none does they are
 `backward-char' and `forward-char'.")
 
 (defvar-local donkey--mode-keys-cache nil
-  "What `donkey--install-mode-keys' last built here.
+  "What `donkey--install-mode-keys' last built here, or nil.
 
-Everything the answer depends on, so that the map is rebuilt when one
-of them changes rather than on every pass.
+A vector of everything the answer depends on, compared with `eq', so
+that the map is rebuilt when one of them changes and a command that
+changed none of them pays seven comparisons.
 
 It has to be the same set `donkey--normal-state-off-p' reads, and for
 the same buffer: that predicate decides whether NORMAL state runs, this
 one decides whether the support map is installed, and a buffer where
 the two disagree gets neither.  `buffer-read-only' is in it for that
 reason -- `donkey--program-buffer-p' reads it, so a buffer becomes a
-support mode the moment it becomes read-only, with no option changing.
+support mode the moment it becomes read-only, with no option changing,
+and stops being one the moment it becomes writable again.
 
-Where the coverage stops: the mode\\='s KEYMAP is not part of the key, and
-`donkey--install-mode-keys' runs from
-`after-change-major-mode-hook'.  A binding a mode or a reader adds to
-the map after that point is not seen until something else invalidates
-this -- another major mode, or a change to one of the options.  Every
-mode builds its map before the hook runs, so this costs nothing in
-practice; `donkey-refresh-suppressed-commands' is the way to ask by
-hand.")
+Where the coverage stops: the mode\\='s KEYMAP is not part of the key.  A
+binding a mode or a reader adds to the map after the support map was
+built is not seen until something else invalidates this -- another
+major mode, the read-only flag, or a change to one of the options.
+Every mode builds its map before `after-change-major-mode-hook' runs,
+so this costs nothing in practice.")
 
 (defun donkey--enter-key-the-mode-owns-p (seq key)
   "Return non-nil if SEQ is an Enter key this major mode has its own use for.
@@ -14202,14 +14208,25 @@ than set, so an ordinary buffer reads the same global value it always
 did and NORMAL state is reached through `donkey-normal-mode-map' alone.
 
 Runs from `donkey--ensure-default-state', the one address every major
-mode change already reaches, and does nothing while
-`donkey--mode-keys-cache' says no input to the answer has changed."
-  (let ((wanted (list major-mode buffer-read-only
-                      donkey-support-modes donkey-support-mode-exceptions
-                      donkey-key-packages
-                      donkey-excluded-modes donkey-excluded-mode-exceptions)))
-    (unless (equal wanted donkey--mode-keys-cache)
-      (setq donkey--mode-keys-cache wanted)
+mode change already reaches, and after every command from
+`donkey--check-post-command-non-editing', so a buffer that turns
+read-only or writable gets the map its state needs.  Does nothing
+while `donkey--mode-keys-cache' says no input to the answer has
+changed."
+  (let ((c donkey--mode-keys-cache))
+    (unless (and c
+                 (eq (aref c 0) major-mode)
+                 (eq (aref c 1) buffer-read-only)
+                 (eq (aref c 2) donkey-support-modes)
+                 (eq (aref c 3) donkey-support-mode-exceptions)
+                 (eq (aref c 4) donkey-key-packages)
+                 (eq (aref c 5) donkey-excluded-modes)
+                 (eq (aref c 6) donkey-excluded-mode-exceptions))
+      (setq donkey--mode-keys-cache
+            (vector major-mode buffer-read-only
+                    donkey-support-modes donkey-support-mode-exceptions
+                    donkey-key-packages
+                    donkey-excluded-modes donkey-excluded-mode-exceptions))
       (if (donkey--support-mode-p)
           (donkey--install-support-mode-keys)
         (kill-local-variable 'donkey--emulation-mode-map-alist)))))

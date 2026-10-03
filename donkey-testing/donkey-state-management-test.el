@@ -917,29 +917,70 @@ that does not exist."
       (should-not (donkey--support-mode-package-keys)))))
 
 (ert-deftest donkey-a-buffer-that-becomes-read-only-gets-the-support-map ()
-  "The two caches have to agree, or the buffer gets neither state.
+  "\\[read-only-mode] in Normal state makes a support buffer whose keys move.
 
-`donkey--normal-state-off-p' reads `buffer-read-only' and switches
-NORMAL state off; the installer has to read it too, or the support map
-is never put in and the buffer is left with no keys at all."
-  (with-temp-buffer
-    (fundamental-mode)
-    (donkey-mode 1)
-    (unwind-protect
-        (progn
-          (donkey--ensure-default-state)
-          (should-not (donkey--support-mode-p))
-          (should (eq (key-binding "l") 'forward-char))
-          ;; the flag alone makes this a program buffer
-          (setq buffer-read-only t)
-          (donkey--install-mode-keys)
-          (donkey--ensure-default-state)
-          (should (donkey--support-mode-p))
-          (should (local-variable-p 'donkey--emulation-mode-map-alist))
-          (should (eq (key-binding "h") 'backward-char))
-          (should (eq (key-binding "l") 'forward-char))
-          (should (eq (key-binding "j") 'next-line)))
-      (donkey-mode -1))))
+In a mode outside `prog-mode', `text-mode' and `conf-mode' the flag
+alone makes the buffer a support mode: \\`h' \\`j' \\`k' \\`l' move at
+once, and \\[read-only-mode] again gives Normal state back with no
+support map left behind."
+  (donkey-test-keys--harness "*donkey-ro-turn*" #'fundamental-mode ()
+      "alpha\nbeta\ngamma\n"
+      "C-x C-q j l"
+    (should buffer-read-only)
+    (should (bound-and-true-p donkey-insert-mode))
+    (should (equal (donkey--insert-state-lighter) " DONKEY[S]"))
+    (should (= (line-number-at-pos) 2))
+    (should (= (current-column) 1))
+    (execute-kbd-macro (kbd "C-x C-q"))
+    (should-not buffer-read-only)
+    (should (bound-and-true-p donkey-normal-mode))
+    (should-not (local-variable-p 'donkey--emulation-mode-map-alist))
+    (execute-kbd-macro (kbd "x"))
+    (should (equal (buffer-string) "alpha\nbta\ngamma\n"))))
+
+(ert-deftest donkey-insert-state-in-a-buffer-turned-read-only-has-the-support-keys ()
+  "Insert state the reader asked for gets the support map with the flag too.
+
+The keys of a buffer that cannot be typed into are the support map\\='s
+whatever state the buffer is in, so \\`j' moves rather than signaling
+that the buffer is read-only."
+  (donkey-test-keys--harness "*donkey-ro-insert*" #'fundamental-mode ()
+      "alpha\nbeta\n"
+      "i C-x C-q j"
+    (should buffer-read-only)
+    (should (equal (donkey--insert-state-lighter) " DONKEY[S]"))
+    (should (= (line-number-at-pos) 2))))
+
+(defvar-local donkey-test--late-mode nil
+  "Non-nil where `donkey-test--late-mode-map' answers as a minor mode map.")
+
+(defvar donkey-test--late-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "x" #'ignore)
+    map)
+  "A minor mode map that binds one of Normal state's letters.")
+
+(ert-deftest donkey-a-support-buffer-made-writable-gives-normal-state-its-map ()
+  "A buffer read-only from the start and then made writable is plain Normal state.
+
+The support map goes with the flag, so Normal state answers before a
+minor mode map again and \\`x' deletes rather than running what that
+map put there."
+  (donkey-test-keys--harness "*donkey-ro-start*"
+      (lambda ()
+        (insert "alpha\n")
+        (setq buffer-read-only t)
+        (fundamental-mode)
+        (setq donkey-test--late-mode t)
+        (setq-local minor-mode-overriding-map-alist
+                    (list (cons 'donkey-test--late-mode
+                                donkey-test--late-mode-map))))
+      () ""
+      "C-x C-q x"
+    (should-not buffer-read-only)
+    (should (bound-and-true-p donkey-normal-mode))
+    (should-not (local-variable-p 'donkey--emulation-mode-map-alist))
+    (should (equal (buffer-string) "lpha\n"))))
 
 (ert-deftest donkey-a-section-may-not-name-a-command-that-types ()
   "Rule 74 is a floor a section does not get to lower either.
