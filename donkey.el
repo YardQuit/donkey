@@ -472,10 +472,11 @@ The first section whose mode this buffer\\='s `major-mode' is or derives
 from, so a parent covers its children and a mode listed twice is
 answered by whichever was written first.
 
-Memoized per buffer on the major mode and a copy of the option, the
-way `donkey--memo-major-mode-in-p' is: this runs from
-`post-command-hook' in every buffer, so the sections are read rather
-than searched on all but the first command after a change.
+Memoized per buffer on the major mode and the option itself, both
+compared with `eq' as the state memos compare them: a list a reader
+replaces is a new object and is searched again, and one edited in
+place is seen at the buffer\\='s next major mode.  Nothing of the
+option is copied into the buffer.
 
 A row that is not a cons whose car is a symbol, or whose tail is not
 a proper list, is skipped -- so neither this function nor the callers
@@ -483,7 +484,7 @@ that walk the tail can signal on a mis-typed option."
   (let ((cache donkey--support-mode-cache))
     (if (and cache
              (eq (car (car cache)) major-mode)
-             (equal (cdr (car cache)) donkey-support-modes))
+             (eq (cdr (car cache)) donkey-support-modes))
         (cdr cache)
       (let ((result
              (and (proper-list-p donkey-support-modes)
@@ -496,7 +497,7 @@ that walk the tail can signal on a mis-typed option."
                                                                 (car row)))))
                             donkey-support-modes))))
         (setq donkey--support-mode-cache
-              (cons (cons major-mode (copy-tree donkey-support-modes)) result))
+              (cons (cons major-mode donkey-support-modes) result))
         result))))
 
 (defun donkey--program-buffer-p ()
@@ -14126,6 +14127,20 @@ text property, and Emacs reads that before any emulation map."
          (and own (symbolp own) (commandp own)
               (not (memq own '(newline undefined ignore)))))))
 
+(defvar donkey--package-keys-read (make-hash-table :test 'equal)
+  "Each package sequence `donkey--package-key' has read, by its string.")
+
+(defun donkey--package-key (sequence)
+  "Return SEQUENCE, a string in `kbd' form, as a key, or nil if it is not one.
+
+Read once and kept, since the answer depends on nothing but the
+string."
+  (let ((key (gethash sequence donkey--package-keys-read 'unread)))
+    (when (eq key 'unread)
+      (setq key (ignore-errors (kbd sequence)))
+      (puthash sequence key donkey--package-keys-read))
+    key))
+
 (defun donkey--support-mode-package-keys ()
   "Return the (SEQUENCE . COMMAND) pairs this buffer\\='s packages ask for.
 
@@ -14136,7 +14151,9 @@ DONKEY binds there; a sequence it does not bind, or binds to a prefix,
 is passed over.
 
 Nil where the section names no package, which is most of them, and
-without `donkey-key-packages' being read at all while it is empty."
+without `donkey-key-packages' being read at all while it is empty.
+Each sequence is read by `kbd' once per session; see
+`donkey--package-key'."
   (let ((section (cdr (donkey--support-mode-section)))
         (table (and (proper-list-p donkey-key-packages) donkey-key-packages))
         pairs)
@@ -14145,7 +14162,7 @@ without `donkey-key-packages' being read at all while it is empty."
         (dolist (seq (let ((seqs (cdr (assq name table))))
                        (and (proper-list-p seqs) seqs)))
           (when (stringp seq)
-            (let* ((key (ignore-errors (kbd seq)))
+            (let* ((key (donkey--package-key seq))
                    (command (and key (lookup-key donkey-normal-mode-map key))))
               (when (and command (symbolp command) (commandp command)
                          (not (donkey--enter-key-the-mode-owns-p seq key)))
@@ -14173,6 +14190,18 @@ rule 74 is a floor a section does not get to lower either."
                        (not (memq (cdr pair) typing))))
                 (cdr (donkey--support-mode-section)))))
 
+(defvar donkey--support-maps-built
+  (make-hash-table :test 'equal :weakness 'value)
+  "The support maps built so far, by everything each is made of.
+
+The key is the leader, the package\\='s (SEQUENCE . COMMAND) pairs and
+the section\\='s (CHARACTER . COMMAND) pairs, which are the whole of
+what `donkey--install-support-mode-keys' puts in a map: a reader who
+rebinds a key the package carries, edits a section or replaces the
+leader gets a new map, and a buffer whose mode answers the same as
+another\\='s shares that one\\='s.  A map no buffer holds any more is let
+go of.")
+
 (defun donkey--install-support-mode-keys ()
   "Give this buffer the keys its `donkey-support-modes' section names.
 
@@ -14195,22 +14224,32 @@ section may name \\=`SPC\\=' to take it back for a mode that needs it.
 
 Keyed on `donkey-mode' rather than on `donkey-normal-mode', because
 NORMAL state does not run here -- a support mode sits in Insert state
-the way an excluded one does, and the map has to answer there."
-  (let ((map (make-sparse-keymap)))
-    (define-key map "j" #'next-line)
-    (define-key map "k" #'previous-line)
-    (define-key map "h" #'backward-char)
-    (define-key map "l" #'forward-char)
-    ;; The leader, shared rather than copied, so whatever the user hangs
-    ;; under SPC later is reachable here too.
-    (let ((leader (lookup-key donkey-normal-mode-map " ")))
-      (when (keymapp leader) (define-key map " " (cons "leader" leader))))
-    ;; The package first, the section's own pairs over the top, so a
-    ;; section that names `h' gets its own rather than the package's.
-    (pcase-dolist (`(,key . ,command) (donkey--support-mode-package-keys))
-      (define-key map key command))
-    (pcase-dolist (`(,char . ,command) (donkey--support-mode-keys))
-      (define-key map (vector char) command))
+the way an excluded one does, and the map has to answer there.
+
+The map is built once for everything it is made of -- the leader, the
+package\\='s pairs and the section\\='s -- and every buffer those
+answer the same for shares it; see `donkey--support-maps-built'."
+  (let* ((leader (lookup-key donkey-normal-mode-map " "))
+         (packaged (donkey--support-mode-package-keys))
+         (own (donkey--support-mode-keys))
+         (inputs (list leader packaged own))
+         (map (gethash inputs donkey--support-maps-built)))
+    (unless map
+      (setq map (make-sparse-keymap))
+      (define-key map "j" #'next-line)
+      (define-key map "k" #'previous-line)
+      (define-key map "h" #'backward-char)
+      (define-key map "l" #'forward-char)
+      ;; The leader, shared rather than copied, so whatever the user
+      ;; hangs under SPC later is reachable here too.
+      (when (keymapp leader) (define-key map " " (cons "leader" leader)))
+      ;; The package first, the section's own pairs over the top, so a
+      ;; section that names `h' gets its own rather than the package's.
+      (pcase-dolist (`(,key . ,command) packaged)
+        (define-key map key command))
+      (pcase-dolist (`(,char . ,command) own)
+        (define-key map (vector char) command))
+      (puthash inputs map donkey--support-maps-built))
     (setq-local donkey--emulation-mode-map-alist
                 (list (cons 'donkey-mode map)))))
 

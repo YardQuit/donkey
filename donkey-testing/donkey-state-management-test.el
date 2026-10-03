@@ -982,6 +982,112 @@ map put there."
     (should-not (local-variable-p 'donkey--emulation-mode-map-alist))
     (should (equal (buffer-string) "lpha\n"))))
 
+(defun donkey-support-test--map ()
+  "Return the current buffer\\='s support map, or nil where it has none."
+  (and (local-variable-p 'donkey--emulation-mode-map-alist)
+       (cdr (assq 'donkey-mode donkey--emulation-mode-map-alist))))
+
+(ert-deftest donkey-the-support-map-installer-is-keyed-on-every-input ()
+  "Moving any one input the installer reads gives the map that input asks for.
+
+Each input is moved over a cache warmed immediately before, to an
+answer the stale one is not.  `major-mode' is in the key and is not
+moved, since every way of changing it clears the buffer\\='s cache."
+  (let ((donkey-support-modes '((fundamental-mode prose)))
+        (donkey-support-mode-exceptions nil)
+        (donkey-excluded-modes nil)
+        (donkey-excluded-mode-exceptions nil)
+        (donkey-key-packages '((prose "w"))))
+    (with-temp-buffer
+      (fundamental-mode)
+      (setq donkey--mode-keys-cache nil)
+      ;; the section
+      (donkey--install-mode-keys)
+      (should (donkey-support-test--map))
+      (let ((donkey-support-modes nil))
+        (donkey--install-mode-keys)
+        (should-not (donkey-support-test--map)))
+      ;; the exceptions to the sections
+      (donkey--install-mode-keys)
+      (should (donkey-support-test--map))
+      (let ((donkey-support-mode-exceptions '(fundamental-mode)))
+        (donkey--install-mode-keys)
+        (should-not (donkey-support-test--map)))
+      ;; the packages
+      (donkey--install-mode-keys)
+      (should (eq (lookup-key (donkey-support-test--map) "w") 'forward-word))
+      (let ((donkey-key-packages '((prose "b"))))
+        (donkey--install-mode-keys)
+        (should-not (lookup-key (donkey-support-test--map) "w")))
+      ;; the excluded list
+      (donkey--install-mode-keys)
+      (should (donkey-support-test--map))
+      (let ((donkey-excluded-modes '(fundamental-mode)))
+        (donkey--install-mode-keys)
+        (should-not (donkey-support-test--map))
+        ;; and its exceptions, warmed as excluded
+        (let ((donkey-excluded-mode-exceptions '(fundamental-mode)))
+          (donkey--install-mode-keys)
+          (should (donkey-support-test--map))))
+      ;; the read-only flag
+      (let ((donkey-support-modes nil))
+        (donkey--install-mode-keys)
+        (should-not (donkey-support-test--map))
+        (setq buffer-read-only t)
+        (donkey--install-mode-keys)
+        (should (donkey-support-test--map))))))
+
+(ert-deftest donkey-the-section-memo-is-keyed-on-the-option ()
+  "A replaced `donkey-support-modes' is searched again, not answered stale."
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((donkey-support-modes '((fundamental-mode (?l . ignore)))))
+      (setq donkey--support-mode-cache nil)
+      (should (equal (donkey--support-mode-section)
+                     '(fundamental-mode (?l . ignore))))
+      (let ((donkey-support-modes '((text-mode))))
+        (should-not (donkey--support-mode-section))))))
+
+(ert-deftest donkey-a-support-map-is-built-once-for-what-it-is-made-of ()
+  "Buffers whose map would be the same share one; any input moved builds anew.
+
+The inputs are the leader, the package\\='s pairs, read through
+`donkey-normal-mode-map', and the section\\='s pairs.  Each is moved
+over a map just built, to a map the old one is not."
+  (let ((donkey-support-modes '((fundamental-mode prose)))
+        (donkey-key-packages '((prose "w"))))
+    (cl-flet ((map-here ()
+                (with-temp-buffer
+                  (fundamental-mode)
+                  (setq donkey--support-mode-cache nil)
+                  (donkey--install-support-mode-keys)
+                  (donkey-support-test--map))))
+      (let ((first (map-here)))
+        ;; shared
+        (should (eq (map-here) first))
+        ;; the package's pairs, through a key the reader rebinds
+        (let ((was (keymap-lookup donkey-normal-mode-map "w")))
+          (unwind-protect
+              (progn
+                (keymap-set donkey-normal-mode-map "w" #'ignore)
+                (should (eq (lookup-key (map-here) "w") #'ignore)))
+            (keymap-set donkey-normal-mode-map "w" was)))
+        (should (eq (lookup-key (map-here) "w") 'forward-word))
+        ;; the section's pairs
+        (let ((donkey-support-modes '((fundamental-mode prose (?H . ignore)))))
+          (should (eq (lookup-key (map-here) "H") #'ignore)))
+        (should-not (lookup-key (map-here) "H"))
+        ;; the leader
+        (let ((was (keymap-lookup donkey-normal-mode-map "SPC"))
+              (leader (make-sparse-keymap)))
+          (unwind-protect
+              (progn
+                (keymap-set donkey-normal-mode-map "SPC" (cons "leader" leader))
+                (should (eq (lookup-key (map-here) " ") leader)))
+            (keymap-set donkey-normal-mode-map "SPC" (cons "leader" was))))
+        (should (eq (lookup-key (map-here) " ")
+                    (keymap-lookup donkey-normal-mode-map "SPC")))))))
+
 (ert-deftest donkey-a-section-may-not-name-a-command-that-types ()
   "Rule 74 is a floor a section does not get to lower either.
 
