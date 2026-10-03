@@ -380,24 +380,18 @@ afterward, unlike every sibling command in the same category."
       (should entered)
       (should (= (point) 12)))))
 
-(ert-deftest donkey-insert-end-of-line-call-order ()
-  "`move-end-of-line' executes before donkey-enter-insert."
-  (let (order)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (let ((orig-eol (symbol-function 'move-end-of-line)))
-        (cl-letf (((symbol-function 'move-end-of-line)
-                   (lambda (n)
-                     (push 'eol order)
-                     (funcall orig-eol n)))
-                  ((symbol-function 'donkey-enter-insert)
-                   (lambda ()
-                     (push 'enter order))))
-          (donkey-insert-end-of-line))))
-    (should (eq (nth 0 order) 'enter))
-    (should (eq (nth 1 order) 'eol))
-    (should (= (length order) 2))))
+(ert-deftest donkey-insert-end-of-line-in-visual-line-mode-goes-to-the-whole-line-end ()
+  "`A' under `visual-line-mode' types at the end of the line, not of the screen line."
+  (donkey-test-keys--harness "*donkey-A-visual*"
+      (lambda () (text-mode) (visual-line-mode 1)) ()
+      (concat (mapconcat (lambda (i) (format "word%02d" i))
+                         (number-sequence 1 40) " ")
+              "\nnext\n")
+      "A X C-g"
+    (goto-char (point-min))
+    (should (equal (buffer-substring-no-properties
+                    (- (line-end-position) 7) (line-end-position))
+                   "word40X"))))
 
 (ert-deftest donkey-insert-end-of-line-from-second-line ()
   "Point on second line moves to end of second line."
@@ -443,7 +437,7 @@ afterward, unlike every sibling command in the same category."
     (should (= (point) 8))))
 
 (ert-deftest donkey-insert-end-of-line-skips-trailing-whitespace ()
-  "`move-end-of-line' moves past trailing whitespace to the newline position."
+  "`A' moves past trailing whitespace to the newline position."
   (with-temp-buffer
     (insert "hello   \n")
     (goto-char 1)
@@ -453,7 +447,7 @@ afterward, unlike every sibling command in the same category."
     (should (= (point) 9))))
 
 (ert-deftest donkey-insert-end-of-line-with-tabs ()
-  "`move-end-of-line' handles tabs correctly."
+  "`A' handles tabs correctly."
   (with-temp-buffer
     (insert "\thello\n")
     (goto-char 1)

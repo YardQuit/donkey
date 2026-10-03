@@ -951,7 +951,9 @@ Takes no COUNT."
 (defun donkey-insert-after ()
   "Insert after the character at point, and enter INSERT state.
 
-At the very end of the buffer point stays put.
+At the very end of the buffer point stays put, and so it does before
+hidden text: at the end of a folded heading the typing lands at the
+end of the heading, not inside the fold.
 
 Any active selection is dropped, a rectangle included, and banked
 lines are left standing; `donkey-change' is the insert-entry key that
@@ -960,9 +962,10 @@ acts on them instead.
 Takes no COUNT."
   (interactive)
   (donkey--deactivate-region-if-active)
-  (condition-case _err
-      (forward-char 1)
-    (end-of-buffer nil))
+  (unless (invisible-p (point))
+    (condition-case _err
+        (forward-char 1)
+      (end-of-buffer nil)))
   (donkey-enter-insert))
 
 (defun donkey-insert-beginning-of-line ()
@@ -981,6 +984,11 @@ Takes no COUNT."
 (defun donkey-insert-end-of-line ()
   "Move to the end of the line, and enter INSERT state.
 
+The end of the line in the buffer: on a folded heading that is the end
+of the heading itself, not of the hidden text after it, and under
+`visual-line-mode' the end of the whole line rather than of the screen
+line point is on.
+
 Any active selection is dropped, a rectangle included, and banked
 lines are left standing; `donkey-change' is the insert-entry key that
 acts on them instead.
@@ -988,7 +996,7 @@ acts on them instead.
 Takes no COUNT."
   (interactive)
   (donkey--deactivate-region-if-active)
-  (move-end-of-line 1)
+  (end-of-line)
   (donkey-enter-insert))
 
 (defun donkey-open-below (&optional count)
@@ -1054,6 +1062,20 @@ opens one line, as a bare press does."
       (end-of-line)))
   (donkey-enter-insert))
 
+(defun donkey--refuse-hidden-text (beg end)
+  "Signal a `user-error' when any text between BEG and END is invisible.
+
+The guard the counted branches of `donkey-delete' and `donkey-change'
+share: text a fold or an outline hides is not deleted unseen, as Org\\='s
+own `org-delete-char' does not delete it.  Checked before anything is
+removed."
+  (let ((pos (min beg end))
+        (limit (max beg end)))
+    (while (< pos limit)
+      (when (invisible-p pos)
+        (user-error "Hidden text there -- nothing deleted; show it first"))
+      (setq pos (next-single-char-property-change pos 'invisible nil limit)))))
+
 (defun donkey-change (&optional count)
   "Delete the active region (or the character at point) and enter INSERT state.
 
@@ -1091,7 +1113,9 @@ the very end of the buffer.
 COUNT changes that many characters when no selection is active.  A
 negative COUNT changes that many characters before point, and a COUNT of
 zero changes none while still entering INSERT state, the same reading
-`donkey-delete' gives its own argument."
+`donkey-delete' gives its own argument.  Where those characters include
+hidden text, such as the line break at the end of a folded heading,
+the change is refused and INSERT state is not entered."
   (interactive "p")
   (if (donkey--selection-to-act-on-p)
       (if (bound-and-true-p rectangle-mark-mode)
@@ -1105,9 +1129,10 @@ zero changes none while still entering INSERT state, the same reading
         (donkey-enter-insert))
     ;; Not killed: no selection was made, so there is nothing to put
     ;; back.
-    (delete-region (point)
-                   (max (point-min)
-                        (min (point-max) (+ (point) (or count 1)))))
+    (let ((target (max (point-min)
+                       (min (point-max) (+ (point) (or count 1))))))
+      (donkey--refuse-hidden-text (point) target)
+      (delete-region (point) target))
     (donkey-enter-insert)))
 
 ;;; ---------------------------------------------------------------------------
@@ -2212,7 +2237,9 @@ and wins, and the banks survive untouched.  See
 COUNT deletes that many characters when no region is active.
 A count larger than the text remaining stops at the end rather than
 signaling.  A negative COUNT deletes that many characters before point
-and a COUNT of zero deletes none, matching `delete-char'.
+and a COUNT of zero deletes none, matching `delete-char'.  Characters
+that include hidden text, such as the line break at the end of a
+folded heading, are refused rather than deleted unseen.
 
 Those characters are NOT put on the `kill-ring', and neither is a
 counted run of them: only a selection is saved.  A character deleted
@@ -2241,6 +2268,7 @@ the same place."
        (kill-region (car bounds) (cdr bounds))))
     ((zerop n) nil)
     ((/= target (point))
+     (donkey--refuse-hidden-text (point) target)
      (delete-region (point) target))
    ((< n 0)
     (message "Beginning of buffer -- nothing to delete"))
