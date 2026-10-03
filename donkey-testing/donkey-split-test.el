@@ -846,6 +846,42 @@ touch the text it goes around, so it is not asked."
         (should (equal (list (car case) (buffer-string))
                        (list (car case) (cadr case))))))))
 
+(ert-deftest donkey-split-repeats-a-deletion-by-count-past-differing-text ()
+  "Backspace and its count delete as many characters at every place, whatever they are."
+  (dolist (case '(("i DEL C-g" "xfoo\nyfoo\n" "foo\nfoo\n")
+                  ("i C-u 2 DEL C-g" "ab foo\ncd foo\n" "afoo\ncfoo\n")
+                  ("a C-d C-g" "foox\nfooy\n" "foo\nfoo\n")))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-edge-count*" (nth 1 case)
+          (concat "v G f " (car case))
+        (should (equal (list (car case) (buffer-string))
+                       (list (car case) (nth 2 case))))))))
+
+(ert-deftest donkey-split-repeats-a-deletion-sized-by-the-text-only-where-it-agrees ()
+  "A word, line or blank deletion past an edge is made only where the same text stands."
+  (dolist (case '(("M-d" "a foo bar\nc foo bazooka\n" "a foo\nc foo bazooka\n")
+                  ("C-k" "a foo bar\nc foo bazooka\n" "a foo\nc foo bazooka\n")
+                  ("M-\\" "a foo   bar\nc foo baz\n" "a foobar\nc foo baz\n")
+                  ("M-d" "a foo bar\nc foo bar\n" "a foo\nc foo\n")))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-edge-text*" (nth 1 case)
+          (concat "v G f a " (car case) " C-g")
+        (should (equal (list (car case) (buffer-string))
+                       (list (car case) (nth 2 case))))
+        (execute-kbd-macro (kbd "u"))
+        (should (equal (list (car case) (buffer-string))
+                       (list (car case) (nth 1 case))))))))
+
+(ert-deftest donkey-split-a-transposition-across-an-edge-ends-the-split ()
+  "A character moved into a place from past its edge is not taken from the others."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-transpose*" "a fooXbar\nc fooYbaz\n"
+        "v G f a C-t C-g"
+      (should (equal (buffer-string) "a foXobar\nc fooYbaz\n"))
+      (should (null donkey--split-phase))
+      (execute-kbd-macro (kbd "u"))
+      (should (equal (buffer-string) "a fooXbar\nc fooYbaz\n")))))
+
 (ert-deftest donkey-split-keeps-every-place-alike-through-electric-indentation ()
   "What `electric-indent-mode' does beside the place after RET happens at every place."
   (let ((electric-indent-mode t))

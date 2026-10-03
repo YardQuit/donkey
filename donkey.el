@@ -7352,6 +7352,9 @@ place is copied whatever the buffer\\='s narrowing, or none is."
                             donkey--split-lost nil)
                       (donkey--split-draw-cursors)
                       (donkey--repaint-hint (donkey--split-hint)))
+                  ;; Nothing more is copied: the other places keep what
+                  ;; they hold, and each is recorded as it stands.
+                  (donkey--split-close-edit t)
                   (donkey--split-dissolve t)
                   (message "Split ended -- %s" "an edit beside a place could \
 not be made at every place"))))))
@@ -8239,16 +8242,25 @@ after it in the same command moved it; nil where there are none, and
   "Make EDITS, the deletions seen just past HERE\\='s edges, at every other place.
 
 Each is (SIDE . TEXT), as `donkey--split-edge-edits' holds them.  At
-every other place as many characters are deleted on the same side,
-where there are that many, they reach no other place, and a line break
-stands among them exactly where one stood in TEXT.  Return nil where a
-place fails that, having deleted at the places after it.  What was
-deleted at each other place is noted in `donkey--split-edge-texts'
-once every place has had its deletions; HERE\\='s own deletions were
-noted by `donkey--split-edge-note-primary'."
+every other place the same deletion is made on the same side where it
+takes the same TEXT there.  Where the text there differs it is made by
+count instead -- as many characters as TEXT holds -- only where the
+running command did nothing but delete, and deleted as many characters
+as its count asked for, as \\`DEL' and \\`C-d' do; a deletion sized by
+the text itself, a word or the rest of a line, would take something
+else at another place.  Either way the characters must be there, reach
+no other place, and hold a line break exactly where TEXT does.  Return
+nil where a place fails that, having deleted at the places after it.
+What was deleted at each other place is noted in
+`donkey--split-edge-texts' once every place has had its deletions;
+HERE\\='s own deletions were noted by `donkey--split-edge-note-primary'."
   (let* ((places donkey--split-places)
          (n (length places))
-         (texts (donkey--split-edge-texts-copy n)))
+         (texts (donkey--split-edge-texts-copy n))
+         (by-count (and (seq-every-p (lambda (change)
+                                       (= (car change) (cadr change)))
+                                     donkey--split-changes)
+                        (abs (prefix-numeric-value current-prefix-arg)))))
     (catch 'unlike
       (dolist (edit edits)
         (let ((after (eq (car edit) 'after))
@@ -8266,6 +8278,10 @@ noted by `donkey--split-edge-note-primary'."
                      (end (if after (+ edge count) edge)))
                 (unless (and (>= beg (point-min))
                              (<= end (point-max))
+                             (or (eql count by-count)
+                                 (string= (cdr edit)
+                                          (buffer-substring-no-properties
+                                           beg end)))
                              (equal breaks
                                     (donkey--split-line-breaks
                                      (buffer-substring-no-properties beg end)))
