@@ -1602,7 +1602,7 @@ minibuffer as text, and every cursor's line is searched."
   "`u' and `U' in the run step every cursor as they step one cursor."
   (dolist (keys '("M w u" "M w w u" "M w w u u" "M w u U" "M w w u u U U"
                   "M w u w" "M w b u" "M l u" "M g l u" "M * u" "M w . u"
-                  "M m w u" "v w w M w u" "M w u b"))
+                  "M m w u" "v w w M w u" "M w u b" "M w u b U"))
     (let (single)
       (donkey-split-test--keys "*cursors-M-u-one*" donkey-split-test--words keys
         (setq single (buffer-substring (region-beginning) (region-end))))

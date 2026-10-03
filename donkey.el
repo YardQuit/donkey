@@ -5178,6 +5178,14 @@ it back, and any OTHER press in the run empties it, a new branch
 having nothing to redo onto.  Emptied with the history whenever the
 mode is disarmed.")
 
+(defvar donkey--mark-run-recorded nil
+  "The step the press now running recorded, or nil when it recorded none.
+
+A cons (STEP . REDO): the entry `donkey--mark-run-mode-pre-command'
+pushed on `donkey--mark-run-history', and the `donkey--mark-run-redo'
+it dropped.  `donkey--mark-run-forget-empty-step' takes both back after
+a press that changed nothing.")
+
 (defvar donkey--mark-run-armed-in-macro nil
   "Non-nil when mark run mode was armed from inside a keyboard macro.
 
@@ -5248,7 +5256,9 @@ It also names the nameless press -- see the comment below -- which is
 the one thing here that is not about the history.
 
 A command from another terminal is not the run's, and is left alone:
-it neither records a step nor is renamed.
+it neither records a step nor is renamed.  A press that turns out to
+change nothing is taken back off the history after it has run, by
+`donkey--mark-run-forget-empty-step'.
 
 Nothing here signals, which is what a `pre-command-hook' function has
 to be able to say: one that errors is removed for the session and
@@ -5259,6 +5269,7 @@ called with the argument that makes it answer nil where it would
 otherwise refuse.  Its sibling on `post-command-hook' does its work
 through overlays and is guarded instead."
   (when (donkey--mark-run-answers-p)
+    (setq donkey--mark-run-recorded nil)
     ;; Name the nameless press: a sequence that resolved to nothing
     ;; arrives with `this-command' nil, and `undefined' -- a family
     ;; member -- is what its other spelling, a single unbound key, runs.
@@ -5271,9 +5282,27 @@ through overlays and is guarded instead."
                                       donkey-mark-run-step-forward))))
         (push (list (point) (mark t) (and mark-active t))
               donkey--mark-run-history)
+        (setq donkey--mark-run-recorded
+              (cons (car donkey--mark-run-history) donkey--mark-run-redo))
         ;; A step off the path is a new branch, and there is nothing to
         ;; redo onto it -- the bargain every undo system strikes.
         (setq donkey--mark-run-redo nil)))))
+
+(defun donkey--mark-run-forget-empty-step ()
+  "Take back the step the press just run recorded, when it changed nothing.
+
+A family press that leaves point, the mark and the mark\\='s activation
+as they were -- a word key past the last word, a line key at the
+buffer\\='s edge, a refusal -- is no step for \`u' to take back, and no
+new branch either: the history and the redo are put back as the press
+found them."
+  (let ((recorded donkey--mark-run-recorded))
+    (setq donkey--mark-run-recorded nil)
+    (when (and recorded
+               (eq (car donkey--mark-run-history) (car recorded))
+               (equal (car recorded) (list (point) (mark t) (and mark-active t))))
+      (pop donkey--mark-run-history)
+      (setq donkey--mark-run-redo (cdr recorded)))))
 
 (defun donkey-mark-run-step-back ()
   "Put the run back where the last press found it.
@@ -5282,10 +5311,12 @@ Bound to \`u' inside `donkey-mark-run-mode-map'.  One press, one step:
 `M w w s' and three of these is the first word again, a fourth
 reporting rather than guessing.  Every press the mode counts as its
 own steps back this way, the motions and \`*' included -- a simpler
-rule to hold than one that undid the object keys only.
+rule to hold than one that undid the object keys only.  A press that
+changed nothing, such as \`w' past the last word, is no step.
 
 What it leaves is kept, so `donkey-mark-run-step-forward' on \`U' can
-hand it back, until any other press in the run drops the redo.  A
+hand it back, until any other press in the run that changes the
+selection drops the redo.  A
 member of `donkey--mark-run-commands', so the run carries on: `M w w u
 w' grows from the restored selection instead of marking afresh."
   (interactive)
@@ -5370,6 +5401,7 @@ why."
        ((and donkey--mark-run-armed-in-macro (not executing-kbd-macro))
         (donkey--mark-run-exit))
        ((memq this-command donkey--mark-run-commands)
+        (donkey--mark-run-forget-empty-step)
         ;; A count's keys arrive under the family member's name.
         (unless prefix-arg
           (donkey--repaint-hint donkey--mark-run-mode-hint)))
@@ -5607,6 +5639,7 @@ that said something of its own keeps its echo."
     (add-hook 'post-command-hook #'donkey--mark-run-settle))
   (setq donkey--mark-run-history nil)
   (setq donkey--mark-run-redo nil)
+  (setq donkey--mark-run-recorded nil)
   ;; The reminder must not outlive the mode; cleared only when it is
   ;; what is showing.
   (when (equal (current-message) donkey--mark-run-mode-hint)
@@ -9754,7 +9787,14 @@ messages are shown."
                 (when edit
                   (donkey--split-record-ops head (nreverse ops))
                   (setq donkey--split-did 'edited))
-                (when (and donkey--split-running (not edit))
+                ;; A press that moved no cursor's selection is no step,
+                ;; as at one cursor.
+                (when (and donkey--split-running (not edit)
+                           (not (equal (mapcar #'butlast states)
+                                       (mapcar (lambda (place)
+                                                 (butlast (donkey--split-cursor-state
+                                                           place)))
+                                               donkey--split-places))))
                   (push states donkey--split-run-history)
                   (setq donkey--split-run-redo nil)))
             (t

@@ -6889,6 +6889,20 @@ does."
     (should-not (region-active-p))
     (should (eq (key-binding "w") 'donkey-mark-word))))
 
+(ert-deftest donkey-a-run-press-that-changed-nothing-is-no-step ()
+  "A family press that leaves the selection as it was is not a step for `u'."
+  ;; The second `w' finds no word past the last one.
+  (donkey-mark-test--keys "alpha beta" "M w w u"
+    (should (equal (donkey-mark-test--selection) "alpha")))
+  ;; `J' past the last line, `s' past the last sentence.
+  (donkey-mark-test--keys "one\ntwo\n" "M J J J u"
+    (should (equal (donkey-mark-test--selection) "one\n")))
+  (donkey-mark-test--keys "One.  Two." "M s s s u"
+    (should (equal (donkey-mark-test--selection) "One.")))
+  ;; Nor is it a new branch: what `u' stepped out of is still there.
+  (donkey-mark-test--keys "alpha beta" "M w u K U"
+    (should (equal (donkey-mark-test--selection) "alpha beta"))))
+
 (ert-deftest donkey-U-steps-a-run-forward-again ()
   "`U' puts the run back where `u' stepped it out of.
 
