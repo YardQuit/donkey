@@ -4027,6 +4027,77 @@ nil or `undefined' is taken."
         (donkey--intercept-quit-after-prefix)
         (should (null this-command))))))
 
+(ert-deftest donkey-the-quit-key-after-a-prefix-is-quiet-in-a-support-buffer ()
+  "SPC, g and m and then the quit key quit quietly in a support buffer.
+
+The leader is DONKEY\\='s there, and a `prose' section makes \\`g' and
+\\`m' prefixes of DONKEY\\='s: the quit key after one abandons the
+sequence rather than saying it is undefined, and \\`C-x' and then the
+quit key is still Emacs\\='s."
+  (skip-unless (fboundp 'help-mode))
+  (let ((said nil))
+    (unwind-protect
+        (progn
+          (donkey-mode 1)
+          (switch-to-buffer (get-buffer-create "*donkey-prefix-quit-support*"))
+          (help-mode)
+          (let ((inhibit-read-only t))
+            (erase-buffer)
+            (insert "alpha bravo\ncharlie\n"))
+          (goto-char (point-min))
+          (should (equal (donkey--insert-state-lighter) " DONKEY[S]"))
+          (cl-letf* ((orig (symbol-function 'message))
+                     ((symbol-function 'message)
+                      (lambda (fmt &rest args)
+                        (when fmt (push (apply #'format fmt args) said))
+                        (apply orig fmt args))))
+            (dolist (prefix '("SPC" "g" "m"))
+              (setq said nil)
+              (should (eq 'quit
+                          (condition-case nil
+                              (progn (execute-kbd-macro
+                                      (kbd (concat prefix " C-g")))
+                                     'no-signal)
+                            (quit 'quit))))
+              (should-not (seq-find (lambda (m) (string-match-p "undefined" m))
+                                    said)))
+            (let ((this-command nil))
+              (cl-letf (((symbol-function 'this-single-command-keys)
+                         (lambda () (vconcat (kbd "C-x") (vector ?\C-g)))))
+                (donkey--intercept-quit-after-prefix)
+                (should (null this-command))))))
+      (when (get-buffer "*donkey-prefix-quit-support*")
+        (kill-buffer "*donkey-prefix-quit-support*"))
+      (donkey-mode -1))))
+
+(define-derived-mode donkey-test--prefix-mode special-mode "Prefix-Test"
+  "A buffer a program made, with a `g' prefix of its own.")
+(define-key donkey-test--prefix-mode-map (kbd "g d") #'ignore)
+
+(ert-deftest donkey-a-support-buffers-own-prefix-keeps-its-quit-key ()
+  "A prefix a support buffer\\='s mode owns keeps the quit key after it.
+
+\\`g' is a prefix of Normal state\\='s and of this mode\\='s own; with no
+section taking it, \\`g' and the quit key are left to Emacs."
+  (with-temp-buffer
+    (donkey-test--prefix-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (donkey--ensure-default-state)
+          (should (donkey--support-map))
+          (let ((this-command nil))
+            (cl-letf (((symbol-function 'this-single-command-keys)
+                       (lambda () (vector ?g ?\C-g))))
+              (donkey--intercept-quit-after-prefix)
+              (should (null this-command))))
+          (let ((this-command nil))
+            (cl-letf (((symbol-function 'this-single-command-keys)
+                       (lambda () (vconcat (kbd "SPC") (vector ?\C-g)))))
+              (donkey--intercept-quit-after-prefix)
+              (should (eq this-command 'donkey--quit-the-sequence)))))
+      (donkey-mode -1))))
+
 (ert-deftest donkey-a-cancelled-donkey-prompt-does-not-end-insert-state ()
   "Cancelling one of DONKEY's own prompts cancels the prompt, and no more.
 

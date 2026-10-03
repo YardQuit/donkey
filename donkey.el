@@ -14870,19 +14870,28 @@ names it as the command to run."
   (interactive)
   (signal 'quit nil))
 
-(defun donkey--own-prefix-p (keys)
+(defun donkey--own-prefix-p (keys &optional map)
   "Return non-nil when KEYS is a prefix of DONKEY's own.
 
-The SPC leader and its own sub-prefixes, `m', `g', `r' and `z', and
-any prefix a reader has added to `donkey-normal-mode-map' -- all of
-which answer `keymapp' here.  A prefix of Emacs's own, `C-x' or
-`C-c', is not bound there and answers nil, which is what keeps
-DONKEY's hands off it.
+MAP is the keymap that answers for DONKEY, `donkey-normal-mode-map'
+when nil.  There, the SPC leader and its own sub-prefixes, `m', `g',
+`r' and `z', and any prefix a reader has added -- all of which answer
+`keymapp'.  A support buffer passes its support map, which holds the
+same leader and the prefixes its section\\='s package makes, `g' and
+`m' for `prose'.  A prefix of Emacs's own, `C-x' or `C-c', is bound
+in neither and answers nil, which is what keeps DONKEY's hands off
+it.
 
 `donkey-mark-run-mode-map' is not consulted: the one prefix it has is
 `g', which is a prefix of the normal map as well, so asking it a
 second time could not change an answer."
-  (keymapp (lookup-key donkey-normal-mode-map keys)))
+  (keymapp (lookup-key (or map donkey-normal-mode-map) keys)))
+
+(defun donkey--support-map ()
+  "Return this buffer\\='s support-mode map, or nil where it has none."
+  (and (bound-and-true-p donkey-mode)
+       (local-variable-p 'donkey--emulation-mode-map-alist)
+       (cdr (assq 'donkey-mode donkey--emulation-mode-map-alist))))
 
 (defun donkey--intercept-quit-after-prefix ()
   "Make the quit key mean quit after a key sequence DONKEY owns.
@@ -14908,18 +14917,27 @@ the catch to DONKEY's own prefixes: after `C-x' or `C-c' the key is
 Emacs's business, and its own diagnostic names the sequence, which is
 more use than a bare quit for a prefix DONKEY has nothing to do with.
 
+The same holds in a support buffer, where DONKEY owns the leader and
+the prefixes its section\\='s package makes: the support map is asked
+there instead of Normal state\\='s.
+
 Only a sequence LONGER than one key is taken: a bare press of the quit
 key is the real `keyboard-quit' and is left alone, as are the
-minibuffer and an excluded mode."
-  (when (and (bound-and-true-p donkey-normal-mode)
-             (memq this-command '(nil undefined))
-             (not (minibufferp))
-             (not (donkey--normal-state-off-p)))
-    (let ((keys (this-single-command-keys)))
-      (when (and (> (length keys) 1)
-                 (eq (aref keys (1- (length keys))) ?\C-g)
-                 (donkey--own-prefix-p (substring keys 0 (1- (length keys)))))
-        (setq this-command 'donkey--quit-the-sequence)))))
+minibuffer, an excluded mode and Insert state in a buffer being
+written."
+  (when (memq this-command '(nil undefined))
+    (let ((map (cond ((minibufferp) nil)
+                     ((bound-and-true-p donkey-normal-mode)
+                      (and (not (donkey--normal-state-off-p))
+                           donkey-normal-mode-map))
+                     (t (donkey--support-map)))))
+      (when map
+        (let ((keys (this-single-command-keys)))
+          (when (and (> (length keys) 1)
+                     (eq (aref keys (1- (length keys))) ?\C-g)
+                     (donkey--own-prefix-p
+                      (substring keys 0 (1- (length keys))) map))
+            (setq this-command 'donkey--quit-the-sequence)))))))
 
 (defconst donkey--quit-commands-of-its-own
   '(keyboard-quit minibuffer-keyboard-quit abort-recursive-edit
