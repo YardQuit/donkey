@@ -2856,6 +2856,46 @@ It falls back when nothing is found forward.  See
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "(\"quoted string\")"))))
 
+(ert-deftest donkey-mark-sexp-from-inside-a-string-or-comment ()
+  "`m A' and `m I' from inside a string or comment take the code around it.
+
+The brackets the string or comment holds are text: a lone one does not
+refuse the key, and a pair of them is not the expression marked."
+  (dolist (case '((emacs-lisp-mode "(list \"ab\" c)" "ab" "m A"
+                                   "(list \"ab\" c)")
+                  (emacs-lisp-mode "(list \"a)b\" c)" ")b" "m A"
+                                   "(list \"a)b\" c)")
+                  (emacs-lisp-mode "(list \"a(b\" c)" "(b" "m I"
+                                   "list \"a(b\" c")
+                  (emacs-lisp-mode "(f (re \"\\\\(foo\\\\)\" t))" "foo" "m A"
+                                   "(re \"\\\\(foo\\\\)\" t)")
+                  (emacs-lisp-mode "(defun f ()\n  \"Do it (now).\"\n  (g))"
+                                   "Do" "m A"
+                                   "(defun f ()\n  \"Do it (now).\"\n  (g))")
+                  (emacs-lisp-mode "(list ; a)b\n c)" ")b" "m I"
+                                   "list ; a)b\n c")
+                  (c-mode "f(\"x)y\", z);" ")y" "m A" "(\"x)y\", z)")
+                  (emacs-lisp-mode "(a (b \"s\") c)" "s" "C-u 2 m A"
+                                   "(a (b \"s\") c)")))
+    (pcase-let ((`(,mode ,text ,at ,keys ,want) case))
+      (donkey-test-keys--harness "*donkey-sexp-string*" mode ()
+          text ""
+        (search-forward at)
+        (goto-char (match-beginning 0))
+        (execute-kbd-macro (kbd keys))
+        (should (equal (list text keys
+                             (buffer-substring-no-properties
+                              (region-beginning) (region-end)))
+                       (list text keys want)))))))
+
+(ert-deftest donkey-mark-sexp-in-a-top-level-string-is-refused ()
+  "A string outside every list still has no expression around it."
+  (donkey-test-keys--harness "*donkey-sexp-string*" #'emacs-lisp-mode ()
+      "\"just (a) string\"" ""
+    (search-forward "a)")
+    (should-error (execute-kbd-macro (kbd "m A")) :type 'user-error)
+    (should-not (region-active-p))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-rectangle-mark-mode
 ;;; ---------------------------------------------------------------------------

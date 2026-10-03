@@ -4717,7 +4717,9 @@ same command repeats.")
 
 Uses the syntax table to identify delimiters (parentheses, brackets,
 braces).  If point is on an opening or closing delimiter, uses that
-pair; if point is inside a pair, finds the enclosing delimiters.
+pair; if point is inside a pair, finds the enclosing delimiters.  From
+inside a string or a comment the expression around it is the one at
+point: the brackets its text holds are text, not delimiters.
 
 COUNT selects how many levels out to go, so a count of 2 marks the pair
 enclosing the one that would be marked without it.  Point already on an
@@ -4746,7 +4748,12 @@ expression has been found."
           (save-excursion
             (goto-char anchor)
             (condition-case nil
-                (backward-up-list (if (looking-at "\\s(") (1- levels) levels))
+                (let ((in (nth 8 (syntax-ppss))))
+                  (if in
+                      ;; From inside a string or comment, the expression
+                      ;; around it, not the parens the text happens to hold.
+                      (progn (goto-char in) (backward-up-list levels))
+                    (backward-up-list (if (looking-at "\\s(") (1- levels) levels))))
               (scan-error
                (user-error "Not inside a balanced expression")))
             (let ((start (if inner-p (1+ (point)) (point))) end)
@@ -4774,7 +4781,9 @@ Uses the syntax table to identify delimiters (parentheses,
 brackets, braces).  If point is on an opening or closing
 delimiter, marks content within that pair.  If point is inside
 a pair, finds the enclosing delimiters and marks everything
-within, excluding the delimiters themselves.
+within, excluding the delimiters themselves.  From inside a string
+or a comment it is the expression around the string or comment,
+whatever brackets the text holds.
 
 Point is left at the START of the selection and the mark at its end,
 which is where `mark-sexp' leaves them and where the other DONKEY
@@ -4790,7 +4799,9 @@ COUNT selects how many levels out to go."
 Uses the syntax table to identify delimiters (parentheses,
 brackets, braces).  If point is on a delimiter, marks that
 pair.  If point is inside a pair, finds the enclosing pair
-and marks it including delimiters.
+and marks it including delimiters.  From inside a string or a
+comment it is the expression around the string or comment, whatever
+brackets the text holds.
 
 Point is left at the START of the selection and the mark at its end,
 which is where `mark-sexp' leaves them and where the other DONKEY
