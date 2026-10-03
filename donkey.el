@@ -2949,32 +2949,41 @@ which is what any other value reads as.
 Both variables are defcustoms and hold whatever they were given, so
 this is where the coercion happens: a character naming no pair in the
 table is dropped, and so is anything that is not a character.  The
-table comes through `donkey--pair-table' and is then read through
-`consp' rather than `car', an entry that is not a pair at all being
-the shape a reader gets from one bracket too few."
-  (let* ((pairs (seq-filter #'consp (donkey--pair-table)))
-         (asked (cond ((proper-list-p donkey-pair-delimiters)
-                       donkey-pair-delimiters)
-                      ((eq donkey-pair-delimiters 'all) (mapcar #'car pairs))
-                      ;; `safe' and anything else: the table less the
-                      ;; punctuation that is text far more often than it
-                      ;; is a delimiter.
-                      (t (let ((out (and (proper-list-p
-                                          donkey-pair-safe-exclusions)
-                                         donkey-pair-safe-exclusions)))
-                           (seq-remove (lambda (char) (memq char out))
-                                       (mapcar #'car pairs)))))))
-    (seq-filter (lambda (char)
-                  (and (characterp char)
-                       (characterp (cdr (assq char pairs)))))
-                asked)))
+table comes through `donkey--pair-table' and its rows are read only
+when they are conses, an entry that is not a pair at all being the
+shape a reader gets from one bracket too few."
+  ;; Plain loops: this is asked for each delimiter typed and for each
+  ;; DEL between the two halves of a pair.
+  (let* ((table (donkey--pair-table))
+         (named (proper-list-p donkey-pair-delimiters))
+         ;; `safe' and anything else but `all': the table less the
+         ;; punctuation that is text far more often than it is a
+         ;; delimiter.
+         (out (and (not named)
+                   (not (eq donkey-pair-delimiters 'all))
+                   (proper-list-p donkey-pair-safe-exclusions)
+                   donkey-pair-safe-exclusions))
+         asked chars)
+    (if named
+        (setq asked donkey-pair-delimiters)
+      (dolist (pair table)
+        (when (and (consp pair) (not (memq (car pair) out)))
+          (push (car pair) asked)))
+      (setq asked (nreverse asked)))
+    (dolist (char asked)
+      (when (and (characterp char)
+                 (characterp (cdr (assq char table))))
+        (push char chars)))
+    (nreverse chars)))
 
 (defun donkey--pair-close-for (open)
   "Return the closing half of the pair OPEN opens, or nil.
 
-A plain lookup: `assq' passes over a table row that is not a cons, and
-every caller has already put OPEN through `donkey--pair-characters',
-which is where a row holding something that is not a character is
+A plain lookup, and one that never signals: `donkey--pair-table' hands
+it a proper list, and `assq' passes over a row that is not a cons.
+What comes back need not be a character, the table holding whatever it
+was given, so a caller that writes it into the buffer puts OPEN
+through `donkey--pair-characters' first, which is where such a row is
 refused."
   (cdr (assq open (donkey--pair-table))))
 
@@ -3248,10 +3257,10 @@ use this to tell a pair from two ordinary characters."
         (after (char-after)))
     (and before
          after
-         ;; Asked before the table is, so that a delimiter the reader
-         ;; never asked for cannot reach `donkey--pair-close-for'.
-         (memq before (donkey--pair-characters-here))
+         ;; The plain lookup first: it settles almost every press, so the
+         ;; list of what pairs here is built only between two halves.
          (eq after (donkey--pair-close-for before))
+         (memq before (donkey--pair-characters-here))
          (not (donkey--pair-exception-p before)))))
 
 (defun donkey--pair-empty-pair-here-p ()

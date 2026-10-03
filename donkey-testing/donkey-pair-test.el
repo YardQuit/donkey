@@ -890,6 +890,18 @@ coercion a row like (?# . \"hash\") would type the word."
       "" "i #"
     (should (equal (buffer-string) "#"))))
 
+(ert-deftest donkey-pair-a-row-whose-opener-is-not-a-character-pairs-nothing ()
+  "A table row opened by something other than a character is not a delimiter.
+
+Under `all', and named in `donkey-pair-delimiters', the list of what
+pairs holds characters only, and that is what Emacs\\='s own pairing is
+handed."
+  (let ((donkey-mark-pair-delimiters '((nope . ?x) (nil . ?y) (?\( . ?\)))))
+    (dolist (asked '(all (nope nil ?\()))
+      (let ((donkey-pair-delimiters asked))
+        (should (equal (cons asked (donkey--pair-characters))
+                       (list asked ?\()))))))
+
 (ert-deftest donkey-pair-survives-a-mistyped-delimiter-list ()
   "Anything in `donkey-pair-delimiters' that is not a pair is dropped."
   (donkey-pair-test--typing "*donkey-pair-bad-list*" #'text-mode
