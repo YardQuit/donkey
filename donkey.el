@@ -1231,12 +1231,12 @@ not entered."
 writes a carriage-return byte over the byte at point.
 
 Enter in a mode outside `donkey-editing-modes' runs what that mode
-itself puts on the key -- `dired-find-file' in Dired,
-`Info-follow-nearest-node' in Info.  A mode that puts nothing there
-leaves the key to the global map, where RET is `newline', and a mode
-that asks for a line break outright arrives at the same place by
-another route.  Both are refused and Enter does nothing, as it does in
-a mode that IS in `donkey-editing-modes'.
+itself puts on the key -- `tab-switcher-select' in the tab switcher.
+A mode that puts nothing there leaves the key to the global map, where
+RET is `newline', and a mode that asks for a line break outright
+arrives at the same place by another route.  Both are refused and
+Enter does nothing, as it does in a mode that IS in
+`donkey-editing-modes'.
 
 Normal state does not type, and Enter is the last key that should put
 a newline in a buffer being read rather than written.  A constant
@@ -1255,8 +1255,8 @@ being edited as code or plain text -- inserting a literal newline via
 Enter in Normal state is rarely what's wanted there.  See
 `donkey-enter-dwim' for what happens instead in modes NOT in this
 list: it falls through to Org/markdown-aware dispatch, or to
-whatever RET was originally bound to before Normal state's keymap
-took over (e.g. `dired-find-file' in `dired-mode').
+whatever RET means underneath Normal state's keymap (e.g.
+`tab-switcher-select' in the tab switcher).
 
 Add a major mode here if Enter should also be a no-op for it; remove
 one if you'd rather it fall through to its own original RET binding."
@@ -1511,11 +1511,16 @@ A headline with no keyword is left alone."
 (defun donkey-enter-dwim ()
   "Smart Return handler for DONKEY Normal state.
 
-Bound to both RET and <enter> in `donkey-normal-mode-map'.  Tries, in
-order, stopping at the first one that reports it handled the key:
+Bound to both RET and <enter> in `donkey-normal-mode-map', so it
+answers Enter in a buffer in Normal state and nowhere else.  A buffer
+a program made -- Dired, help, a compilation log, the Org agenda -- is
+a support buffer, where Enter is the mode's own key and this command
+is not reached.  Tries, in order, stopping at the first one that
+reports it handled the key:
 
-1. `donkey--org-agenda-enter-handler' -- delegates to whatever
-   `org-agenda-mode-map' itself binds RET to (open item, visit entry).
+1. `donkey--org-agenda-enter-handler' -- in an Org agenda buffer in
+   Normal state, which it is only when it is not a support buffer,
+   delegates to whatever `org-agenda-mode-map' itself binds RET to.
 2. `donkey--org-mode-enter-handler' -- in `org-mode' buffers, derived
    modes such as `org-journal-mode' included, dispatches via
    `donkey--find-enter-handler' against the element at point (see
@@ -1524,11 +1529,11 @@ order, stopping at the first one that reports it handled the key:
 3. `donkey--markdown-enter-handler' -- in `markdown-mode' and
    `gfm-mode' buffers, follows the link at point through
    `markdown-follow-thing-at-point', Markdown's own key for it.
-4. `donkey--non-editing-enter-handler' -- outside `donkey-editing-modes'
-   (`org-agenda-mode', `compilation-mode', etc.), falls through to
-   whatever the key means underneath Normal state's own keymap, asked
-   at the press.  A command that would type or break a line is
-   refused: see `donkey--line-break-commands'.
+4. `donkey--non-editing-enter-handler' -- outside `donkey-editing-modes',
+   falls through to whatever the key means underneath Normal state's
+   own keymap, asked at the press -- selecting a tab in the tab
+   switcher.  A command that would type or break a line is refused:
+   see `donkey--line-break-commands'.
 
 If none of these handle it -- ordinary `prog-mode'/`text-mode' buffers
 being edited as code or plain text -- RET does nothing at all, on
