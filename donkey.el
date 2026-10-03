@@ -13618,16 +13618,30 @@ A key that has become `donkey-wrap-region' since the snapshot, having
 held nothing or `undefined' in it, is DONKEY claiming a wrap key for a
 pair the reader added -- see `donkey--claim-wrap-keys'.  That is this
 package doing what it was asked, not somebody taking a key, and is not
-a change to report."
-  (let (changed)
+a change to report.
+
+A prefix that is no longer one -- bound to a command, or taken out --
+is answered once, as (PREFIX MAP NOW) with MAP an empty keymap standing
+for the prefix it was, rather than once for every key DONKEY had under
+it."
+  (let (changed prefixes)
     (pcase-dolist (`(,keys . ,default) donkey--default-normal-bindings)
-      (let ((now (donkey--binding-value (lookup-key donkey-normal-mode-map keys))))
-        (unless (or (eq now default)
-                    ;; The same three `donkey--wrap-key-free-p' calls
-                    ;; free, so the two answers cannot drift apart.
-                    (and (eq now 'donkey-wrap-region)
-                         (memq default '(nil undefined ignore))))
-          (push (list keys default now) changed))))
+      (let ((now (lookup-key donkey-normal-mode-map keys)))
+        (if (numberp now)
+            (let ((prefix (substring keys 0 now)))
+              (unless (member prefix prefixes)
+                (push prefix prefixes)
+                (push (list prefix (make-sparse-keymap)
+                            (donkey--binding-value
+                             (lookup-key donkey-normal-mode-map prefix)))
+                      changed)))
+          (setq now (donkey--binding-value now))
+          (unless (or (eq now default)
+                      ;; The same three `donkey--wrap-key-free-p' calls
+                      ;; free, so the two answers cannot drift apart.
+                      (and (eq now 'donkey-wrap-region)
+                           (memq default '(nil undefined ignore))))
+            (push (list keys default now) changed)))))
     (sort changed (lambda (a b) (string< (key-description (car a))
                                          (key-description (car b)))))))
 
@@ -13707,7 +13721,9 @@ called it a loss would cry wolf in every Org buffer."
       (pcase-dolist (`(,keys . ,_default) donkey--default-normal-bindings)
         (let ((own (donkey--binding-value (lookup-key donkey-normal-mode-map keys)))
               (effective (donkey--binding-value (key-binding keys))))
-          (when (and own (not (eq own effective))
+          ;; A number is a key under a prefix the map no longer has:
+          ;; not DONKEY's any more, and `donkey--binding-changes' says so.
+          (when (and own (not (numberp own)) (not (eq own effective))
                      ;; A PREFIX answers with a COMPOSED keymap where a
                      ;; map above Normal state's binds the same prefix:
                      ;; Emacs merges the prefix maps of the active maps
@@ -13824,10 +13840,10 @@ EVERYTHING are its.  Answer with the number of lines said."
 (defun donkey--binding-name (binding)
   "Return a name for BINDING a reader will recognize.
 
-A symbol is itself; a keymap is named as one, since a prefix map has
-no name of its own; anything else is printed."
+A symbol is itself; a keymap is named as the prefix it is, since a
+prefix map has no name of its own; anything else is printed."
   (cond ((symbolp binding) (symbol-name binding))
-        ((keymapp binding) "a keymap")
+        ((keymapp binding) "a prefix")
         (t (format "%S" binding))))
 
 (defun donkey--mode-list-entry-for (mode-list)

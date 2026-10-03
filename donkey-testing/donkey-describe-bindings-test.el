@@ -4315,6 +4315,30 @@ two answers cannot drift apart."
           (keymap-set donkey-normal-mode-map "#" was)
         (keymap-unset donkey-normal-mode-map "#" t)))))
 
+(ert-deftest donkey-a-prefix-that-is-no-longer-one-is-reported-once ()
+  "A prefix bound to a command, or taken out, is one line naming the prefix.
+
+Not one line for every key DONKEY had under it, and nothing in the
+half only a buffer can answer."
+  (let ((g (donkey-report-test--own-binding "g"))
+        (z (donkey-report-test--own-binding "z")))
+    (should (keymapp g))
+    (should (keymapp z))
+    (unwind-protect
+        (progn
+          (keymap-set donkey-normal-mode-map "g" #'goto-line)
+          (keymap-unset donkey-normal-mode-map "z" t)
+          (should (equal (donkey--binding-report-lines)
+                         '("g is goto-line now, was a prefix"
+                           "z is unbound now, was a prefix")))
+          (with-temp-buffer
+            (text-mode)
+            (donkey-normal-mode 1)
+            (should (equal (donkey--shadowed-normal-bindings) nil))))
+      (keymap-set donkey-normal-mode-map "g" g)
+      (keymap-set donkey-normal-mode-map "z" z)
+      (should (equal (donkey--binding-changes) nil)))))
+
 (ert-deftest donkey-does-not-trust-what-is-in-the-wrap-delimiters ()
   "Anything in `donkey-wrap-delimiters' that is not a character is skipped.
 
