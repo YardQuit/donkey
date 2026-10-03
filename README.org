@@ -890,8 +890,9 @@ Editing inside matches that differ is what a multiple-cursors package
 is for; this is not one.
 
 A deletion just past a match is made at every match. Backspace and
-=C-d=, with a count or without, take as many characters at each; a
-command that deletes as far as the text goes — =M-d=, =C-k=, =M-\= —
+=C-d=, with a count or without, take as many characters at each, and
+so does typing in overwrite mode, which writes over the character
+after every match alike; a command that deletes as far as the text goes — =M-d=, =C-k=, =M-\= —
 does so only where the same text stands past every match. Where it
 does not, the split ends and says so, and the other matches keep what
 they hold.

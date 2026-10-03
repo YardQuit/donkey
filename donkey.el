@@ -7405,10 +7405,19 @@ the copies away instead; see `donkey--split-disown'."
                ((null here)
                 ;; Only while editing.  During the chooser nothing has
                 ;; moved point yet, and ending the split there would end
-                ;; it on arrival.
+                ;; it on arrival.  What the command wrote in the place it
+                ;; left is copied first, so the split ends with every
+                ;; place holding it, as its report says.
                 (when (and (eq donkey--split-phase 'edit)
                            donkey--split-primary)
-                  (donkey--split-dissolve)))
+                  (if (or (not (overlay-buffer donkey--split-primary))
+                          (donkey--split-copy donkey--split-primary
+                                              edge-edits))
+                      (donkey--split-dissolve)
+                    (donkey--split-close-edit t)
+                    (donkey--split-dissolve t)
+                    (message "Split ended -- %s" "an edit beside a place \
+could not be made at every place"))))
                (t
                 (unless (eq here donkey--split-primary)
                   (let ((still (eql donkey--split-synced-tick
@@ -8359,8 +8368,9 @@ Each is (SIDE . TEXT), as `donkey--split-edge-edits' holds them.  At
 every other place the same deletion is made on the same side where it
 takes the same TEXT there.  Where the text there differs it is made by
 count instead -- as many characters as TEXT holds -- only where the
-running command did nothing but delete, and deleted as many characters
-as its count asked for, as \\`DEL' and \\`C-d' do; a deletion sized by
+running command did nothing but delete, or write over characters in
+`overwrite-mode', and took as many characters as its count asked for,
+as \\`DEL', \\`C-d' and a typed character there do; a deletion sized by
 the text itself, a word or the rest of a line, would take something
 else at another place.  Either way the characters must be there, reach
 no other place, and hold a line break exactly where TEXT does.  Return
@@ -8371,9 +8381,13 @@ HERE\\='s own deletions were noted by `donkey--split-edge-note-primary'."
   (let* ((places donkey--split-places)
          (n (length places))
          (texts (donkey--split-edge-texts-copy n))
-         (by-count (and (seq-every-p (lambda (change)
-                                       (= (car change) (cadr change)))
-                                     donkey--split-changes)
+         (by-count (and (seq-every-p
+                         (lambda (change)
+                           (or (= (car change) (cadr change))
+                               (and overwrite-mode
+                                    (= (- (cadr change) (car change))
+                                       (nth 2 change)))))
+                         donkey--split-changes)
                         (abs (prefix-numeric-value current-prefix-arg)))))
     (catch 'unlike
       (dolist (edit edits)
@@ -8491,7 +8505,10 @@ that left the text as it was -- a text property set -- is no change.
 A change inside the written place is left to the copying after the
 command; a deletion reaching just past the place\\='s start or end is
 kept in `donkey--split-edge-edits'; anything else away from the places
-sets `donkey--split-strayed'.  What the change replaced is the part of
+sets `donkey--split-strayed'.  In `overwrite-mode' a character typed
+at the place\\='s end writes over the one after it: the place takes the
+typed character in, and the one written over is a deletion past its
+end.  What the change replaced is the part of
 the text noted as it began that BEG and LENGTH name, which is less
 than all of it where the change ended over less than it began over, as
 a case command does.  Every change ending here, Split mode\\='s own
@@ -8512,6 +8529,16 @@ signals, for the reason `donkey--split-note-change' gives."
             (unless (and (= length (- end beg))
                          (equal text (buffer-substring-no-properties beg end)))
               (push (list beg end length text) donkey--split-changes)
+              ;; Overwrite mode replaces the character after the place
+              ;; rather than inserting at its end, and the place does not
+              ;; take a replacement in: it takes it in here, and what was
+              ;; written over is a deletion just past its end.
+              (when (and overwrite-mode
+                         (> end beg) (> length 0)
+                         (= beg finish)
+                         (= beg (overlay-end donkey--split-primary)))
+                (move-overlay donkey--split-primary
+                              (overlay-start donkey--split-primary) end))
               ;; What was put in has to be inside the written place as it
               ;; now stands: text replaced just past an edge stays
               ;; outside it.

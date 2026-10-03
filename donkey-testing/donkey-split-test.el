@@ -1005,6 +1005,32 @@ when BODY runs.  `donkey-split-test--saved' counts what the file holds."
       (execute-kbd-macro (kbd "u"))
       (should (equal (buffer-string) "a fooXbar\nc fooYbaz\n")))))
 
+(ert-deftest donkey-split-writes-over-every-place-in-overwrite-mode ()
+  "In overwrite mode what is typed writes over the same characters at every place."
+  (dolist (case '(("foo" "v G f a <insert> X Y <insert> C-g"
+                   "a foo bcd\nc foo efg\n" "a fooXYcd\nc fooXYfg\n")
+                  ("foo" "v G f i <insert> X Y <insert> C-g"
+                   "a foo bcd\nc foo efg\n" "a XYo bcd\nc XYo efg\n")
+                  ("[0-9]+" "v G f i <insert> X <insert> C-g"
+                   "id=1;\nid=22;\n" "id=X;\nid=X2;\n")
+                  ("foo" "t i <insert> X Y <insert> C-g C-g"
+                   "abcd\nefgh\n" "XYcd\nXYgh\n")))
+    (donkey-split-test--on (car case)
+      (donkey-split-test--keys "*split-overwrite*" (nth 2 case) (nth 1 case)
+        (should (equal (list (nth 1 case) (buffer-string))
+                       (list (nth 1 case) (nth 3 case))))
+        (execute-kbd-macro (kbd "u"))
+        (should (equal (list (nth 1 case) (buffer-string))
+                       (list (nth 1 case) (nth 2 case))))))))
+
+(ert-deftest donkey-split-takes-in-a-replacement-at-its-end-only-in-overwrite-mode ()
+  "Outside overwrite mode a word replaced just after a place is an edit away from it."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-replace-after*" "a foobar\nc foobar\n"
+        "v G f a M-u C-g"
+      (should (equal (buffer-string) "a fooBAR\nc foobar\n"))
+      (should (null donkey--split-phase)))))
+
 (ert-deftest donkey-split-keeps-every-place-alike-through-electric-indentation ()
   "What `electric-indent-mode' does beside the place after RET happens at every place."
   (let ((electric-indent-mode t))
@@ -2977,8 +3003,8 @@ compared by their text, not by their size."
     (execute-kbd-macro (kbd "C-/"))
     (should (equal (buffer-string) donkey-split-test--column))))
 
-(ert-deftest donkey-split-undo-keeps-an-edit-the-copying-never-reached ()
-  "An edit that takes point out of the places before it is copied is still undone."
+(ert-deftest donkey-split-undo-takes-back-an-edit-that-left-the-places ()
+  "An edit made by a command that takes point out of the places is copied and undone."
   (donkey-split-test--on "foo"
     (donkey-split-test--keys "*split-undo-uncopied*" "a foo b\nc foo d\n"
         "v G f a X"
@@ -2988,9 +3014,29 @@ compared by their text, not by their size."
                                     (goto-char (point-max))))
       (execute-kbd-macro (kbd "<f9>"))
       (should (null donkey--split-phase))
-      (should (equal (buffer-string) "a fooXQ b\nc fooX d\n"))
+      (should (equal (buffer-string) "a fooXQ b\nc fooXQ d\n"))
       (execute-kbd-macro (kbd "C-/"))
       (should (equal (buffer-string) "a foo b\nc foo d\n")))))
+
+(ert-deftest donkey-split-says-so-when-an-edit-that-left-cannot-be-copied ()
+  "A command that leaves the places with an edge edit unlike the others says so."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-leave-unlike*" "a foo bb\nc foo dd\n"
+        "v G f a X"
+      (donkey-split-test--bind-f9 (lambda ()
+                                    (interactive)
+                                    (delete-char 2)
+                                    (goto-char (point-max))))
+      (let ((said nil))
+        (cl-letf (((symbol-function 'message)
+                   (lambda (fmt &rest args)
+                     (when fmt (push (apply #'format fmt args) said))
+                     nil)))
+          (execute-kbd-macro (kbd "<f9>")))
+        (should (member "Split ended -- an edit beside a place could not be made at every place"
+                        said)))
+      (should (null donkey--split-phase))
+      (should (equal (buffer-string) "a fooXb\nc fooX dd\n")))))
 
 (ert-deftest donkey-split-cursors-a-line-break-keeps-the-cursors-in-code ()
   "RET at the cursors in a programming mode breaks and indents every line alike."
