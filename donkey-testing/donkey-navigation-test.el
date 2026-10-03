@@ -474,6 +474,21 @@ pinned here so making the junk cases safe did not quietly change it."
         (should (progn (donkey--track-position) t))
         (should-not donkey--position-ring)))))
 
+(ert-deftest donkey-track-position-survives-a-non-finite-ring-max ()
+  "An infinite or NaN ring max is read as \"off\" rather than signaling."
+  (dolist (junk (list 1.0e+INF -1.0e+INF 0.0e+NaN))
+    (with-temp-buffer
+      (insert "a\nb\nc\n")
+      (goto-char (point-min))
+      (let ((donkey--position-ring nil)
+            (donkey--position-index 0)
+            (donkey--last-tracked-state nil)
+            (donkey-position-ring-max junk))
+        (donkey--track-position)
+        (goto-char 3)
+        (should (progn (donkey--track-position) t))
+        (should-not donkey--position-ring)))))
+
 (ert-deftest donkey-track-position-truncates-a-float-ring-max ()
   "A float ring max keeps working, truncated rather than rejected.
 

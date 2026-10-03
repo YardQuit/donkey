@@ -771,18 +771,20 @@ shows the binding in force."
 
 Zero switches position tracking off: nothing is retained, so
 `donkey-jump-back' has nowhere to go and says so.  Anything that is not
-a number is read the same way rather than signaling."
+a finite number is read the same way rather than signaling."
   :type 'integer
   :group 'donkey)
 
 (defun donkey--position-ring-limit ()
   "Return `donkey-position-ring-max' as a usable count, never signaling.
 
-A non-number or a negative value reads as 0, tracking off; a float is
-truncated."
-  (if (numberp donkey-position-ring-max)
-      (max 0 (truncate donkey-position-ring-max))
-    0))
+A non-number, an infinite or NaN float, or a negative value reads as
+0, tracking off; a finite float is truncated."
+  (let ((limit donkey-position-ring-max))
+    ;; Infinity and NaN fail the comparison; `truncate' signals on both.
+    (if (and (numberp limit) (< (abs limit) 1.0e+INF))
+        (max 0 (truncate limit))
+      0)))
 
 (defvar-local donkey--position-ring nil
   "List of markers recording previous cursor positions, most recent first.")
