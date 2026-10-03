@@ -2277,6 +2277,30 @@ separately, so they can be taken out."
              (ratio (/ large small)))
         (should (< ratio 25))))))
 
+(ert-deftest donkey-letting-go-of-a-large-bank-is-not-quadratic ()
+  "Unbanking scales with the number of lines, not their square.
+
+The path `y', `d', `p', `m U' and a block toggled off with `m l' all
+take.  Asserts the shape of the growth, as
+`donkey-banking-a-large-region-is-not-quadratic' does: eight times the
+lines, the best of three runs, collections subtracted.  Linear measures
+about 8, quadratic about 29."
+  (cl-flet* ((unbank-n (n)
+               (with-temp-buffer
+                 (dotimes (i n) (insert (format "line %d\n" i)))
+                 (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+                   (donkey--bank-span (point-min) (point-max))
+                   (garbage-collect)
+                   (let ((figures (benchmark-run 1
+                                    (donkey--unbank-span (point-min) (point-max)))))
+                     (should (zerop (donkey--banked-line-count)))
+                     (- (nth 0 figures) (nth 2 figures))))))
+             (best-of-3 (n) (min (unbank-n n) (unbank-n n) (unbank-n n))))
+    (unbank-n 200)
+    (let ((small (max (best-of-3 1000) 0.0005))
+          (large (best-of-3 8000)))
+      (should (< (/ large small) 15)))))
+
 (ert-deftest donkey-docstring-first-lines-are-complete-sentences ()
   "Every docstring in donkey.el opens with a one-line sentence.
 

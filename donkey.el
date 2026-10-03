@@ -10483,10 +10483,12 @@ line rather than leaving a blank."
       (cons start finish))))
 
 (defun donkey--prune-banked-overlays ()
-  "Drop banked overlays that no longer cover any text.
+  "Drop banked overlays that were deleted or no longer cover any text.
 
 An overlay collapses to zero width when the line it banked is removed
-by ordinary editing; such a bank highlights nothing, and is dropped."
+by ordinary editing; such a bank highlights nothing, and is dropped.
+An overlay `donkey--delete-banked-overlays' deleted is dropped here
+too."
   (setq donkey--banked-overlays
         (seq-filter (lambda (ov)
                       (or (and (overlay-buffer ov)
@@ -10686,10 +10688,12 @@ goes through the list, since a line can carry more than one overlay."
   (car (donkey--banked-overlays-at pos)))
 
 (defun donkey--delete-banked-overlays (overlays)
-  "Delete OVERLAYS and forget them, so the line they covered is unbanked."
-  (dolist (ov overlays)
-    (delete-overlay ov)
-    (setq donkey--banked-overlays (delq ov donkey--banked-overlays))))
+  "Delete OVERLAYS, so the lines they covered are unbanked.
+
+The list of banks forgets them the next time it is read, through
+`donkey--prune-banked-overlays', so letting go of any number of lines
+walks the list once."
+  (mapc #'delete-overlay overlays))
 
 (defun donkey--banked-run-at (pos)
   "Return the contiguous banked run covering POS as (START . END), or nil.
@@ -10821,10 +10825,12 @@ is how `donkey-copy' and `donkey-delete' count what they report."
 (defun donkey--span-line-count (spans)
   "Return how many buffer lines SPANS cover in total.
 
-Counts via `count-lines' rather than counting newlines in the extracted
-text, so a banked blank line still counts as a line."
-  (apply #'+ (mapcar (lambda (span) (count-lines (car span) (cdr span)))
-                     spans)))
+SPANS are whole lines in buffer order.  Counts via `count-lines' rather
+than counting newlines in the extracted text, so a banked blank line
+still counts as a line; spans that touch are counted as one stretch."
+  (let ((lines 0))
+    (dolist (span (donkey--merge-spans spans) lines)
+      (setq lines (+ lines (count-lines (car span) (cdr span)))))))
 
 (defun donkey--consume-banked-spans (spans)
   "Unbank only the lines in SPANS, leaving every other bank alone.
