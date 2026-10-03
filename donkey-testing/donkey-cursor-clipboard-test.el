@@ -164,13 +164,16 @@ qualify."
             ((symbol-function 'tty-type) (lambda () "xterm-256color")))
     (should (donkey--terminal-supports-decscusr-p))))
 
-(ert-deftest donkey-terminal-supports-decscusr-p-falls-back-to-TERM-env ()
-  "Uses TERM env var when `tty-type' returns nil."
+(ert-deftest donkey-a-terminal-that-is-not-a-tty-gets-no-cursor-shape ()
+  "Nil where `tty-type' has no type, whatever `TERM' says.
+
+That is a daemon\\='s initial terminal, whose output is the daemon\\='s
+standard output."
   (cl-letf ((noninteractive nil)
             ((symbol-function 'display-graphic-p) (lambda () nil))
             ((symbol-function 'tty-type) (lambda () nil))
-            ((symbol-function 'getenv) (lambda (var) "xterm-256color")))
-    (should (donkey--terminal-supports-decscusr-p))))
+            ((symbol-function 'getenv) (lambda (_var) "xterm-256color")))
+    (should-not (donkey--terminal-supports-decscusr-p))))
 
 (ert-deftest donkey-terminal-supports-decscusr-p-returns-nil-when-both-tty-and-term-nil ()
   "Nil when no terminal type can be determined at all."
@@ -200,16 +203,17 @@ qualify."
       (should-not send-called))))
 
 (ert-deftest donkey-send-cursor-sequence-sends-in-supported-terminal ()
-  "Sends sequence twice (double-send for reliability) in a supported terminal."
-  (let ((send-count 0))
+  "Sends the sequence once in a supported terminal, and waits for nothing."
+  (let ((send-count 0) (waited nil))
     (cl-letf ((noninteractive nil)
               ((symbol-function 'display-graphic-p) (lambda () nil))
               ((symbol-function 'tty-type) (lambda () "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (cl-incf send-count)))
-              ((symbol-function 'sit-for) (lambda (&rest _) t)))
+              ((symbol-function 'sit-for) (lambda (&rest _) (setq waited t))))
       (donkey--send-cursor-sequence 'box)
-      (should (= send-count 2)))))
+      (should (= send-count 1))
+      (should-not waited))))
 
 (ert-deftest donkey-send-cursor-sequence-suppressed-for-denied-terminal ()
   "Suppressed for denied ('dumb') terminals."
@@ -438,8 +442,8 @@ Regression test: `donkey-normal-mode' and `donkey-insert-mode' each
 toggle the other off as part of their own body, so a single state
 transition runs `donkey--update-cursor' (and thus
 `donkey--apply-cursor-setting') twice -- once from each mode's hook.
-Without deduplication, that doubles DECSCUSR terminal I/O and the
-synchronous `sit-for' delay on every single transition."
+Without deduplication, that doubles DECSCUSR terminal I/O on every
+single transition."
   (let ((send-count 0))
     (clrhash donkey--last-applied-cursor-settings)
     (cl-letf ((noninteractive nil)
@@ -452,10 +456,9 @@ synchronous `sit-for' delay on every single transition."
         (set-window-buffer nil (current-buffer))
         (donkey--apply-cursor-setting 'bar)
         (donkey--apply-cursor-setting 'bar)
-        ;; Each real call sends the sequence twice (see
-        ;; donkey--send-cursor-sequence); two IDENTICAL calls to
-        ;; donkey--apply-cursor-setting should only send once, not twice.
-        (should (= send-count 2))))))
+        ;; Two IDENTICAL calls to donkey--apply-cursor-setting send the
+        ;; sequence once, not twice.
+        (should (= send-count 1))))))
 
 (ert-deftest donkey-apply-cursor-setting-resends-on-actual-change ()
   "Still sends DECSCUSR when the setting genuinely changes."

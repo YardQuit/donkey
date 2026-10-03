@@ -14385,19 +14385,18 @@ and says so once, and the state DONKEY is in stops showing after that."
 (defun donkey--terminal-supports-decscusr-p ()
   "Return non-nil if the current terminal likely supports DECSCUSR.
 
-Returns nil for graphical frames and for terminals whose type
-matches a prefix in `donkey-decscusr-denied-terminals', read through
-`donkey--decscusr-denied-prefixes' so a malformed value denies
-rather than signals.
-Falls back to the `TERM' environment variable when `tty-type'
-returns nil, and performs a conservative guess based on known
-capable terminal names.
+Returns nil for graphical frames, for a terminal that is not a text
+terminal -- a daemon\\='s initial terminal, whose output is the daemon\\='s
+own standard output, whatever `TERM' says -- and for terminals whose
+type matches a prefix in `donkey-decscusr-denied-terminals', read
+through `donkey--decscusr-denied-prefixes' so a malformed value denies
+rather than signals.  The type is the one `tty-type' reports.
 
-Nil under `--batch' too, whatever `TERM' says; a test that stubs a
-capable terminal binds `noninteractive' to nil."
+Nil under `--batch' too; a test that stubs a capable terminal binds
+`noninteractive' to nil."
   (and (not noninteractive)
        (not (display-graphic-p))
-       (let ((tty (or (tty-type) (getenv "TERM"))))
+       (let ((tty (tty-type)))
          (when tty
            (and (not (cl-some
                       (lambda (prefix)
@@ -14409,18 +14408,15 @@ capable terminal binds `noninteractive' to nil."
   "Send DECSCUSR escape sequence for TYPE to terminal.
 
 Suppresses output on graphical frames and on terminals listed in
-`donkey-decscusr-denied-terminals'.  Wraps `send-string-to-terminal'
-in `condition-case' to silently absorb I/O failures.  Sends the
-sequence twice with a brief pause to improve delivery reliability
-on terminals that drop bytes during state transitions."
+`donkey-decscusr-denied-terminals'.  Sends the sequence once, and
+waits for nothing: no redisplay, no timer, between the state change
+and the command that made it.  Wraps `send-string-to-terminal' in
+`condition-case' to silently absorb I/O failures."
   (when (donkey--terminal-supports-decscusr-p)
     (let ((seq (donkey--cursor-type-to-decscusr type)))
       (when seq
         (condition-case nil
-            (progn
-              (send-string-to-terminal seq)
-              (sit-for 0.01)
-              (send-string-to-terminal seq))
+            (send-string-to-terminal seq)
           (error nil))))))
 
 (defvar donkey--last-applied-cursor-settings (make-hash-table :test 'eq)
