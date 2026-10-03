@@ -8763,6 +8763,7 @@ the current one, so both are cleared."
         (remove-hook 'before-change-functions #'donkey--split-note-change t)
         (remove-hook 'after-change-functions #'donkey--split-noted-change t)))
     (remove-hook 'post-gc-hook #'donkey--split-note-gc)
+    (remove-hook 'delete-terminal-functions #'donkey--split-terminal-deleted)
     (setq donkey--split-gc-note nil)
     ;; The hidden buffer the places were compared against keeps no text
     ;; once there are no places.
@@ -8803,6 +8804,19 @@ one of the split\\='s own, where it still stands as the copy was made."
                       donkey--split-cursor-marks donkey--split-behind
                       donkey--split-target donkey--split-sweep-timer))
     (kill-local-variable variable)))
+
+(defun donkey--split-terminal-deleted (terminal)
+  "End the split armed on TERMINAL, which is being deleted.
+
+On `delete-terminal-functions' while a split is armed.  A client that
+disconnects takes its terminal with it, and a split noted there would
+stay armed, painted and holding its writing open, with no key left on
+that terminal that can end it.  Never signals."
+  (when (eq terminal donkey--split-terminal)
+    (condition-case err
+        (donkey--split-dissolve t)
+      (error (message "DONKEY: ending a split failed: %s"
+                      (error-message-string err))))))
 
 (defun donkey--split-flush ()
   "End the split as its buffer is killed or given a new major mode.
@@ -9274,6 +9288,7 @@ ends the split."
   (add-hook 'kill-buffer-hook #'donkey--split-flush nil t)
   (add-hook 'change-major-mode-hook #'donkey--split-flush nil t)
   (add-hook 'before-save-hook #'donkey--split-save-flush -90 t)
+  (add-hook 'delete-terminal-functions #'donkey--split-terminal-deleted)
   ;; From here on the holds can tell what a collection is due.
   (add-hook 'post-gc-hook #'donkey--split-note-gc)
   (donkey--split-note-gc)

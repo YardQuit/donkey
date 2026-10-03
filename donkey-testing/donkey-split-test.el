@@ -607,6 +607,20 @@ mouse or a frame switch does, so nothing has ended the split first."
       (execute-kbd-macro (kbd "d"))
       (should (equal (buffer-string) "a  b\nc  d\n")))))
 
+(ert-deftest donkey-split-ends-when-its-terminal-is-deleted ()
+  "Deleting the terminal a split was armed on ends the split; another terminal does not."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-terminal-gone*" "a foo b\nc foo d\n" "v G f a X"
+      (should (memq #'donkey--split-terminal-deleted delete-terminal-functions))
+      (run-hook-with-args 'delete-terminal-functions 'another-terminal)
+      (should (eq donkey--split-phase 'edit))
+      (run-hook-with-args 'delete-terminal-functions (frame-terminal))
+      (should (null donkey--split-phase))
+      (should (null donkey--split-buffer))
+      (should-not (memq #'donkey--split-terminal-deleted delete-terminal-functions))
+      (should-not (memq #'donkey--split-sync post-command-hook))
+      (should (equal (buffer-string) "a fooX b\nc fooX d\n")))))
+
 (ert-deftest donkey-split-verbs-answer-only-on-its-own-terminal ()
   "Looked up from another terminal, a verb\'s key is the ordinary one."
   (donkey-split-test--on "foo"
