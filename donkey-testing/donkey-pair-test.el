@@ -463,6 +463,28 @@ list, so `(?# . ?#)' put there for \\=`m i\\=' is typed as well."
     (should (equal (buffer-string) "((("))))
 
 ;;; ---------------------------------------------------------------------------
+;;; Overwrite mode
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-pair-overwrite-mode-replaces-and-pairs-nothing ()
+  "In `overwrite-mode' a delimiter replaces one character and pairs nothing.
+
+A closer typed over its own kind leaves the text as it was, with point
+past the one replaced, and an opener typed over a letter writes no
+closer.  Textual and binary overwrite alike."
+  (dolist (mode '(overwrite-mode-textual overwrite-mode-binary))
+    (dolist (case '(("f(g(x))" "C-u 5 l i )" "f(g(x))" 7)
+                    ("]]"      "i ]"         "]]"      2)
+                    ("\"\""    "i \""        "\"\""    2)
+                    ("abc"     "i ("         "(bc"     2)
+                    ("abc"     "i \""        "\"bc"    2)))
+      (donkey-pair-test--typing "*donkey-pair-overwrite*" #'text-mode
+          ((overwrite-mode mode))
+          (car case) (cadr case)
+        (should (equal (list mode (cadr case) (buffer-string) (point))
+                       (list mode (cadr case) (nth 2 case) (nth 3 case))))))))
+
+;;; ---------------------------------------------------------------------------
 ;;; DEL
 ;;; ---------------------------------------------------------------------------
 

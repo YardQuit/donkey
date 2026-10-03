@@ -633,6 +633,8 @@ With it on, as you type:
   between the two;
 - the closing half, typed where that character already stands, steps
   over it rather than doubling it;
+- in overwrite mode (the =<insert>= key) nothing pairs: a delimiter
+  replaces the character under the cursor, as it does in plain Emacs;
 - =DEL= between the halves of an empty pair takes both, and =DEL=
   anywhere else is whatever your major mode bound it to;
 - a count types and pairs nothing: =C-u 3 (= gives you three of them.

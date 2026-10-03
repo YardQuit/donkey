@@ -3119,9 +3119,12 @@ in it before any of them has had a turn.
 Does nothing under a count: \\[universal-argument] 3 and a delimiter
 types three of them and pairs none, which is what a count means to
 `self-insert-command' and what a count already means to
-`donkey-wrap-region'.  Does nothing either where
+`donkey-wrap-region'.  Does nothing in `overwrite-mode' either, where
+the press has replaced the character under point rather than gone in
+before it, so there is no closer to write and none to step over;
+`electric-pair-mode' writes no closer there either.  Nor where
 `donkey--pair-off-here-p' says the buffer is not DONKEY\\='s to pair
-in, and at most once per command."
+in, and it acts at most once per command."
   (unless donkey--pair-done-this-command
     ;; Set first, and for every press rather than only the ones acted
     ;; on: what this stops is a second run of the whole hook, and by
@@ -3130,6 +3133,7 @@ in, and at most once per command."
     (let ((char last-command-event))
       (when (and (characterp char)
                  (null current-prefix-arg)
+                 (not overwrite-mode)
                  ;; Cheapest and most selective first: this runs for
                  ;; every character typed, and almost every character
                  ;; typed is a letter, which is in neither half of the
