@@ -7745,6 +7745,17 @@ saying why, as it would from `donkey--split-sync'."
         (widen)
         (donkey--split-sweep nil t)))))
 
+(defun donkey--split-save-flush ()
+  "Write every place still behind before the split\\='s buffer is saved.
+
+On `before-save-hook' while a split is armed, ahead of the reader\\='s
+own functions there, so the file and whatever formats it get the text
+the buffer shows.  Nothing is written over a change the split did not
+see; see `donkey--split-note-unseen'.  A place that cannot be written
+is reported by Emacs, which saves all the same."
+  (unless (donkey--split-note-unseen)
+    (donkey--split-sweep-flush)))
+
 (defun donkey--split-text-at (texts i)
   "Return element I of TEXTS, as `donkey--split-texts' shapes them.
 
@@ -8655,6 +8666,7 @@ the current one, so both are cleared."
         (remove-hook 'post-command-hook #'donkey--split-sync t)
         (remove-hook 'kill-buffer-hook #'donkey--split-flush t)
         (remove-hook 'change-major-mode-hook #'donkey--split-flush t)
+        (remove-hook 'before-save-hook #'donkey--split-save-flush t)
         (remove-hook 'before-change-functions #'donkey--split-note-change t)
         (remove-hook 'after-change-functions #'donkey--split-noted-change t)))
     (remove-hook 'post-gc-hook #'donkey--split-note-gc)
@@ -8671,6 +8683,7 @@ one of the split\\='s own, where it still stands as the copy was made."
   (remove-hook 'post-command-hook #'donkey--split-sync t)
   (remove-hook 'kill-buffer-hook #'donkey--split-flush t)
   (remove-hook 'change-major-mode-hook #'donkey--split-flush t)
+  (remove-hook 'before-save-hook #'donkey--split-save-flush t)
   (remove-hook 'before-change-functions #'donkey--split-note-change t)
   (remove-hook 'after-change-functions #'donkey--split-noted-change t)
   (let ((copied (make-hash-table :test #'equal)))
@@ -9162,6 +9175,7 @@ ends the split."
   (add-hook 'post-command-hook #'donkey--split-sync nil t)
   (add-hook 'kill-buffer-hook #'donkey--split-flush nil t)
   (add-hook 'change-major-mode-hook #'donkey--split-flush nil t)
+  (add-hook 'before-save-hook #'donkey--split-save-flush -90 t)
   ;; From here on the holds can tell what a collection is due.
   (add-hook 'post-gc-hook #'donkey--split-note-gc)
   (donkey--split-note-gc)
@@ -9217,9 +9231,9 @@ character.
 There is no limit on the number of matches.  Past
 `donkey--split-eager-places' of them, a keystroke writes the matches a
 window shows and the rest between keystrokes, the ones scrolled onto
-first; \\`C-g' waits for the last of them.  Once the split has ended
-its writing is one undo entry, whatever the number of matches; see
-`donkey--split-close-edit'.
+first; \\`C-g' waits for the last of them, and so does saving the
+buffer.  Once the split has ended its writing is one undo entry,
+whatever the number of matches; see `donkey--split-close-edit'.
 
 Bound to \\`f' in Normal state."
   (interactive

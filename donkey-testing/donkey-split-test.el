@@ -869,6 +869,74 @@ as a command of its own."
                        (list revert text)))
         (should (null donkey--split-phase))))))
 
+(defmacro donkey-split-test--saving (&rest body)
+  "Write X after 8,000 places in a buffer visiting a file, then run BODY.
+
+The places past the first few thousand are still waiting to be written
+when BODY runs.  `donkey-split-test--saved' counts what the file holds."
+  (declare (indent 0))
+  `(let ((file (make-temp-file "donkey-split-save"))
+         (text (mapconcat (lambda (i) (format "foo %d\n" i))
+                          (number-sequence 1 8000) "")))
+     (unwind-protect
+         (donkey-split-test--on "%foo"
+           (donkey-split-test--keys "*split-save*" text ""
+             (write-region nil nil file nil 'silent)
+             (set-visited-file-name file t)
+             (text-mode)
+             (donkey-normal-mode 1)
+             (set-buffer-modified-p nil)
+             (execute-kbd-macro (kbd "f a X"))
+             (should donkey--split-behind)
+             ;; Places left behind stay behind: a live frame runs the
+             ;; sweep's timer too.
+             (donkey--split-sweep-cancel)
+             (cl-flet ((donkey-split-test--saved (regexp)
+                         (with-temp-buffer
+                           (insert-file-contents file)
+                           (how-many regexp (point-min) (point-max)))))
+               ,@body)
+             (set-buffer-modified-p nil)
+             (set-visited-file-name nil t)))
+       (delete-file file))))
+
+(ert-deftest donkey-split-saved-while-writing-saves-every-place ()
+  "Saving while places wait to be written writes them first, so the file has all."
+  (donkey-split-test--saving
+    (let ((inhibit-message t))
+      (save-buffer))
+    (should (= (donkey-split-test--saved "fooX") 8000))
+    (should (eq donkey--split-phase 'edit))
+    (execute-kbd-macro (kbd "C-g"))
+    (should (null (memq #'donkey--split-save-flush before-save-hook)))))
+
+(ert-deftest donkey-split-saved-after-an-unseen-edit-writes-nothing-over-it ()
+  "A save after an edit the split did not see writes no place over that edit."
+  (donkey-split-test--saving
+    (save-excursion
+      (goto-char (point-max))
+      (search-backward "foo 7999")
+      (let ((inhibit-modification-hooks t))
+        (forward-char 1)
+        (insert "Q")))
+    (let ((inhibit-message t))
+      (save-buffer))
+    (should (= (donkey-split-test--saved "fQoo 7999") 1))))
+
+(ert-deftest donkey-split-saves-though-a-place-cannot-be-written ()
+  "A place that refuses to be written before a save leaves the save to go ahead."
+  (donkey-split-test--saving
+    (save-excursion
+      (goto-char (point-max))
+      (search-backward "foo 7999")
+      (let ((inhibit-read-only t)
+            (buffer-undo-list t))
+        (put-text-property (point) (+ (point) 3) 'read-only t)))
+    (let ((inhibit-message t))
+      (save-buffer))
+    (should-not (buffer-modified-p))
+    (should (= (donkey-split-test--saved "foo 7999") 1))))
+
 (ert-deftest donkey-split-ends-when-donkey-mode-is-turned-off ()
   "Turning DONKEY off takes a split down with it."
   (unwind-protect
