@@ -403,6 +403,11 @@ take that line's newline as well, so lines go and come back whole. So
 do Emacs's own =C-w=, =M-w= and =C-x r s=, and anything else that asks
 Emacs for the region's text.
 
+A line is the line the screen shows. A folded Org or outline heading
+is one line, so =V= takes it with the body it hides and =J= and =K=
+step over it in one press, the way =m l= banks it and Emacs's
+=kill-whole-line= kills it.
+
 A command that reads the region's two ends for itself sees it stop
 before the last newline: =M-x keep-lines= leaves the last line out,
 =M-|= hands its command the lines without their last newline, and

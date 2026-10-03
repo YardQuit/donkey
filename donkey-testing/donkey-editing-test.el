@@ -1512,6 +1512,20 @@ second reported \"Unbanked this line (0 total)\"."
       ;; Banking releases the mark so navigation can continue.
       (should-not (use-region-p)))))
 
+(ert-deftest donkey-banking-a-folded-heading-takes-its-hidden-body ()
+  "`m l' on a folded heading banks the heading with the body it hides."
+  (skip-unless (require 'org nil t))
+  (donkey-test-keys--harness "*donkey-bank-fold*" #'org-mode ()
+      "* A\n* B\nb1\nb2\n* C\n" ""
+    (goto-char (point-min))
+    (forward-line 1)
+    (let ((last-command nil))
+      (org-cycle))
+    (should (invisible-p (line-end-position)))
+    (execute-kbd-macro (kbd "m l j m l d"))
+    (should (equal (buffer-string) "* A\n"))
+    (should (equal (car kill-ring) "* B\nb1\nb2\n* C\n"))))
+
 (ert-deftest donkey-copy-banked-lines-concatenates-in-buffer-order ()
   "Banked lines are copied as one kill, in buffer order.
 

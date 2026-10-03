@@ -994,6 +994,99 @@ Only the bare press cancels: a count is an instruction about size."
     (should (equal (buffer-string) "d\ne\n"))
     (should (equal (car kill-ring) "a\nb\nc\n"))))
 
+(defconst donkey-nav-test--folded-text
+  "* A\na body\n* B\nb1\nb2\nb3\n* C\nc body\n"
+  "An Org outline whose heading B is folded by `donkey-nav-test--fold-b'.")
+
+(defun donkey-nav-test--fold-b ()
+  "Fold heading B of `donkey-nav-test--folded-text' and put point on it."
+  (goto-char (point-min))
+  (re-search-forward "^\\* B")
+  (beginning-of-line)
+  (let ((last-command nil))
+    (org-cycle))
+  (should (invisible-p (line-end-position))))
+
+(ert-deftest donkey-V-takes-a-folded-heading-with-its-hidden-body ()
+  "`V d' on a folded heading removes the heading and the body it hides."
+  (skip-unless (require 'org nil t))
+  (donkey-test-keys--harness "*donkey-V-fold*" #'org-mode ()
+      donkey-nav-test--folded-text ""
+    (donkey-nav-test--fold-b)
+    (execute-kbd-macro (kbd "V d"))
+    (should (equal (buffer-string) "* A\na body\n* C\nc body\n"))
+    (should (equal (car kill-ring) "* B\nb1\nb2\nb3\n"))))
+
+(ert-deftest donkey-K-steps-over-a-fold-as-one-line ()
+  "`V K' from below a folded heading takes the heading, not a hidden line.
+
+A count counts the folded heading once, and `K' from the folded heading
+itself keeps it whole on the anchor's side."
+  (skip-unless (require 'org nil t))
+  (donkey-test-keys--harness "*donkey-V-fold*" #'org-mode ()
+      donkey-nav-test--folded-text ""
+    (donkey-nav-test--fold-b)
+    (re-search-forward "^\\* C")
+    (beginning-of-line)
+    (execute-kbd-macro (kbd "V C-u 2 K y"))
+    (should (equal (car kill-ring) "a body\n* B\nb1\nb2\nb3\n* C\n"))
+    (re-search-forward "^\\* B")
+    (beginning-of-line)
+    (execute-kbd-macro (kbd "V K y"))
+    (should (equal (car kill-ring) "a body\n* B\nb1\nb2\nb3\n"))
+    (re-search-forward "^\\* C")
+    (beginning-of-line)
+    (execute-kbd-macro (kbd "V K d"))
+    (should (equal (buffer-string) "* A\na body\nc body\n"))
+    (should (equal (car kill-ring) "* B\nb1\nb2\nb3\n* C\n"))))
+
+(ert-deftest donkey-J-and-a-count-step-over-a-fold-as-one-line ()
+  "`J' and a counted `V' count a folded heading as the one line it shows."
+  (skip-unless (require 'org nil t))
+  (donkey-test-keys--harness "*donkey-V-fold*" #'org-mode ()
+      donkey-nav-test--folded-text ""
+    (donkey-nav-test--fold-b)
+    (execute-kbd-macro (kbd "g g V J J y"))
+    (should (equal (car kill-ring) "* A\na body\n* B\nb1\nb2\nb3\n"))
+    (execute-kbd-macro (kbd "g g j V C-u 2 J y"))
+    (should (equal (car kill-ring) "a body\n* B\nb1\nb2\nb3\n* C\n"))
+    (goto-char (point-min))
+    (re-search-forward "^\\* B")
+    (beginning-of-line)
+    (execute-kbd-macro (kbd "C-u 2 V y"))
+    (should (equal (car kill-ring) "* B\nb1\nb2\nb3\n* C\n"))
+    (goto-char (point-min))
+    (re-search-forward "^\\* B")
+    (beginning-of-line)
+    (execute-kbd-macro (kbd "C-u - 2 V y"))
+    (should (equal (car kill-ring) "a body\n* B\nb1\nb2\nb3\n"))
+    (should (equal (buffer-string) donkey-nav-test--folded-text))))
+
+(ert-deftest donkey-a-hidden-line-belongs-to-the-folded-line-above-it ()
+  "A position inside a fold spans the folded heading's whole line."
+  (skip-unless (require 'org nil t))
+  (with-temp-buffer
+    (org-mode)
+    (insert donkey-nav-test--folded-text)
+    (donkey-nav-test--fold-b)
+    (let ((heading (point))
+          (hidden (save-excursion (search-forward "b2") (point)))
+          (next (save-excursion (re-search-forward "^\\* C")
+                                (line-beginning-position))))
+      (should (equal (donkey--whole-line-span hidden hidden)
+                     (cons heading next))))))
+
+(ert-deftest donkey-V-takes-an-outline-fold-made-with-overlays ()
+  "An `outline-mode' fold, hidden by an overlay, is one line to `V' too."
+  (donkey-test-keys--harness "*donkey-V-fold*" #'outline-mode ()
+      "* A\na\n* B\nb1\nb2\n* C\n" ""
+    (goto-char (point-min))
+    (re-search-forward "^\\* B")
+    (outline-hide-subtree)
+    (beginning-of-line)
+    (execute-kbd-macro (kbd "V J y"))
+    (should (equal (car kill-ring) "* B\nb1\nb2\n* C\n"))))
+
 (ert-deftest donkey-V-with-a-count-is-still-refused-inside-a-mark-run ()
   "The mark run's refusal of `V' does not depend on the count.
 

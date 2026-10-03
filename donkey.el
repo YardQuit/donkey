@@ -3646,7 +3646,9 @@ the mark still sits where a visual-line command would have left it --
 either exactly AT the anchor (a line beginning) or at that anchor
 line's end.  Those are the only two values `donkey-visual-line-toggle',
 `donkey-visual-next-line' and `donkey-visual-previous-line' ever set
-the mark to, depending on which side of the anchor point is on.
+the mark to, depending on which side of the anchor point is on.  A line
+is the line the screen shows, so a folded heading ends where its hidden
+body does; see `donkey--visible-line-end'.
 
 An anchor outside the accessible portion is not a session this can
 continue."
@@ -3657,9 +3659,37 @@ continue."
        (<= donkey-visual-anchor (point-max))
        (mark)
        (or (= (mark) donkey-visual-anchor)
-           (= (mark) (save-excursion
-                       (goto-char donkey-visual-anchor)
-                       (line-end-position))))))
+           (= (mark) (donkey--visible-line-end donkey-visual-anchor)))))
+
+(defun donkey--visible-line-start (&optional pos)
+  "Return the start of the visible line POS is on.
+
+POS defaults to point.  A line hidden in a fold belongs to the line
+above it that the screen shows, as `forward-visible-line' counts lines,
+so inside a folded Org heading's body this is the heading's start."
+  (save-excursion
+    (when pos (goto-char pos))
+    (beginning-of-line)
+    ;; The line break before is asked first, so a buffer with nothing
+    ;; hidden pays one property lookup a line.
+    (when (and (not (bobp)) (invisible-p (1- (point))))
+      (forward-visible-line 0))
+    (point)))
+
+(defun donkey--visible-line-end (&optional pos)
+  "Return the end of the visible line POS is on, before its newline.
+
+POS defaults to point.  A folded heading ends where its hidden body
+does, as `end-of-visible-line' finds it: one line on the screen, one
+line to `donkey-visual-line-toggle', `donkey-visual-next-line' and the
+whole-line selections, as it is one line to the command
+`kill-whole-line'."
+  (save-excursion
+    (when pos (goto-char pos))
+    (end-of-line)
+    (when (and (not (eobp)) (invisible-p (point)))
+      (end-of-visible-line))
+    (point)))
 
 (defvar donkey--visual-line-hint
   "Visual line: J/K whole lines, j/k by char, V to cancel"
@@ -3792,7 +3822,11 @@ emptying it, `y' gives a kill that pastes back as a complete line, and
 Emacs's own \\[kill-region], \\[kill-ring-save] and \\[copy-to-register]
 take the same whole lines; a command that reads point and mark itself,
 such as `keep-lines', sees the highlighted region.  See
-`donkey--visual-line-extract-region'."
+`donkey--visual-line-extract-region'.
+
+A row is a line the screen shows: a folded heading is one row, its
+hidden body with it, for the count, for `J' and `K', and for what `y',
+`d' and `p' take."
   (interactive "P")
   (let ((n (prefix-numeric-value arg)))
     (cond
@@ -3815,19 +3849,19 @@ motions leave, so `J' and `K' pick it up as theirs: rows downward keep
 the mark at the anchor with point at the last row's end, rows upward
 put the mark at the anchor line's end with point at the first row's
 start -- the two layouts `donkey--visual-line-session-active-p' knows.
-N below zero counts upward; the motion is `forward-line', which stops
-at the buffer's edge the way the session's `J' and `K' do."
+N below zero counts upward; the motion is `forward-visible-line', which
+stops at the buffer's edge the way the session's `J' and `K' do, and
+counts a folded heading as the one line the screen shows."
   (donkey--ensure-non-rectangle-selection)
   (add-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor nil t)
-  (setq donkey-visual-anchor (line-beginning-position))
+  (setq donkey-visual-anchor (donkey--visible-line-start))
   (if (> n 0)
       (progn
-        (set-mark (line-beginning-position))
-        (forward-line (1- n))
-        (end-of-line))
-    (set-mark (line-end-position))
-    (forward-line (1+ n))
-    (beginning-of-line))
+        (set-mark donkey-visual-anchor)
+        (forward-visible-line (1- n))
+        (end-of-visible-line))
+    (set-mark (donkey--visible-line-end))
+    (forward-visible-line (1+ n)))
   (activate-mark)
   (message "%s" donkey--visual-line-hint))
 
@@ -3850,6 +3884,8 @@ COUNT defaults to 1, and a negative COUNT moves up instead.  The
 selection is re-derived from the anchor and wherever point lands, not
 accumulated as it goes, so a count needs no special handling: the
 branch below is the same one a run of single presses would end on.
+In a session a line is the line the screen shows, so a folded heading
+and its hidden body are one step.
 
 Inside a rectangle this moves as `j' does there, through
 `rectangle-next-line', which keeps the column, so the block grows by a
@@ -3857,16 +3893,13 @@ row.  `donkey-visual-previous-line' mirrors it."
   (interactive "p")
   (cond
    ((donkey--visual-line-session-active-p)
-    (forward-line (or count 1))
-    (if (> (line-beginning-position) donkey-visual-anchor)
+    (forward-visible-line (or count 1))
+    (if (> (donkey--visible-line-start) donkey-visual-anchor)
         (progn
           (set-mark donkey-visual-anchor)
-          (end-of-line))
-      (progn
-        (set-mark (save-excursion
-                    (goto-char donkey-visual-anchor)
-                    (line-end-position)))
-        (beginning-of-line)))
+          (end-of-visible-line))
+      (set-mark (donkey--visible-line-end donkey-visual-anchor))
+      (forward-visible-line 0))
     (activate-mark))
    ((bound-and-true-p rectangle-mark-mode)
     (rectangle-next-line (or count 1)))
@@ -3892,16 +3925,13 @@ Inside a rectangle this moves as `k' does there, through
   (interactive "p")
   (cond
    ((donkey--visual-line-session-active-p)
-    (forward-line (- (or count 1)))
-    (if (< (line-beginning-position) donkey-visual-anchor)
+    (forward-visible-line (- (or count 1)))
+    (if (< (donkey--visible-line-start) donkey-visual-anchor)
         (progn
-          (set-mark (save-excursion
-                      (goto-char donkey-visual-anchor)
-                      (line-end-position)))
-          (beginning-of-line))
-      (progn
-        (set-mark donkey-visual-anchor)
-        (end-of-line)))
+          (set-mark (donkey--visible-line-end donkey-visual-anchor))
+          (forward-visible-line 0))
+      (set-mark donkey-visual-anchor)
+      (end-of-visible-line))
     (activate-mark))
    ((bound-and-true-p rectangle-mark-mode)
     (rectangle-previous-line (or count 1)))
@@ -11102,17 +11132,19 @@ the overlays that draw them.")
 
 END extends past the final line's newline when there is one, so a
 banked line carries its own line break and deleting it removes the
-line rather than leaving a blank."
+line rather than leaving a blank.  A line is the line the screen
+shows: a folded heading comes with its hidden body, as the command
+`kill-whole-line' takes it; see `donkey--visible-line-start' and
+`donkey--visible-line-end'."
   (save-excursion
-    (let ((start (progn (goto-char (min beg end))
-                        (line-beginning-position)))
+    (let ((start (donkey--visible-line-start (min beg end)))
           (finish (progn (goto-char (max beg end))
                          ;; A region ending exactly at a line beginning
                          ;; came from the line ABOVE -- do not swallow the
                          ;; next line just because point sits at its start.
                          (when (and (bolp) (> (point) (min beg end)))
                            (forward-char -1))
-                         (min (point-max) (1+ (line-end-position))))))
+                         (min (point-max) (1+ (donkey--visible-line-end))))))
       (cons start finish))))
 
 (defun donkey--prune-banked-overlays ()
