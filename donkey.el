@@ -9300,10 +9300,11 @@ The matches need not hold the same text: where they differ, \\`i' and
 reaches the kill ring one per line.  Case is ignored as
 `replace-regexp' ignores it: when REGEXP holds no capital letter.
 Refuses matches that touch, since text typed where two meet would
-belong to both, and an empty REGEXP, which would put a place at every
-character.  A match hidden from view, as in a folded subtree, is left
-out unless `search-invisible' is t, and the opening message says how
-many were.
+belong to both, and an empty REGEXP.  A REGEXP that matches the empty
+string -- `^', `$', `\\b', `x*' -- holds an empty place wherever it
+does.  A match hidden from view, as in a folded subtree, is left out
+unless `search-invisible' is t, and the opening message says how many
+were.
 
 There is no limit on the number of matches.  Past
 `donkey--split-eager-places' of them, a keystroke writes the matches a
