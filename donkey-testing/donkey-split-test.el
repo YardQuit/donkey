@@ -1834,7 +1834,9 @@ minibuffer as text, and every cursor's line is searched."
                   ("j j l l V k k t" (1 12 24) 1)
                   ("v j j l t" (2 13 25) 25)
                   ("l l m v j j t" (4 15 27) 27)
-                  ("g g V G t" (1 12 24 37 46) 46)))
+                  ("g g V G t" (1 12 24 37 46) 46)
+                  ("v j j t" (1 12) 12)
+                  ("j j v k k t" (1 12) 1)))
     (donkey-split-test--keys "*cursors-from-selection*" donkey-split-test--five
         (car case)
       (should (equal (list (car case) (donkey-split-test--cursors)
@@ -1955,7 +1957,15 @@ minibuffer as text, and every cursor's line is searched."
     (donkey-split-test--keys "*cursors-limit-sel*" donkey-split-test--five "% "
       (should-error (execute-kbd-macro (kbd "t")) :type 'user-error)
       (should (null donkey--split-places))
-      (should (equal (buffer-string) donkey-split-test--five)))))
+      (should (equal (buffer-string) donkey-split-test--five))))
+  (let ((donkey-split-cursor-limit 1)
+        (donkey-split-cursor-limit-ask nil))
+    (dolist (end (list 24 (1+ (length donkey-split-test--five))))
+      (donkey-split-test--keys "*cursors-limit-point*" donkey-split-test--five
+          "v"
+        (goto-char end)
+        (should-error (execute-kbd-macro (kbd "t")) :type 'user-error)
+        (should (equal (list end (point)) (list end end)))))))
 
 (ert-deftest donkey-split-cursors-past-the-limit-ask-when-told-to ()
   "With asking on, the answer decides; a no makes nothing."

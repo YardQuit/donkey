@@ -900,7 +900,9 @@ real one again; with selections it wraps them, as any delimiter does.
 With lines selected, =t= puts a cursor on every one of them at once:
 =V j j j j t= gives five cursors, each at its line's start, and a =v=
 selection or an =m v= block gives each line a cursor at point's column.
-The real cursor stays on point's line. The other cursors are drawn in
+The real cursor stays on point's line, or goes to the last line
+selected where the selection stops at the start of point's line: =g h
+v j j t= is two lines and two cursors. The other cursors are drawn in
 the real cursor's shape, a box or a bar as the state changes, and
 always in the text's own color rather than the real cursor's; a
 background given to the face =donkey-split-cursor-face= is used

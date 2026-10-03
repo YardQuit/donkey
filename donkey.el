@@ -9378,9 +9378,10 @@ that many, and a negative COUNT adds above instead, as
 gets its cursor at its end.  Nothing is added where there are not
 COUNT lines below.  With a
 selection over two lines or more, the first press puts a cursor on
-every line it covers instead, the real one staying on point\\='s line:
-at point\\='s column, or at each line\\='s start for a whole-line
-selection made with \\[donkey-visual-line-toggle].  \\[donkey-split-add-cursor-above] adds above, and
+every line it covers instead, the real one staying on point\\='s line,
+or going to the nearest line the selection takes where it stops at the
+start of point\\='s: at point\\='s column, or at each line\\='s start
+for a whole-line selection made with \\[donkey-visual-line-toggle].  \\[donkey-split-add-cursor-above] adds above, and
 \\[donkey-split-drop-cursor] takes back the cursor added last.
 
 Every cursor then does what the real one does, on the keys Normal state
@@ -9404,13 +9405,21 @@ the selections, and with none ends the split."
                         0)
                        (t (current-column)))))
     (if (cdr lines)
-        (let* ((here (progn
+        (let* ((here (save-excursion
                        ;; Not the empty line after the final newline,
                        ;; which `donkey--split-cursor-spots' never takes.
                        (when (and (eobp) (bolp) (not (bobp)))
                          (forward-line -1))
-                       (line-beginning-position)))
-               (_ (move-to-column column))
+                       ;; A region that stops at the start of point's
+                       ;; line does not take that line: the real cursor
+                       ;; goes on the nearest line the region takes.
+                       (let ((line (line-beginning-position)))
+                         (if (memq line lines)
+                             line
+                           (or (car (last (seq-filter
+                                           (lambda (start) (< start line))
+                                           lines)))
+                               (car lines))))))
                (spots (delq nil
                             (mapcar (lambda (start)
                                       (unless (= start here)
@@ -9420,6 +9429,8 @@ the selections, and with none ends the split."
                                           (point))))
                                     lines))))
           (donkey--split-cursors-refuse-p (1+ (length spots)))
+          (goto-char here)
+          (move-to-column column)
           (donkey--split-cursors-start column)
           (donkey--split-cursors-add spots))
       (if (and count (< count 0))
