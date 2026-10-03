@@ -8448,6 +8448,31 @@ Read from `donkey-mark-pair-delimiters', the one table
             (eq (char-after end) closer))))
    places))
 
+(defmacro donkey--split-atomic-change (&rest body)
+  "Run BODY, a change at the places of a split, as all of it or none of it.
+
+BODY runs under `atomic-change-group', so where it fails part of the
+way -- a cursor\\='s text is read-only, say -- every change it made is
+taken back.  In a split of cursors every cursor\\='s place, selection
+and memory are noted first and, where BODY does not finish, put back
+as noted and shown again, so the key after a refused one finds the
+cursors as the refused one found them."
+  (declare (indent 0) (debug t))
+  (let ((states (make-symbol "states"))
+        (done (make-symbol "done")))
+    `(let ((,states (and (donkey--split-cursors-live-p)
+                         (mapcar #'donkey--split-cursor-state
+                                 donkey--split-places)))
+           (,done nil))
+       (unwind-protect
+           (prog1 (atomic-change-group ,@body)
+             (setq ,done t))
+         (when (and ,states (not ,done))
+           (dolist (state ,states)
+             (when (overlay-buffer (car state))
+               (apply #'donkey--split-cursor-set state)))
+           (donkey--split-cursors-settle))))))
+
 (defun donkey-split-wrap (char)
   "Wrap every place in the split in the pair CHAR names, or take it off.
 
@@ -8492,7 +8517,7 @@ its own key, as `donkey-wrap-region' is reached in Normal state."
               (close (if (characterp closer)
                          (string closer)
                        (format "%s" closer))))
-          (atomic-change-group
+          (donkey--split-atomic-change
             (save-excursion
               (dolist (place targets)
                 (let ((beg (overlay-start place))
@@ -10066,7 +10091,7 @@ one kill, as \\[donkey-split-change] puts it; characters do not."
                            donkey--split-places))
             (head buffer-undo-list)
             (ops nil))
-        (atomic-change-group
+        (donkey--split-atomic-change
           (dolist (span (reverse spans))
             (push (list (car span)
                         (buffer-substring-no-properties (car span)
@@ -10104,7 +10129,7 @@ one undo entry whatever the number of cursors, and the cursors stay."
           (message "Nothing to delete")
         (let ((head buffer-undo-list)
               (ops nil))
-          (atomic-change-group
+          (donkey--split-atomic-change
             (dolist (span (reverse spans))
               (push (list (car span)
                           (buffer-substring-no-properties (car span)
@@ -10165,7 +10190,7 @@ number of cursors."
                (n (max 0 (or count 1)))
                (head buffer-undo-list)
                (ops nil))
-          (atomic-change-group
+          (donkey--split-atomic-change
             (cl-loop
              for place in (reverse places)
              for piece in (reverse pieces)
@@ -10254,7 +10279,7 @@ cursor\\='s line recorded before and after."
   (donkey--split-holding-gc
     (let ((head buffer-undo-list)
           (ops nil))
-      (atomic-change-group
+      (donkey--split-atomic-change
         ;; Each cursor is read from its overlay, which the lines opened
         ;; above it have moved, so the order costs no bookkeeping.
         (dolist (place donkey--split-places)
@@ -10385,7 +10410,7 @@ the number of cursors."
           (message "Nothing to kill")
         (let ((head buffer-undo-list)
               (ops nil))
-          (atomic-change-group
+          (donkey--split-atomic-change
             (dolist (span (reverse spans))
               (push (list (car span)
                           (buffer-substring-no-properties (car span) (cdr span))

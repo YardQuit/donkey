@@ -1779,6 +1779,39 @@ minibuffer as text, and every cursor's line is searched."
     (should (equal (buffer-string) "ab\ncd\n"))
     (should (equal (donkey-split-test--cursors) '(1 4)))))
 
+(defun donkey-split-test--cursor-state ()
+  "Return every cursor, its selection, whether it has one, and point."
+  (list (donkey-split-test--cursors)
+        (donkey-split-test--selections)
+        (mapcar (lambda (place)
+                  (and (donkey--split-cursor-selecting-p place) t))
+                donkey--split-places)
+        (point)))
+
+(ert-deftest donkey-split-cursors-stay-as-they-were-when-an-edit-is-refused ()
+  "A verb refused part of the way leaves the text, the cursors and point."
+  (dolist (case '(("abcdef\nabcdef\n" (5 6) "l l t" "D")
+                  ("abcdef\nabcdef\n" (3 4) "l l t" "c")
+                  ("abcdef\nabcdef\n" (4 5) "l l t" "C-u 2 d")
+                  ("abcdef\nabcdef\n" (10 15) "l l t" "o")
+                  ("alpha beta\nalpha beta\n" (2 3) "t m w" "p")
+                  ("alpha beta\nalpha beta\n" (2 3) "t m w" "d")
+                  ("x alpha\nx alpha\n" (10 11) "l l t m w" "(")
+                  ("x (alpha)\nx (alpha)\n" (19 20) "l l l t m w" "(")))
+    (donkey-split-test--keys "*cursors-refused*" (car case) (nth 2 case)
+      (put-text-property (car (nth 1 case)) (cadr (nth 1 case)) 'read-only t)
+      (let ((kill-ring (list "ZZ"))
+            (before (donkey-split-test--cursor-state)))
+        (should-error (execute-kbd-macro (kbd (nth 3 case))))
+        (should (equal (list (nth 3 case) (buffer-string)
+                             (donkey-split-test--cursor-state))
+                       (list (nth 3 case) (car case) before)))
+        ;; With nothing selected, a wrap key after the refusal does nothing.
+        (unless (seq-some #'identity (nth 2 before))
+          (ignore-errors (execute-kbd-macro (kbd "(")))
+          (should (equal (list (nth 3 case) (buffer-string))
+                         (list (nth 3 case) (car case)))))))))
+
 (ert-deftest donkey-split-cursors-open-lines-and-type-on-them ()
   "`o' and `O' open a line at every cursor and type there, then come back."
   (dolist (case '(("t t o X C-g"

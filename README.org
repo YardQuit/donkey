@@ -951,7 +951,8 @@ the run, and a key the cursors answer does its job at every cursor.
 The case keys are Emacs's own, and a key you gave =upcase-region= or
 =downcase-region= in Normal state works at the cursors too. An edit at
 the cursors is one change: =u= takes it back everywhere at once, and
-an edit that fails at one cursor is taken back at all of them. =z z=
+an edit that fails at one cursor is taken back at all of them, the
+cursors and their selections left as they were. =z z=
 and =C-l= move the view and keep the cursors.
 
 Every key but the ones that type runs once at every cursor: a motion
