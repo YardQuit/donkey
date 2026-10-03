@@ -1551,45 +1551,67 @@ purpose."
        (let ((elem (org-element-at-point)))
          (and (consp elem) (eq (car elem) 'src-block)))))
 
+(defun donkey--org-src-block-lines ()
+  "Return the line numbers of the #+begin and #+end of the Org block point is in.
+
+A cons (BEGIN . END) of the line numbers of the block\\='s #+begin and
+#+end lines, when point is on one of them or on a line of the code
+between.  Nil outside a source block, and on the block\\='s own keyword
+lines before #+begin and the blank lines after #+end, which Org counts
+as part of the block."
+  (when (and (donkey--in-org-src-block-p)
+             (fboundp 'org-element-property))
+    (let* ((elem (org-element-at-point))
+           (begin (org-element-property :post-affiliated elem))
+           (end (org-element-property :end elem)))
+      (when (and begin end)
+        (let ((here (line-number-at-pos))
+              (first (line-number-at-pos begin))
+              (last (save-excursion
+                      (goto-char end)
+                      (skip-chars-backward " \t\n")
+                      (line-number-at-pos))))
+          (when (<= first here last)
+            (cons first last)))))))
+
 (defun donkey-comment-dwim ()
   "Comment/uncomment whole lines in region, or current line if no region.
 
-When inside an Org source block, delegates to the block's native
-major mode via `org-edit-special' for language-aware commenting,
-then returns to the Org buffer."
+With point in an Org source block, comments the lines of the block\\='s
+code that the line or region takes in, through the block\\='s native
+major mode via `org-edit-special' for language-aware commenting, then
+returns to the Org buffer.  A region reaching outside the block
+comments only its lines of code.  On the block\\='s #+begin or #+end line
+with nothing selected, there is no code to comment and it refuses:
+commenting either line alone breaks the block."
   (interactive)
   (cond
-   ((donkey--in-org-src-block-p)
-    (let ((has-region (use-region-p))
-          (cur-line (line-number-at-pos))
-          (reg-beg-line (when (use-region-p)
-                          (line-number-at-pos (region-beginning))))
-          (reg-end-line (when (use-region-p)
-                          (line-number-at-pos (region-end)))))
+   ((donkey--org-src-block-lines)
+    (let* ((block (donkey--org-src-block-lines))
+           (has-region (use-region-p))
+           ;; The org lines asked for, cut to the block's code.
+           (from (max (1+ (car block))
+                      (line-number-at-pos
+                       (if has-region (region-beginning) (point)))))
+           (to (min (1- (cdr block))
+                    (line-number-at-pos
+                     (if has-region (region-end) (point))))))
+      (when (> from to)
+        (user-error "Not commented: a source block's #+begin or #+end line -- select lines of its code"))
       (condition-case err
           (progn
             (org-edit-special)
             ;; `org-edit-special' stays outside the `unwind-protect':
             ;; with no edit buffer there is nothing to exit from.
             (unwind-protect
-                (if has-region
-                    (let* ((cur-line-in-edit (line-number-at-pos))
-                           (diff (- cur-line-in-edit cur-line))
-                           (last-line (line-number-at-pos (point-max)))
-                           ;; Clamp to the edit buffer's own line range; the
-                           ;; region may reach past either end of the block.
-                           (edit-beg-line (max 1 (+ reg-beg-line diff)))
-                           (edit-end-line (min last-line (+ reg-end-line diff))))
-                      (save-excursion
-                        (goto-char (point-min))
-                        (forward-line (1- edit-beg-line))
-                        (let ((beg (line-beginning-position)))
-                          (forward-line (- edit-end-line edit-beg-line))
-                          (comment-or-uncomment-region
-                           beg (line-beginning-position 2)))))
-                  (comment-or-uncomment-region
-                   (line-beginning-position)
-                   (line-beginning-position 2)))
+                ;; The edit buffer's first line is the line after #+begin.
+                (save-excursion
+                  (goto-char (point-min))
+                  (forward-line (- from (car block) 1))
+                  (let ((beg (point)))
+                    (forward-line (- to from))
+                    (comment-or-uncomment-region
+                     beg (line-beginning-position 2))))
               (org-edit-src-exit))
             (when has-region (deactivate-mark)))
         (error

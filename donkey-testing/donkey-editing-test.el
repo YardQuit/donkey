@@ -813,11 +813,25 @@ start to region end's line start (or next line if not at bol)."
           (donkey-comment-dwim))))
     (should deactivated)))
 
+;; Loaded before any test stubs `org-element-at-point', which would
+;; otherwise be an autoload cell, and so `org-element-property' -- which
+;; the comment key reads off the element -- exists.
+(require 'org-element)
+
+(defun donkey-test--src-block-here ()
+  "Stand in for `org-element-at-point': a source block spanning the buffer.
+
+Its #+begin line is the buffer's first and its #+end line the last, so
+a line between them is a line of its code."
+  (list 'src-block
+        (list :language "python" :begin 1 :post-affiliated 1
+              :end (point-max))))
+
 (ert-deftest donkey-comment-dwim-in-org-src-block-delegates-to-org-edit ()
   "Inside an org src-block, delegates to org-edit-special first."
   (let (calls)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(src-block (:language "python" :begin 1 :end 50))))
+               #'donkey-test--src-block-here)
               ((symbol-function 'org-edit-special)
                (lambda () (interactive) (push 'org-edit-special calls)))
               ((symbol-function 'comment-or-uncomment-region)
@@ -825,8 +839,9 @@ start to region end's line start (or next line if not at bol)."
               ((symbol-function 'org-edit-src-exit)
                (lambda () (interactive) (push 'org-exit calls))))
       (with-temp-buffer
-        (insert "some text\n")
+        (insert "#+begin_src python\nsome text\n#+end_src\n")
         (goto-char (point-min))
+        (forward-line 1)
         (let ((major-mode 'org-mode))
           (donkey-comment-dwim))))
     (should (memq 'org-exit calls))
@@ -841,7 +856,7 @@ Multiple lines in org src-block with active region: both org-edit-special
 and `comment-or-uncomment-region' are called."
   (let (org-edit-called comment-called)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(src-block (:language "python" :begin 1 :end 50))))
+               #'donkey-test--src-block-here)
               ((symbol-function 'org-edit-special)
                (lambda () (interactive) (setq org-edit-called t)))
               ((symbol-function 'comment-or-uncomment-region)
@@ -851,9 +866,9 @@ and `comment-or-uncomment-region' are called."
               ((symbol-function 'use-region-p)
                (lambda () t)))
       (with-temp-buffer
-        (insert "line one\nline two\nline three\n")
-        (goto-char 1)
-        (push-mark 11)
+        (insert "#+begin_src python\nline one\nline two\nline three\n#+end_src\n")
+        (goto-char 20)
+        (push-mark 30)
         (let ((major-mode 'org-mode))
           (donkey-comment-dwim))))
     (should org-edit-called)
@@ -863,7 +878,7 @@ and `comment-or-uncomment-region' are called."
   "When org-edit-src-exit succeeds with a region, mark is deactivated."
   (let (deactivated)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(src-block (:language "python" :begin 1 :end 50))))
+               #'donkey-test--src-block-here)
               ((symbol-function 'org-edit-special)
                (lambda () (interactive) nil))
               ((symbol-function 'comment-or-uncomment-region)
@@ -875,9 +890,9 @@ and `comment-or-uncomment-region' are called."
               ((symbol-function 'deactivate-mark)
                (lambda () (setq deactivated t))))
       (with-temp-buffer
-        (insert "a\nb\n")
-        (goto-char 1)
-        (push-mark 3)
+        (insert "#+begin_src python\na\nb\n#+end_src\n")
+        (goto-char 20)
+        (push-mark 22)
         (let ((major-mode 'org-mode))
           (donkey-comment-dwim))))
     (should deactivated)))
@@ -889,15 +904,16 @@ If org-edit-special raises an error, `condition-case' catches it and
 displays a message instead of propagating."
   (let (messages caught-error-p)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(src-block (:language "python" :begin 1 :end 50))))
+               #'donkey-test--src-block-here)
               ((symbol-function 'org-edit-special)
                (lambda () (interactive) (error "Mock error")))
               ((symbol-function 'message)
                (lambda (fmt &rest args)
                  (push (apply #'format fmt args) messages))))
       (with-temp-buffer
-        (insert "code\n")
+        (insert "#+begin_src python\ncode\n#+end_src\n")
         (goto-char (point-min))
+        (forward-line 1)
         (let ((major-mode 'org-mode))
           (condition-case _err
               (donkey-comment-dwim)
@@ -923,7 +939,7 @@ syntax is defined\", and without this fix the edit buffer/window was
 left open rather than being cleaned up by `org-edit-src-exit'."
   (let (org-edit-called org-exit-called)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(src-block (:language "fundamental" :begin 1 :end 50))))
+               #'donkey-test--src-block-here)
               ((symbol-function 'org-edit-special)
                (lambda () (interactive) (setq org-edit-called t)))
               ((symbol-function 'comment-or-uncomment-region)
@@ -931,8 +947,9 @@ left open rather than being cleaned up by `org-edit-src-exit'."
               ((symbol-function 'org-edit-src-exit)
                (lambda () (interactive) (setq org-exit-called t))))
       (with-temp-buffer
-        (insert "some text\n")
+        (insert "#+begin_src python\nsome text\n#+end_src\n")
         (goto-char (point-min))
+        (forward-line 1)
         (let ((major-mode 'org-mode))
           (donkey-comment-dwim))))
     (should org-edit-called)
@@ -942,7 +959,7 @@ left open rather than being cleaned up by `org-edit-src-exit'."
   "When in `org-mode' on a src-block, the org delegation path is taken."
   (let (call-order)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(src-block (:language "python" :begin 1 :end 50))))
+               #'donkey-test--src-block-here)
               ((symbol-function 'org-edit-special)
                (lambda () (interactive) (push 'org-edit call-order)))
               ((symbol-function 'comment-or-uncomment-region)
@@ -950,8 +967,9 @@ left open rather than being cleaned up by `org-edit-src-exit'."
               ((symbol-function 'org-edit-src-exit)
                (lambda () (interactive) (push 'org-exit call-order))))
       (with-temp-buffer
-        (insert "code\n")
+        (insert "#+begin_src python\ncode\n#+end_src\n")
         (goto-char (point-min))
+        (forward-line 1)
         (let ((major-mode 'org-mode))
           (donkey-comment-dwim))))
     (should (memq 'org-edit call-order))
@@ -1040,6 +1058,31 @@ ordinary non-org branch instead and is not this code path at all."
                        (concat "#+begin_src python\n"
                                "  line_a\n  # line_b\n  # line_c\n"
                                "#+end_src\n\nOutro.\n"))))))
+
+(ert-deftest donkey-comment-dwim-refuses-a-source-block-delimiter-alone ()
+  "`C' on a block's #+begin or #+end line, taking no code, refuses and changes nothing."
+  (let ((text "#+begin_src emacs-lisp\n(a)\n(b)\n#+end_src\n"))
+    (dolist (keys '("" "j j j" "V"))
+      (donkey-test-keys--harness "*donkey-C-src*" #'org-mode () text keys
+        (should-error (execute-kbd-macro (kbd "C")) :type 'user-error)
+        (should (equal (list keys (buffer-string)) (list keys text)))))))
+
+(ert-deftest donkey-comment-dwim-comments-the-code-a-selection-takes-from-a-delimiter ()
+  "`C' with point on #+begin or #+end comments the lines of code selected, and no others."
+  (let ((text "#+begin_src emacs-lisp\n(a)\n(b)\n#+end_src\n"))
+    (donkey-test-keys--harness "*donkey-C-src*" #'org-mode () text "j V K C"
+      (should (equal (buffer-string)
+                     "#+begin_src emacs-lisp\n  ;; (a)\n  (b)\n#+end_src\n")))
+    (donkey-test-keys--harness "*donkey-C-src*" #'org-mode () text "V J J J C"
+      (should (equal (buffer-string)
+                     "#+begin_src emacs-lisp\n  ;; (a)\n  ;; (b)\n#+end_src\n")))))
+
+(ert-deftest donkey-comment-dwim-comments-a-blocks-keyword-line-as-org ()
+  "`C' on a keyword line before #+begin comments it as an Org line."
+  (donkey-test-keys--harness "*donkey-C-src*" #'org-mode ()
+      "#+name: demo\n#+begin_src emacs-lisp\n(a)\n#+end_src\n" "C"
+    (should (equal (buffer-string)
+                   "# #+name: demo\n#+begin_src emacs-lisp\n(a)\n#+end_src\n"))))
 
 (ert-deftest donkey-comment-dwim-real-org-src-no-region-single-line ()
   "With no region, only the current src-block line is commented.
