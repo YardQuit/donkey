@@ -10841,8 +10841,40 @@ everything\" command and says so in its name.
 
 SPANS comes from `donkey--effective-line-spans', so it is exactly what
 was acted on, region included."
-  (dolist (span spans)
-    (donkey--unbank-span (car span) (cdr span))))
+  (donkey--delete-banked-overlays (donkey--banked-overlays-in-spans spans)))
+
+(defun donkey--banked-overlays-in-spans (spans)
+  "Return every banked overlay on the lines of SPANS.
+
+SPANS are whole lines, as `donkey--effective-line-spans' returns them."
+  (let (found)
+    (dolist (span spans found)
+      (dolist (ov (overlays-in (car span) (cdr span)))
+        (when (overlay-get ov 'donkey-banked)
+          (push ov found))))))
+
+(defun donkey--edit-banked-lines (spans edit)
+  "Run EDIT over the lines of SPANS as one edit, then spend their banks.
+
+EDIT runs under `atomic-change-group'.  Where it is refused part of the
+way -- read-only text, a signal, a quit -- every change it made is taken
+back, the banks whose lines it had deleted are banked again, and the
+selection stays.  Where it goes through, the banks on SPANS are spent."
+  (let* ((banks (donkey--banked-overlays-in-spans spans))
+         (where (mapcar (lambda (ov) (cons (overlay-start ov) (overlay-end ov)))
+                        banks))
+         done)
+    (unwind-protect
+        (progn
+          (atomic-change-group
+            (funcall edit))
+          (setq done t))
+      ;; The group has put the text back by now; a bank deleted with
+      ;; its line before the refusal evaporated, and goes back on it.
+      (unless done
+        (dolist (span where)
+          (donkey--bank-span (car span) (cdr span)))))
+    (donkey--delete-banked-overlays banks)))
 
 (defun donkey--copy-banked-selection ()
   "Copy every banked line (plus any active region's lines) as one kill."
@@ -10870,44 +10902,46 @@ still holds what is being pasted.  A paste bringing no newline of its
 own gets the taken line ending restored behind it, as
 `donkey--paste-restoring-line-ending' states for both line selections.
 
-Consumes the bank, the way `donkey-copy' and `donkey-delete' do, after
-the read-only check."
+One edit: where any line cannot be deleted -- read-only text --
+nothing changes, the bank stays and the selection with it.  Consumes
+the bank, the way `donkey-copy' and `donkey-delete' do, once the
+paste is in."
   (barf-if-buffer-read-only)
   (let* ((spans (donkey--effective-line-spans))
          (lines (donkey--span-line-count spans))
          (target (car (car spans)))
          ;; Read before the deletions below shift every position.
          (took-newline (eq (char-before (cdr (car spans))) ?\n)))
-    ;; BEFORE the deletions, as `donkey--delete-banked-selection' does:
-    ;; they shrink the buffer, and spans computed against the old text
-    ;; then point past `point-max'.
-    (donkey--consume-banked-spans spans)
-    (dolist (span (reverse spans))
-      (delete-region (car span) (cdr span)))
+    (donkey--edit-banked-lines
+     spans
+     (lambda ()
+       (dolist (span (reverse spans))
+         (delete-region (car span) (cdr span)))
+       (goto-char target)
+       (donkey--paste-restoring-line-ending (or count 1) took-newline)))
     (deactivate-mark)
-    (goto-char target)
-    (donkey--paste-restoring-line-ending (or count 1) took-newline)
     (message "Replaced %d line%s" lines (if (= 1 lines) "" "s"))))
 
 (defun donkey--delete-banked-selection ()
   "Kill every banked line (plus any active region's lines) as one kill.
 
-Deletes back to front so each span's positions stay valid while the
-earlier ones are still being removed.
-
-The read-only check runs first, before anything is consumed."
+One edit: where any line cannot be deleted -- read-only text --
+nothing changes, nothing is killed, and the bank stays and the
+selection with it.  The kill is made and the bank spent once every
+line has gone.  Deletes back to front so each span's positions stay
+valid while the earlier ones are still being removed."
   (barf-if-buffer-read-only)
   (let* ((spans (donkey--effective-line-spans))
          (lines (donkey--span-line-count spans))
          (text (mapconcat (lambda (span)
                             (buffer-substring (car span) (cdr span)))
                           spans "")))
+    (donkey--edit-banked-lines
+     spans
+     (lambda ()
+       (dolist (span (reverse spans))
+         (delete-region (car span) (cdr span)))))
     (kill-new text)
-    ;; BEFORE the deletions, not after: they shrink the buffer, and spans
-    ;; computed against the old text then point past `point-max'.
-    (donkey--consume-banked-spans spans)
-    (dolist (span (reverse spans))
-      (delete-region (car span) (cdr span)))
     (deactivate-mark)
     (message "Deleted %d line%s" lines (if (= 1 lines) "" "s"))))
 

@@ -1487,6 +1487,36 @@ for the paste path."
                     :type 'buffer-read-only))
     (should (donkey--banked-selection-p))))
 
+(ert-deftest donkey-delete-over-banks-with-read-only-text-changes-nothing ()
+  "`d' over banks that read-only text refuses deletes, kills and spends nothing."
+  (donkey-test-keys--harness "*donkey-bank-ro*" #'text-mode nil
+      "aaa\nbbb\nccc\nddd\n" "m l j j m l"
+    (put-text-property 1 3 'read-only t)
+    (should-error (execute-kbd-macro (kbd "d")) :type 'text-read-only)
+    (should (equal (buffer-string) "aaa\nbbb\nccc\nddd\n"))
+    (should-not kill-ring)
+    (should (= 2 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-paste-over-banks-with-read-only-text-changes-nothing ()
+  "`p' over banks that read-only text refuses deletes and spends nothing."
+  (donkey-test-keys--harness "*donkey-bank-ro*" #'text-mode nil
+      "aaa\nbbb\nccc\nddd\n" "m l j j m l"
+    (put-text-property 1 3 'read-only t)
+    (kill-new "PASTE\n")
+    (should-error (execute-kbd-macro (kbd "p")) :type 'text-read-only)
+    (should (equal (buffer-string) "aaa\nbbb\nccc\nddd\n"))
+    (should (= 2 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-delete-over-a-bank-and-a-read-only-region-keeps-the-region ()
+  "A refused `d' over a bank and a live region leaves both standing."
+  (donkey-test-keys--harness "*donkey-bank-ro*" #'text-mode nil
+      "aaa\nbbb\nccc\nddd\n" "j j j m l g g v l"
+    (put-text-property 1 3 'read-only t)
+    (should-error (execute-kbd-macro (kbd "d")) :type 'text-read-only)
+    (should (equal (buffer-string) "aaa\nbbb\nccc\nddd\n"))
+    (should (region-active-p))
+    (should (= 1 (donkey--banked-line-count)))))
+
 (ert-deftest donkey-bank-selection-does-not-outlive-the-buffer-being-refilled ()
   "Regression test: a bank must not survive the text it banked.
 
