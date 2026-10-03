@@ -1956,7 +1956,21 @@ graphical frame:
 :CUSTOM_ID: configuring-the-enter-key
 :END:
 
-=RET= does nothing in the modes listed in =donkey-editing-modes=:
+In Normal state =RET= tries these in order and stops at the first that
+answers:
+
+1. An =org-agenda= buffer — whatever the agenda binds =RET= to.
+2. An Org buffer — the rules below: follow the link, toggle the
+   checkbox, flip the TODO.
+3. A Markdown buffer — follow the link at point.
+4. A mode not listed in =donkey-editing-modes= — whatever the mode
+   itself binds =RET= to, asked at the moment you press it. A command
+   that would type or break a line is refused, so =RET= stays inert
+   rather than inserting a newline in a buffer you are reading.
+
+Where none of them answers, =RET= does nothing. That is every buffer
+of a mode in the list, away from what the Org and Markdown steps act
+on:
 
 #+begin_src emacs-lisp
 
@@ -1968,20 +1982,10 @@ graphical frame:
 #+end_src
 
 Derived modes are covered, so those seven names cover nearly every
-buffer you actually edit. Add a mode to make =RET= inert there; remove
-one to let =RET= fall through to whatever that mode binds.
-
-Everywhere else, =RET= tries these in order and stops at the first
-that answers:
-
-1. An =org-agenda= buffer — whatever the agenda binds =RET= to.
-2. An Org buffer — the rules below: follow the link, toggle the
-   checkbox, flip the TODO.
-3. A Markdown buffer — follow the link at point.
-4. Anything else — whatever the mode itself binds =RET= to, asked at
-   the moment you press it. A command that would type or break a line
-   is refused, so =RET= stays inert rather than inserting a newline in
-   a buffer you are reading.
+buffer you actually edit. Org and Markdown are in it for what their
+own steps leave over: =RET= on an Org checkbox still toggles it. Add a
+mode to make =RET= inert there; remove one to let =RET= reach whatever
+that mode binds.
 
 ** Rules of your own
 
