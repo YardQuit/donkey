@@ -1810,6 +1810,36 @@ minibuffer as text, and every cursor's line is searched."
       (should-not (region-active-p))
       (should (equal (buffer-string) donkey-split-test--five)))))
 
+(ert-deftest donkey-split-t-passes-over-lines-hidden-in-a-fold ()
+  "A cursor added below, above or over a selection skips a line a fold hides."
+  (dolist (case '((org-mode org-overview "t" (1 19))
+                  (org-mode org-overview "j T" (1 19))
+                  (org-mode org-overview "C-u 2 t" (1 19 30))
+                  (org-mode org-overview "V j j t" (1 19 30))
+                  (outline-mode outline-hide-body "t" (1 19))
+                  (outline-mode outline-hide-body "j t" (19 30))))
+    (donkey-test-keys--harness "*cursors-fold*" (car case) ()
+        "* A\nbody a\nmore a\n* B\nbody b\n* C\n" ""
+      (funcall (nth 1 case))
+      (execute-kbd-macro (kbd (nth 2 case)))
+      (should (equal (list (car case) (nth 2 case) (donkey-split-test--cursors))
+                     (list (car case) (nth 2 case) (nth 3 case))))
+      (execute-kbd-macro (kbd "i Z C-g"))
+      (should (equal (list (car case) (nth 2 case)
+                           (how-many "^Zbody\\|^Zmore" (point-min) (point-max)))
+                     (list (car case) (nth 2 case) 0))))))
+
+(ert-deftest donkey-split-t-stops-where-only-folded-lines-are-left ()
+  "No cursor is added below a heading whose fold reaches the buffer's end."
+  (donkey-test-keys--harness "*cursors-fold-end*" #'org-mode ()
+      "* A\nbody a\n* B\nbody b" ""
+    (org-overview)
+    (goto-char (point-max))
+    (beginning-of-line)
+    (should (equal (should-error (execute-kbd-macro (kbd "t"))
+                                 :type 'user-error)
+                   '(user-error "No line below")))))
+
 (ert-deftest donkey-split-t-on-a-selection-within-one-line-adds-below ()
   "A selection inside one line is let go of, and a cursor is added below."
   (donkey-split-test--keys "*cursors-one-line-sel*" donkey-split-test--five

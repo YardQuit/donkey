@@ -9118,20 +9118,32 @@ sorted where a walk finds one out of place."
                             donkey--split-places)
                     #'car-less-than-car)))))
 
+(defun donkey--split-shown-line (above)
+  "Move to the start of the next line on the screen below point\\='s, or ABOVE it.
+
+Lines hidden inside a fold are passed over, as \\[next-line] passes over
+them; see `forward-visible-line'.  Return nil where there is no such
+line, the empty line after a buffer\\='s final newline included."
+  (let ((from (line-beginning-position)))
+    (forward-visible-line (if above -1 1))
+    (if above
+        (< (point) from)
+      (and (> (point) from) (not (eobp))))))
+
 (defun donkey--split-cursor-spots (from column n &optional above)
   "Return the N positions at COLUMN on the lines below FROM, nearest first.
 
 On the lines ABOVE it where ABOVE is non-nil.  A line shorter than
-COLUMN gives its end.  Signals a `user-error', changing nothing, where
-there are not N lines that way; the empty line after a buffer\\='s final
-newline is not one."
+COLUMN gives its end.  A line hidden in a fold is not one; see
+`donkey--split-shown-line'.  Signals a `user-error', changing nothing,
+where there are not N lines that way; the empty line after a
+buffer\\='s final newline is not one."
   (save-excursion
     (goto-char from)
     (let ((spots nil)
           (way (if above "above" "below")))
       (dotimes (_ n)
-        (unless (and (zerop (forward-line (if above -1 1)))
-                     (not (and (not above) (eobp) (bolp))))
+        (unless (donkey--split-shown-line above)
           (user-error (if spots
                           (format "Only %d line%s %s" (length spots)
                                   (if (cdr spots) "s" "") way)
@@ -9309,7 +9321,8 @@ many? " n))))))
 A region ending at a line\\='s start does not take that line, as
 `donkey--whole-line-span' reads it, except in a whole-line selection
 made with `donkey-visual-line-toggle', which takes every line it
-touches.  Nil without an active region."
+touches.  Lines hidden in a fold are left out; see
+`donkey--split-shown-line'.  Nil without an active region."
   (when (region-active-p)
     (let* ((beg (region-beginning))
            (end (region-end))
@@ -9326,8 +9339,7 @@ touches.  Nil without an active region."
         (while (and (< (point) (cdr span))
                     (not (and (eobp) (bolp) (> (point) (car span)))))
           (push (point) starts)
-          (forward-line 1)
-          (when (and (eobp) (not (bolp)))
+          (unless (donkey--split-shown-line nil)
             (goto-char (point-max)))))
       (nreverse starts))))
 
