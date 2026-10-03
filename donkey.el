@@ -5247,6 +5247,9 @@ A \`.' is recorded as the command it repeats, which
 It also names the nameless press -- see the comment below -- which is
 the one thing here that is not about the history.
 
+A command from another terminal is not the run's, and is left alone:
+it neither records a step nor is renamed.
+
 Nothing here signals, which is what a `pre-command-hook' function has
 to be able to say: one that errors is removed for the session and
 takes the run's history with it.  Nothing here needs a guard to say
@@ -5255,21 +5258,22 @@ membership tests are over constants, `push' allocates, and `mark' is
 called with the argument that makes it answer nil where it would
 otherwise refuse.  Its sibling on `post-command-hook' does its work
 through overlays and is guarded instead."
-  ;; Name the nameless press: a sequence that resolved to nothing
-  ;; arrives with `this-command' nil, and `undefined' -- a family
-  ;; member -- is what its other spelling, a single unbound key, runs.
-  (when (null this-command)
-    (setq this-command 'undefined))
-  (let ((command (donkey--mark-run-press-command)))
-    (when (and (memq command donkey--mark-run-commands)
-               (not (memq command donkey--mark-run-inert-commands))
-               (not (memq command '(donkey-mark-run-step-back
-                                    donkey-mark-run-step-forward))))
-      (push (list (point) (mark t) (and mark-active t))
-            donkey--mark-run-history)
-      ;; A step off the path is a new branch, and there is nothing to
-      ;; redo onto it -- the bargain every undo system strikes.
-      (setq donkey--mark-run-redo nil))))
+  (when (donkey--mark-run-answers-p)
+    ;; Name the nameless press: a sequence that resolved to nothing
+    ;; arrives with `this-command' nil, and `undefined' -- a family
+    ;; member -- is what its other spelling, a single unbound key, runs.
+    (when (null this-command)
+      (setq this-command 'undefined))
+    (let ((command (donkey--mark-run-press-command)))
+      (when (and (memq command donkey--mark-run-commands)
+                 (not (memq command donkey--mark-run-inert-commands))
+                 (not (memq command '(donkey-mark-run-step-back
+                                      donkey-mark-run-step-forward))))
+        (push (list (point) (mark t) (and mark-active t))
+              donkey--mark-run-history)
+        ;; A step off the path is a new branch, and there is nothing to
+        ;; redo onto it -- the bargain every undo system strikes.
+        (setq donkey--mark-run-redo nil)))))
 
 (defun donkey-mark-run-step-back ()
   "Put the run back where the last press found it.
@@ -5325,6 +5329,9 @@ shape before the first recorded press comes back as it was."
         (set-mark mk)
       (deactivate-mark))))
 
+(defvar donkey--mark-run-terminal nil
+  "The terminal the armed mark run's map lives on, or nil.")
+
 (defun donkey--mark-run-mode-post-command ()
   "Repaint the mark run reminder, or end a mode that outlived its map.
 
@@ -5335,6 +5342,10 @@ The reminder is repainted after the mode's family commands and after
 nothing else, and not while a count is being typed: count entry is
 told apart by `prefix-arg', since the keys of a count arrive under the
 name of the family member they followed.
+
+A command from another terminal is not the run's: it repaints nothing
+and ends nothing.  A run whose terminal has gone is ended here, for a
+terminal Emacs deleted without running `delete-terminal-functions'.
 
 The exit is the transient map's backstop, for a command that armed
 the map while it was already running.  A command that is neither a
@@ -5352,6 +5363,10 @@ command.  Its sibling on `pre-command-hook' needs no guard, and says
 why."
   (condition-case nil
       (cond
+       ((donkey--mark-run-terminal-gone-p)
+        (donkey--mark-run-forget-terminal donkey--mark-run-terminal))
+       ((not (donkey--mark-run-answers-p))
+        nil)
        ((and donkey--mark-run-armed-in-macro (not executing-kbd-macro))
         (donkey--mark-run-exit))
        ((memq this-command donkey--mark-run-commands)
@@ -5364,9 +5379,6 @@ why."
        (t
         (donkey--mark-run-exit)))
     (error nil)))
-
-(defvar donkey--mark-run-terminal nil
-  "The terminal the armed mark run's map lives on, or nil.")
 
 (defun donkey--mark-run-mode-keep-p ()
   "Return non-nil while mark run mode should stay active.
@@ -5472,6 +5484,28 @@ with nothing to act on."
         (when (eq dying (car donkey--mark-run-pending))
           (setq donkey--mark-run-pending nil))
         (when (eq dying (car donkey--mark-run-suspended))
+          (setq donkey--mark-run-suspended nil)))
+    (error nil)))
+
+(defun donkey--mark-run-terminal-gone-p ()
+  "Return non-nil when the terminal the run was armed on has been deleted."
+  (let ((terminal donkey--mark-run-terminal))
+    (and (eq (type-of terminal) 'terminal)
+         (not (terminal-live-p terminal)))))
+
+(defun donkey--mark-run-forget-terminal (terminal)
+  "End the mark run armed on TERMINAL, and forget one kept for it.
+
+On `delete-terminal-functions' while `donkey-mode' is on, so a client
+that goes takes its run with it; `donkey--mark-run-mode-post-command'
+calls it as well, for a terminal deleted without that hook."
+  (condition-case nil
+      (progn
+        (when (eq terminal donkey--mark-run-terminal)
+          (donkey--mark-run-exit))
+        (when (eq terminal (nth 1 donkey--mark-run-pending))
+          (setq donkey--mark-run-pending nil))
+        (when (eq terminal (nth 1 donkey--mark-run-suspended))
           (setq donkey--mark-run-suspended nil)))
     (error nil)))
 
@@ -15290,6 +15324,7 @@ actually being on, because those mode hooks also fire on the way off."
     (window-buffer-change-functions . donkey--mark-run-resume-when-shown)
     (window-selection-change-functions . donkey--mark-run-resume-when-shown)
     (kill-buffer-hook . donkey--mark-run-forget-killed-buffer)
+    (delete-terminal-functions . donkey--mark-run-forget-terminal)
     ,@donkey--state-hooks)
   "Every (HOOK . FUNCTION) `donkey-mode' adds to Emacs\\='s own hooks.
 

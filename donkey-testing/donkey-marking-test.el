@@ -5001,6 +5001,48 @@ the returning frame brings; ending on it would undo the resume."
       (execute-kbd-macro (kbd "C-e")))
     (should donkey--mark-run-exit-function)))
 
+(ert-deftest donkey-mark-run-a-press-on-another-terminal-is-no-step-of-it ()
+  "A press on another terminal records no step and repaints no reminder."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (let ((history donkey--mark-run-history)
+          said)
+      (cl-letf* ((orig (symbol-function 'message))
+                 ((symbol-function 'message)
+                  (lambda (fmt &rest args)
+                    (when fmt (setq said (apply #'format fmt args)))
+                    (apply orig fmt args))))
+        (let ((donkey--mark-run-terminal 'elsewhere))
+          (execute-kbd-macro (kbd "m w m w"))))
+      (should (equal said "Word marked"))
+      (should (equal donkey--mark-run-history history))
+      (should donkey--mark-run-exit-function))))
+
+(ert-deftest donkey-mark-run-ends-with-its-terminal ()
+  "Deleting the run's terminal ends the run and forgets one kept for it."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (should (memq #'donkey--mark-run-forget-terminal
+                  (default-value 'delete-terminal-functions)))
+    (donkey--mark-run-forget-terminal (frame-terminal))
+    (should-not donkey--mark-run-exit-function)
+    (should-not donkey--mark-run-pending))
+  (let ((other (get-buffer-create "*donkey-other-buffer*")))
+    (unwind-protect
+        (donkey-mark-test--keys "for text that is not saved"
+            "w w l M w C-x b *donkey-other-buffer* RET"
+          (should donkey--mark-run-suspended)
+          (donkey--mark-run-forget-terminal (frame-terminal))
+          (should-not donkey--mark-run-suspended))
+      (kill-buffer other))))
+
+(ert-deftest donkey-mark-run-on-a-terminal-deleted-unseen-ends-after-a-command ()
+  "A run whose terminal went without `delete-terminal-functions' ends after a command."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (should donkey--mark-run-exit-function)
+    (cl-letf (((symbol-function 'terminal-live-p) (lambda (_) nil)))
+      (donkey--mark-run-mode-post-command))
+    (should-not donkey--mark-run-exit-function)
+    (should-not donkey--mark-run-pending)))
+
 (ert-deftest donkey-mark-run-keys-answer-only-on-its-own-terminal ()
   "Looked up from another terminal, a run\'s key is the ordinary one."
   (donkey-mark-test--keys "for text that is not saved" "w w l M w"
