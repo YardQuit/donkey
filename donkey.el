@@ -9553,9 +9553,12 @@ The real cursor is never dropped: with only it left, the press beeps,
 and \\`C-g' ends the split."
   (interactive)
   (donkey--split-live-p)
+  ;; A cursor merged or dropped is a deleted overlay, so standing is
+  ;; asked of the overlay: a walk of the places for each would make a
+  ;; press cost the cursors squared.
   (setq donkey--split-cursor-order
         (seq-filter (lambda (place)
-                      (and (memq place donkey--split-places)
+                      (and (overlay-buffer place)
                            (not (eq place donkey--split-primary))))
                     donkey--split-cursor-order))
   (let ((place (or (car donkey--split-cursor-order)
