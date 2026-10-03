@@ -3254,6 +3254,33 @@ real `emacs -nw' session."
 ;;; Deferred Cleanup Timer
 ;;; ---------------------------------------------------------------------------
 
+(ert-deftest donkey-the-overlay-cleanup-walks-what-the-windows-show ()
+  "A shown buffer is cleared where its windows show it, and nowhere else.
+
+The window\\='s end is fixed by a stub, since a batch Emacs never draws
+and reports every window as showing its whole buffer."
+  (let ((buffer (get-buffer-create "*donkey-overlay-span*")))
+    (unwind-protect
+        (with-current-buffer buffer
+          (switch-to-buffer buffer)
+          (dotimes (_ 50) (insert "(alpha)\n"))
+          (goto-char (point-min))
+          (let ((near (make-overlay 1 2))
+                (far (make-overlay (- (point-max) 3) (- (point-max) 2))))
+            (overlay-put near 'face 'show-paren-match)
+            (overlay-put far 'face 'show-paren-match)
+            (cl-letf (((symbol-function 'window-end) (lambda (&rest _) 40)))
+              (should (= (donkey--clear-transient-overlays) 1)))
+            (should-not (overlay-start near))
+            (should (overlay-start far))
+            ;; and a buffer no window shows is walked whole
+            (switch-to-buffer (other-buffer buffer t))
+            (set-buffer buffer)
+            (should-not (get-buffer-window-list nil nil t))
+            (should (= (donkey--clear-transient-overlays) 1))
+            (should-not (overlay-start far))))
+      (kill-buffer buffer))))
+
 (ert-deftest donkey-schedule-overlay-cleanup-creates-timer ()
   "Creates a deferred timer."
   (donkey--with-test-buffer

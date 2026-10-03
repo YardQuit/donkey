@@ -14720,7 +14720,10 @@ Reset on next command to prevent re-entry race conditions.")
 (defun donkey--clear-transient-overlays ()
   "Clear transient overlays left by highlighting packages.
 
-Operates on the current buffer only."
+Operates on the current buffer only, and there on what its windows
+show of it: a highlight is drawn where it can be seen and point always
+can, so the parts out of view are left to the package that drew them,
+which moves its own.  A buffer no window shows is walked whole."
   (let ((cleared 0)
         (transient-faces
          '(sp-show-pair-match-face
@@ -14728,8 +14731,11 @@ Operates on the current buffer only."
            show-paren-match
            show-paren-mismatch
            hl-paren-face))
-        (beg (point-min))
-        (end (point-max)))
+        (spans (or (mapcar (lambda (window)
+                             (cons (window-start window)
+                                   (window-end window t)))
+                           (get-buffer-window-list nil nil t))
+                   (list (cons (point-min) (point-max))))))
     ;; Strategy 1: Direct variable access
     (when (boundp 'sp-show-pair-overlay-list)
       (dolist (ov sp-show-pair-overlay-list)
@@ -14752,33 +14758,35 @@ Operates on the current buffer only."
           (delete-overlay ov)
           (setq cleared (1+ cleared)))))
     ;; Strategies 2 (transient faces) and 3 (smartparens keymap
-    ;; overlays) share one scan.  An overlay Smartparens still tracks
-    ;; goes through its own `sp--remove-overlay'.
-    (dolist (ov (overlays-in beg end))
-      (when (overlay-start ov)
-        (let ((face (overlay-get ov 'face))
-              (km (overlay-get ov 'keymap)))
-          (cond
-           ((or (overlay-get ov 'donkey-cleanup)
-                (and face
-                     (cond
-                      ((symbolp face)
-                       (memq face transient-faces))
-                      ((consp face)
-                       (cl-some (lambda (f) (memq f transient-faces)) face)))))
-            (delete-overlay ov)
-            (setq cleared (1+ cleared)))
-           ((and km
-                 (or (and (boundp 'sp-pair-overlay-keymap)
-                          (eq km sp-pair-overlay-keymap))
-                     (and (boundp 'sp-overlay-keymap)
-                          (eq km sp-overlay-keymap))))
-            (if (and (boundp 'sp-pair-overlay-list)
-                     (fboundp 'sp--remove-overlay)
-                     (memq ov sp-pair-overlay-list))
-                (sp--remove-overlay ov)
-              (delete-overlay ov))
-            (setq cleared (1+ cleared)))))))
+    ;; overlays) share one scan of each span.  An overlay Smartparens
+    ;; still tracks goes through its own `sp--remove-overlay'.  An
+    ;; overlay two windows both show is met twice and gone the second
+    ;; time, which `overlay-start' answers.
+    (dolist (span spans)
+      (dolist (ov (overlays-in (car span) (cdr span)))
+        (when (overlay-start ov)
+          (let ((face (overlay-get ov 'face))
+                (km (overlay-get ov 'keymap)))
+            (cond
+             ((and face
+                   (cond
+                    ((symbolp face)
+                     (memq face transient-faces))
+                    ((consp face)
+                     (cl-some (lambda (f) (memq f transient-faces)) face))))
+              (delete-overlay ov)
+              (setq cleared (1+ cleared)))
+             ((and km
+                   (or (and (boundp 'sp-pair-overlay-keymap)
+                            (eq km sp-pair-overlay-keymap))
+                       (and (boundp 'sp-overlay-keymap)
+                            (eq km sp-overlay-keymap))))
+              (if (and (boundp 'sp-pair-overlay-list)
+                       (fboundp 'sp--remove-overlay)
+                       (memq ov sp-pair-overlay-list))
+                  (sp--remove-overlay ov)
+                (delete-overlay ov))
+              (setq cleared (1+ cleared))))))))
     cleared))
 
 (defun donkey--schedule-overlay-cleanup ()
