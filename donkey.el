@@ -6699,6 +6699,12 @@ places by `donkey--split-copy-edges'.")
 (defvar-local donkey--split-strayed nil
   "Non-nil where the running command changed text away from the places.")
 
+(defvar-local donkey--split-lost nil
+  "Non-nil where the running command made a change the writing cannot record.
+
+The writing\\='s undo record is then left as Emacs made it; see
+`donkey--split-writing-entry'.")
+
 (defvar donkey--split-copying nil
   "Bound non-nil while Split mode makes its own copies, which are not noted.")
 
@@ -7342,7 +7348,8 @@ place is copied whatever the buffer\\='s narrowing, or none is."
                         donkey--split-text (donkey--split-place-text here)))
                 (if (donkey--split-copy here edge-edits)
                     (progn
-                      (setq donkey--split-changes nil)
+                      (setq donkey--split-changes nil
+                            donkey--split-lost nil)
                       (donkey--split-draw-cursors)
                       (donkey--repaint-hint (donkey--split-hint)))
                   (donkey--split-dissolve t)
@@ -8034,7 +8041,8 @@ stays as Emacs made it, without the copies."
             donkey--split-edit-base nil
             donkey--split-edit-initial nil
             donkey--split-edge-texts nil
-            donkey--split-changes nil))))
+            donkey--split-changes nil
+            donkey--split-lost nil))))
 
 (defun donkey--split-open-record ()
   "Open the undo record of a writing over the places.
@@ -8108,10 +8116,11 @@ before.  Does nothing where no writing is open."
 A list (POSITIONS FROM TO) over every live place and every change
 the ending command made away from the places, in buffer order; nil
 where none of them changed anything, and `lost' where a change cannot
-be told apart from a place.  With NO-FLUSH non-nil each place is
+be told apart from a place or could not be weighed at all; see
+`donkey--split-lost'.  With NO-FLUSH non-nil each place is
 read for what it holds, since the places were not all written; so it
 is where the written place holds what was never copied."
-  (let ((strays (donkey--split-stray-changes)))
+  (let ((strays (if donkey--split-lost 'lost (donkey--split-stray-changes))))
     (if (eq strays 'lost)
         'lost
       (let ((initial donkey--split-edit-initial)
@@ -8337,7 +8346,8 @@ package\\='s change hooks with it."
           (setq donkey--split-pending
                 (list beg end (overlay-start place) (overlay-end place)
                       (buffer-substring-no-properties beg end))))
-      (error (setq donkey--split-strayed t)))))
+      (error (setq donkey--split-strayed t
+                   donkey--split-lost t)))))
 
 (defun donkey--split-noted-change (beg end length)
   "Weigh the change noted as it began, now that it ended at BEG, END, LENGTH.
@@ -8347,19 +8357,31 @@ that left the text as it was -- a text property set -- is no change.
 A change inside the written place is left to the copying after the
 command; a deletion reaching just past the place\\='s start or end is
 kept in `donkey--split-edge-edits'; anything else away from the places
-sets `donkey--split-strayed'.  Never signals, for the reason
+sets `donkey--split-strayed'.  What the change replaced is the part of
+the text noted as it began that BEG and LENGTH name, which is less
+than all of it where the change ended over less than it began over, as
+a case command does.  Never signals, for the reason
 `donkey--split-note-change' gives."
   (let ((pending donkey--split-pending))
     (setq donkey--split-pending nil)
     (when pending
       (condition-case nil
           (cl-destructuring-bind (old-beg old-end start finish text) pending
+            (let ((offset (- beg old-beg)))
+              (unless (and (<= 0 offset) (<= (+ offset length) (length text)))
+                (error "A change ended outside where it began"))
+              (setq text (substring text offset (+ offset length))
+                    old-beg beg
+                    old-end (+ beg length)))
             (unless (and (= length (- end beg))
                          (equal text (buffer-substring-no-properties beg end)))
               (push (list beg end length text) donkey--split-changes)
-              ;; What was inserted went in at OLD-BEG.
+              ;; What was put in has to be inside the written place as it
+              ;; now stands: text replaced just past an edge stays
+              ;; outside it.
               (when (and (> end beg)
-                         (not (<= start old-beg finish)))
+                         (not (and (<= (overlay-start donkey--split-primary) beg)
+                                   (<= end (overlay-end donkey--split-primary)))))
                 (setq donkey--split-strayed t))
               (when (< old-beg old-end)
                 (when (< old-beg start)
@@ -8381,7 +8403,8 @@ sets `donkey--split-strayed'.  Never signals, for the reason
                          (eq (char-before end) ?\n)
                          (= end (overlay-end donkey--split-primary)))
                 (donkey--split-take-blanks))))
-        (error (setq donkey--split-strayed t))))))
+        (error (setq donkey--split-strayed t
+                     donkey--split-lost t))))))
 
 (defun donkey--split-take-blanks ()
   "Take the blanks just after each place into it, noted for undo.
@@ -8465,6 +8488,7 @@ the current one, so both are cleared."
               donkey--split-agree nil
               donkey--split-edge-edits nil
               donkey--split-strayed nil
+              donkey--split-lost nil
               donkey--split-pending nil
               donkey--split-tick nil
               donkey--split-target nil

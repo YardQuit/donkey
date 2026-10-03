@@ -902,6 +902,70 @@ touch the text it goes around, so it is not asked."
       (should (null donkey--split-phase))
       (should (equal (buffer-string) "a foo b\nc foo d\nZ")))))
 
+(ert-deftest donkey-split-undo-takes-back-a-case-change-past-an-edge ()
+  "A case command reaching past a place ends the split, and one `u' takes it back."
+  (dolist (case '(("M-u" "a foo BAR\nc foo baz\n")
+                  ("M-c" "a foo Bar\nc foo baz\n")
+                  ("M-l" "a foo bar\nc foo baz\n")))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-case-edge*"
+          (if (equal (car case) "M-l") "a foo BAR\nc foo baz\n" "a foo bar\nc foo baz\n")
+          (concat "v G f a " (car case) " C-g")
+        (should (equal (list (car case) (buffer-string)) case))
+        (should (null donkey--split-phase))
+        (execute-kbd-macro (kbd "u"))
+        (should (equal (list (car case) (buffer-string))
+                       (list (car case)
+                             (if (equal (car case) "M-l")
+                                 "a foo BAR\nc foo baz\n"
+                               "a foo bar\nc foo baz\n"))))))))
+
+(ert-deftest donkey-split-a-case-change-past-an-edge-leaves-the-others-alone ()
+  "Upcasing the text after a place changes nothing at the other places."
+  (donkey-split-test--on "foo"
+    (donkey-test-keys--harness "*split-case-region*" #'text-mode
+        ((disabled-command-function nil))
+        "a foo bar\nc foo bazooka\n" "v G f a M-@ C-x C-u C-g"
+      (should (equal (buffer-string) "a foo BAR\nc foo bazooka\n"))
+      (should (null donkey--split-phase)))))
+
+(ert-deftest donkey-split-a-change-reaching-past-an-edge-is-no-edge-edit ()
+  "A case change from inside a place to past its end ends the split, copying nothing."
+  (donkey-split-test--on "foo"
+    (donkey-test-keys--harness "*split-case-across*" #'text-mode
+        ((disabled-command-function nil))
+        "a foo bar\nc foo bar\n" "v G f a C-b C-b M-2 M-@ C-x C-u C-g"
+      (should (equal (buffer-string) "a fOO BAR\nc foo bar\n"))
+      (should (null donkey--split-phase))
+      (execute-kbd-macro (kbd "u"))
+      (should (equal (buffer-string) "a foo bar\nc foo bar\n")))))
+
+(defun donkey-split-test--misreported-change ()
+  "Change the buffer's last character, telling the change hooks wrong bounds."
+  (interactive)
+  (let ((end (point-max)))
+    (run-hook-with-args 'before-change-functions (- end 6) end)
+    (let ((inhibit-modification-hooks t))
+      (save-excursion
+        (goto-char (1- end))
+        (delete-char -1)
+        (insert "Z")))
+    (run-hook-with-args 'after-change-functions (- end 9) (- end 8) 1)))
+
+(ert-deftest donkey-split-leaves-undo-to-emacs-for-a-change-it-cannot-weigh ()
+  "A change whose bounds do not fit together is left recorded as Emacs made it."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-misreported*" "a foo b\nc foo dd\n" "v G f a X"
+      (let ((overriding-local-map (let ((map (make-sparse-keymap)))
+                                    (define-key map [f7]
+                                      #'donkey-split-test--misreported-change)
+                                    map)))
+        (execute-kbd-macro [f7]))
+      (should (null donkey--split-phase))
+      (should (equal (buffer-string) "a fooX b\nc fooX dZ\n"))
+      (execute-kbd-macro (kbd "C-g u"))
+      (should (equal (buffer-string) "a fooX b\nc fooX dd\n")))))
+
 (ert-deftest donkey-split-survives-an-undo-while-writing ()
   "An undo while writing puts every place back together, and writing goes on."
   (donkey-split-test--on "foo"
