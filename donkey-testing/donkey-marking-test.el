@@ -3571,6 +3571,53 @@ regardless of the count, so a count of 2 over \"foo-a bar-b\" marked only
       (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                      "(up at (the hospital. He was) bemoaning)")))))
 
+(ert-deftest donkey-a-pair-level-skips-a-sibling-pair-beside-it ()
+  "One level out from a pair is its parent, even with a sibling right before it.
+
+Keys from inside the second of two touching pairs: a count, a repeat
+and `m a', and a sibling with no parent, which has no level beyond."
+  (dolist (case '(("(outer (x)(a))" "a)" "C-u 2 m i (" "outer (x)(a)")
+                  ("\\sqrt{\\frac{a}{b}}" "b}" "m i { m i" "\\frac{a}{b}")
+                  ("((a 1)(b 2))" "b" "C-u 2 m i (" "(a 1)(b 2)")
+                  ("(outer (x)(a))" "a)" "m a ( m a" "(outer (x)(a))")))
+    (pcase-let ((`(,text ,at ,keys ,want) case))
+      (donkey-test-keys--harness "*donkey-pair-level*" #'text-mode ()
+          text ""
+        (search-forward at)
+        (goto-char (match-beginning 0))
+        (execute-kbd-macro (kbd keys))
+        (should (equal (list text keys
+                             (buffer-substring-no-properties
+                              (region-beginning) (region-end)))
+                       (list text keys want))))))
+  (let ((text-quoting-style 'grave))
+    (donkey-test-keys--harness "*donkey-pair-level*" #'text-mode ()
+        "see [text][ref] here" ""
+      (search-forward "ref")
+      (goto-char (match-beginning 0))
+      (should (equal (cadr (should-error (execute-kbd-macro (kbd "m i [ m i"))
+                                         :type 'user-error))
+                     "No enclosing `[' beyond that level"))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "ref")))))
+
+(ert-deftest donkey-a-pair-level-of-letters-does-not-fold-case ()
+  "The level beyond the first matches a letter delimiter exactly."
+  (let ((transient-mark-mode t)
+        (case-fold-search t)
+        (donkey-mark-pair-delimiters
+         (append donkey-mark-pair-delimiters (list (cons ?B ?E)))))
+    (with-temp-buffer
+      (insert "B b x B mid E y E")
+      (goto-char (point-min))
+      (search-forward "mi")
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?B)))
+        (donkey-mark-inner 2))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     " b x B mid E y ")))))
+
 (ert-deftest donkey-mark-pair-count-on-a-symmetric-delimiter-counts-outward ()
   "A count on a symmetric delimiter counts OCCURRENCES outward.
 

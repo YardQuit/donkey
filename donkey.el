@@ -4536,11 +4536,13 @@ count does, the same one the nesting-aware path signals."
 ON-OPENER is passed through to `donkey--mark-pair-positions' for the
 first level; see there for what it means.  LEVELS of 1 is the pair that
 function finds on its own.
-Each level beyond that steps just outside the pair already found and
-searches again, so from inside the inner parentheses of
+Each level beyond that scans outward from the opener of the pair
+already found, so from inside the inner parentheses of
 \"(up at (the hospital) bemoaning)\" a LEVELS of 2 gives the outer pair.
 The forward and backward scans count depth, so the pair already stepped
-out of is skipped rather than re-matched.
+out of is skipped rather than re-matched, and so is a sibling pair
+right beside it: from inside the second braces of \"{\\frac{a}{b}}\"
+a LEVELS of 2 gives the outer braces, not the first pair.
 
 A symmetric delimiter has no depth to count, so it goes through
 `donkey--mark-pair-widen-symmetric' instead, which counts occurrences
@@ -4558,13 +4560,18 @@ Signals a `user-error' when there is no enclosing pair left."
       (when (<= (car span) (point-min))
         (user-error "No enclosing `%c' beyond that level" open-char))
       (setq span (save-excursion
-                   (goto-char (1- (car span)))
+                   (goto-char (car span))
                    ;; Running out of enclosing pairs is ordinary -- a bare
                    ;; \\[universal-argument] asks for four levels -- so
                    ;; it is a `user-error' naming the level, not the
                    ;; scan's own message.
                    (condition-case nil
-                       (donkey--mark-pair-positions open-char close-char nil)
+                       (let* ((case-fold-search nil)
+                              (start (donkey--mark-pair-scan-backward
+                                      open-char close-char)))
+                         (goto-char (1+ start))
+                         (cons start (donkey--mark-pair-scan-forward
+                                      open-char close-char)))
                      (error
                       (user-error "No enclosing `%c' beyond that level"
                                   open-char))))))
