@@ -6705,6 +6705,67 @@ places by `donkey--split-copy-edges'.")
 The writing\\='s undo record is then left as Emacs made it; see
 `donkey--split-writing-entry'.")
 
+(defvar-local donkey--split-seen-tick nil
+  "`buffer-chars-modified-tick' as the change hooks last saw a change end.
+
+Set as a writing opens over the places, after every change the hooks
+see and after every command while it lasts, with
+`donkey--split-seen-size' and `donkey--split-seen-undo'; see
+`donkey--split-changed-unseen-p'.")
+
+(defvar-local donkey--split-seen-size nil
+  "`buffer-size' as `donkey--split-seen-tick' was last set.")
+
+(defvar-local donkey--split-seen-undo nil
+  "The newest entry of `buffer-undo-list' as the hooks last saw it.
+
+The list\\='s first cons holding an entry other than a boundary, as
+`donkey--split-undo-top' finds it.")
+
+(defvar-local donkey--split-unseen nil
+  "Non-nil where a change began with the text changed since the hooks last looked.")
+
+(defun donkey--split-undo-top ()
+  "Return the first cons of `buffer-undo-list' holding a change, or nil.
+
+Boundaries are passed over, since the command loop pushes them between
+commands.  Nil also where undo is off."
+  (let ((tail (and (listp buffer-undo-list) buffer-undo-list)))
+    (while (and (consp tail) (null (car tail)))
+      (setq tail (cdr tail)))
+    (and (consp tail) tail)))
+
+(defun donkey--split-note-seen (&optional undo)
+  "Note the buffer as the split\\='s hooks see it now.
+
+Sets `donkey--split-seen-tick' and `donkey--split-seen-size', and with
+UNDO non-nil `donkey--split-seen-undo' too."
+  (setq donkey--split-seen-tick (buffer-chars-modified-tick)
+        donkey--split-seen-size (buffer-size))
+  (when undo
+    (setq donkey--split-seen-undo (donkey--split-undo-top))))
+
+(defun donkey--split-changed-unseen-p ()
+  "Return non-nil where the text changed since the split\\='s hooks last looked.
+
+The tick has moved and the change shows: the buffer is not the size it
+was, or the undo list has an entry the hooks never saw.  So a change
+made out of sight -- from an indirect buffer sharing the text, or with
+the change hooks bound off -- is found, and a change that put back what
+it took away with undo off is not: that is how an input method such as
+`swedish-postfix' shows the key it is waiting on, and it changes
+nothing.  Coverage stops there: a change out of sight that keeps the
+size, with undo off as well, is not found."
+  (and (not (eql (buffer-chars-modified-tick) donkey--split-seen-tick))
+       (or (not (eql (buffer-size) donkey--split-seen-size))
+           (and (listp buffer-undo-list)
+                (not (eq (donkey--split-undo-top) donkey--split-seen-undo))))))
+
+(defconst donkey--split-unseen-message
+  "the text changed where the split could not follow it, so undo will \
+not reach every place"
+  "What is said as a writing ends over a change its hooks did not see.")
+
 (defvar donkey--split-copying nil
   "Bound non-nil while Split mode makes its own copies, which are not noted.")
 
@@ -7283,7 +7344,19 @@ deletion reaching just past its edge -- \\`DEL' at its start, \\`C-d' at
 its end -- is made at every other place\\='s edge too; see
 `donkey--split-copy-edges'.  An edit away from the places ends the
 split, as does a place that cannot be written, and says why.  Every
-place is copied whatever the buffer\\='s narrowing, or none is."
+place is copied whatever the buffer\\='s narrowing, or none is.  A
+change the hooks did not see ends the split before anything is copied;
+see `donkey--split-note-unseen'.
+
+In a buffer that is not the split\\='s own -- a clone of it, which
+starts with copies of the split\\='s hooks, state and places -- it takes
+the copies away instead; see `donkey--split-disown'."
+  (if (not (eq (current-buffer) donkey--split-buffer))
+      (donkey--split-disown)
+    (donkey--split-sync-home)))
+
+(defun donkey--split-sync-home ()
+  "Do `donkey--split-sync'\\='s work in the split\\='s own buffer."
   (when (memq this-command donkey--split-repeatable-verbs)
     (setq donkey--split-repeat
           (list :verb this-command current-prefix-arg last-command-event)))
@@ -7309,6 +7382,12 @@ place is copied whatever the buffer\\='s narrowing, or none is."
             (widen)
             (let ((here (donkey--split-place-at-point)))
               (cond
+               ;; The text changed where the hooks could not see it: nothing
+               ;; is copied over it, and Emacs's own record of it stands.
+               ((donkey--split-note-unseen)
+                (donkey--split-close-edit t)
+                (donkey--split-dissolve t)
+                (message "Split ended -- %s" donkey--split-unseen-message))
                ;; Insert state was left -- by the quit key, or by anything
                ;; else that reaches Normal state.  The writing is over, so
                ;; the split is: leaving the places held would keep them
@@ -7362,7 +7441,11 @@ not be made at every place"))))))
          (donkey--split-close-edit t)
          (donkey--split-dissolve t)
          (message "Split ended -- %s" (error-message-string err))))
-      (setq donkey--split-synced-tick (buffer-chars-modified-tick)))))
+      (setq donkey--split-synced-tick (buffer-chars-modified-tick))
+      ;; Whatever the command did was looked at above; what an input
+      ;; method shows next is weighed against the buffer as it is now.
+      (when donkey--split-writing
+        (donkey--split-note-seen t)))))
 
 (defun donkey--split-primary-start ()
   "Return where the place being written begins, or nil where none is."
@@ -7628,8 +7711,8 @@ are still behind."
 
 The sweep\\='s timer function.  Nothing is done where the split has
 ended, or is choosing a verb rather than being written.  A place that
-refuses ends the split, saying why, as it would from
-`donkey--split-sync'."
+refuses, or a change the split\\='s hooks did not see, ends the split,
+saying why, as it would from `donkey--split-sync'."
   (donkey--split-holding-gc
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
@@ -7637,16 +7720,21 @@ refuses ends the split, saying why, as it would from
         (when (and donkey--split-behind
                    (eq donkey--split-buffer buffer)
                    (eq donkey--split-phase 'edit))
-          (condition-case err
-              (save-restriction
-                (widen)
-                (when (donkey--split-sweep)
-                  (donkey--split-sweep-arm))
-                (setq donkey--split-synced-tick (buffer-chars-modified-tick)))
-            (error
-             (donkey--split-close-edit t)
-             (donkey--split-dissolve t)
-             (message "Split ended -- %s" (error-message-string err)))))))))
+          (if (donkey--split-note-unseen)
+              (progn
+                (donkey--split-close-edit t)
+                (donkey--split-dissolve t)
+                (message "Split ended -- %s" donkey--split-unseen-message))
+            (condition-case err
+                (save-restriction
+                  (widen)
+                  (when (donkey--split-sweep)
+                    (donkey--split-sweep-arm))
+                  (setq donkey--split-synced-tick (buffer-chars-modified-tick)))
+              (error
+               (donkey--split-close-edit t)
+               (donkey--split-dissolve t)
+               (message "Split ended -- %s" (error-message-string err))))))))))
 
 (defun donkey--split-sweep-flush ()
   "Write every place still behind now, whatever keys are waiting."
@@ -8008,7 +8096,9 @@ deletions past its edges and changes away from the places included;
 see `donkey--split-writing-entry' and `donkey--split-record'.  With
 NO-FLUSH non-nil the places still behind are left as they are,
 because writing them is what failed; so they are where two places have
-come to touch, since what was copied into one would land in the other.
+come to touch, since what was copied into one would land in the other,
+and where the text changed out of the split\\='s sight, see
+`donkey--split-note-unseen'.
 
 Nothing is replaced where what was recorded can no longer be found,
 which a garbage collection can bring about, or where a change reached
@@ -8016,9 +8106,11 @@ into a place so that the two cannot be told apart: the record then
 stays as Emacs made it, without the copies."
   (donkey--split-holding-gc
     (when donkey--split-writing
-      (setq donkey--split-writing nil)
-      (when (and (not no-flush) donkey--split-behind (donkey--split-touching-p))
+      (when (or (donkey--split-note-unseen)
+                (and (not no-flush) donkey--split-behind
+                     (donkey--split-touching-p)))
         (setq no-flush t))
+      (setq donkey--split-writing nil)
       (unless no-flush
         (condition-case err
             (donkey--split-sweep-flush)
@@ -8048,7 +8140,8 @@ stays as Emacs made it, without the copies."
             donkey--split-edit-initial nil
             donkey--split-edge-texts nil
             donkey--split-changes nil
-            donkey--split-lost nil))))
+            donkey--split-lost nil
+            donkey--split-unseen nil))))
 
 (defun donkey--split-open-record ()
   "Open the undo record of a writing over the places.
@@ -8363,9 +8456,13 @@ Just after it where AFTER is non-nil, else just before it; see
 
 On `before-change-functions' while a split is being written.  Split
 mode\\='s own copies and an undo are not noted -- an undo puts every
-place back at once.  Never signals: an error here would take every
-package\\='s change hooks with it."
+place back at once.  A change beginning on text that changed since the
+hooks last saw a change end sets `donkey--split-unseen'; see
+`donkey--split-changed-unseen-p'.  Never signals: an error here would
+take every package\\='s change hooks with it."
   (setq donkey--split-pending nil)
+  (when (donkey--split-changed-unseen-p)
+    (setq donkey--split-unseen t))
   (unless (or donkey--split-copying undo-in-progress)
     (condition-case nil
         (let ((place donkey--split-primary))
@@ -8386,8 +8483,10 @@ kept in `donkey--split-edge-edits'; anything else away from the places
 sets `donkey--split-strayed'.  What the change replaced is the part of
 the text noted as it began that BEG and LENGTH name, which is less
 than all of it where the change ended over less than it began over, as
-a case command does.  Never signals, for the reason
-`donkey--split-note-change' gives."
+a case command does.  Every change ending here, Split mode\\='s own
+included, is noted as seen; see `donkey--split-note-seen'.  Never
+signals, for the reason `donkey--split-note-change' gives."
+  (donkey--split-note-seen (listp buffer-undo-list))
   (let ((pending donkey--split-pending))
     (setq donkey--split-pending nil)
     (when pending
@@ -8431,6 +8530,20 @@ a case command does.  Never signals, for the reason
                 (donkey--split-take-blanks))))
         (error (setq donkey--split-strayed t
                      donkey--split-lost t))))))
+
+(defun donkey--split-note-unseen ()
+  "Return non-nil where the writing\\='s text changed out of its hooks\\=' sight.
+
+While a split is being written its change hooks see every change in its
+buffer, Split mode\\='s own copies included.  A change made where they
+cannot see it -- from an indirect buffer sharing the text, or with the
+hooks bound off -- is found by `donkey--split-changed-unseen-p'.
+Nothing can then be copied over the places or recorded for them
+safely, so the writing is marked lost; see `donkey--split-lost'."
+  (when (and donkey--split-writing
+             (or donkey--split-unseen
+                 (donkey--split-changed-unseen-p)))
+    (setq donkey--split-lost t)))
 
 (defun donkey--split-take-blanks ()
   "Take the blanks just after each place into it, noted for undo.
@@ -8515,6 +8628,10 @@ the current one, so both are cleared."
               donkey--split-edge-edits nil
               donkey--split-strayed nil
               donkey--split-lost nil
+              donkey--split-unseen nil
+              donkey--split-seen-tick nil
+              donkey--split-seen-size nil
+              donkey--split-seen-undo nil
               donkey--split-pending nil
               donkey--split-tick nil
               donkey--split-target nil
@@ -8543,16 +8660,52 @@ the current one, so both are cleared."
     (remove-hook 'post-gc-hook #'donkey--split-note-gc)
     (setq donkey--split-gc-note nil)))
 
+(defun donkey--split-disown ()
+  "Take a split\\='s copies out of this buffer, which is not the split\\='s own.
+
+A buffer cloned from the split\\='s own, as `clone-indirect-buffer'
+makes one, starts with copies of the split\\='s buffer-local hooks, of
+its state and of its places and cursors, none of which is a split.
+The hooks and the state go, and so does every overlay here that copies
+one of the split\\='s own, where it still stands as the copy was made."
+  (remove-hook 'post-command-hook #'donkey--split-sync t)
+  (remove-hook 'kill-buffer-hook #'donkey--split-flush t)
+  (remove-hook 'change-major-mode-hook #'donkey--split-flush t)
+  (remove-hook 'before-change-functions #'donkey--split-note-change t)
+  (remove-hook 'after-change-functions #'donkey--split-noted-change t)
+  (let ((copied (make-hash-table :test #'equal)))
+    (dolist (overlay (append donkey--split-places donkey--split-cursor-marks))
+      (when (overlay-buffer overlay)
+        (puthash (list (overlay-start overlay) (overlay-end overlay)
+                       (overlay-properties overlay))
+                 t copied)))
+    (save-restriction
+      (widen)
+      (dolist (overlay (overlays-in (point-min) (point-max)))
+        (when (gethash (list (overlay-start overlay) (overlay-end overlay)
+                             (overlay-properties overlay))
+                       copied)
+          (delete-overlay overlay)))))
+  (dolist (variable '(donkey--split-places donkey--split-primary
+                      donkey--split-text donkey--split-phase
+                      donkey--split-writing donkey--split-cursors
+                      donkey--split-cursor-marks donkey--split-behind
+                      donkey--split-target donkey--split-sweep-timer))
+    (kill-local-variable variable)))
+
 (defun donkey--split-flush ()
   "End the split as its buffer is killed or given a new major mode.
 
 Runs from `kill-buffer-hook' and `change-major-mode-hook' in the
 split\\='s buffer, while the places still count, so the report counts
 the real places and the chooser is disarmed at once rather than by the
-next key.  An error here would stop the buffer being killed, or its
-mode changing, so none is let out."
+next key.  In a buffer cloned from the split\\='s, it only takes the
+copies away; see `donkey--split-disown'.  An error here would stop the
+buffer being killed, or its mode changing, so none is let out."
   (condition-case err
-      (donkey--split-dissolve)
+      (if (eq (current-buffer) donkey--split-buffer)
+          (donkey--split-dissolve)
+        (donkey--split-disown))
     (error (message "DONKEY: ending a split failed: %s"
                     (error-message-string err)))))
 
@@ -8700,6 +8853,8 @@ be written."
             donkey--split-edit-initial donkey--split-text))
     (add-hook 'before-change-functions #'donkey--split-note-change nil t)
     (add-hook 'after-change-functions #'donkey--split-noted-change nil t)
+    (donkey--split-note-seen)
+    (setq donkey--split-unseen nil)
     (donkey-enter-insert)
     (donkey--repaint-hint (donkey--split-hint))))
 

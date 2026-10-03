@@ -896,6 +896,14 @@ does so only where the same text stands past every match. Where it
 does not, the split ends and says so, and the other matches keep what
 they hold.
 
+A split belongs to the buffer it was made in. Text changed where it
+cannot follow — from an indirect buffer sharing the text, such as one
+=C-x 4 c= or Org makes, or by a program that turns the change hooks
+off — ends the writing and says so. Nothing is written over that
+change; what was typed stays, and =u= then takes back each edit as
+Emacs recorded it rather than every match at once. A clone made while
+a split is live does not carry the split with it.
+
 ** Cursors in a column: =t=
 
 =t= (=donkey-split-add-cursor=) puts a second cursor on the line below,

@@ -1057,6 +1057,235 @@ as a command of its own."
       (execute-kbd-macro (kbd "C-g u"))
       (should (equal (buffer-string) "a fooX b\nc fooX dd\n")))))
 
+(defmacro donkey-split-test--from-indirect (clone keys &rest body)
+  "Run KEYS in an indirect buffer of this one, come back, then run BODY.
+
+With CLONE nil the indirect buffer is a plain one in Text mode and
+Normal state; with CLONE non-nil it is a clone, which starts in the
+state this buffer is in, with copies of its local variables, hooks and
+overlays.  With KEYS empty no command runs there at all.  It is killed
+afterward."
+  (declare (indent 2))
+  `(let ((home (current-buffer))
+         (other (make-indirect-buffer (current-buffer) "*split-indirect*"
+                                      ,clone)))
+     (unwind-protect
+         (progn
+           (switch-to-buffer other)
+           (unless ,clone
+             (text-mode)
+             (donkey-normal-mode 1))
+           (setq this-command nil last-command nil)
+           (unless (string-empty-p ,keys)
+             (execute-kbd-macro (kbd ,keys)))
+           (switch-to-buffer home)
+           ,@body)
+       (switch-to-buffer home)
+       (when (buffer-live-p other)
+         (kill-buffer other)))))
+
+(ert-deftest donkey-split-ends-at-an-edit-made-from-an-indirect-buffer ()
+  "Text changed from another buffer sharing the text ends the writing, kept and undoable."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-indirect-home*" "a foo b\nc foo d\n"
+        "v G f a X"
+      (donkey-split-test--from-indirect nil "g g j l l l i Q C-g"
+        (let ((said nil))
+          (cl-letf (((symbol-function 'message)
+                     (lambda (fmt &rest args)
+                       (when fmt (push (apply #'format fmt args) said))
+                       nil)))
+            (execute-kbd-macro (kbd "Y")))
+          (should (member (concat "Split ended -- " donkey--split-unseen-message)
+                          said)))
+        (should (null donkey--split-phase))
+        (should (equal (buffer-string) "a fooXY b\nc fQooX d\n"))
+        (execute-kbd-macro (kbd "C-g u"))
+        (should (equal (buffer-string) "a fooX b\nc fQooX d\n"))))))
+
+(ert-deftest donkey-split-cursors-keep-what-was-typed-into-a-place-from-elsewhere ()
+  "Text typed into a cursor's place from an indirect buffer is not written over."
+  (donkey-split-test--keys "*split-indirect-cursors*" "alpha\nbeta\n" "t i X"
+    (donkey-split-test--from-indirect nil "g g j l i Q"
+      (execute-kbd-macro (kbd "Y"))
+      (should (null donkey--split-phase))
+      (should (equal (buffer-string) "XYalpha\nXQbeta\n")))))
+
+(ert-deftest donkey-split-ends-at-an-edit-made-with-the-change-hooks-off ()
+  "A command changing text with the change hooks bound off ends the writing."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-hooks-off*" "a foo b\nc foo d\n" "v G f a X"
+      (let ((overriding-local-map
+             (let ((map (make-sparse-keymap)))
+               (define-key map [f7]
+                 (lambda () (interactive)
+                   (save-excursion
+                     (goto-char (point-max))
+                     (let ((inhibit-modification-hooks t))
+                       (insert "Q")))))
+               map)))
+        (execute-kbd-macro [f7]))
+      (should (null donkey--split-phase))
+      (execute-kbd-macro (kbd "C-g u"))
+      (should (equal (buffer-string) "a fooX b\nc fooX d\n")))))
+
+(ert-deftest donkey-split-writes-through-an-input-method-at-every-place ()
+  "A postfix or prefix input method types the same character at every place and cursor."
+  (dolist (case '(("swedish-postfix" "v G f a a a C-g" "a foo b\nc foo d\n"
+                   "a foo\u00e5 b\nc foo\u00e5 d\n")
+                  ("latin-1-prefix" "v G f a ' a C-g" "a foo b\nc foo d\n"
+                   "a foo\u00e1 b\nc foo\u00e1 d\n")
+                  ("swedish-postfix" "t i a a C-g C-g" "abcd\nefgh\n"
+                   "\u00e5abcd\n\u00e5efgh\n")
+                  ("latin-1-prefix" "t i \" u C-g C-g" "abcd\nefgh\n"
+                   "\u00fcabcd\n\u00fcefgh\n")))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-input-method*" (nth 2 case) ""
+        (set-input-method (car case))
+        (execute-kbd-macro (kbd (nth 1 case)))
+        (should (equal (list (nth 1 case) (buffer-string))
+                       (list (nth 1 case) (nth 3 case))))
+        (execute-kbd-macro (kbd "u"))
+        (should (equal (list (nth 1 case) (buffer-string))
+                       (list (nth 1 case) (nth 2 case))))))))
+
+(ert-deftest donkey-split-writes-through-an-input-method-after-the-sweep ()
+  "An input method types at every place after the sweep wrote with undo off."
+  (let ((text (mapconcat (lambda (i) (format "foo %d\n" i))
+                         (number-sequence 1 8000) "")))
+    (donkey-split-test--on "%foo"
+      (donkey-split-test--keys "*split-input-sweep*" text ""
+        (set-input-method "swedish-postfix")
+        (execute-kbd-macro (kbd "f a X"))
+        (donkey--split-sweep-run (current-buffer))
+        (execute-kbd-macro (kbd "a a C-g"))
+        (should (null donkey--split-phase))
+        (should (= (how-many "fooX\u00e5 " (point-min) (point-max)) 8000))))))
+
+(ert-deftest donkey-split-sweep-leaves-room-for-an-input-method ()
+  "After the sweep writes with undo off, a change put back with undo off is not unseen."
+  (let ((text (mapconcat (lambda (i) (format "foo %d\n" i))
+                         (number-sequence 1 8000) "")))
+    (donkey-split-test--on "%foo"
+      (donkey-split-test--keys "*split-sweep-quail*" text "f a X"
+        (donkey--split-sweep-cancel)
+        (donkey--split-sweep-run (current-buffer))
+        (should-not donkey--split-behind)
+        ;; What an input method does as it shows the key it waits on.
+        (let ((inhibit-modification-hooks t)
+              (buffer-undo-list t))
+          (insert "a")
+          (delete-char -1))
+        (should-not (donkey--split-changed-unseen-p))))))
+
+(ert-deftest donkey-split-writes-through-an-input-method-after-moving-places ()
+  "An input method types at every place after an edit moved point into another place."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-input-move*" "a foo b\nc foo d\n" ""
+      (set-input-method "swedish-postfix")
+      (execute-kbd-macro (kbd "v G f a X"))
+      (donkey-split-test--bind-f9 (lambda ()
+                                    (interactive)
+                                    (insert "Y")
+                                    (goto-char (point-max))
+                                    (search-backward "fooXY")
+                                    (forward-char 5)))
+      (execute-kbd-macro (kbd "<f9> a a C-g"))
+      (should (null donkey--split-phase))
+      (should (equal (buffer-string) "a fooXY\u00e5 b\nc fooXY\u00e5 d\n")))))
+
+(ert-deftest donkey-split-ends-at-an-edit-out-of-sight-of-either-size ()
+  "An edit out of the hooks' sight ends the writing, by its size or by its undo entry."
+  (dolist (case '(("same size, recorded" t)
+                  ("new size, not recorded" nil)))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-out-of-sight*" "a foo b\nc foo d\nlast\n"
+          "v G f a X"
+        (let ((overriding-local-map
+               (let ((map (make-sparse-keymap)))
+                 (define-key map [f7]
+                   (if (cadr case)
+                       (lambda () (interactive)
+                         (let ((inhibit-modification-hooks t))
+                           (upcase-region (- (point-max) 5) (point-max))))
+                     (lambda () (interactive)
+                       (let ((inhibit-modification-hooks t)
+                             (buffer-undo-list t))
+                         (save-excursion
+                           (goto-char (point-max))
+                           (insert "Q"))))))
+                 map)))
+          (execute-kbd-macro [f7]))
+        (should (equal (list (car case) donkey--split-phase)
+                       (list (car case) nil)))))))
+
+(ert-deftest donkey-split-notices-an-unseen-edit-followed-by-a-seen-one ()
+  "A command changing text unseen and then at the place ends the writing, undoably."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-unseen-then-seen*" "a foo b\nc foo d\n"
+        "v G f a X"
+      (let ((overriding-local-map
+             (let ((map (make-sparse-keymap)))
+               (define-key map [f7]
+                 (lambda () (interactive)
+                   (save-excursion
+                     (goto-char (point-max))
+                     (let ((inhibit-modification-hooks t))
+                       (insert "Q")))
+                   (insert "Y")))
+               map)))
+        (execute-kbd-macro [f7]))
+      (should (null donkey--split-phase))
+      (should (equal (buffer-string) "a fooXY b\nc fooX d\nQ"))
+      (execute-kbd-macro (kbd "C-g u"))
+      (should (equal (buffer-string) "a fooX b\nc fooX d\n")))))
+
+(ert-deftest donkey-split-sweep-writes-nothing-over-text-changed-from-elsewhere ()
+  "The sweep finding the text changed out of the split's sight ends the split."
+  (let ((text (mapconcat (lambda (i) (format "foo %d\n" i))
+                         (number-sequence 1 8000) "")))
+    (donkey-split-test--on "%foo"
+      (donkey-split-test--keys "*split-sweep-indirect*" text "f a X"
+        (should donkey--split-behind)
+        ;; Only the call below sweeps: a live frame runs the timer too.
+        (donkey--split-sweep-cancel)
+        (let ((written (how-many "fooX" (point-min) (point-max))))
+          (donkey-split-test--from-indirect nil "G o Q C-g"
+            (donkey--split-sweep-run (current-buffer))
+            (should (null donkey--split-phase))
+            (should (= (how-many "fooX" (point-min) (point-max)) written))))))))
+
+(ert-deftest donkey-split-ended-by-a-new-mode-keeps-an-unseen-edit-undoable ()
+  "A writing ended by its buffer's mode changing leaves an unseen edit on the undo list."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-unseen-mode*" "a foo b\nc foo d\n" "v G f a X"
+      (donkey-split-test--from-indirect nil "G o Q C-g"
+        (text-mode)
+        (should (null donkey--split-phase))
+        (should (equal (buffer-string) "a fooX b\nc fooX d\n\nQ"))
+        (donkey-normal-mode 1)
+        (execute-kbd-macro (kbd "u"))
+        (should (equal (buffer-string) "a fooX b\nc fooX d\n\n"))))))
+
+(ert-deftest donkey-split-a-clone-of-its-buffer-holds-no-split ()
+  "A clone made while writing neither ends the split nor keeps copies of it."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-clone*" "a foo b\nc foo d\n" "v G f a X"
+      (let (painted)
+        (donkey-split-test--from-indirect t "C-g"
+          (setq painted (with-current-buffer "*split-indirect*"
+                          (seq-filter (lambda (overlay)
+                                        (overlay-get overlay 'donkey-split))
+                                      (overlays-in (point-min) (point-max)))))
+          (kill-buffer "*split-indirect*")
+          (should (eq donkey--split-phase 'edit))
+          (donkey-split-test--from-indirect t ""
+            (kill-buffer "*split-indirect*")
+            (should (eq donkey--split-phase 'edit)))
+          (execute-kbd-macro (kbd "Y C-g"))
+          (should (equal (buffer-string) "a fooXY b\nc fooXY d\n")))
+        (should (null painted))))))
+
 (ert-deftest donkey-split-survives-an-undo-while-writing ()
   "An undo while writing puts every place back together, and writing goes on."
   (donkey-split-test--on "foo"
