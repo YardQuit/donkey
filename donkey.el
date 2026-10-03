@@ -1020,6 +1020,17 @@ the cursor's line."
       (save-excursion (insert (make-string extra ?\n)))))
   (donkey-enter-insert))
 
+(defun donkey--open-line-above ()
+  "Open an empty line above this one, indented by the mode, with point on it.
+
+Only the new line is indented: the line point was on moves down with
+its own indentation untouched, whatever the mode would indent it to.
+What `donkey-open-above' and the cursors\\=' `O' both do at each line."
+  (move-beginning-of-line 1)
+  (insert "\n")
+  (forward-line -1)
+  (indent-according-to-mode))
+
 (defun donkey-open-above (&optional count)
   "Open COUNT new lines above the current one, and enter INSERT state.
 
@@ -1033,10 +1044,7 @@ cursor on it, and COUNT - 1 empty lines above that.  A COUNT below 1
 opens one line, as a bare press does."
   (interactive "p")
   (donkey--deactivate-region-if-active)
-  (move-beginning-of-line 1)
-  (newline-and-indent)
-  (forward-line -1)
-  (indent-according-to-mode)
+  (donkey--open-line-above)
   ;; Inserted at the line's start, so the line is pushed down and the
   ;; cursor stays beside the line it came from.
   (let ((extra (1- (or count 1))))
@@ -10427,11 +10435,7 @@ cursor\\='s line recorded before and after."
                  (size (buffer-size))
                  (was (buffer-substring-no-properties start finish)))
             (if above
-                (progn
-                  (move-beginning-of-line 1)
-                  (newline-and-indent)
-                  (forward-line -1)
-                  (indent-according-to-mode))
+                (donkey--open-line-above)
               ;; The place `move-end-of-line' reaches, without the
               ;; display engine it runs in a live frame at every cursor.
               (end-of-visible-line)

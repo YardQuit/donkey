@@ -2889,6 +2889,16 @@ the bottom up every line is parsed from far back."
     (execute-kbd-macro (kbd "u u"))
     (should (equal (buffer-string) donkey-split-test--column))))
 
+(ert-deftest donkey-split-cursors-open-above-leaves-each-cursor-line-as-it-was ()
+  "O at the cursors opens a line above each and leaves the cursors' lines as they were."
+  (donkey-test-keys--harness "*cursors-O-indent*" #'makefile-mode ()
+      "all:\n\techo a\n\techo b\n" "j t O C-g C-g"
+    (should (equal (buffer-string) "all:\n\n\techo a\n\n\techo b\n")))
+  (donkey-test-keys--harness "*cursors-O-indent*" #'text-mode ()
+      "top\n    one\n    two\n" "j t O C-g C-g"
+    ;; Each new line takes the mode's indentation; the cursors' lines keep theirs.
+    (should (equal (buffer-string) "top\n\n    one\n    \n    two\n"))))
+
 (ert-deftest donkey-split-cursors-change-and-indent-are-one-entry-each ()
   "The c on characters and the > at the cursors each record one entry."
   (donkey-test-keys--harness "*cursors-c-entry*" #'emacs-lisp-mode ()

@@ -513,41 +513,24 @@ afterward, unlike every sibling command in the same category."
       (should (= (point) 1))
       (should (= (buffer-size) 7)))))
 
-(ert-deftest donkey-open-above-call-order ()
-  "Executes bol, newline, `forward-line' -1, indent, then enter-insert."
-  (let (order)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 3)
-      (let ((orig-bol (symbol-function 'move-beginning-of-line))
-            (orig-forward-line (symbol-function 'forward-line)))
-        (cl-letf (((symbol-function 'region-active-p)
-                   (lambda () nil))
-                  ((symbol-function 'move-beginning-of-line)
-                   (lambda (n)
-                     (push 'bol order)
-                     (funcall orig-bol n)))
-                  ((symbol-function 'newline-and-indent)
-                   (lambda ()
-                     (push 'newline order)
-                     (insert "\n")))
-                  ((symbol-function 'forward-line)
-                   (lambda (n)
-                     (push 'forward-line order)
-                     (funcall orig-forward-line n)))
-                  ((symbol-function 'indent-according-to-mode)
-                   (lambda ()
-                     (push 'indent order)))
-                  ((symbol-function 'donkey-enter-insert)
-                   (lambda ()
-                     (push 'enter order))))
-          (donkey-open-above))))
-    (should (eq (nth 0 order) 'enter))
-    (should (eq (nth 1 order) 'indent))
-    (should (eq (nth 2 order) 'forward-line))
-    (should (eq (nth 3 order) 'newline))
-    (should (eq (nth 4 order) 'bol))
-    (should (= (length order) 5))))
+(ert-deftest donkey-open-above-leaves-the-line-below-as-it-was ()
+  "`O' indents the line it opens and leaves the line it came from untouched.
+
+Pinned where a mode would indent that line differently: a recipe's
+tab in a Makefile, a statement after a Python block, indentation the
+mode has no opinion on in Text mode."
+  (pcase-dolist (`(,mode ,text ,keys ,line)
+                 '((text-mode "top\n    indented line\n" "j O" "    indented line")
+                   (makefile-mode "all:\n\techo hi\n" "j O" "\techo hi")
+                   (python-mode "if a:\n    b()\nc()\n" "j j O" "c()")
+                   (emacs-lisp-mode "(let ((a 1))\n      a)\n" "j O" "      a)")))
+    (donkey-test-keys--harness "*donkey-open-above*" mode ()
+        text keys
+      (should (bound-and-true-p donkey-insert-mode))
+      (should (equal (list mode (buffer-substring-no-properties
+                                 (line-beginning-position 2)
+                                 (line-end-position 2)))
+                     (list mode line))))))
 
 (ert-deftest donkey-open-above-deactivates-active-region ()
   "When region is active, deactivates the mark before proceeding."
