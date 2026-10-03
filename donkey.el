@@ -10785,11 +10785,16 @@ than one."
   "Bank every whole line in BEG..END that is not already banked.
 
 Creates one overlay per LINE, so any one line can be unbanked on its
-own; adjacent spans are merged at use time."
+own; adjacent spans are merged at use time.  Text inserted at either
+edge of a banked line -- a line opened or pasted above or below it --
+stays outside the bank."
   (donkey--map-line-spans beg end
     (lambda (line-span)
       (unless (donkey--banked-overlay-at (car line-span))
-        (let ((ov (make-overlay (car line-span) (cdr line-span) nil nil t)))
+        ;; Front advance and no rear advance: an insertion at the
+        ;; start of the line lands before the overlay, one at the start
+        ;; of the next line after it.
+        (let ((ov (make-overlay (car line-span) (cdr line-span) nil t nil)))
           (overlay-put ov 'face 'donkey-banked-selection)
           (overlay-put ov 'donkey-banked t)
           ;; Above `hl-line-overlay-priority', which is -50: at equal
@@ -10798,8 +10803,7 @@ own; adjacent spans are merged at use time."
           ;; redisplay draws at a nil primary priority, so a line that
           ;; is banked and selected still shows the selection.
           (overlay-put ov 'priority -25)
-          ;; Evaporate, so an emptied buffer does not regrow the bank
-          ;; over whatever replaces the line.
+          ;; Evaporate, so a bank goes with the text of its line.
           (overlay-put ov 'evaporate t)
           (push ov donkey--banked-overlays))))))
 

@@ -1491,8 +1491,8 @@ for the paste path."
   "Regression test: a bank must not survive the text it banked.
 
 Emptying a buffer collapses an overlay to zero width rather than
-removing it, and banked overlays advance with text inserted at their
-end -- so refilling the buffer regrew the overlay over whatever
+removing it, and banked overlays used to advance with text inserted at
+their end -- so refilling the buffer regrew the overlay over whatever
 replaced the banked line.  Banking one line of three and then
 refilling reported the entire new buffer as banked, while
 `donkey--banked-line-count' still said one line, so `y'/`d' acted on
@@ -1522,6 +1522,35 @@ looks collapsed.  The overlays evaporate instead."
     (should (= 1 (length (donkey--banked-spans))))
     (delete-region (point-min) (save-excursion (forward-line 1) (point)))
     (should (null (donkey--banked-spans)))))
+
+(ert-deftest donkey-text-inserted-beside-a-banked-line-is-not-banked ()
+  "Text opened, typed or pasted at either edge of a banked line stays out."
+  (let ((text "aaa\nbbb\nccc\n"))
+    ;; Typed at the start of the line below.
+    (donkey-test-keys--harness "*donkey-bank-edge*" #'text-mode nil
+        text "m l j i X C-g g g y"
+      (should (equal (car kill-ring) "aaa\n")))
+    ;; A line opened below the bank, from the line below it.
+    (donkey-test-keys--harness "*donkey-bank-edge*" #'text-mode nil
+        text "m l j O N E W C-g y"
+      (should (equal (car kill-ring) "aaa\n")))
+    ;; A line opened above the bank, from the banked line.
+    (donkey-test-keys--harness "*donkey-bank-edge*" #'text-mode nil
+        text "j m l O N E W C-g d"
+      (should (equal (car kill-ring) "bbb\n"))
+      (should (equal (buffer-string) "aaa\nNEW\nccc\n")))
+    ;; Whole lines pasted at either edge.
+    (donkey-test-keys--harness "*donkey-bank-edge*" #'text-mode nil
+        text "j m l"
+      (save-excursion
+        (goto-char (point-min))
+        (forward-line 1)
+        (insert "ZZZ\n")
+        (forward-line 1)
+        (insert "YYY\n"))
+      (should (equal (buffer-string) "aaa\nZZZ\nbbb\nYYY\nccc\n"))
+      (should (equal (donkey--banked-spans)
+                     (list (cons 9 13)))))))
 
 (ert-deftest donkey-bank-selection-toggles-off-on-same-line ()
   "Banking a line twice unbanks only that line.

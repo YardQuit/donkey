@@ -533,7 +533,8 @@ what the next command acts on.
 
 Banked lines survive =C-g=: they are a store you put something in on
 purpose, like the kill ring, and only the key that means discard
-discards them.
+discards them. A line you open or paste beside a banked line is not
+banked with it.
 
 * Wrapping a selection in a pair
 :PROPERTIES:
