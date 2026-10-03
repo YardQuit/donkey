@@ -8875,6 +8875,14 @@ On whichever keys `donkey-mark-run-mode-map' has them on, through
 run\\='s keys that move a selection off its line are refused at the
 cursors by `donkey-split-cursors-run-refuse'.")
 
+(defconst donkey--split-cursor-countless
+  '(beginning-of-line donkey-mark-run-line-start)
+  "The replayed commands the cursors run without a count.
+
+With a count each goes to the start of another line, which a cursor
+never leaves; at the cursors the count is let go of, as
+`donkey-split-cursors-line-end' lets go of the count of \\`g l'.")
+
 (defun donkey--split-cursors-live-p ()
   "Return non-nil where a split of cursors is live in this buffer."
   (and donkey--split-cursors
@@ -9732,7 +9740,7 @@ While the cursors are in a run, a command of
 `donkey--split-run-replayed' on those keys in `donkey-mark-run-mode-map'
 is run; otherwise the command Normal state has there, where it is one
 of `donkey--split-cursor-replayed'.  ARG is the prefix argument, given
-to every cursor."
+to every cursor, except to a command of `donkey--split-cursor-countless'."
   (interactive "P")
   (donkey--split-live-p)
   (let* ((keys (this-single-command-keys))
@@ -9745,7 +9753,8 @@ to every cursor."
                 (memq command donkey--split-cursor-replayed))
       (user-error "%s is not run at every cursor"
                   (key-description (this-single-command-keys))))
-    (donkey--split-cursors-run command arg)))
+    (donkey--split-cursors-run
+     command (unless (memq command donkey--split-cursor-countless) arg))))
 
 (defun donkey-split-cursors-run-toggle ()
   "Start a mark run at every cursor, or end it and let go of the selections.

@@ -1095,6 +1095,17 @@ this a verb elsewhere acts on nothing at all."
                      (nth 2 case)))
       (should (equal (buffer-string) donkey-split-test--column)))))
 
+(ert-deftest donkey-split-cursors-g-h-with-a-count-stays-on-the-line ()
+  "`g h' with a count takes every cursor to its own line's start."
+  (dolist (case '(("C-u 2 g h" (1 14) ("" ""))
+                  ("v C-u 2 g h" (1 14) ("  al" "  ga"))
+                  ("M C-u 2 g h" (1 14) ("  alpha" "  gamma"))))
+    (donkey-split-test--keys "*cursors-g-h-count*"
+        "  alpha beta\n  gamma delta\nlast\n" (concat "l l l l t " (car case))
+      (should (equal (list (car case) (donkey-split-test--cursors)
+                           (donkey-split-test--selections))
+                     case)))))
+
 (ert-deftest donkey-split-cursors-g-l-ends-a-mark-run-like-any-motion ()
   "A mark key after `g l' marks afresh at every cursor, as after any other motion."
   (donkey-split-test--keys "*cursors-g-l-run*" donkey-split-test--column
