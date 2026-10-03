@@ -1553,20 +1553,22 @@ availability.  Useful for debugging platform-specific issues."
 (defvar donkey-insert-mode) ;(donkey-debug-platform); defined below, in "Donkey Mode Definitions"
 
 (defun donkey--pair-table ()
-  "Return `donkey-mark-pair-delimiters' when it is a list, else nil.
+  "Return `donkey-mark-pair-delimiters' when it is a proper list, else nil.
 
 One address for the question every reader of that option asks first.
 It is a defcustom and holds whatever it was given, and `assq',
 `rassq', `seq-filter' and `length' all signal on a value that is not a
-list -- so `m i', a wrap key, the `?' chart, the platform report and
-the typing hook would each signal in their own way at a reader who
-typed one bracket too few (rules 3 and 10).
+proper list -- so `m i', a wrap key, the `?' chart, the platform report
+and the typing hook would each signal in their own way at a reader who
+typed one bracket too few (rules 3 and 10).  A dotted list is one of
+those: `append' leaves one when a pair is added without a list round
+it.
 
 Where that signal lands decides how bad it is rather than whether it
 is wrong: from `post-self-insert-hook' it aborts the reader\\='s own
 typing, from a key it is an ordinary command error.  Every reader goes
 through here either way."
-  (and (listp donkey-mark-pair-delimiters) donkey-mark-pair-delimiters))
+  (and (proper-list-p donkey-mark-pair-delimiters) donkey-mark-pair-delimiters))
 
 (defun donkey--debug-pair-line ()
   "Return the platform report\\='s line about `donkey-pair-mode'.
@@ -1648,7 +1650,7 @@ two places to read it."
            (format "Wrap engine:    %s" donkey-wrap-region-engine)
            (format "Wrap keys:      %d of %d claimed (%s)"
                    claimed (length halves)
-                   (if (listp donkey-wrap-delimiters)
+                   (if (proper-list-p donkey-wrap-delimiters)
                        "a list of characters"
                      "all of donkey-mark-pair-delimiters"))
            (format "Pair table:     %d pairs" (length (donkey--pair-table)))
@@ -2778,7 +2780,7 @@ exactly as it stands.  To drop a delimiter in ONE major mode rather
 than everywhere, see `donkey-pair-delimiter-exceptions'.
 
 Anything here that is not a character is ignored, and a value that is
-not a list reads as the empty list: this is read from
+not a proper list reads as the empty list: this is read from
 `post-self-insert-hook', where a signal would abort your own typing."
   :type '(repeat character)
   :set (lambda (symbol value)
@@ -2939,10 +2941,10 @@ Cleared by `donkey--pair-reset' before each command.")
 (defun donkey--pair-characters ()
   "Return the OPEN characters that pair while typing, as a list.
 
-`donkey-pair-delimiters' taken as it stands when it is a list; every
-OPEN character of `donkey-mark-pair-delimiters' under `all'; and that
-table less `donkey-pair-safe-exclusions' under `safe', which is
-what any other value reads as.
+`donkey-pair-delimiters' taken as it stands when it is a proper
+list; every OPEN character of `donkey-mark-pair-delimiters' under
+`all'; and that table less `donkey-pair-safe-exclusions' under `safe',
+which is what any other value reads as.
 
 Both variables are defcustoms and hold whatever they were given, so
 this is where the coercion happens: a character naming no pair in the
@@ -2951,12 +2953,14 @@ table comes through `donkey--pair-table' and is then read through
 `consp' rather than `car', an entry that is not a pair at all being
 the shape a reader gets from one bracket too few."
   (let* ((pairs (seq-filter #'consp (donkey--pair-table)))
-         (asked (cond ((listp donkey-pair-delimiters) donkey-pair-delimiters)
+         (asked (cond ((proper-list-p donkey-pair-delimiters)
+                       donkey-pair-delimiters)
                       ((eq donkey-pair-delimiters 'all) (mapcar #'car pairs))
                       ;; `safe' and anything else: the table less the
                       ;; punctuation that is text far more often than it
                       ;; is a delimiter.
-                      (t (let ((out (and (listp donkey-pair-safe-exclusions)
+                      (t (let ((out (and (proper-list-p
+                                          donkey-pair-safe-exclusions)
                                          donkey-pair-safe-exclusions)))
                            (seq-remove (lambda (char) (memq char out))
                                        (mapcar #'car pairs)))))))
@@ -3000,12 +3004,13 @@ Reads `donkey-pair-delimiter-exceptions', first matching row only.
 
 Coerced at every level it is walked, because this runs from
 `post-self-insert-hook' and a signal there aborts the reader\\='s own
-typing (rules 3 and 81): the option is walked only when it is a list,
-a row is read only when it is a cons whose car is a symbol, and its
-tail only when that tail is a proper list.  A row whose tail is a
-single value -- `(text-mode . 5)', the shape a reader gets from one
-dot too many -- passes `consp' and would otherwise signal here."
-  (let ((row (and (listp donkey-pair-delimiter-exceptions)
+typing (rules 3 and 81): the option is walked only when it is a
+proper list, a row is read only when it is a cons whose car is a
+symbol, and its tail only when that tail is a proper list.  A row
+whose tail is a single value -- `(text-mode . 5)', the shape a reader
+gets from one dot too many -- passes `consp' and would otherwise
+signal here."
+  (let ((row (and (proper-list-p donkey-pair-delimiter-exceptions)
                   (seq-find (lambda (entry)
                               (and (consp entry)
                                    (symbolp (car entry))
@@ -3027,7 +3032,7 @@ row naming a character the table has no closer for would signal from
 
 Coerced at every level it is walked (rules 3 and 81), exactly as
 `donkey--pair-exception-p' is."
-  (let ((row (and (listp donkey-pair-delimiter-inclusions)
+  (let ((row (and (proper-list-p donkey-pair-delimiter-inclusions)
                   (seq-find (lambda (entry)
                               (and (consp entry)
                                    (symbolp (car entry))
@@ -13144,7 +13149,7 @@ pair added there needs no second line to become a key -- except while
 `donkey-wrap-region-engine' hands the press to a pairing package,
 where it means `donkey--wrap-delegated-delimiters', the six such a
 package pairs.  A list is taken as it stands whatever the engine, and
-a value that is neither `all' nor a list reads as `all'.
+a value that is neither `all' nor a proper list reads as `all'.
 
 Whatever the source, anything that is not a character is dropped here
 and nowhere else: both variables are defcustoms, and hold whatever
@@ -13152,7 +13157,8 @@ they were given.  The table is read for its OPEN characters through
 `consp' rather than `car', an entry that is not a pair at all being
 exactly the shape a reader gets by typing one bracket too few."
   (seq-filter #'characterp
-              (cond ((listp donkey-wrap-delimiters) donkey-wrap-delimiters)
+              (cond ((proper-list-p donkey-wrap-delimiters)
+                     donkey-wrap-delimiters)
                     ((eq donkey-wrap-region-engine 'pairing-package)
                      donkey--wrap-delegated-delimiters)
                     (t (mapcar #'car
@@ -13382,7 +13388,7 @@ installation is one a reader learns to skip.  Just those two: a pair
 the reader added is always answered, whatever its key holds, and so is
 everything when `donkey-wrap-delimiters' names its characters
 outright."
-  (let ((asked (or everything (listp donkey-wrap-delimiters)))
+  (let ((asked (or everything (proper-list-p donkey-wrap-delimiters)))
         taken)
     (dolist (ch (donkey--wrap-delimiter-characters))
       (dolist (half (list ch (donkey--wrap-close-char ch)))

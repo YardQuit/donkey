@@ -897,17 +897,22 @@ coercion a row like (?# . \"hash\") would type the word."
     ("the table is a string"          donkey-mark-pair-delimiters "nonsense")
     ("the table is a symbol"          donkey-mark-pair-delimiters nope)
     ("the table has junk rows"        donkey-mark-pair-delimiters ((?a . ?b) 7 "x"))
+    ("a pair appended without a list" donkey-mark-pair-delimiters ((?\( . ?\)) ?# . ?#))
     ("the delimiters are a symbol"    donkey-pair-delimiters nonsense)
     ("the delimiters are a number"    donkey-pair-delimiters 7)
     ("the delimiters are a junk list" donkey-pair-delimiters ("(" 3.5 nil x))
+    ("the delimiters are dotted"      donkey-pair-delimiters (?\( . ?\[))
+    ("the exclusions are dotted"      donkey-pair-safe-exclusions (?\' . ?\`))
     ("the exceptions are not a list"  donkey-pair-delimiter-exceptions 9)
     ("an exception row is dotted"     donkey-pair-delimiter-exceptions ((text-mode . 5)))
     ("the exception rows are junk"    donkey-pair-delimiter-exceptions (1 "x" (nil ?a) (text-mode . 5)))
+    ("the exception list is dotted"   donkey-pair-delimiter-exceptions ((text-mode ?\() . 5))
     ("the excluded list is junk"      donkey-pair-excluded-modes (1 "x" nil))
     ("the excluded list is a number"  donkey-pair-excluded-modes 7)
     ("the inclusions are not a list"  donkey-pair-delimiter-inclusions 9)
     ("an inclusion row is dotted"     donkey-pair-delimiter-inclusions ((text-mode . 5)))
-    ("the inclusion rows are junk"    donkey-pair-delimiter-inclusions (1 "x" (nil ?a) (text-mode . 5))))
+    ("the inclusion rows are junk"    donkey-pair-delimiter-inclusions (1 "x" (nil ?a) (text-mode . 5)))
+    ("the inclusion list is dotted"   donkey-pair-delimiter-inclusions ((text-mode ?<) . 5)))
   "Ways a reader can mis-type one of the pairing options.
 
 Every one is a shape a reader reaches by hand: a dot too many, a
@@ -943,6 +948,19 @@ written around: it passes `consp' and its tail is not a list."
         (should (stringp (buffer-string)))
         (ignore label)))))
 
+(ert-deftest donkey-a-pair-appended-without-its-list-stops-nothing ()
+  "A table `append' left dotted neither stops the mode nor the typing.
+
+With the pair added as `(append donkey-mark-pair-delimiters
+\\='(?# . ?#))' the table is a dotted list and reads as no table at
+all: `donkey-pair-mode' comes on, and every key types, pairing nothing."
+  (let ((donkey-mark-pair-delimiters
+         (append donkey-mark-pair-delimiters '(?# . ?#))))
+    (should-not (proper-list-p donkey-mark-pair-delimiters))
+    (donkey-pair-test--typing "*donkey-pair-appended*" #'text-mode () ""
+        "i h i ( x"
+      (should (equal (buffer-string) "hi(x")))))
+
 (ert-deftest donkey-every-reader-of-the-pair-table-survives-a-mistyped-one ()
   "No subsystem signals on a `donkey-mark-pair-delimiters' that is not a list.
 
@@ -956,7 +974,7 @@ which is rules 3 and 10.
 Driven through the functions rather than through keys because `m i'
 prompts, and a batch run that reaches `read-char' hangs rather than
 fails."
-  (dolist (value '(42 "nonsense" nope))
+  (dolist (value '(42 "nonsense" nope ((?\( . ?\)) ?# . ?#)))
     (let ((donkey-mark-pair-delimiters value))
       (should (equal (donkey--pair-table) nil))
       ;; the mark commands

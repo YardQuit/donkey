@@ -4296,6 +4296,22 @@ signals is worse than the misconfiguration it was meant to explain."
     (should (equal (donkey--delimiters-that-cannot-wrap) nil))
     (should (equal (donkey-report-test--collect (donkey--say-binding-changes)) nil))))
 
+(ert-deftest donkey-a-dotted-wrap-delimiter-list-reads-as-all ()
+  "A `donkey-wrap-delimiters' left dotted reads as `all', and nothing signals.
+
+The keys asked for, the delimiters the report names and the line in
+the platform report all read it the way `all' is read."
+  (let ((as-all (let ((donkey-wrap-delimiters 'all))
+                  (list (donkey--wrap-delimiter-characters)
+                        (donkey--delimiters-that-cannot-wrap)))))
+    (let ((donkey-wrap-delimiters '(?\( . ?\[)))
+      (should (equal (list (donkey--wrap-delimiter-characters)
+                           (donkey--delimiters-that-cannot-wrap))
+                     as-all))
+      (should (seq-find (lambda (line)
+                          (string-match-p "all of donkey-mark-pair-delimiters" line))
+                        (donkey--debug-donkey-lines))))))
+
 (ert-deftest donkey-keeps-the-leader-whole-in-what-it-remembers ()
   "The leader is one entry, so its own rebuilds are not reported as losses.
 
