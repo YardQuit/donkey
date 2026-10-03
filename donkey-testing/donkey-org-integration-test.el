@@ -417,7 +417,10 @@ distinguishable from \"was called and did nothing\"."
   "In `org-mode' with TODO headline, calls `donkey-org-todo'."
   (let (called-cmd)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(headline (:todo-type todo))))
+               ;; Begins on the line point is on, as a heading point is on does.
+               (lambda () (list 'headline
+                                (list :begin (line-beginning-position)
+                                      :todo-type 'todo))))
               ((symbol-function 'org-element-context)
                (lambda () nil))
               ((symbol-function 'org-element-property)
@@ -1147,6 +1150,15 @@ otherwise."
     (should (equal (donkey-org-key-test--line) "* TODO write it")))
   (donkey-org-key-test "* TODO write it\n" "RET RET"
     (should (equal (donkey-org-key-test--line) "* TODO write it"))))
+
+(ert-deftest donkey-org-ret-under-a-heading-leaves-the-heading-alone ()
+  "RET on a blank line under a TODO or DONE heading changes nothing.
+
+Org counts those lines as part of the headline; RET on the heading
+line itself still cycles it."
+  (dolist (text '("* TODO Task\n\nmore\n" "* DONE Task\n\n"))
+    (donkey-org-key-test text "j RET"
+      (should (equal (cons text (buffer-string)) (cons text text))))))
 
 (ert-deftest donkey-org-ret-toggles-a-checkbox ()
   "RET ticks and unticks a checkbox item."

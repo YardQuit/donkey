@@ -1235,6 +1235,18 @@ Set to nil in `config.el' if you want to define rules manually."
   "Return non-nil if CMD is a bound, callable interactive command."
   (and cmd (fboundp cmd) (commandp cmd)))
 
+(defun donkey--enter-element-here-p (elem)
+  "Return non-nil when the Org element ELEM may answer Enter at point.
+
+A headline answers only with point on its own heading line.  Org counts
+the blank lines under a heading as part of the headline, and Enter on
+one of them is not Enter on the heading.  Every other element answers
+wherever Org says point is in it."
+  (or (not (eq (car-safe elem) 'headline))
+      (let ((begin (and (fboundp 'org-element-property)
+                        (org-element-property :begin elem))))
+        (and begin (= begin (line-beginning-position))))))
+
 (defun donkey--find-enter-handler ()
   "Find command for Enter key based on element at point.
 
@@ -1271,7 +1283,8 @@ is the one place the mode is tested for the Org rules."
               (rule-cmds (nthcdr 2 rule)))
           (when (and ctx
                      (eq (car ctx) rule-type)
-                     (null (nth 1 rule)))
+                     (null (nth 1 rule))
+                     (donkey--enter-element-here-p ctx))
             (setq result (seq-find #'donkey--callable-command-p rule-cmds))))))
     ;; Parent, then its line-start fallback, then ancestors — ALL rules
     ;; checked per element level, most specific first
@@ -1284,6 +1297,7 @@ is the one place the mode is tested for the Org rules."
                   (rule-cmds (nthcdr 2 rule)))
               (when (and elem
                          (eq (car elem) rule-type)
+                         (donkey--enter-element-here-p elem)
                          (or (null rule-prop)
                              (and (fboundp 'org-element-property)
                                   (org-element-property rule-prop elem))))
