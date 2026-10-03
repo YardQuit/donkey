@@ -1192,6 +1192,39 @@ this a verb elsewhere acts on nothing at all."
     (execute-kbd-macro (kbd "p"))
     (should (equal (buffer-string) "alpha\n...\nNil.\nbeta\n"))))
 
+(ert-deftest donkey-split-cursors-give-an-empty-last-text-back-too ()
+  "`p' gives each cursor its own text back when the last cursor's is empty."
+  (dolist (case '(("l l l t t D p" "abcdef\nabcdef\nab\n" "abcdef\nabcdef\nab\n")
+                  ("t t M d p" "alpha\nbeta\n...\n" "alpha\nbeta\n...\n")
+                  ("t t M c C-g p" "alpha\nbeta\n...\n" "alpha\nbeta\n...\n")
+                  ("l l l t t C-u 2 y g l p" "abcdef\nabcdef\nab\n"
+                   "abcdefde\nabcdefde\nab\n")))
+    (let ((donkey--split-kill-shape nil))
+      (donkey-split-test--keys "*cursors-empty-last*" (nth 1 case) (car case)
+        (should (equal (list (car case) (buffer-string))
+                       (list (car case) (nth 2 case))))))))
+
+(ert-deftest donkey-split-cursors-take-whole-lines-as-one-cursor-takes-them ()
+  "`V y' and `V d' at the cursors kill what `V' over the same lines kills."
+  (dolist (case '(("j t V y" "a\nbb\ncc" "bb\ncc" "a\nbb\ncc")
+                  ("j t t V d" "x\nbb\ncc\ndd" "bb\ncc\ndd" "x\n")
+                  ("t V y" "a\nb\nc\n" "a\nb\n" "a\nb\nc\n")))
+    (donkey-split-test--keys "*cursors-whole-lines*" (nth 1 case) (car case)
+      (should (equal (list (car case) (car kill-ring) (buffer-string))
+                     (list (car case) (nth 2 case) (nth 3 case)))))))
+
+(ert-deftest donkey-split-cursors-paste-over-whole-lines-keeping-the-lines ()
+  "`V p' at the cursors replaces each line and opens no line under it."
+  (dolist (case '(("V y t V p" "a\nb\nc\n" "a\na\nc\n")
+                  ("V y t V C-u 2 p" "a\nb\nc\n" "a\na\na\na\nc\n")
+                  ("j t V y V p" "a\nbb\ncc" "a\nbb\ncc")
+                  ("t V y V p" "a\nb\nc\n" "a\nb\nc\n")
+                  ("v l y t V p" "ab\ncd\nef\n" "a\na\nef\n")))
+    (let ((donkey--split-kill-shape nil))
+      (donkey-split-test--keys "*cursors-line-paste*" (nth 1 case) (car case)
+        (should (equal (list (car case) (buffer-string))
+                       (list (car case) (nth 2 case))))))))
+
 (ert-deftest donkey-split-cursors-kill-to-each-line-s-end ()
   "`D' kills from every cursor to its line's end, and no newline."
   (donkey-split-test--keys "*cursors-D*" donkey-split-test--column "l l t t D"

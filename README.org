@@ -935,7 +935,9 @@ line's end types there rather than on the next line. With a selection,
 ring as one kill, one line per cursor, and =p= gives each cursor its
 own line back when the kill has as many lines as there are cursors —
 so =m w y=, a move, and =p= copies each cursor's word to where that
-cursor went. A key =m i= would ask for is asked once.
+cursor went. Whole lines taken with =V= are the lines as =V y= at one
+cursor takes them, and =V p= replaces each cursor's line the way it
+replaces one. A key =m i= would ask for is asked once.
 
 =M= at the cursors is the mark run at every cursor: each selects its
 word, or keeps what it had selected, and the run's keys grow and

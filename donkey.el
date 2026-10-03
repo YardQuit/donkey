@@ -8289,7 +8289,8 @@ caller has read it already."
     (cond
      ((seq-every-p #'string-empty-p texts) nil)
      (donkey--split-agree (car texts))
-     (t (string-join texts "\n")))))
+     (t (donkey--split-note-kill (string-join texts "\n") (length texts)
+                                 nil)))))
 
 (defun donkey--split-enter-edit (clear where)
   "Leave the chooser and open Insert state over the places.
@@ -9983,17 +9984,59 @@ non-nil for a selection."
       (let ((far (max (car line) (min (cdr line) (+ cursor count)))))
         (list (min cursor far) (max cursor far) nil))))))
 
-(defun donkey--split-cursors-kill-text (texts)
+(defvar donkey--split-kill-shape nil
+  "How the last kill a split made of several texts was put together, or nil.
+
+A list (KILL COUNT LINES): KILL is the string put on the `kill-ring',
+COUNT the number of texts in it, one for each place or cursor, and
+LINES non-nil where they are whole lines put together as they are
+rather than one text per line.  See `donkey--split-kill-pieces'.")
+
+(defun donkey--split-note-kill (kill count lines)
+  "Note KILL as made of COUNT texts, whole LINES or one per line; return KILL.
+
+See `donkey--split-kill-shape'."
+  (setq donkey--split-kill-shape (list kill count lines))
+  kill)
+
+(defun donkey--split-kill-pieces (text n)
+  "Return TEXT as N texts, one for each of N cursors, or nil where it is not.
+
+Where TEXT is the last kill a split made of N texts, each text comes
+back as it went, an empty one included; see `donkey--split-kill-shape'.
+Any other TEXT is N texts where it has N lines, a final newline ending
+the last of them.  A text that was a whole line comes back without its
+newline."
+  (when (> n 1)
+    (pcase-let ((`(,kill ,count ,lines) donkey--split-kill-shape))
+      (let* ((ours (and (stringp kill) (eql count n) (string= text kill)))
+             (pieces (split-string (if (and (string-suffix-p "\n" text)
+                                            (or lines (not ours)))
+                                       (substring text 0 -1)
+                                     text)
+                                   "\n")))
+        (and (= (length pieces) n) pieces)))))
+
+(defun donkey--split-cursors-whole-lines-p ()
+  "Return non-nil where every cursor has its whole line selected."
+  (seq-every-p (lambda (place) (overlay-get place 'donkey-line))
+               donkey--split-places))
+
+(defun donkey--split-cursors-kill-text (texts &optional lines)
   "Return what the cursors put on the `kill-ring' for TEXTS, one per cursor.
 
-Whole lines, which end in a newline, are put together as they are.
-Texts that agree are one copy of that text, and texts that differ are
-every text, one per line, as `donkey--split-kill-text' puts them."
-  (cond
-   ((seq-every-p (lambda (text) (string-suffix-p "\n" text)) texts)
-    (apply #'concat texts))
-   ((null (cdr (delete-dups (copy-sequence texts)))) (car texts))
-   (t (string-join texts "\n"))))
+With LINES non-nil the texts are whole lines, the buffer\\='s last of
+which may have no newline, and are put together as they are.
+Otherwise texts that agree are one copy of that text, and texts that
+differ are every text, one per line, as `donkey--split-kill-text' puts
+them.  What the kill holds is noted, so \\[donkey-split-cursors-yank]
+gives each cursor its own text back; see `donkey--split-kill-pieces'."
+  (donkey--split-note-kill
+   (cond
+    (lines (apply #'concat texts))
+    ((null (cdr (delete-dups (copy-sequence texts)))) (car texts))
+    (t (string-join texts "\n")))
+   (length texts) lines))
 
 (defun donkey-split-cursors-change (&optional count)
   "Empty every cursor\\='s selection, or COUNT characters, then type there.
@@ -10059,7 +10102,8 @@ one undo entry whatever the number of cursors, and the cursors stay."
               (delete-region (car span) (cadr span))))
           (donkey--split-record-ops head (nreverse ops) t))
         (when kills
-          (kill-new (donkey--split-cursors-kill-text kills)))
+          (kill-new (donkey--split-cursors-kill-text
+                     kills (donkey--split-cursors-whole-lines-p))))
         (setq donkey--split-did 'deleted)
         (donkey--split-cursors-deselect)))))
 
@@ -10079,7 +10123,8 @@ the selections."
                          donkey--split-places)))
       (if (seq-every-p #'string-empty-p texts)
           (message "Nothing to copy")
-        (kill-new (donkey--split-cursors-kill-text texts))
+        (kill-new (donkey--split-cursors-kill-text
+                   texts (donkey--split-cursors-whole-lines-p)))
         (donkey--split-cursors-deselect)))))
 
 (defun donkey-split-cursors-yank (&optional count)
@@ -10088,9 +10133,13 @@ the selections."
 The split\\='s `donkey-yank'.  Where the kill has as many lines as there
 are cursors, each cursor gets its own line, top to bottom, so what
 \\[donkey-split-cursors-copy] took from the cursors goes back one line
-to each; otherwise every cursor gets the whole kill.  COUNT pastes that
-many copies.  The paste is one undo entry whatever the number of
-cursors."
+to each, an empty one included; otherwise every cursor gets the whole
+kill.  Over a whole line selected with
+\\[donkey-split-cursors-select-lines] the paste takes the line\\='s
+place and the line keeps its own ending, as \\[donkey-yank] keeps it
+over a line selection made with \\[donkey-visual-line-toggle].  COUNT
+pastes that many copies.  The paste is one undo entry whatever the
+number of cursors."
   (interactive "p")
   (donkey--split-live-p)
   (barf-if-buffer-read-only)
@@ -10099,13 +10148,8 @@ cursors."
       (if (or (null text) (string-empty-p text))
           (message "Nothing to paste")
         (let* ((places donkey--split-places)
-               (lines (split-string (if (string-suffix-p "\n" text)
-                                        (substring text 0 -1)
-                                      text)
-                                    "\n"))
-               (pieces (if (and (cdr places) (= (length lines) (length places)))
-                           lines
-                         (make-list (length places) text)))
+               (pieces (or (donkey--split-kill-pieces text (length places))
+                           (make-list (length places) text)))
                (n (max 0 (or count 1)))
                (head buffer-undo-list)
                (ops nil))
@@ -10124,6 +10168,11 @@ cursors."
                   (goto-char beg)
                   (dotimes (_ n)
                     (insert-for-yank piece))
+                  ;; A whole line keeps its own line ending.
+                  (when (and (overlay-get place 'donkey-line)
+                             (> (point) beg)
+                             (eq (char-before) ?\n))
+                    (delete-char -1))
                   (push (list beg was
                               (buffer-substring-no-properties beg (point)))
                         ops)
