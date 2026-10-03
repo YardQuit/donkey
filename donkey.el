@@ -6901,6 +6901,14 @@ end it.")
 
 Whatever is selected; see `donkey-split'.")
 
+(defvar donkey--split-hidden 0
+  "How many matches the last search left out for being hidden.
+
+Counted by `donkey--split-search'; see `donkey--split-hidden-p'.")
+
+(defvar-local donkey--split-hidden-count 0
+  "How many hidden matches the live split left out, for its reminder.")
+
 (defvar donkey--split-banked nil
   "The banked spans a split is searching, bound while it is made.
 
@@ -7211,7 +7219,8 @@ is quit leaves the selection, and a split of cursors, as they were."
                           place))
                       spans))
         (setq donkey--split-agree
-              (donkey--split-places-agree-p donkey--split-places)))
+              (donkey--split-places-agree-p donkey--split-places)
+              donkey--split-hidden-count donkey--split-hidden))
       (length spans))))
 
 (defun donkey--split-places-agree-p (places)
@@ -7232,27 +7241,64 @@ places the copies were a third of what \\[donkey-split] cost."
                                      nil beg end nil start (+ start length)))))))
                  (cdr places))))
 
+(defun donkey--split-hidden-p (beg end)
+  "Return non-nil where the match from BEG to END is hidden from view.
+
+A match is hidden where any character of it is invisible, and an empty
+match where the character before it is, or at the buffer\\='s start the
+one after it: so a line\\='s start or end inside a folded subtree is
+hidden, and the end of the heading line folding it is not; see
+`invisible-p'."
+  (if (= beg end)
+      (invisible-p (if (= beg (point-min)) beg (1- beg)))
+    (let ((pos beg)
+          (hidden nil))
+      (while (and (not hidden) (< pos end))
+        (if (invisible-p pos)
+            (setq hidden t)
+          (setq pos (next-single-char-property-change pos 'invisible nil end))))
+      hidden)))
+
 (defun donkey--split-search (regexp ranges)
   "Return every REGEXP match inside RANGES as (BEG . END), in buffer order.
 
 RANGES is a list of (BEG . END) in buffer order, as
 `donkey--split-bounds' returns them.  Case is ignored as
 `replace-regexp' ignores it: where `case-fold-search' is on and REGEXP
-holds no capital letter, unless `search-upper-case' says otherwise."
+holds no capital letter, unless `search-upper-case' says otherwise.  A
+match hidden from view, in a folded subtree for one, is left out unless
+`search-invisible' is t, and `donkey--split-hidden' counts those left
+out; see `donkey--split-hidden-p'."
   (let ((case-fold-search (if (and case-fold-search search-upper-case)
                               (isearch-no-upper-case-p regexp t)
                             case-fold-search))
-        (spans nil))
+        (spans nil)
+        ;; Most text hides nothing: asked once for the whole search, so
+        ;; a search over every line asks nothing more of each match.
+        (hiding (and ranges
+                     (not (eq search-invisible t))
+                     (let ((beg (car (car ranges)))
+                           (end (cdr (car (last ranges)))))
+                       (or (get-char-property beg 'invisible)
+                           (< (next-single-char-property-change
+                               beg 'invisible nil end)
+                              end))))))
+    (setq donkey--split-hidden 0)
     (save-excursion
       (dolist (range ranges)
         (goto-char (car range))
         (let ((done nil))
           (while (and (not done)
                       (re-search-forward regexp (cdr range) t))
-            (unless (and (eobp) (bolp)
-                         (> (point-max) (point-min))
-                         (= (match-beginning 0) (match-end 0)))
-              (push (cons (match-beginning 0) (match-end 0)) spans))
+            (cond
+             ((and (eobp) (bolp)
+                   (> (point-max) (point-min))
+                   (= (match-beginning 0) (match-end 0))))
+             ((and hiding
+                   (donkey--split-hidden-p (match-beginning 0) (match-end 0)))
+              (setq donkey--split-hidden (1+ donkey--split-hidden)))
+             (t
+              (push (cons (match-beginning 0) (match-end 0)) spans)))
             ;; A zero-width match has to be stepped over or the search
             ;; never advances, and stepping past this range would leave
             ;; point on the wrong side of the bound `re-search-forward'
@@ -7323,9 +7369,10 @@ i a I A o O c d y p D, f find, C-g"
 \\[donkey-split-add-cursor-above]")))
      (t
       (format
-       "Split: %s in %s -- i before, a after, c change, d delete, w wrap, C-g"
+       "Split: %s in %s%s -- i before, a after, c change, d delete, w wrap, C-g"
        (if (= n 1) "1 place" (format "%d places" n))
-       donkey--split-scope)))))
+       donkey--split-scope
+       (donkey--split-hidden-note donkey--split-hidden-count))))))
 
 (defun donkey--split-sync ()
   "Copy the place point is in onto the others, and keep the reminder up.
@@ -8663,6 +8710,7 @@ the current one, so both are cleared."
               donkey--split-phase nil
               donkey--split-did nil
               donkey--split-agree nil
+              donkey--split-hidden-count 0
               donkey--split-edge-edits nil
               donkey--split-strayed nil
               donkey--split-lost nil
@@ -9253,7 +9301,9 @@ reaches the kill ring one per line.  Case is ignored as
 `replace-regexp' ignores it: when REGEXP holds no capital letter.
 Refuses matches that touch, since text typed where two meet would
 belong to both, and an empty REGEXP, which would put a place at every
-character.
+character.  A match hidden from view, as in a folded subtree, is left
+out unless `search-invisible' is t, and the opening message says how
+many were.
 
 There is no limit on the number of matches.  Past
 `donkey--split-eager-places' of them, a keystroke writes the matches a
@@ -9276,7 +9326,8 @@ Bound to \\`f' in Normal state."
          (donkey--split-banked nil)
          (n (donkey--split-make regexp)))
     (if (zerop n)
-        (message "Nothing matched %s" regexp)
+        (message "Nothing matched %s%s" regexp
+                 (donkey--split-hidden-note donkey--split-hidden))
       ;; Letting go of the selection runs the reader's hooks, and a
       ;; split half made is worse than one whose selection lingers.
       (condition-case err
@@ -9295,6 +9346,12 @@ Bound to \\`f' in Normal state."
       ;; Spent last, once the split stands.
       (donkey--consume-banked-spans donkey--split-banked)
       (message "%s" (donkey--split-hint)))))
+
+(defun donkey--split-hidden-note (n)
+  "Return what to say of N hidden matches left out, or \"\" for none."
+  (if (zerop n)
+      ""
+    (format " (%d hidden match%s left out)" n (if (= n 1) "" "es"))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Split Cursors

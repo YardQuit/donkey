@@ -276,6 +276,42 @@ split can be driven by real keys without a minibuffer."
         "f a X"
       (should (equal (buffer-string) "a %fooX b\nc %foo d\n")))))
 
+(defconst donkey-split-test--folded
+  (concat "a foo\nB foo" (propertize "\nc foo\nd foo" 'invisible t) "\nE foo\n")
+  "Five lines, the third and fourth hidden as a folded subtree hides them.")
+
+(defun donkey-split-test--place-lines ()
+  "Return the line each place of the split is on."
+  (mapcar (lambda (place) (line-number-at-pos (overlay-start place)))
+          donkey--split-places))
+
+(ert-deftest donkey-split-leaves-out-matches-hidden-from-view ()
+  "Matches in invisible text are left out, and the reminder says how many."
+  (dolist (case '(("%foo" (1 2 5)) ("%^" (1 2 5)) ("%$" (1 2 5)) ("%\\b" (1 1 1 1 2 2 2 2 5 5 5 5))))
+    (donkey-split-test--on (car case)
+      (donkey-split-test--keys "*split-hidden*" donkey-split-test--folded "f"
+        (should (equal (list (car case) (donkey-split-test--place-lines))
+                       case))
+        (should (string-match-p "places in the buffer ([0-9]+ hidden matches left out)"
+                                (donkey--split-hint)))))))
+
+(ert-deftest donkey-split-takes-hidden-matches-where-search-invisible-is-t ()
+  "With `search-invisible' t a split holds hidden matches too."
+  (donkey-split-test--on "%foo"
+    (donkey-test-keys--harness "*split-hidden-on*" #'text-mode
+        ((search-invisible t))
+        donkey-split-test--folded "f"
+      (should (equal (donkey-split-test--place-lines) '(1 2 3 4 5)))
+      (should-not (string-match-p "hidden" (donkey--split-hint))))))
+
+(ert-deftest donkey-split-says-when-every-match-is-hidden ()
+  "A split finding only hidden matches opens nothing and says why."
+  (donkey-split-test--on "%d foo"
+    (donkey-split-test--keys "*split-all-hidden*" donkey-split-test--folded "f"
+      (should (null donkey--split-places))
+      (should (equal donkey-test-keys--said
+                     "Nothing matched d foo (1 hidden match left out)")))))
+
 (ert-deftest donkey-split-reads-a-percent-first-through-the-prompt ()
   "The % is read from the minibuffer and is not part of the search."
   (donkey-split-test--keys "*split-percent-prompt*" donkey-split-test--three

@@ -826,6 +826,11 @@ front — =f %foo RET= — and the whole buffer is searched whatever is
 selected. Either way you reach it by choosing it. The =%= is not part
 of the search; =\%= or =[%]= at the start searches for a percent sign.
 
+A match hidden from view — inside a folded Org subtree or outline
+heading, or in any other invisible text — is left out, so nothing is
+written where you cannot see it, and the reminder says how many were
+left out. Set =search-invisible= to =t= to hold them too.
+
 Banked lines are how the split reaches lines that are not next to each
 other. Each run of banked lines is searched up to the end of its last
 line and no further, so =^= and =$= stay on the lines you banked. A =v=
