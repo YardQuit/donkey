@@ -907,6 +907,25 @@ refuse the insertion by itself and prove nothing."
     (should (equal (donkey-enter-test--press binding "alpha")
                    (cons nil "alpha")))))
 
+(ert-deftest donkey-enter-changes-nothing-in-hexl-and-picture-mode ()
+  "Enter in Normal state leaves `hexl-mode' and `picture-mode' buffers alone.
+
+Both buffers are Normal state and outside `donkey-editing-modes', so
+Enter asks what the mode binds: `hexl-self-insert-command', which
+writes a byte, and `picture-newline', which breaks a line."
+  (progn
+    (donkey-test-keys--harness "*donkey-enter-hexl*"
+        ;; With no undo information, so `hexl-mode' has nothing to ask.
+        (lambda () (insert "abc\ndef\n") (setq buffer-undo-list nil) (hexl-mode)) ()
+        "" "RET"
+      (should (bound-and-true-p donkey-normal-mode))
+      (should (equal (buffer-substring-no-properties 1 25)
+                     "00000000: 6162 630a 6465")))
+    (donkey-test-keys--harness "*donkey-enter-picture*" #'picture-mode ()
+        "abc\ndef\n" "G RET"
+      (should (bound-and-true-p donkey-normal-mode))
+      (should (equal (buffer-string) "abc\ndef\n")))))
+
 (ert-deftest donkey-enter-has-a-floor-no-setting-can-take-away ()
   "Enter still refuses to type when `donkey-self-insert-commands' is junk.
 

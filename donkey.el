@@ -1128,8 +1128,14 @@ zero changes none while still entering INSERT state, the same reading
     comment-indent-new-line
     default-indent-new-line
     open-line
-    split-line)
-  "Commands Normal state refuses on Enter, because they break a line.
+    split-line
+    picture-newline
+    hexl-self-insert-command)
+  "Commands Normal state refuses on Enter, because they break a line or type.
+
+`picture-newline' breaks a line in `picture-mode'.
+`hexl-self-insert-command' is what `hexl-mode' binds Enter to, and
+writes a carriage-return byte over the byte at point.
 
 Enter in a mode outside `donkey-editing-modes' runs what that mode
 itself puts on the key -- `dired-find-file' in Dired,
