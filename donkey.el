@@ -14775,17 +14775,27 @@ recorded -- the one errand of `keyboard-quit' that the key keeps, see
 through INSERT calls `donkey--leave-insert' itself, since it has no
 `C-g' to stand in for.
 
-In the minibuffer, in a `donkey-excluded-modes' buffer, or when
-`donkey-insert-mode' is not active in the current buffer, delegates to
-`keyboard-quit' instead."
+In the minibuffer it runs what the quit key runs in the minibuffer\\='s
+own keymap, `abort-minibuffers' unless something else is bound there,
+so a minor mode that puts this command on the key -- Smartparens after
+`donkey-setup-smartparens' -- still leaves the minibuffer.  In a
+`donkey-excluded-modes' buffer, or when `donkey-insert-mode' is not
+active in the current buffer, delegates to `keyboard-quit' instead."
   (interactive)
-  (if (or (not (bound-and-true-p donkey-insert-mode))
-          (minibufferp)
-          (donkey--normal-state-off-p))
-      (keyboard-quit)
+  (cond
+   ((minibufferp)
+    (let ((own (and (current-local-map)
+                    (lookup-key (current-local-map) [?\C-g]))))
+      (if (and (commandp own) (not (eq own #'donkey--exit-insert)))
+          (call-interactively own)
+        (keyboard-quit))))
+   ((or (not (bound-and-true-p donkey-insert-mode))
+        (donkey--normal-state-off-p))
+    (keyboard-quit))
+   (t
     (donkey--leave-insert)
     ;; After the state change.
-    (donkey--abort-keyboard-macro-definition)))
+    (donkey--abort-keyboard-macro-definition))))
 
 (defun donkey--abort-keyboard-macro-definition ()
   "Stop a keyboard macro that is being recorded, the way `keyboard-quit' does.

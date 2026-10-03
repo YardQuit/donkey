@@ -1968,20 +1968,64 @@ fallback \(donkey-normal-mode 1) is not called."
     (should-not force-called)))
 
 (ert-deftest donkey-state-exit-insert-minibuffer-delegates-to-keyboard-quit ()
-  "In the minibuffer, delegates to `keyboard-quit' and skips all other steps."
-  (let (quit-called deactivated entered-normal)
-    (cl-letf (((symbol-function 'minibufferp)
-               (lambda () t))
-              ((symbol-function 'keyboard-quit)
-               (lambda () (setq quit-called t)))
-              ((symbol-function 'deactivate-mark)
-               (lambda () (setq deactivated t)))
-              ((symbol-function 'donkey-enter-normal)
-               (lambda () (setq entered-normal t))))
-      (donkey--exit-insert))
-    (should quit-called)
-    (should-not deactivated)
-    (should-not entered-normal)))
+  "In the minibuffer, with no quit key of its own, delegates to `keyboard-quit'.
+
+It skips all other steps.  A minibuffer keymap that puts this very
+command on the quit key counts as having none."
+  (dolist (map (list (make-sparse-keymap)
+                     (let ((m (make-sparse-keymap)))
+                       (define-key m (kbd "C-g") #'donkey--exit-insert)
+                       m)))
+    (let (quit-called deactivated entered-normal)
+      (with-temp-buffer
+        (use-local-map map)
+        (cl-letf (((symbol-function 'minibufferp)
+                   (lambda (&rest _) t))
+                  ((symbol-function 'keyboard-quit)
+                   (lambda () (setq quit-called t)))
+                  ((symbol-function 'deactivate-mark)
+                   (lambda () (setq deactivated t)))
+                  ((symbol-function 'donkey-enter-normal)
+                   (lambda () (setq entered-normal t))))
+          (donkey--exit-insert)))
+      (should quit-called)
+      (should-not deactivated)
+      (should-not entered-normal))))
+
+(defvar-local donkey-test--quit-key-mode nil
+  "Non-nil where `donkey-test--quit-key-map' answers as a minor mode map.")
+
+(defvar donkey-test--quit-key-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-g") #'donkey--exit-insert)
+    map)
+  "A minor mode map with the quit key on `donkey--exit-insert'.")
+
+(defun donkey-test--quit-the-minibuffer (setup)
+  "Type 1 and the quit key into \\[eval-expression], SETUP run in the minibuffer.
+Answer `left' when the minibuffer was left and `trapped' when
+`keyboard-quit' ran there instead, which leaves it open."
+  (catch 'donkey-test--trapped
+    (cl-letf (((symbol-function 'keyboard-quit)
+               (lambda () (interactive) (throw 'donkey-test--trapped 'trapped))))
+      (minibuffer-with-setup-hook setup
+        (condition-case nil
+            (execute-kbd-macro (kbd "M-: 1 C-g"))
+          (quit nil)))
+      (if (zerop (minibuffer-depth)) 'left 'open))))
+
+(ert-deftest donkey-the-quit-key-leaves-a-minibuffer-a-minor-mode-gave-it-to ()
+  "The quit key leaves the minibuffer where a minor mode binds it to DONKEY.
+
+`donkey--exit-insert' runs the minibuffer\\='s own quit there, as the
+key would without the minor mode."
+  (should (eq (donkey-test--quit-the-minibuffer
+               (lambda ()
+                 (setq donkey-test--quit-key-mode t)
+                 (setq-local minor-mode-overriding-map-alist
+                             (list (cons 'donkey-test--quit-key-mode
+                                         donkey-test--quit-key-map)))))
+              'left)))
 
 (ert-deftest donkey-state-exit-insert-insert-mode-inactive-delegates-to-keyboard-quit ()
   "With Insert state inactive, the command delegates to `keyboard-quit'.
@@ -2800,6 +2844,14 @@ found bound."
   (require 'smartparens)
   (donkey-setup-smartparens)
   (should (eq (keymap-lookup smartparens-mode-map "C-g") #'donkey--exit-insert)))
+
+(ert-deftest donkey-the-quit-key-leaves-a-minibuffer-smartparens-is-on-in ()
+  "After `donkey-setup-smartparens', the quit key still leaves the minibuffer."
+  (skip-unless (featurep 'smartparens))
+  (require 'smartparens)
+  (donkey-setup-smartparens)
+  (should (eq (donkey-test--quit-the-minibuffer (lambda () (smartparens-mode 1)))
+              'left)))
 
 (ert-deftest donkey-setup-smartparens-no-error-without-keymaps ()
   "Smartparens setup does not error without the keymaps.
