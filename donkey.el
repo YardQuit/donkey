@@ -10458,7 +10458,11 @@ the live region."
   :group 'donkey)
 
 (defvar-local donkey--banked-overlays nil
-  "Overlays covering the whole lines banked in this buffer.")
+  "Overlays covering the whole lines banked in this buffer.
+
+Permanent: a new major mode or a revert keeps the banks, as it keeps
+the overlays that draw them.")
+(put 'donkey--banked-overlays 'permanent-local t)
 
 (defun donkey--whole-line-span (beg end)
   "Return (START . END) covering every whole line touched by BEG..END.

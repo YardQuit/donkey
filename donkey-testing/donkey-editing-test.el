@@ -1806,6 +1806,26 @@ ghost could neither be toggled off nor banked over."
     (should (= 1 (donkey--banked-line-count)))
     (should (equal (donkey--banked-spans) (list (cons 1 5))))))
 
+(ert-deftest donkey-a-bank-survives-a-change-of-major-mode ()
+  "A new major mode keeps the banks, and every key that reads them sees them."
+  (donkey-test-keys--harness "*donkey-bank-mode*" #'text-mode nil
+      "aaa\nbbb\nccc\n" "m l j m l"
+    (emacs-lisp-mode)
+    (donkey-mode 1)
+    (should (= 2 (donkey--banked-line-count)))
+    (execute-kbd-macro (kbd "j y"))
+    (should (equal (car kill-ring) "aaa\nbbb\n"))
+    (should-not (donkey--banked-selection-p))))
+
+(ert-deftest donkey-mode-disable-clears-banks-made-before-a-mode-change ()
+  "Turning off variable `donkey-mode' clears banks the mode change kept."
+  (donkey-test-keys--harness "*donkey-bank-mode*" #'text-mode nil
+      "aaa\nbbb\n" "m l"
+    (normal-mode)
+    (donkey-mode -1)
+    (should-not (seq-filter (lambda (ov) (overlay-get ov 'donkey-banked))
+                            (overlays-in (point-min) (point-max))))))
+
 (ert-deftest donkey-mode-disable-clears-banked-lines ()
   "Turning off variable `donkey-mode' clears banked highlights.
 
