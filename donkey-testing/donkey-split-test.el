@@ -841,6 +841,19 @@ touch the text it goes around, so it is not asked."
       (execute-kbd-macro (kbd "a X C-g"))
       (should (equal (buffer-string) "a foo b\nc fooX d\ne fooX f\n")))))
 
+(ert-deftest donkey-split-reminder-counts-the-places-it-holds-now ()
+  "The reminder's count follows places dropped by a verb and cursors dropped by DEL."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-count*" "a foo b\nc foo d\ne foo f\n" "v G f"
+      (should (string-prefix-p "Split: 3 places" (donkey--split-hint)))
+      (delete-overlay (car donkey--split-places))
+      (execute-kbd-macro (kbd "a"))
+      (should (string-prefix-p "Split: writing at 2 places" (donkey--split-hint)))))
+  (donkey-split-test--keys "*split-count-cursors*" "a\nb\nc\nd\n" "t t t"
+    (should (string-prefix-p "Split: 4 cursors" (donkey--split-hint)))
+    (execute-kbd-macro (kbd "DEL"))
+    (should (string-prefix-p "Split: 3 cursors" (donkey--split-hint)))))
+
 (ert-deftest donkey-split-ends-when-the-major-mode-changes ()
   "A new major mode takes the split down: nothing stays painted."
   (donkey-split-test--on "foo"
@@ -1097,6 +1110,14 @@ when BODY runs.  `donkey-split-test--saved' counts what the file holds."
     (donkey-split-test--keys "*split-edge-touch*" "x foo foo y\n" "f a C-d"
       (should (null donkey--split-phase))
       (should (equal (buffer-string) "x foofoo y\n")))))
+
+(ert-deftest donkey-split-ends-where-an-edge-edit-would-reach-into-a-place ()
+  "A deletion by count that would reach into the next place ends the split instead."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-edge-reach*" "foo  xfoo foo  zz\n"
+        "f a C-u 2 C-d"
+      (should (null donkey--split-phase))
+      (should (equal (buffer-string) "fooxfoo foo  zz\n")))))
 
 (defun donkey-split-test--append-z ()
   "Put a Z at the end of the buffer, away from every place."

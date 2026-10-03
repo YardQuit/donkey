@@ -7346,9 +7346,26 @@ since the split was made, whichever verb ran."
         ('edited    (format "Split: edited at %s" places))
         (_         (format "Split ended -- %s left alone" places))))))
 
+(defvar-local donkey--split-count nil
+  "The list of places last counted, and how many it held, as (PLACES . N).
+
+See `donkey--split-place-count'.")
+
+(defun donkey--split-place-count ()
+  "Return the number of places in the split.
+
+Counted once for each list of places, rather than for every reminder
+repainted after every key: at 850,000 places a count is a millisecond
+and a half.  Every change to the places makes a new list, as
+`donkey--split-cursors-settle' does after a cursor is dropped."
+  (if (eq (car donkey--split-count) donkey--split-places)
+      (cdr donkey--split-count)
+    (cdr (setq donkey--split-count
+               (cons donkey--split-places (length donkey--split-places))))))
+
 (defun donkey--split-hint ()
   "Return the echo-area reminder for the phase the split is in."
-  (let ((n (length donkey--split-places)))
+  (let ((n (donkey--split-place-count)))
     (cond
      ((and donkey--split-cursors (eq donkey--split-phase 'edit))
       (format "Split: writing at %s -- C-g back to the cursors"
@@ -8426,13 +8443,15 @@ running command did nothing but delete, or write over characters in
 `overwrite-mode', and took as many characters as its count asked for,
 as \\`DEL', \\`C-d' and a typed character there do; a deletion sized by
 the text itself, a word or the rest of a line, would take something
-else at another place.  Either way the characters must be there, reach
-no other place, and hold a line break exactly where TEXT does.  Return
-nil where a place fails that, having deleted at the places after it.
+else at another place.  Either way the characters must be there and
+hold a line break exactly where TEXT does.  Return nil where a place
+fails that, having deleted at the places after it.  A deletion reaching
+into another place leaves the two touching, which the caller refuses;
+see `donkey--split-copy'.
 What was deleted at each other place is noted in
 `donkey--split-edge-texts' once every place has had its deletions;
 HERE\\='s own deletions were noted by `donkey--split-edge-note-primary'."
-  (let* ((places donkey--split-places)
+  (let* ((places (vconcat donkey--split-places))
          (n (length places))
          (texts (donkey--split-edge-texts-copy n))
          (by-count (and (seq-every-p
@@ -8445,39 +8464,30 @@ HERE\\='s own deletions were noted by `donkey--split-edge-note-primary'."
                         (abs (prefix-numeric-value current-prefix-arg)))))
     (catch 'unlike
       (dolist (edit edits)
-        (let ((after (eq (car edit) 'after))
-              (count (length (cdr edit)))
-              (breaks (donkey--split-line-breaks (cdr edit)))
-              (index n))
-          (dolist (place (reverse places))
+        (let* ((after (eq (car edit) 'after))
+               (count (length (cdr edit)))
+               (breaks (donkey--split-line-breaks (cdr edit)))
+               (index n))
+          (while (> index 0)
             (setq index (1- index))
-            (cond
-             ((not (overlay-buffer place)))
-             ((eq place here))
-             (t
-              (let* ((edge (if after (overlay-end place) (overlay-start place)))
-                     (beg (if after edge (- edge count)))
-                     (end (if after (+ edge count) edge)))
-                (unless (and (>= beg (point-min))
-                             (<= end (point-max))
-                             (or (eql count by-count)
-                                 (string= (cdr edit)
-                                          (buffer-substring-no-properties
-                                           beg end)))
-                             (equal breaks
-                                    (donkey--split-line-breaks
-                                     (buffer-substring-no-properties beg end)))
-                             (not (seq-some
-                                   (lambda (other)
-                                     (and (not (eq other place))
-                                          (overlay-get other 'donkey-split)
-                                          (< (overlay-start other) end)
-                                          (> (overlay-end other) beg)))
-                                   (overlays-in beg end))))
-                  (throw 'unlike nil))
-                (donkey--split-edge-note
-                 texts index after (buffer-substring-no-properties beg end))
-                (delete-region beg end)))))))
+            (let ((place (aref places index)))
+              (unless (or (not (overlay-buffer place)) (eq place here))
+                (let* ((edge (if after (overlay-end place) (overlay-start place)))
+                       (beg (if after edge (- edge count)))
+                       (end (if after (+ edge count) edge))
+                       (there (and (>= beg (point-min))
+                                   (<= end (point-max))
+                                   (buffer-substring-no-properties beg end))))
+                  (unless (and there
+                               (or (eql count by-count)
+                                   (string= (cdr edit) there))
+                               (if breaks
+                                   (equal breaks
+                                          (donkey--split-line-breaks there))
+                                 (not (string-search "\n" there))))
+                    (throw 'unlike nil))
+                  (donkey--split-edge-note texts index after there)
+                  (delete-region beg end)))))))
       (setq donkey--split-edge-texts texts)
       t)))
 
@@ -8718,6 +8728,7 @@ the current one, so both are cleared."
               donkey--split-did nil
               donkey--split-agree nil
               donkey--split-hidden-count 0
+              donkey--split-count nil
               donkey--split-edge-edits nil
               donkey--split-strayed nil
               donkey--split-lost nil
