@@ -1756,32 +1756,66 @@ Output goes to a temporary buffer named '*DONKEY Platform Debug*'."
 ;;; Yank, Copy, and Delete Commands
 ;;; ---------------------------------------------------------------------------
 
-(defun donkey--clipboard-yank ()
-  "Yank from the system clipboard with `kill-ring' fallback.
+(defun donkey--take-clipboard ()
+  "Read the system clipboard once for a paste, and say whether there is one.
 
-If `clipboard-yank' signals an error (empty or inaccessible clipboard),
-falls back to `yank' from the kill ring and emits an informative message
-with platform context.  Shows platform-appropriate installation tips
-only once per session."
-  (condition-case err
-      (clipboard-yank)
-    (error
-     (yank)
-     (message "Clipboard unavailable on %s; yanked from kill ring (%s)."
-              (cond
-               ((eq system-type 'darwin) "macOS")
-               ((eq system-type 'windows-nt) "Windows")
-               (t "Linux/BSD"))
-              (error-message-string err))))
-  ;; The tip fires once, on the first paste where it is eligible;
-  ;; `display-graphic-p' is frame-dependent.
-  (when (and (not donkey--clipboard-warning-shown)
-             (not (display-graphic-p))
-             (not (eq system-type 'darwin))
-             (not (eq system-type 'windows-nt))
-             (not (donkey--detect-clipboard-tools)))
-    (setq donkey--clipboard-warning-shown t)
-    (message "Tip: Install wl-clipboard (Wayland) or xclip/xsel (X11) for system clipboard.")))
+Returns non-nil when there is something to paste, nil when neither the
+clipboard nor the `kill-ring' holds anything.  Called once per press,
+before anything is removed; the paste that follows inserts through
+`donkey--yank-kill', which does not read the clipboard again.
+
+The clipboard is read the way \\[yank] reads it, through
+`interprogram-paste-function', with `select-enable-clipboard' on
+whatever that option says, so the paste keys take the clipboard in
+every configuration.  Emacs\\='s own test of whether the clipboard has
+changed since Emacs last looked still applies: text Emacs put there
+with a copy, or text an earlier paste already took, is not added to
+the kill ring again.  Text another program put there is added once, as
+\\[yank] adds it -- unless it is the same string as the newest kill,
+which a clipboard nobody copied to since and a clipboard manager that
+takes over every copy both hand back.  A clipboard that cannot be read
+leaves the kill ring to answer.
+
+On a terminal with no clipboard tool the first paste also shows a
+one-time tip naming the tools to install."
+  (prog1
+      (condition-case nil
+          (let* ((select-enable-clipboard t)
+                 (read interprogram-paste-function)
+                 (interprogram-paste-function
+                  (and read
+                       (lambda ()
+                         ;; A clipboard that cannot be read is no
+                         ;; clipboard; the kill ring answers.
+                         (let ((text (condition-case nil
+                                         (funcall read)
+                                       (error nil))))
+                           (unless (and (stringp text)
+                                        kill-ring
+                                        (string= text (car kill-ring)))
+                             text))))))
+            (current-kill 0 t)
+            t)
+        (error nil))
+    ;; The tip fires once, on the first paste where it is eligible;
+    ;; `display-graphic-p' is frame-dependent.
+    (when (and (not donkey--clipboard-warning-shown)
+               (not (display-graphic-p))
+               (not (eq system-type 'darwin))
+               (not (eq system-type 'windows-nt))
+               (not (donkey--detect-clipboard-tools)))
+      (setq donkey--clipboard-warning-shown t)
+      (message "Tip: Install wl-clipboard (Wayland) or xclip/xsel (X11) for system clipboard."))))
+
+(defun donkey--yank-kill ()
+  "Insert the kill a paste has taken, without reading the clipboard again.
+
+The inserter every paste key's count repeats; `donkey--take-clipboard'
+has already brought the clipboard's text onto the `kill-ring', once per
+press.  Inserts through \\[yank], so \\[yank-pop] after a paste
+reaches the kill before it."
+  (let ((interprogram-paste-function nil))
+    (yank)))
 
 (defun donkey--delete-active-region-safe ()
   "Delete the active region, if there is one, to make room for a paste.
@@ -1791,21 +1825,6 @@ killing first would make the yank that follows pull back the text just
 removed.  The replaced text stays recoverable through \\[undo]."
   (when (use-region-p)
     (delete-active-region)))
-
-(defun donkey--nothing-to-paste-p ()
-  "Return non-nil when there is nothing for a paste to insert.
-
-`current-kill' is the same source `yank' reads, so this also picks up
-the system clipboard through `interprogram-paste-function' rather than
-looking at `kill-ring' alone -- a clipboard with content in it is
-something to paste even when the kill ring is empty.  DO-NOT-MOVE keeps
-the probe from rotating `kill-ring-yank-pointer' underneath the paste
-that follows.
-
-Checked before anything is removed."
-  (condition-case nil
-      (progn (current-kill 0 t) nil)
-    (error t)))
 
 (defun donkey--rectangle-top-left (start end)
   "Return the buffer position of the top-left corner of the rectangle.
@@ -1885,7 +1904,7 @@ line below.
 Whether anything was pasted is measured by point, not by N: a paste
 of nothing restores no newline."
   (let ((before (point)))
-    (donkey--paste-times n #'donkey--clipboard-yank)
+    (donkey--paste-times n #'donkey--yank-kill)
     (when (and took-newline
                (> (point) before)
                (not (eq (char-before) ?\n)))
@@ -1918,9 +1937,14 @@ Linear text only.  A rectangle is a block of columns and lives in its
 own store, `killed-rectangle'; \\[donkey-yank-rectangle] is the key that
 pastes it.
 
-Falls back to the kill ring when the system clipboard is inaccessible,
-so behavior is the same across GUI and terminal Emacs on Linux
-\(X11/Wayland), macOS, and Windows.
+Pastes what \\[yank] would: what another program last copied to the
+system clipboard, when that has changed since Emacs last looked, and
+the newest kill otherwise -- whatever `select-enable-clipboard' says.
+The clipboard is read once per press, and another program's copy goes
+on the `kill-ring' once however often it is pasted; see
+`donkey--take-clipboard'.  Where there is no clipboard to reach the
+kill ring is used, so behavior is the same across GUI and terminal
+Emacs on Linux \(X11/Wayland), macOS, and Windows.
 
 Banked lines are a selection, and a paste replaces a selection: with
 lines banked, they are replaced by what is pasted rather than the paste
@@ -1954,17 +1978,17 @@ which is what asking to replace it with nothing means."
     (cond
      ((bound-and-true-p rectangle-mark-mode)
       (call-interactively #'undefined))
-     ((donkey--banked-selection-p)
-      (if (donkey--nothing-to-paste-p)
-          (message "Nothing to paste")
-        (donkey--replace-banked-selection-with-paste n)))
-     ((donkey--nothing-to-paste-p)
+     ;; Before anything is removed, and the one read of the clipboard
+     ;; this press makes.
+     ((not (donkey--take-clipboard))
       (message "Nothing to paste"))
+     ((donkey--banked-selection-p)
+      (donkey--replace-banked-selection-with-paste n))
      ((donkey--visual-line-session-active-p)
       (donkey--replace-visual-lines-with-paste n))
      (t
       (donkey--delete-active-region-safe)
-      (donkey--paste-times n #'donkey--clipboard-yank)))))
+      (donkey--paste-times n #'donkey--yank-kill)))))
 
 (defun donkey-yank-rectangle (&optional count)
   "Paste `killed-rectangle' as a block of columns.

@@ -450,243 +450,96 @@ in height."
 ;;; donkey-yank
 ;;; ---------------------------------------------------------------------------
 
-(ert-deftest donkey-yank-no-region-calls-clipboard-yank ()
-  "Without an active region, calls `clipboard-yank' directly."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (yanked)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (cl-letf (((symbol-function 'use-region-p)
-                   (lambda () nil))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () (setq yanked t))))
-          (donkey-yank)))
-      (should yanked))))
+(ert-deftest donkey-yank-pastes-the-clipboard-at-point ()
+  "`p' with nothing selected inserts what the clipboard holds, at point."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "world" ()
+      "hello\n" "p"
+    (should (equal (buffer-string) "worldhello\n"))
+    (should (equal kill-ring '("world")))))
 
-(ert-deftest donkey-yank-no-region-skips-delete-active-region ()
-  "Without an active region, the function `delete-active-region' is not called."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (deleted)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (cl-letf (((symbol-function 'use-region-p)
-                   (lambda () nil))
-                  ((symbol-function 'delete-active-region)
-                   (lambda () (setq deleted t)))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () nil)))
-          (donkey-yank)))
-      (should-not deleted))))
+(ert-deftest donkey-yank-without-a-selection-removes-nothing ()
+  "`p' with nothing selected only inserts; the text around point stays."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      nil ((kill-ring (list "K")))
+      "hello\n" "l p"
+    (should (equal (buffer-string) "hKello\n"))))
 
-(ert-deftest donkey-yank-region-deletes-then-yanks ()
-  "An active region is removed before the paste lands.
-Calls the function `delete-active-region' then `clipboard-yank', in that
-order."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (order)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (push-mark 4)
-        (cl-letf (((symbol-function 'use-region-p)
-                   (lambda () t))
-                  ((symbol-function 'delete-active-region)
-                   (lambda () (push 'delete order)))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () (push 'yank order))))
-          (donkey-yank)))
-      (should (eq (nth 0 order) 'yank))
-      (should (eq (nth 1 order) 'delete))
-      (should (= (length order) 2)))))
+(ert-deftest donkey-yank-replaces-a-selection ()
+  "`p' over a `v' selection replaces it, and the replaced text is not killed."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "hey" ()
+      "hello world\n" "v l l l l l p"
+    (should (equal (buffer-string) "hey world\n"))
+    (should (equal kill-ring '("hey")))))
 
-(ert-deftest donkey-yank-no-region-inserts-clipboard-content ()
-  "Without region, `clipboard-yank' inserts clipboard text at point."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () nil))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (insert "world"))))
-        (donkey-yank))
-      (should (string= (buffer-substring 1 6) "world")))))
+(ert-deftest donkey-yank-replaces-a-selection-of-the-whole-buffer ()
+  "`% p' replaces every character of the buffer."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "world\n" ()
+      "hello\n" "% p"
+    (should (equal (buffer-string) "world\n"))))
 
-(ert-deftest donkey-yank-region-replaces-with-clipboard-content ()
-  "With region, deletes region then yanks clipboard content."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (with-temp-buffer
-      (insert "hello world\n")
-      (goto-char 6)
-      (push-mark 1)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () t))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (delete-region 1 6)))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (insert "hey"))))
-        (donkey-yank))
-      (should (string= (buffer-substring 1 4) "hey")))))
+(ert-deftest donkey-yank-in-an-empty-buffer ()
+  "`p' in an empty buffer inserts the paste and nothing else."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "text" ()
+      "" "p"
+    (should (equal (buffer-string) "text"))))
 
-(ert-deftest donkey-yank-empty-buffer-no-region ()
-  "Empty buffer, no region: `clipboard-yank' inserts at point-min."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (with-temp-buffer
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () nil))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (insert "text"))))
-        (donkey-yank))
-      (should (= (buffer-size) 4))
-      (should (string= (buffer-string) "text")))))
-
-(ert-deftest donkey-yank-region-covers-entire-buffer ()
-  "Region covers entire buffer: cleared then replaced."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char (point-max))
-      (push-mark 1)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () t))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (delete-region 1 7)))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (insert "world\n"))))
-        (donkey-yank))
-      (should (string= (buffer-string) "world\n")))))
-
-(ert-deftest donkey-yank-call-interactively-with-region ()
-  "Can be called interactively with a region."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (deleted yanked)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (push-mark 4)
-        (cl-letf (((symbol-function 'use-region-p)
-                   (lambda () t))
-                  ((symbol-function 'delete-active-region)
-                   (lambda () (setq deleted t)))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () (setq yanked t))))
-          (call-interactively #'donkey-yank))
-        (should deleted)
-        (should yanked)))))
-
-(ert-deftest donkey-yank-ignores-prefix-arg ()
-  "`clipboard-yank' is called regardless of prefix arg."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (yanked)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (let ((current-prefix-arg '(4)))
-          (cl-letf (((symbol-function 'use-region-p)
-                     (lambda () nil))
-                    ((symbol-function 'clipboard-yank)
-                     (lambda () (setq yanked t))))
-            (call-interactively #'donkey-yank)))
-        (should yanked)))))
-
-(ert-deftest donkey-yank-outside-rectangle-mode-pastes-normally ()
-  "Without `rectangle-mark-mode', \"p\" deletes the region and yanks."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (called-cmd deleted yanked)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (push-mark 3)
-        (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-                  ((symbol-function 'call-interactively)
-                   (lambda (cmd) (setq called-cmd cmd)))
-                  ((symbol-function 'delete-active-region)
-                   (lambda () (setq deleted t)))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () (setq yanked t))))
-          (let ((rectangle-mark-mode nil))
-            (donkey-yank))))
-      (should-not called-cmd)
-      (should deleted)
-      (should yanked))))
+(ert-deftest donkey-yank-reads-a-prefix-as-a-count-not-a-kill-ring-index ()
+  "A count on `p' pastes the newest kill that many times; `yank' reads it as an index."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      nil ((kill-ring (list "NEW" "OLD")))
+      "x\n" "C-u 2 p"
+    (should (equal (buffer-string) "NEWNEWx\n"))))
 
 (ert-deftest donkey-yank-pastes-linear-text-not-a-rectangle ()
-  "`donkey-yank' goes through `clipboard-yank', never `yank-rectangle'.
+  "`p' pastes the clipboard and kill ring, never `killed-rectangle'."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "TXT" ((killed-rectangle (list "R1" "R2")))
+      "x\n" "p"
+    (should (equal (buffer-string) "TXTx\n"))))
 
-The two stores are reached by two keys; \"p\" only ever names the kill
-ring and the system clipboard."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (
-          rectangle-yanked clipboard-yanked)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
-                  ((symbol-function 'yank-rectangle)
-                   (lambda () (setq rectangle-yanked t)))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () (setq clipboard-yanked t))))
-          (let (rectangle-mark-mode)
-            (donkey-yank))))
-      (should-not rectangle-yanked)
-      (should clipboard-yanked))))
+(ert-deftest donkey-yank-of-text-emacs-copied-adds-no-kill ()
+  "Pasting what Emacs itself copied leaves the `kill-ring' as the copy left it."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      nil ()
+      "alpha beta\n" "C-u 5 y G p p p"
+    (should (equal (buffer-string) "alpha beta\nalphaalphaalpha"))
+    (should (equal kill-ring '("alpha")))))
+
+(ert-deftest donkey-yank-adds-another-programs-copy-once ()
+  "Text another program copied goes on the `kill-ring' once, however often pasted."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "EXT" ((kill-ring (list "OLD")))
+      "x\n" "p p p"
+    (should (equal (buffer-string) "EXTEXTEXTx\n"))
+    (should (equal kill-ring '("EXT" "OLD")))))
+
+(ert-deftest donkey-yank-with-a-count-reads-the-clipboard-once ()
+  "`C-u 5 p' asks the clipboard once and adds one kill for five copies."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "EXT" ((kill-ring (list "OLD")))
+      "x\n" "C-u 5 p"
+    (should (equal (buffer-string) "EXTEXTEXTEXTEXTx\n"))
+    (should (equal kill-ring '("EXT" "OLD")))
+    (should (= donkey-test-keys--clipboard-reads 1))))
+
+(ert-deftest donkey-yank-then-yank-pop-reaches-the-kill-before ()
+  "`M-y' right after `p' replaces the paste with the kill before it."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      nil ((kill-ring (list "OLD")))
+      "alpha beta\n" "C-u 5 y G p M-y"
+    (should (equal (buffer-string) "alpha beta\nOLD"))))
+
+(ert-deftest donkey-yank-with-the-clipboard-option-off-adds-its-text-once ()
+  "With `select-enable-clipboard' nil, `p' still takes the clipboard, once."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "EXT" ((select-enable-clipboard nil) (kill-ring (list "OLD")))
+      "x\n" "p p"
+    (should (equal (buffer-string) "EXTEXTx\n"))
+    (should (equal kill-ring '("EXT" "OLD")))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-indent-region-or-line
@@ -3444,7 +3297,7 @@ t unconditionally would grow a trailing newline on every such paste."
 (ert-deftest donkey-visual-line-paste-with-nothing-to-paste-keeps-the-line ()
   "`V p' with an empty kill ring reports and leaves the line standing.
 
-Guard order pinned: `donkey--nothing-to-paste-p' must run before the
+Guard order pinned: `donkey--take-clipboard' must run before the
 visual-line branch removes anything, the same protection the plain
 region and the bank already have."
   (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode ()
@@ -4537,38 +4390,19 @@ mismatched row count rather than paste half of it."
     (should replace-called)))
 
 (ert-deftest donkey-yank-in-rectangle-mode-falls-through-to-undefined ()
-  "A live rectangle is never deleted and then pasted back linearly.
+  "`p' over a live rectangle changes nothing: no deletion, no paste, no kill.
 
-Regression test: `donkey--delete-active-region-safe' correctly deletes
-the whole rectangle (via `region-extract-function', which rect.el
-advises to respect `rectangle-mark-mode'), but that deletion deactivates
-the mark, which auto-disables `rectangle-mark-mode' via its own hook --
-so a plain linear yank immediately after would land on only one row,
-silently leaving every other row of the just-deleted rectangle with
-nothing to replace it.  Must call `undefined' instead, same as
-`donkey-wrap-region' does.  Pasting over a rectangle selection is
-\\[donkey-yank-rectangle]'s job.
-
-The deletion and the yank are both asserted absent, not just the
-fall-through: reaching `undefined' matters less than not having eaten
-the rectangle on the way there."
-  (let (called-cmd deleted yanked)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 3)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-                ((symbol-function 'call-interactively)
-                 (lambda (cmd) (setq called-cmd cmd)))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (setq deleted t)))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (setq yanked t))))
-        (let ((rectangle-mark-mode t))
-          (donkey-yank 1))))
-    (should (eq called-cmd 'undefined))
-    (should-not deleted)
-    (should-not yanked)))
+The fall-through is `undefined', which rings the bell -- an error inside
+a keyboard macro in a live frame, a plain beep in batch -- so the key is
+sent on its own and its error ignored."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "EXT" ((kill-ring (list "K")))
+      "hello\nworld\n" "m v j l l"
+    (should rectangle-mark-mode)
+    (ignore-errors (execute-kbd-macro (kbd "p")))
+    (should (equal (buffer-string) "hello\nworld\n"))
+    (should (equal kill-ring '("K")))
+    (should-not killed-rectangle)))
 
 (ert-deftest donkey-yank-rectangle-count-widens-rather-than-stacking ()
   "A count on `P' repeats each ROW, giving a wider block.

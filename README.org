@@ -1928,7 +1928,10 @@ into a bug report.
 :END:
 
 =y= and =p= use the system clipboard where there is one, falling back
-to the kill ring. On most systems this needs no configuration at all:
+to the kill ring. =p= reads the clipboard once per press and puts
+another program's copy on the kill ring once, however often it is
+pasted, so =M-y= after a paste reaches the kill before it. On most
+systems this needs no configuration at all:
 DONKEY looks for =wl-copy=, =xclip=, =xsel=, =pbcopy= or Windows
 PowerShell and uses the first that fits.
 

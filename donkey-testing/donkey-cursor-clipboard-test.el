@@ -5,6 +5,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
+(require 'donkey-test-keys)
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--cursor-type-to-decscusr
@@ -748,48 +749,26 @@ real platform instead of the intended one."
       (should (eq (donkey--detect-clipboard-tools) t)))))
 
 ;;; ---------------------------------------------------------------------------
-;;; donkey--clipboard-yank
+;;; donkey--take-clipboard
 ;;; ---------------------------------------------------------------------------
 
-(ert-deftest donkey-clipboard-yank-uses-clipboard-yank-when-available ()
-  "A successful `clipboard-yank' is the whole story; `yank' is not called."
-  (let ((clipboard-called nil)
-        (yank-called nil))
-    (cl-letf (((symbol-function 'clipboard-yank)
-               (lambda () (setq clipboard-called t)))
-              ((symbol-function 'yank)
-               (lambda () (setq yank-called t))))
-      (donkey--clipboard-yank)
-      (should clipboard-called)
-      (should-not yank-called))))
+(ert-deftest donkey-yank-takes-another-programs-copy-over-the-kill-ring ()
+  "`p' pastes what another program copied last, not the older kill."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "EXT" ((kill-ring (list "K")))
+      "x\n" "p"
+    (should (equal (buffer-string) "EXTx\n"))
+    (should (equal kill-ring '("EXT" "K")))))
 
-(ert-deftest donkey-clipboard-yank-falls-back-to-yank-on-clipboard-error ()
-  "An erroring `clipboard-yank' falls back to `yank' and says so.
-
-The ONE fallback this function has.  A second test used to assert a
-fallback for `clipboard-yank' not being defined, by stubbing `fboundp'
-itself to say no -- manufacturing a world the package's version floor
-rules out, since the function is preloaded in every Emacs from 29 on.
-When the branch it reached was removed, that test kept passing anyway:
-its stubbed `clipboard-yank' signaled, so the ERROR path caught it --
-green for a reason unrelated to what it claimed to check, which is the
-recurring failure mode this suite keeps being cured of.
-
-The message is asserted as well as the call, since naming the platform
-is the part a bug report leans on."
-  (let ((yank-called nil) said)
-    (cl-letf (((symbol-function 'clipboard-yank)
-               (lambda () (signal 'error '("Clipboard inaccessible"))))
-              ((symbol-function 'yank)
-               (lambda () (setq yank-called t)))
-              ((symbol-function 'message)
-               (lambda (fmt &rest args)
-                 (when (and fmt (not said))
-                   (setq said (apply #'format fmt args))))))
-      (donkey--clipboard-yank)
-      (should yank-called)
-      (should (string-match-p "Clipboard unavailable on .*yanked from kill ring"
-                              said)))))
+(ert-deftest donkey-yank-with-an-unreadable-clipboard-pastes-the-kill-ring ()
+  "A clipboard read that signals leaves `p' pasting the newest kill."
+  (donkey-test-keys--harness "*donkey-p-test*" #'text-mode
+      ((interprogram-paste-function
+        (lambda () (error "Clipboard inaccessible")))
+       (kill-ring (list "K")))
+      "x\n" "p"
+    (should (equal (buffer-string) "Kx\n"))
+    (should (equal kill-ring '("K")))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--delete-active-region-safe
@@ -845,23 +824,13 @@ that would do exactly that; it is not passed."
 ;;; donkey-yank (clipboard-layer coverage)
 ;;; ---------------------------------------------------------------------------
 
-(ert-deftest donkey-yank-deletes-region-then-yanks ()
-  "Deletes active region before yanking.
-
-The kill ring is stocked because `donkey-yank' now checks there is
-something to paste BEFORE removing anything -- with it empty the command
-correctly does nothing at all, which is a different test below."
-  (let ((delete-called nil)
-        (yank-called nil)
-        (kill-ring (list "something")))
-    (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-              ((symbol-function 'delete-active-region)
-               (lambda (&optional _killp) (setq delete-called t)))
-              ((symbol-function 'clipboard-yank)
-               (lambda () (setq yank-called t))))
-      (donkey-yank)
-      (should delete-called)
-      (should yank-called))))
+(ert-deftest donkey-yank-over-a-selection-pastes-another-programs-copy ()
+  "`p' over a selection replaces it with the clipboard; the selection is not killed."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "EXT" ((kill-ring (list "K")))
+      "hello world\n" "v l l l l l p"
+    (should (equal (buffer-string) "EXT world\n"))
+    (should (equal kill-ring '("EXT" "K")))))
 
 (ert-deftest donkey-clipboard-tip-is-shown-once-per-session ()
   "The missing-tools tip fires on the first paste and not again.
@@ -879,17 +848,17 @@ asserted here, with the variable bound rather than read from whatever
 the session left behind."
   (let ((donkey--clipboard-warning-shown nil)
         (kill-ring (list "text"))
+        (interprogram-paste-function nil)
         (messages nil))
     (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
               ((symbol-function 'donkey--detect-clipboard-tools) (lambda () nil))
-              ((symbol-function 'clipboard-yank) (lambda () nil))
               ((symbol-function 'message)
                (lambda (fmt &rest args)
                  (push (apply #'format fmt args) messages))))
       (let ((system-type 'gnu/linux))
         (with-temp-buffer
-          (donkey--clipboard-yank)
-          (donkey--clipboard-yank))))
+          (donkey--take-clipboard)
+          (donkey--take-clipboard))))
     (should donkey--clipboard-warning-shown)
     (should (= 1 (length (seq-filter
                           (lambda (m) (string-prefix-p "Tip: Install" m))
@@ -905,21 +874,21 @@ the flag was latched on the first paste whatever the answer, so the
 GUI paste permanently suppressed the tty tip."
   (let ((donkey--clipboard-warning-shown nil)
         (kill-ring (list "text"))
+        (interprogram-paste-function nil)
         (graphic t)
         (messages nil))
     (cl-letf (((symbol-function 'display-graphic-p)
                (lambda (&rest _) graphic))
               ((symbol-function 'donkey--detect-clipboard-tools)
                (lambda () nil))
-              ((symbol-function 'clipboard-yank) (lambda () nil))
               ((symbol-function 'message)
                (lambda (fmt &rest args)
                  (push (apply #'format fmt args) messages))))
       (let ((system-type 'gnu/linux))
         (with-temp-buffer
-          (donkey--clipboard-yank)      ; GUI frame: tip ineligible
+          (donkey--take-clipboard)      ; GUI frame: tip ineligible
           (setq graphic nil)
-          (donkey--clipboard-yank))))   ; tty frame: tip must still fire
+          (donkey--take-clipboard))))   ; tty frame: tip must still fire
     (should donkey--clipboard-warning-shown)
     (should (= 1 (length (seq-filter
                           (lambda (m) (string-prefix-p "Tip: Install" m))

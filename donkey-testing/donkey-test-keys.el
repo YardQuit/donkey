@@ -35,6 +35,84 @@ the suite in a GRAPHICAL frame to see either.  Reading:
 `interprogram-cut-function\\=', and a run of the suite left \"ZZZ\" on the
 clipboard of the machine it ran on.")
 
+;; Declared here so the bindings below are dynamic in this file;
+;; select.el defines all six and is preloaded.
+(defvar gui--last-selected-text-clipboard)
+(defvar gui--last-selected-text-primary)
+(defvar gui--last-selection-timestamp-clipboard)
+(defvar gui--last-selection-timestamp-primary)
+(defvar gui-last-cut-in-clipboard)
+(defvar gui-last-cut-in-primary)
+
+(defvar donkey-test-keys--clipboard nil
+  "What the fake system clipboard of `donkey-test-keys--with-clipboard' holds.")
+
+(defvar donkey-test-keys--clipboard-reads 0
+  "How often `donkey-test-keys--with-clipboard' was asked for the clipboard.")
+
+(defmacro donkey-test-keys--with-clipboard (clipboard &rest body)
+  "Run BODY with a fake system clipboard holding CLIPBOARD, a string or nil.
+
+The fake sits under Emacs\\='s own selection code: `gui-get-selection'
+and `gui-set-selection' read and write `donkey-test-keys--clipboard',
+and everything above them -- `gui-select-text', `gui-selection-value'
+with its test of whether the clipboard changed, `current-kill',
+`kill-new' -- runs for real.  So a copy reaches the fake clipboard, a
+paste reads it, and what a paste adds to the `kill-ring' is what a real
+session gets.  Nothing reaches the machine\\='s clipboard.
+
+`donkey-test-keys--harness' switches the clipboard off again with
+`donkey-test-keys--clipboard-bindings'; `donkey-test-keys--clipboard-harness'
+is the harness with it on.  Reads are counted in
+`donkey-test-keys--clipboard-reads'."
+  (declare (indent 1))
+  `(let ((donkey-test-keys--clipboard ,clipboard)
+         (donkey-test-keys--clipboard-reads 0)
+         (gui--last-selected-text-clipboard nil)
+         (gui--last-selected-text-primary nil)
+         (gui--last-selection-timestamp-clipboard nil)
+         (gui--last-selection-timestamp-primary nil)
+         (gui-last-cut-in-clipboard nil)
+         (gui-last-cut-in-primary nil)
+         ;; `gui-select-text' leaves a copy here for `deactivate-mark'
+         ;; to put in PRIMARY; bound so it cannot outlive the test.
+         (saved-region-selection nil))
+     (cl-letf (((symbol-function 'gui-get-selection)
+                (lambda (&optional type _data-type)
+                  (when (eq type 'CLIPBOARD)
+                    (setq donkey-test-keys--clipboard-reads
+                          (1+ donkey-test-keys--clipboard-reads))
+                    (and donkey-test-keys--clipboard
+                         (copy-sequence donkey-test-keys--clipboard)))))
+               ((symbol-function 'gui-set-selection)
+                (lambda (type data)
+                  (when (and (eq type 'CLIPBOARD) (stringp data))
+                    (setq donkey-test-keys--clipboard
+                          (substring-no-properties data)))
+                  data)))
+       ,@body)))
+
+(defmacro donkey-test-keys--clipboard-harness (name mode clipboard bindings text keys &rest body)
+  "Run `donkey-test-keys--harness' with a fake system clipboard.
+
+NAME, MODE, BINDINGS, TEXT, KEYS and BODY are the harness\\='s.
+CLIPBOARD is what the clipboard holds as the keys start, a string or
+nil; `donkey-test-keys--with-clipboard' says how the fake works.  The
+clipboard is on, as it is in a graphical session: kills reach it
+through `gui-select-text' and pastes read it through
+`gui-selection-value'.  BINDINGS come after those and may change them,
+`select-enable-clipboard' included."
+  (declare (indent 6))
+  `(donkey-test-keys--with-clipboard ,clipboard
+     (donkey-test-keys--harness ,name ,mode
+         ((interprogram-cut-function #'gui-select-text)
+          (interprogram-paste-function #'gui-selection-value)
+          (select-enable-clipboard t)
+          (select-enable-primary nil)
+          ,@bindings)
+         ,text ,keys
+       ,@body)))
+
 (defmacro donkey-test-keys--harness (name mode bindings text keys &rest body)
   "Type KEYS into a displayed DONKEY buffer of TEXT, then run BODY.
 
