@@ -14382,8 +14382,10 @@ and says so once, and the state DONKEY is in stops showing after that."
         ((proper-list-p donkey-decscusr-denied-terminals)
          (seq-filter #'stringp donkey-decscusr-denied-terminals))))
 
-(defun donkey--terminal-supports-decscusr-p ()
-  "Return non-nil if the current terminal likely supports DECSCUSR.
+(defun donkey--terminal-supports-decscusr-p (&optional terminal)
+  "Return non-nil if TERMINAL likely supports DECSCUSR.
+
+TERMINAL defaults to the selected frame\\='s.
 
 Returns nil for graphical frames, for a terminal that is not a text
 terminal -- a daemon\\='s initial terminal, whose output is the daemon\\='s
@@ -14395,8 +14397,8 @@ rather than signals.  The type is the one `tty-type' reports.
 Nil under `--batch' too; a test that stubs a capable terminal binds
 `noninteractive' to nil."
   (and (not noninteractive)
-       (not (display-graphic-p))
-       (let ((tty (tty-type)))
+       (not (display-graphic-p terminal))
+       (let ((tty (tty-type terminal)))
          (when tty
            (and (not (cl-some
                       (lambda (prefix)
@@ -14469,6 +14471,50 @@ otherwise, so the next command in a visible buffer resyncs it through
 
 (defvar donkey--cursor-last-buffer nil
   "The buffer `donkey--update-cursor-passive' last updated the cursor in.")
+
+(defun donkey--give-back-terminal-cursor (&optional terminal)
+  "Send TERMINAL the terminal\\='s own cursor shape, if DONKEY changed it.
+
+With TERMINAL nil, every terminal DONKEY sent a shape to.  The
+terminal is forgotten, so its next state change sends the shape
+again.  On `kill-emacs-hook', `suspend-hook', `suspend-tty-functions'
+and `delete-terminal-functions', so the shell a terminal goes back to
+is not left with DONKEY\\='s shape.  Never signals."
+  (let ((absent (list nil))
+        (terminals
+         (if terminal
+             (list terminal)
+           (let (all)
+             (maphash (lambda (term _) (push term all))
+                      donkey--last-applied-cursor-settings)
+             all))))
+    (dolist (term terminals)
+      (unless (eq (gethash term donkey--last-applied-cursor-settings absent)
+                  absent)
+        (remhash term donkey--last-applied-cursor-settings)
+        (condition-case nil
+            (when (and (terminal-live-p term)
+                       (donkey--terminal-supports-decscusr-p term))
+              (send-string-to-terminal (donkey--cursor-type-to-decscusr nil)
+                                       term))
+          (error nil))))))
+
+(defun donkey--resync-terminal-cursor (&optional terminal)
+  "Send the shape the current state asks for again, after a resume.
+
+On `suspend-resume-hook' and `resume-tty-functions'.  TERMINAL is the
+terminal resumed, nil for the selected frame\\='s.  What the terminal
+shows is not known after a suspension, so it is forgotten and the
+shape sent again: at once when the selected frame is on it, at the
+next command otherwise.  Never signals."
+  (let ((term (or terminal (frame-terminal))))
+    (remhash term donkey--last-applied-cursor-settings)
+    (setq donkey--cursor-last-buffer nil)
+    (when (eq term (frame-terminal))
+      (condition-case nil
+          (with-current-buffer (window-buffer (selected-window))
+            (donkey--update-cursor-passive))
+        (error nil)))))
 
 (defvar donkey--cursor-last-window nil
   "The window that was selected when it last updated the cursor.")
@@ -15362,14 +15408,21 @@ so one buffer's erroring hook cannot strand the rest."
   '((pre-command-hook . donkey--intercept-quit-in-insert)
     (pre-command-hook . donkey--intercept-quit-after-prefix)
     (input-method-activate-hook . donkey--on-input-method-activate)
-    (input-method-deactivate-hook . donkey--on-input-method-deactivate))
+    (input-method-deactivate-hook . donkey--on-input-method-deactivate)
+    (kill-emacs-hook . donkey--give-back-terminal-cursor)
+    (suspend-hook . donkey--give-back-terminal-cursor)
+    (suspend-tty-functions . donkey--give-back-terminal-cursor)
+    (delete-terminal-functions . donkey--give-back-terminal-cursor)
+    (suspend-resume-hook . donkey--resync-terminal-cursor)
+    (resume-tty-functions . donkey--resync-terminal-cursor))
   "The (HOOK . FUNCTION) entries the STATE modes need, `donkey-mode' or not.
 
 A subset of `donkey--global-hooks': the two quit-key backups -- for
 packages that shadow the key, and for the key pressed after one of
-DONKEY's own prefixes -- and the input-method fences.
-`donkey--install-state-hooks' adds them when a state is turned on
-without `donkey-mode'.")
+DONKEY's own prefixes -- the input-method fences, and the terminal
+cursor given back when Emacs exits or is suspended or a terminal
+closes, and sent again on resume.  `donkey--install-state-hooks' adds
+them when a state is turned on without `donkey-mode'.")
 
 (defun donkey--install-state-hooks ()
   "Add the hooks in `donkey--state-hooks' when a DONKEY state is on.
@@ -15405,7 +15458,7 @@ One list, so the enable and disable paths cannot drift apart.
 `deactivate-mark-hook' is not here: its functions are installed
 buffer-locally by the commands that need them.  The
 `donkey--state-hooks' tail is shared with the standalone state modes,
-which reinstall those three on their own -- see
+which reinstall those on their own -- see
 `donkey--install-state-hooks'.")
 
 (defun donkey--install-global-hooks ()

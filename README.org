@@ -1899,6 +1899,11 @@ Those two are the default: =dumb= supports no escape sequences at all,
 and the Linux console changes its cursor by a different mechanism.
 Matching is by prefix on what =tty-type= reports.
 
+When Emacs exits or is suspended, or an =emacsclient -t= frame closes,
+the terminal is sent its own cursor shape back, so the shell you
+return to does not keep DONKEY's. Coming back from a suspension sends
+the state's shape again.
+
 If your terminal prints stray characters when the state changes, add
 its type:
 
