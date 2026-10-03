@@ -2330,8 +2330,8 @@ real raw-key check firing."
                     (default-value hook))
         (lambda (a b) (string< (symbol-name a) (symbol-name b)))))
 
-(ert-deftest donkey-mode-puts-six-functions-on-the-command-hooks ()
-  "Two pre-command and four post-command functions with the mode on, none off.
+(ert-deftest donkey-mode-puts-seven-functions-on-the-command-hooks ()
+  "Two pre-command and five post-command functions with the mode on, none off.
 
 This is the package's whole per-command cost between keystrokes,
 a few microseconds; a function added to either hook is a change
@@ -2349,10 +2349,11 @@ prefix DONKEY owns."
                    '(donkey--check-post-command-non-editing
                      donkey--show-selection-hint
                      donkey--track-position
-                     donkey--update-cursor-passive)))
+                     donkey--update-cursor-passive
+                     donkey--visual-line-follow-exchange)))
     (donkey-enter-normal)
     (should (= 2 (length (donkey-state-test--own-hook-functions 'pre-command-hook))))
-    (should (= 4 (length (donkey-state-test--own-hook-functions 'post-command-hook)))))
+    (should (= 5 (length (donkey-state-test--own-hook-functions 'post-command-hook)))))
   (should (null (donkey-state-test--own-hook-functions 'pre-command-hook)))
   (should (null (donkey-state-test--own-hook-functions 'post-command-hook))))
 

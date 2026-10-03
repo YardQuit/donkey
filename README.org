@@ -403,6 +403,10 @@ take that line's newline as well, so lines go and come back whole. So
 do Emacs's own =C-w=, =M-w= and =C-x r s=, and anything else that asks
 Emacs for the region's text.
 
+=C-x C-x= trades the selection's ends, as =o= does in Vim: =J= and =K=
+then move the end the cursor went to. =C-SPC= lets the line selection
+go and starts a plain one at the cursor.
+
 A line is the line the screen shows. A folded Org or outline heading
 is one line, so =V= takes it with the body it hides and =J= and =K=
 step over it in one press, the way =m l= banks it and Emacs's

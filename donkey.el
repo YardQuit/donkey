@@ -3613,6 +3613,18 @@ this is set -- there, a delimiter key wraps the selection instead."
 (defvar-local donkey-visual-anchor nil
   "Anchor position for visual line selection.")
 
+(defvar-local donkey--visual-line-mark nil
+  "Where the visual-line session put the mark, or nil.
+
+Set with the mark by `donkey--visual-line-set-mark', so a session is
+one whose mark nothing else has moved; see
+`donkey--visual-line-session-active-p'.")
+
+(defun donkey--visual-line-set-mark (pos)
+  "Set the mark of a visual-line session at POS, and note it there."
+  (set-mark pos)
+  (setq donkey--visual-line-mark pos))
+
 (defun donkey--ensure-non-rectangle-selection ()
   "Clear the selection state an earlier selection may have left behind.
 
@@ -3627,7 +3639,8 @@ leaves the old selection standing whole, kind and all; the object
 commands call it before their search, whose refusals mark nothing."
   (when (bound-and-true-p rectangle-mark-mode)
     (rectangle-mark-mode -1))
-  (setq donkey-visual-anchor nil))
+  (setq donkey-visual-anchor nil
+        donkey--visual-line-mark nil))
 
 (defun donkey--clear-visual-anchor ()
   "Clear `donkey-visual-anchor' whenever the mark is deactivated.
@@ -3635,20 +3648,26 @@ commands call it before their search, whose refusals mark nothing."
 On `deactivate-mark-hook', installed buffer-locally by
 `donkey-visual-line-toggle' when it sets the anchor, so the anchor
 never survives its region."
-  (setq donkey-visual-anchor nil))
+  (setq donkey-visual-anchor nil
+        donkey--visual-line-mark nil))
 
 
 (defun donkey--visual-line-session-active-p ()
   "Return non-nil if point is continuing an active visual-line selection.
 
 Requires an active region, a recorded `donkey-visual-anchor', and that
-the mark still sits where a visual-line command would have left it --
+the mark still sits where a visual-line command left it --
 either exactly AT the anchor (a line beginning) or at that anchor
 line's end.  Those are the only two values `donkey-visual-line-toggle',
 `donkey-visual-next-line' and `donkey-visual-previous-line' ever set
 the mark to, depending on which side of the anchor point is on.  A line
 is the line the screen shows, so a folded heading ends where its hidden
 body does; see `donkey--visible-line-end'.
+
+Point may move freely, but the mark may not: a command that moves it --
+\\[set-mark-command] included, even onto the anchor line's other end --
+ends the session.  \\[exchange-point-and-mark] is the exception, and
+trades the session's ends; see `donkey--visual-line-follow-exchange'.
 
 An anchor outside the accessible portion is not a session this can
 continue."
@@ -3658,8 +3677,32 @@ continue."
        (<= (point-min) donkey-visual-anchor)
        (<= donkey-visual-anchor (point-max))
        (mark)
+       (eql (mark) donkey--visual-line-mark)
        (or (= (mark) donkey-visual-anchor)
            (= (mark) (donkey--visible-line-end donkey-visual-anchor)))))
+
+(defun donkey--visual-line-follow-exchange ()
+  "Trade the ends of a visual-line session whose point and mark traded.
+
+On `post-command-hook' for the life of `donkey-mode'.  A command that
+leaves the cursor where the session's mark was, and the mark somewhere
+else, traded the ends -- \\[exchange-point-and-mark] or any other.
+The end the cursor left is then the fixed end and the line it is on the
+new anchor, so `J' and `K' move the end the cursor is now at, as Vim's
+`o' trades the ends of a line selection.  The selection still covers
+the same whole lines."
+  (when (and donkey-visual-anchor
+             donkey--visual-line-mark
+             mark-active
+             (mark t)
+             (= (point) donkey--visual-line-mark)
+             (/= (mark t) donkey--visual-line-mark))
+    (let ((far (mark t)))
+      (setq donkey-visual-anchor (donkey--visible-line-start far))
+      (donkey--visual-line-set-mark
+       (if (> far (point))
+           (donkey--visible-line-end donkey-visual-anchor)
+         donkey-visual-anchor)))))
 
 (defun donkey--visible-line-start (&optional pos)
   "Return the start of the visible line POS is on.
@@ -3857,10 +3900,10 @@ counts a folded heading as the one line the screen shows."
   (setq donkey-visual-anchor (donkey--visible-line-start))
   (if (> n 0)
       (progn
-        (set-mark donkey-visual-anchor)
+        (donkey--visual-line-set-mark donkey-visual-anchor)
         (forward-visible-line (1- n))
         (end-of-visible-line))
-    (set-mark (donkey--visible-line-end))
+    (donkey--visual-line-set-mark (donkey--visible-line-end))
     (forward-visible-line (1+ n)))
   (activate-mark)
   (message "%s" donkey--visual-line-hint))
@@ -3896,9 +3939,10 @@ row.  `donkey-visual-previous-line' mirrors it."
     (forward-visible-line (or count 1))
     (if (> (donkey--visible-line-start) donkey-visual-anchor)
         (progn
-          (set-mark donkey-visual-anchor)
+          (donkey--visual-line-set-mark donkey-visual-anchor)
           (end-of-visible-line))
-      (set-mark (donkey--visible-line-end donkey-visual-anchor))
+      (donkey--visual-line-set-mark
+       (donkey--visible-line-end donkey-visual-anchor))
       (forward-visible-line 0))
     (activate-mark))
    ((bound-and-true-p rectangle-mark-mode)
@@ -3928,9 +3972,10 @@ Inside a rectangle this moves as `k' does there, through
     (forward-visible-line (- (or count 1)))
     (if (< (donkey--visible-line-start) donkey-visual-anchor)
         (progn
-          (set-mark (donkey--visible-line-end donkey-visual-anchor))
+          (donkey--visual-line-set-mark
+           (donkey--visible-line-end donkey-visual-anchor))
           (forward-visible-line 0))
-      (set-mark donkey-visual-anchor)
+      (donkey--visual-line-set-mark donkey-visual-anchor)
       (end-of-visible-line))
     (activate-mark))
    ((bound-and-true-p rectangle-mark-mode)
@@ -16121,6 +16166,7 @@ actually being on, because those mode hooks also fire on the way off."
   `((after-change-major-mode-hook . donkey--ensure-default-state)
     (post-command-hook . donkey--track-position)
     (post-command-hook . donkey--show-selection-hint)
+    (post-command-hook . donkey--visual-line-follow-exchange)
     (post-command-hook . donkey--check-post-command-non-editing)
     (post-command-hook . donkey--update-cursor-passive)
     (minibuffer-setup-hook . donkey--minibuffer-setup)

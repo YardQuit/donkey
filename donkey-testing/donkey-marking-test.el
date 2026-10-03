@@ -5926,12 +5926,14 @@ last would win, which is not a rule anybody could hold."
         (should (equal painted donkey--linear-selection-hint))
         ;; A visual-line session over it takes the echo area.
         (setq painted nil)
-        (let ((donkey-visual-anchor (mark)))
+        (let ((donkey-visual-anchor (mark))
+              (donkey--visual-line-mark (mark)))
           (donkey--show-selection-hint))
         (should (equal painted donkey--visual-line-hint))
         ;; And a rectangle outranks both.
         (setq painted nil)
         (let ((donkey-visual-anchor (mark))
+              (donkey--visual-line-mark (mark))
               (rectangle-mark-mode t))
           (donkey--show-selection-hint))
         (should (equal painted donkey--rectangle-hint))

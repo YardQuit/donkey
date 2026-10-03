@@ -13,6 +13,7 @@
 (defvar donkey--last-tracked-state)
 (defvar donkey-position-ring-max)
 (defvar donkey-visual-anchor)
+(defvar donkey--visual-line-mark)
 
 (defmacro donkey--goto-line (n)
   "Move point to the start of absolute line N (1-based) in the current buffer."
@@ -879,6 +880,7 @@ and clears the anchor."
     (insert "hello world\n")
     (goto-char 1)
     (let ((donkey-visual-anchor (point))
+          (donkey--visual-line-mark (point))
           (last-command 'donkey-visual-line-toggle))
       ;; Real sessions install this hook in the same breath as setting
       ;; the anchor; the cancel branch clears the anchor through it, so
@@ -993,6 +995,41 @@ Only the bare press cancels: a count is an instruction about size."
       "a\nb\nc\nd\ne\n" "C-u 3 V d"
     (should (equal (buffer-string) "d\ne\n"))
     (should (equal (car kill-ring) "a\nb\nc\n"))))
+
+(ert-deftest donkey-exchange-in-a-V-session-trades-its-ends ()
+  "\\[exchange-point-and-mark] in a `V' session keeps whole lines and trades the ends.
+
+After the exchange the far end is fixed and `J' and `K' move the end the
+cursor went to, from either layout."
+  (dolist (case '((0 "V J J C-x C-x y" "a1\nb2\nc3\n")
+                  (0 "V J J C-x C-x J y" "b2\nc3\n")
+                  (1 "V J C-x C-x K y" "a1\nb2\nc3\n")
+                  (3 "V K K C-x C-x J y" "b2\nc3\nd4\ne5\n")
+                  (3 "V K K C-x C-x K y" "b2\nc3\n")
+                  (0 "V J J C-x C-x C-x C-x J y" "a1\nb2\nc3\nd4\n")
+                  (2 "V J k C-x C-x y" "c3\n")))
+    (pcase-let ((`(,line ,keys ,want) case))
+      (donkey-test-keys--harness "*donkey-V-exchange*" #'text-mode ()
+          "a1\nb2\nc3\nd4\ne5\n" ""
+        (forward-line line)
+        (execute-kbd-macro (kbd keys))
+        (should (equal (list keys (car kill-ring)) (list keys want))))))
+  (donkey-test-keys--harness "*donkey-V-exchange*" #'text-mode ()
+      "a1\nb2\nc3\nd4\n" "V J J C-x C-x d"
+    (should (equal (buffer-string) "d4\n"))
+    (should (equal (car kill-ring) "a1\nb2\nc3\n"))))
+
+(ert-deftest donkey-setting-the-mark-ends-a-V-session ()
+  "\\[set-mark-command] in a `V' session ends it, even on a one-line session.
+
+The mark it sets lands on the line's end, where an upward session keeps
+its mark, so only the session's own record of its mark tells them apart."
+  (donkey-test-keys--harness "*donkey-V-set-mark*" #'text-mode ()
+      "alpha\nbeta\ngamma\n" "j V C-SPC"
+    (should (region-active-p))
+    (should-not (donkey--visual-line-session-active-p))
+    (execute-kbd-macro (kbd "d"))
+    (should (string-prefix-p "alpha\nbeta" (buffer-string)))))
 
 (defconst donkey-nav-test--folded-text
   "* A\na body\n* B\nb1\nb2\nb3\n* C\nc body\n"
@@ -1280,6 +1317,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 2)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1296,6 +1334,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 2)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1315,6 +1354,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 4)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1342,6 +1382,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 1)))
       (donkey--goto-line 2)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1357,6 +1398,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 2)))
       (donkey--goto-line 1)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1409,6 +1451,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 4)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1425,6 +1468,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 4)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1444,6 +1488,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 2)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1470,6 +1515,7 @@ original anchor line instead of extending \"hello\" by one line."
     (insert "single line\n")
     (goto-char (point-min))
     (let ((donkey-visual-anchor (point-min))
+          (donkey--visual-line-mark (point-min))
           (last-command 'donkey-visual-line-toggle))
       (set-mark (point-min))
       (end-of-line)
@@ -1486,6 +1532,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 1)))
       (donkey--goto-line 2)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1501,6 +1548,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 2)))
       (donkey--goto-line 3)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
