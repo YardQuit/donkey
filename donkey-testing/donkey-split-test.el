@@ -814,6 +814,61 @@ touch the text it goes around, so it is not asked."
       (should (null donkey--split-buffer))
       (should (null donkey--split-exit-function)))))
 
+(defmacro donkey-split-test--visiting (text revert &rest body)
+  "Write X at a split in a buffer visiting a file of TEXT, REVERT it, run BODY.
+
+The split is every \"foo\" in the buffer, and the file is deleted
+afterward.  REVERT is the argument list `revert-buffer' is called with,
+as a command of its own."
+  (declare (indent 2))
+  `(let ((file (make-temp-file "donkey-split-revert")))
+     (unwind-protect
+         (donkey-split-test--on "foo"
+           (donkey-split-test--keys "*split-revert*" ,text ""
+             (write-region nil nil file nil 'silent)
+             (set-visited-file-name file t)
+             (text-mode)
+             (donkey-normal-mode 1)
+             (set-buffer-modified-p nil)
+             (setq buffer-undo-list nil)
+             (execute-kbd-macro (kbd "v G f a X"))
+             ;; Places left behind stay behind: a live frame runs the
+             ;; sweep's timer too.
+             (donkey--split-sweep-cancel)
+             (let ((overriding-local-map
+                    (let ((map (make-sparse-keymap)))
+                      (define-key map [f7] (lambda () (interactive)
+                                             (apply #'revert-buffer ,revert)))
+                      map)))
+               (execute-kbd-macro [f7]))
+             (when donkey-insert-mode
+               (execute-kbd-macro (kbd "C-g")))
+             ,@body
+             (set-buffer-modified-p nil)
+             (set-visited-file-name nil t)))
+       (delete-file file))))
+
+(ert-deftest donkey-split-reverted-while-writing-leaves-undo-to-emacs ()
+  "A revert reaching over the places ends the split, and `u' takes the revert back."
+  (dolist (revert '((t t) (t t t)))
+    (donkey-split-test--visiting "a foo b\nc foo d\n" revert
+      (should (equal (list revert (buffer-string))
+                     (list revert "a foo b\nc foo d\n")))
+      (should (null donkey--split-phase))
+      (execute-kbd-macro (kbd "u"))
+      (should (equal (list revert (buffer-string))
+                     (list revert "a fooX b\nc fooX d\n"))))))
+
+(ert-deftest donkey-split-reverted-while-writing-writes-no-place-left-behind ()
+  "A revert while places are still behind leaves the buffer as the file has it."
+  (let ((text (mapconcat (lambda (i) (format "foo %d\n" i))
+                         (number-sequence 1 8000) "")))
+    (dolist (revert '((t t) (t t t)))
+      (donkey-split-test--visiting text revert
+        (should (equal (list revert (buffer-string))
+                       (list revert text)))
+        (should (null donkey--split-phase))))))
+
 (ert-deftest donkey-split-ends-when-donkey-mode-is-turned-off ()
   "Turning DONKEY off takes a split down with it."
   (unwind-protect

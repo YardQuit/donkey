@@ -8007,7 +8007,8 @@ the primary, and whatever the command that ended the writing changed
 deletions past its edges and changes away from the places included;
 see `donkey--split-writing-entry' and `donkey--split-record'.  With
 NO-FLUSH non-nil the places still behind are left as they are,
-because writing them is what failed.
+because writing them is what failed; so they are where two places have
+come to touch, since what was copied into one would land in the other.
 
 Nothing is replaced where what was recorded can no longer be found,
 which a garbage collection can bring about, or where a change reached
@@ -8016,6 +8017,8 @@ stays as Emacs made it, without the copies."
   (donkey--split-holding-gc
     (when donkey--split-writing
       (setq donkey--split-writing nil)
+      (when (and (not no-flush) donkey--split-behind (donkey--split-touching-p))
+        (setq no-flush t))
       (unless no-flush
         (condition-case err
             (donkey--split-sweep-flush)
@@ -8119,14 +8122,17 @@ before.  Does nothing where no writing is open."
 A list (POSITIONS FROM TO) over every live place and every change
 the ending command made away from the places, in buffer order; nil
 where none of them changed anything, and `lost' where a change cannot
-be told apart from a place or could not be weighed at all; see
-`donkey--split-lost'.  With NO-FLUSH non-nil each place is
-read for what it holds, since the places were not all written; so it
-is where the written place holds what was never copied."
+be told apart from a place or could not be weighed at all, see
+`donkey--split-lost', or where two places have come to overlap, as a
+replacement reaching over several of them leaves them.  With NO-FLUSH
+non-nil each place is read for what it holds, since the places were
+not all written; so it is where the written place holds what was never
+copied."
   (let ((strays (if donkey--split-lost 'lost (donkey--split-stray-changes))))
     (if (eq strays 'lost)
         'lost
-      (let ((initial donkey--split-edit-initial)
+      (catch 'donkey--split-overlap
+       (let ((initial donkey--split-edit-initial)
             (edges donkey--split-edge-texts)
             (read (or no-flush strays
                       (and donkey--split-primary
@@ -8136,6 +8142,7 @@ is where the written place holds what was never copied."
                                        donkey--split-text)))))
             (index -1)
             (changed nil)
+            (last-end nil)
             positions from to)
         (cl-flet ((take (position was now)
                     (unless (equal was now)
@@ -8148,6 +8155,9 @@ is where the written place holds what was never copied."
             (when (overlay-buffer place)
               (let ((beg (overlay-start place))
                     (cell (and edges (aref edges index))))
+                (when (and last-end (< beg last-end))
+                  (throw 'donkey--split-overlap 'lost))
+                (setq last-end (overlay-end place))
                 ;; A change before this place, or a deletion at its
                 ;; start, which stood before it.
                 (while (and strays
@@ -8163,7 +8173,7 @@ is where the written place holds what was never copied."
         (and changed
              (list (vconcat (nreverse positions))
                    (donkey--split-texts (nreverse from))
-                   (donkey--split-texts (nreverse to))))))))
+                   (donkey--split-texts (nreverse to)))))))))
 
 (defun donkey--split-stray-changes ()
   "Return what the ending command changed away from the places, or `lost'.
