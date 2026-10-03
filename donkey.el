@@ -2342,9 +2342,11 @@ takes it off again.
 `pairing-package' hands the press to `self-insert-command' with the
 mark still active and lets whatever is on `post-self-insert-hook'
 decide -- `electric-pair-mode' wraps `(', `[', `{' and `\"',
-Smartparens wraps the pairs it has for the mode, and with neither
-enabled the character is merely inserted at point.  Nothing is taken
-off again under this setting.
+Smartparens wraps the pairs it has for the mode, and with nothing
+pairing the character is merely inserted at point.  Nothing is taken
+off again under this setting.  Where `donkey-pair-mode' is the only
+thing pairing in the buffer it is the pairing package, and the wrap
+is DONKEY\\='s own, taking a pair off included.
 
 Read at each press, so a change takes effect on the next one, and any
 value but `pairing-package' reads as `donkey'.  A rectangle selection
@@ -2374,27 +2376,33 @@ instead, and a named list is always taken as it stands.  This narrows
 only what `all' DERIVES.")
 
 (defun donkey--wrap-pairing-package-here ()
-  "Return the name of the pairing package live in this buffer, or nil.
+  "Return the mode of the pairing package live in this buffer, or nil.
 
 `smartparens-mode' and `electric-pair-mode' are asked for by name --
 a list, and it says where it stops: another package on
-`post-self-insert-hook' pairs just as well and is not named here.  Used
-only to tell a reader what to expect from the `pairing-package'
-engine, never to decide anything."
-  (cond ((bound-and-true-p smartparens-mode) "smartparens-mode")
+`post-self-insert-hook' pairs just as well and is not named here.
+Where neither is on and `donkey-pair-mode' pairs in the buffer, the
+answer is `donkey-pair-mode', and under the `pairing-package' engine
+`donkey-wrap-region' then wraps with DONKEY\\='s own engine.  The
+toggle asks the same question, so what it says is what a press does."
+  (cond ((bound-and-true-p smartparens-mode) 'smartparens-mode)
         ((or (bound-and-true-p electric-pair-local-mode)
              (bound-and-true-p electric-pair-mode))
-         "electric-pair-mode")))
+         'electric-pair-mode)
+        ((and (bound-and-true-p donkey-pair-mode)
+              (not (donkey--pair-off-here-p)))
+         'donkey-pair-mode)))
 
 (defun donkey-toggle-wrap-engine ()
   "Switch who wraps a selection: DONKEY itself, or your pairing package.
 
 Flips `donkey-wrap-region-engine' between its two values and says
-which is in force.  Under `pairing-package' it also says whether
-anything is pairing in THIS buffer, since with nothing on
-`post-self-insert-hook' a press inserts one character and no pair --
-which is the setting doing exactly what it says, and not what a reader
-who forgot to turn Smartparens on is expecting.
+which is in force.  Under `pairing-package' it also says what is
+pairing in THIS buffer: with nothing on `post-self-insert-hook' a
+press inserts one character and no pair -- which is the setting doing
+exactly what it says, and not what a reader who forgot to turn
+Smartparens on is expecting -- and where only `donkey-pair-mode'
+pairs, DONKEY wraps and unwraps as its own engine does.
 
 The value is global, and is read at each press, so the next key obeys
 it.  Reached by name: a setting changed to compare two behaviors is
@@ -2412,12 +2420,17 @@ not something fingers repeat."
    (if (eq donkey-wrap-region-engine 'donkey)
        "DONKEY wraps and unwraps now"
      (let ((package (donkey--wrap-pairing-package-here)))
-       (if package
-           (format "the pairing package wraps now -- %s is on in this buffer"
-                   package)
+       (cond
+        ((eq package 'donkey-pair-mode)
+         (concat "the pairing package wraps now -- in this buffer that is"
+                 " donkey-pair-mode, so DONKEY wraps and unwraps"))
+        (package
+         (format "the pairing package wraps now -- %s is on in this buffer"
+                 package))
+        (t
          (concat "the pairing package wraps now -- but nothing this package"
                  " knows of is pairing in this buffer, so a press will"
-                 " insert one character"))))))
+                 " insert one character")))))))
 
 (defvar donkey-mark-pair-delimiters) ;(donkey--wrap-close-char); defined below, in "Mark and Text Object Selection Commands"
 
@@ -2717,7 +2730,9 @@ its own start/end column instead; see `donkey--wrap-rectangle-region'.
 
 `donkey-wrap-region-engine' set to `pairing-package' hands the press
 to the pairing package instead, and nothing is taken off then; the
-rectangle is DONKEY's own under either setting.
+rectangle is DONKEY's own under either setting, and so is the whole
+press where `donkey-pair-mode' is the only thing pairing in the
+buffer.
 
 A read-only buffer is refused before anything is changed, and
 read-only text the same way and at the same moment, through
@@ -2736,7 +2751,9 @@ keyboard."
    ;; or a function key does not.
    ((not (characterp last-command-event))
     (call-interactively #'undefined))
-   ((eq donkey-wrap-region-engine 'pairing-package)
+   ((and (eq donkey-wrap-region-engine 'pairing-package)
+         ;; DONKEY's own pairing as the package wraps as DONKEY does.
+         (not (eq (donkey--wrap-pairing-package-here) 'donkey-pair-mode)))
     ;; Refused here, before any state changes, so the selection
     ;; outlives the refusal.
     (barf-if-buffer-read-only)

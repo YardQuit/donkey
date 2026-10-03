@@ -1976,6 +1976,23 @@ is where it is worth saying."
              (should (string-match-p "electric-pair-mode is on in this buffer" said)))
          (electric-pair-local-mode -1))))))
 
+(ert-deftest donkey-the-toggle-names-donkey-pairing-when-it-is-the-package ()
+  "With only `donkey-pair-mode' pairing, the toggle says DONKEY wraps here."
+  (donkey-wrap-test--engine-restored
+   (unwind-protect
+       (with-temp-buffer
+         (text-mode)
+         (donkey-pair-mode 1)
+         (set-default 'donkey-wrap-region-engine 'donkey)
+         (let (said)
+           (cl-letf (((symbol-function 'message)
+                      (lambda (fmt &rest args)
+                        (when fmt (setq said (apply #'format fmt args))))))
+             (donkey-toggle-wrap-engine))
+           (should (string-match-p
+                    "that is donkey-pair-mode, so DONKEY wraps and unwraps" said))))
+     (donkey-pair-mode -1))))
+
 (ert-deftest donkey-a-named-list-is-taken-as-it-stands-under-either-engine ()
   "`all' is narrowed while delegating; a list the reader named is not.
 
@@ -2368,6 +2385,31 @@ one, as it did before there was an engine to choose."
       ((donkey-wrap-region-engine 'pairing-package))
       "say \"word\" now" "w w m i \""
     (should (equal (buffer-string) "say \"\"word\" now"))))
+
+(ert-deftest donkey-the-pairing-package-engine-wraps-as-donkey-where-only-donkey-pairs ()
+  "Where only `donkey-pair-mode' pairs, a press wraps as DONKEY\\='s engine does.
+
+Under `pairing-package' the selection is wrapped, and a pair standing
+round it is taken off, rather than a pair typed at point.  In a mode
+`donkey-pair-mode' does not pair in, nothing pairs, and the press
+types its one character as it does with the mode off."
+  (unwind-protect
+      (progn
+        (donkey-pair-mode 1)
+        (donkey-test-keys--harness "*donkey-wrap-engine*" #'text-mode
+            ((donkey-wrap-region-engine 'pairing-package))
+            "alpha beta" "m w ("
+          (should (equal (buffer-string) "(alpha) beta")))
+        (donkey-test-keys--harness "*donkey-wrap-engine*" #'text-mode
+            ((donkey-wrap-region-engine 'pairing-package))
+            "say \"word\" now" "w w m i \""
+          (should (equal (buffer-string) "say word now")))
+        (donkey-test-keys--harness "*donkey-wrap-engine*" #'text-mode
+            ((donkey-wrap-region-engine 'pairing-package)
+             (donkey-pair-excluded-modes '(text-mode)))
+            "alpha beta" "m w ("
+          (should (equal (buffer-string) "(alpha beta"))))
+    (donkey-pair-mode -1)))
 
 (ert-deftest donkey-a-take-off-over-read-only-delimiters-is-refused ()
   "A take-off whose delimiters are read-only refuses and changes nothing.

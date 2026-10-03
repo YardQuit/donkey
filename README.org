@@ -2069,6 +2069,10 @@ pressing the same delimiter again takes the pair off. =M-x
 donkey-toggle-wrap-engine= flips between the two so you can feel the
 difference.
 
+In a buffer where nothing but =donkey-pair-mode= is pairing, DONKEY's
+own pairing is the package, so the wrap there is DONKEY's own, taking
+the pair off included, and the toggle says so.
+
 * Pairing: every setting
 :PROPERTIES:
 :CUSTOM_ID: pairing-every-setting
