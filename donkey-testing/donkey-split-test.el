@@ -2804,6 +2804,21 @@ compared by their text, not by their size."
       (should (null donkey-visual-anchor))
       (should (null donkey--mark-pair-state)))))
 
+(ert-deftest donkey-split-keeps-no-text-in-its-hidden-buffers-once-done ()
+  "What was written and what an undo checked are gone from the split's hidden buffers."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-hidden-buffers*" "a foo b\nc foo d\n"
+        "v G f c s3cr3t C-g"
+      (should (equal (buffer-string) "a s3cr3t b\nc s3cr3t d\n"))
+      (should (equal (with-current-buffer (donkey--split-text-buffer)
+                       (buffer-string))
+                     ""))
+      (execute-kbd-macro (kbd "u"))
+      (should (equal (buffer-string) "a  b\nc  d\n"))
+      (should (equal (with-current-buffer (donkey--split-check-buffer)
+                       (buffer-string))
+                     "")))))
+
 (ert-deftest donkey-split-refuses-to-undo-over-a-place-whose-case-changed ()
   "The writing's undo entry refuses a place holding its letters in another case."
   (donkey-split-test--on "foo"

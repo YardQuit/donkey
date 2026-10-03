@@ -6868,8 +6868,9 @@ at 850,000 places is a tenth of a second.")
   "A hidden buffer holding the target\\='s texts, for comparing places against.
 
 Filled by `donkey--split-set-target', NEW from its start and OLD after
-it.  `compare-buffer-substrings' against it allocates nothing, where a
-`buffer-substring' at every place costs a string each.")
+it, and emptied when the split ends.  `compare-buffer-substrings'
+against it allocates nothing, where a `buffer-substring' at every
+place costs a string each.")
 
 (defvar donkey--split-buffer nil
   "The buffer an armed split belongs to, or nil when none is armed.
@@ -7611,7 +7612,8 @@ places touching; signal where a place cannot be written."
   "The buffer an undo entry compares the places\\=' text from.
 
 Kept rather than made for each undo: a buffer made and killed runs
-what a configuration hangs on the buffer hooks.")
+what a configuration hangs on the buffer hooks.  Emptied once the
+places are checked.")
 
 (defun donkey--split-check-buffer ()
   "Return `donkey--split-check-buffer', making it where it is not live."
@@ -7921,27 +7923,32 @@ place, so no place holds anything but what it held; see
             (erase-buffer)
             (set-buffer-multibyte multibyte)
             (insert one)))
-        (while (< i n)
-          (let* ((pos (aref positions i))
-                 (text (donkey--split-text-at now i))
-                 (length (length text)))
-            (unless (and (<= (point-min) pos)
-                         (<= (+ pos length) (point-max))
-                         (if one
-                             (eq 0 (compare-buffer-substrings
-                                    scratch 1 (1+ length)
-                                    nil pos (+ pos length)))
-                           (string= text (buffer-substring-no-properties
-                                          pos (+ pos length)))))
-              (error "The split's places no longer hold what was \
+        (unwind-protect
+            (while (< i n)
+              (let* ((pos (aref positions i))
+                     (text (donkey--split-text-at now i))
+                     (length (length text)))
+                (unless (and (<= (point-min) pos)
+                             (<= (+ pos length) (point-max))
+                             (if one
+                                 (eq 0 (compare-buffer-substrings
+                                        scratch 1 (1+ length)
+                                        nil pos (+ pos length)))
+                               (string= text (buffer-substring-no-properties
+                                              pos (+ pos length)))))
+                  (error "The split's places no longer hold what was \
 written at them"))
-            ;; Where the text will stand once the ones before it
-            ;; have moved.
-            (aset moved i (+ pos shift))
-            (setq shift (+ shift
-                           (- (length (donkey--split-text-at then i))
-                              length))))
-          (setq i (1+ i))))
+                ;; Where the text will stand once the ones before it
+                ;; have moved.
+                (aset moved i (+ pos shift))
+                (setq shift (+ shift
+                               (- (length (donkey--split-text-at then i))
+                                  length))))
+              (setq i (1+ i)))
+          ;; The buffer outlives the undo: it keeps no text once checked.
+          (when one
+            (with-current-buffer scratch
+              (erase-buffer)))))
       (let ((buffer-undo-list t)
             (deactivate-mark nil)
             (donkey--split-put-back-places
@@ -8745,7 +8752,12 @@ the current one, so both are cleared."
         (remove-hook 'before-change-functions #'donkey--split-note-change t)
         (remove-hook 'after-change-functions #'donkey--split-noted-change t)))
     (remove-hook 'post-gc-hook #'donkey--split-note-gc)
-    (setq donkey--split-gc-note nil)))
+    (setq donkey--split-gc-note nil)
+    ;; The hidden buffer the places were compared against keeps no text
+    ;; once there are no places.
+    (when (buffer-live-p donkey--split-text-buffer)
+      (with-current-buffer donkey--split-text-buffer
+        (erase-buffer)))))
 
 (defun donkey--split-disown ()
   "Take a split\\='s copies out of this buffer, which is not the split\\='s own.
