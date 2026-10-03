@@ -2575,6 +2575,24 @@ This holds when there is a saved method and none currently active."
           (donkey--on-insert-entry))))
     (should (equal restored "swedish-postfix"))))
 
+(ert-deftest donkey-an-input-method-set-aside-survives-a-major-mode ()
+  "A method Normal state set aside comes back in Insert state after a mode change.
+
+\\`C-g' puts the method aside, the major mode starts again in Normal
+state, and \\`i' brings the method back."
+  (donkey-test-keys--harness "*donkey-im-mode*" #'text-mode () "alpha\n"
+      "i"
+    (unwind-protect
+        (progn
+          (set-input-method "latin-1-prefix")
+          (execute-kbd-macro (kbd "C-g"))
+          (should-not current-input-method)
+          (text-mode)
+          (should (bound-and-true-p donkey-normal-mode))
+          (execute-kbd-macro (kbd "i"))
+          (should (equal current-input-method "latin-1-prefix")))
+      (deactivate-input-method))))
+
 (ert-deftest donkey-state-on-insert-entry-skips-when-no-saved-method ()
   "When no saved input method, does nothing."
   (let (activated)

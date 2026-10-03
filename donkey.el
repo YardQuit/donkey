@@ -15056,7 +15056,12 @@ redisplay or a timer reports as its own does not arrive here."
 ;;; ---------------------------------------------------------------------------
 
 (defvar-local donkey--saved-input-method nil
-  "Buffer-local saved input method name for restoration on Insert entry.")
+  "Buffer-local saved input method name for restoration on Insert entry.
+
+Permanent, as `current-input-method' is: a major mode started in
+Normal state, `revert-buffer' among them, keeps the method for the
+next visit to Insert state.")
+(put 'donkey--saved-input-method 'permanent-local t)
 
 (defvar donkey--input-method-quiet nil
   "Non-nil while DONKEY, rather than the user, switches the input method.
