@@ -291,18 +291,19 @@ it. Kill the buffer to start over — nothing is written to disk.
 | =:=   | go to a line by number                 |
 | =z z= | recentre the screen                    |
 
-** Long lines: =J=, =K= and =V=
+** Long lines: =j=, =k=, =J= and =K=
 :PROPERTIES:
 :CUSTOM_ID: long-lines-j-k-and-v
 :END:
 
-On a wrapped line, =j= moves to the next *line*, which may be off the
-screen. =J= and =K= move by what you can see instead — the next and
-previous screen row.
+On a line too long for the window, =j= and =k= move by what you can
+see: the next and previous screen row, keeping the column, as Emacs's
+own =C-n= and =C-p= do. =J= and =K= move by whole lines instead, to the
+start of the next or previous line however far it wraps.
 
-=V= turns that around: it switches the buffer into visual-line mode,
-where =j= and =k= move by screen rows and =J= and =K= move by logical
-lines. Press =V= again to switch back.
+Inside a whole-line selection (=V=, below) =J= and =K= grow and shrink
+it by a line. =j= and =k= move the cursor inside it, and the next =J= or
+=K= squares it up to whole lines again.
 
 ** Counts
 
@@ -395,8 +396,9 @@ again re-anchors it where the cursor is; =C-g= cancels it.
 
 ** Whole lines: =V=
 
-=V= — see [[#long-lines-j-k-and-v][Long lines]] above — also serves as a line-wise selection
-when a selection is what you are after.
+=V= selects the line the cursor is on, and =J= and =K= grow it a line
+at a time (see [[#long-lines-j-k-and-v][Long lines]] above); =C-u 3 V= selects three lines at once.
+=V= again lets go.
 
 The highlight stops at the end of the last line, but =y=, =d= and =p=
 take that line's newline as well, so lines go and come back whole. So
@@ -3147,7 +3149,7 @@ do not have the problem.
 | =h= =j= =k= =l= | left, down, up, right                |
 | =w= =b=         | forward, back one word               |
 | =W= =B=         | forward, back one balanced expression |
-| =J= =K=         | down, up one screen row              |
+| =J= =K=         | down, up one whole line              |
 | =S=             | back through where you have been     |
 | =:=             | go to line                           |
 | =%=             | select the whole buffer              |
