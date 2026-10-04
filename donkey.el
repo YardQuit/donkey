@@ -15848,8 +15848,9 @@ hand in the meantime is kept.  Switched on through
 (defun donkey--on-input-method-activate ()
   "Immediately undo an input method activated while in Normal state, and say so.
 
-Saves it the way `donkey--on-normal-entry' does.  On the global
-`input-method-activate-hook', so activation by any means is caught.
+Saves and suspends it through `donkey--on-normal-entry', as entering
+Normal state does.  On the global `input-method-activate-hook', so
+activation by any means is caught.
 
 Names the method in the echo area, since Emacs itself says nothing
 when one is switched on and a mode line without the input-method
@@ -15857,11 +15858,8 @@ field shows nothing either.  In NORMAL state it says the method
 waits for INSERT state, which is what the undoing amounts to.  A
 switch DONKEY made itself says nothing."
   (let ((method current-input-method))
-    (when (bound-and-true-p donkey-normal-mode)
-      (when current-input-method
-        (setq donkey--saved-input-method current-input-method)
-        (let ((input-method-activate-hook nil))
-          (donkey--input-method-suspend donkey--saved-input-method))))
+    (let ((input-method-activate-hook nil))
+      (donkey--on-normal-entry))
     (when (and method (not donkey--input-method-quiet))
       (message "%s on%s" method
                (if (bound-and-true-p donkey-normal-mode)
