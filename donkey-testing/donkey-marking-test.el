@@ -1591,6 +1591,29 @@ content."
       (donkey-test--pair-keys "empty() here" 6 "m a")
     (should (equal selection "()"))))
 
+(ert-deftest donkey-the-pair-marks-log-only-what-they-selected ()
+  "`m i', `m a', `m I' and `m A' leave one line in the message log each.
+
+The line saying what was selected, and no \"Mark set\" before it.
+Called as a key press is, outside a keyboard macro, where `push-mark'
+would log one."
+  (dolist (command '(donkey-mark-inner donkey-mark-outer
+                     donkey-mark-sexp-inner donkey-mark-sexp-outer))
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (emacs-lisp-mode)
+      (insert "(a (b c) d)")
+      (goto-char 4)
+      (let ((transient-mark-mode t) (this-command command) (last-command nil)
+            logged)
+        (cl-letf (((symbol-function 'message)
+                   (lambda (fmt &rest args)
+                     (when fmt (push (apply #'format-message fmt args) logged)))))
+          (call-interactively command))
+        (should (use-region-p))
+        (should (= (length logged) 1))
+        (should-not (member "Mark set" logged))))))
+
 (ert-deftest donkey-mark-inner-braces ()
   "Marks content inside braces, excluding delimiters."
   (with-temp-buffer

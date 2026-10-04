@@ -4736,8 +4736,9 @@ has been FOUND -- see the comment at the marking below."
       ;; Only now, with a pair in hand, is the previous selection's
       ;; kind let go of.
       (donkey--ensure-non-rectangle-selection)
-      ;; Mark at the end, point at the start, as every mark command.
-      (push-mark end)
+      ;; Mark at the end, point at the start, as every mark command;
+      ;; set quietly, the message below saying what was selected.
+      (push-mark end t)
       (goto-char start)
       (activate-mark)
       (setq donkey--mark-pair-state
