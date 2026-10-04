@@ -2211,13 +2211,19 @@ block gets wider.  A COUNT below 1 inserts nothing, as it does for
 (defun donkey--visual-line-region-bounds ()
   "Return the active region as (BEG . END), whole-lined for a `V' session.
 
-A `V' session's region stops before the newline that ends its last
-line; the span returned takes it in, through `donkey--whole-line-span',
-so the two line selections agree on whole lines.  A character-wise
-region made with `v' means the characters it covers, and is returned
-untouched."
+A `V' session's region runs from its first line's start to its last
+line's end, before the newline; the span returned takes that newline
+in, so every line the session shows is whole, an empty last line
+included.  A line is the line the screen shows; see
+`donkey--visible-line-start'.  A character-wise region made with `v'
+means the characters it covers, and is returned untouched.
+
+The one span of a `V' session: `y', `d', `p', the cursors made from it
+and the region Emacs's own commands read all take it from here."
   (if (donkey--visual-line-session-active-p)
-      (donkey--whole-line-span (region-beginning) (region-end))
+      (cons (donkey--visible-line-start (region-beginning))
+            (min (point-max)
+                 (1+ (donkey--visible-line-end (region-end)))))
     (cons (region-beginning) (region-end))))
 
 (defun donkey--visual-line-extract-region (extract method)
@@ -10178,11 +10184,7 @@ touches.  Lines hidden in a fold are left out; see
     (let* ((beg (region-beginning))
            (end (region-end))
            (span (if (donkey--visual-line-session-active-p)
-                     (save-excursion
-                       (cons (progn (goto-char beg) (line-beginning-position))
-                             (progn (goto-char end)
-                                    (min (point-max)
-                                         (1+ (line-end-position))))))
+                     (donkey--visual-line-region-bounds)
                    (donkey--whole-line-span beg end)))
            (starts nil))
       (save-excursion
@@ -11398,8 +11400,10 @@ the live region, never duplicates or splits text."
   (donkey--merge-spans
    (sort (append (donkey--banked-spans)
                  (when (use-region-p)
-                   (list (donkey--whole-line-span (region-beginning)
-                                                  (region-end)))))
+                   (list (if (donkey--visual-line-session-active-p)
+                             (donkey--visual-line-region-bounds)
+                           (donkey--whole-line-span (region-beginning)
+                                                    (region-end))))))
          (lambda (a b) (< (car a) (car b))))))
 
 (defun donkey-bank-selection (&optional count)

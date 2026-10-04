@@ -3285,6 +3285,23 @@ later tidy-up that routed `c' through
    (donkey-delete 1)
    (should (equal (buffer-string) "alpha\ngamma\n"))))
 
+(ert-deftest donkey-visual-line-takes-an-empty-last-line ()
+  "A `V' selection whose last line is empty takes that line whole.
+
+`y', `M-w', `d' and a counted `V' all act on the empty line as on any
+other; a bank over the same two lines agrees, and so does a `V'
+selection taken together with a bank."
+  (dolist (case '(("V J y"     "a\n\nb\n"   "a\n\n")
+                  ("V J M-w"   "a\n\nb\n"   "a\n\n")
+                  ("V J d"     "b\n"        "a\n\n")
+                  ("C-u 2 V d" "b\n"        "a\n\n")
+                  ("m l j m l y" "a\n\nb\n" "a\n\n")
+                  ("j j m l g g V J y" "a\n\nb\n" "a\n\nb\n")))
+    (donkey-test-keys--harness "*donkey-v-empty-last*" #'text-mode ()
+        "a\n\nb\n" (car case)
+      (should (equal (list (car case) (buffer-string) (car kill-ring))
+                     (cons (car case) (cdr case)))))))
+
 ;; `V p' -- pasting over a visual-line selection replaces whole lines.
 ;;
 ;; Driven through real keys in a displayed buffer, because the defect these
