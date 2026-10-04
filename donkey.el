@@ -9176,18 +9176,7 @@ be written."
                       (overlay-end place))))
           (move-overlay place edge edge))))
     (when clear
-      (let* ((texts (donkey--split-place-texts))
-             (kill (donkey--split-kill-text texts))
-             (head buffer-undo-list)
-             (ops nil))
-        (atomic-change-group
-          (cl-loop for place in donkey--split-places
-                   for text in texts
-                   do (push (list (overlay-start place) text "") ops)
-                   (delete-region (overlay-start place) (overlay-end place))))
-        (donkey--split-record-ops head (nreverse ops))
-        (when kill
-          (kill-new kill))))
+      (donkey--split-empty-places))
     (setq donkey--split-did (cond (clear 'changed)
                                   ((eq where 'start) 'before)
                                   (t 'after)))
@@ -9263,18 +9252,7 @@ Bound to \\`d' inside `donkey-split-mode-map'."
   (interactive)
   (donkey--split-live-p)
   (donkey--split-holding-gc
-    (let* ((texts (donkey--split-place-texts))
-           (kill (donkey--split-kill-text texts))
-           (head buffer-undo-list)
-           (ops nil))
-      (atomic-change-group
-        (cl-loop for place in donkey--split-places
-                 for text in texts
-                 do (push (list (overlay-start place) text "") ops)
-                 (delete-region (overlay-start place) (overlay-end place))))
-      (donkey--split-record-ops head (nreverse ops))
-      (when kill
-        (kill-new kill)))
+    (donkey--split-empty-places)
     (setq donkey--split-did 'deleted)
     (donkey--split-dissolve)))
 
@@ -9322,6 +9300,40 @@ cursors as the refused one found them."
          (when (and ,states (not ,done))
            (donkey--split-cursors-put-back ,states)
            (donkey--split-cursors-settle))))))
+
+(defun donkey--split-delete-spans (spans &optional texts)
+  "Delete SPANS, each (BEG . END) in buffer order, as one change.
+
+TEXTS, where the caller has read them, are what SPANS hold, in the same
+order.  Every span goes or none does, and the cursors are put back
+where one cannot, see `donkey--split-atomic-change'; the deletion is
+one undo entry whatever the number of spans, see
+`donkey--split-record-ops'."
+  (let ((head buffer-undo-list)
+        (ops nil)
+        (texts (reverse texts)))
+    (donkey--split-atomic-change
+      (dolist (span (reverse spans))
+        (push (list (car span)
+                    (or (pop texts)
+                        (buffer-substring-no-properties (car span) (cdr span)))
+                    "")
+              ops)
+        (delete-region (car span) (cdr span))))
+    (donkey--split-record-ops head (nreverse ops) t)))
+
+(defun donkey--split-empty-places ()
+  "Delete the text of every place as one change, and kill it as `c' and `d' do.
+
+See `donkey--split-delete-spans' and `donkey--split-kill-text'."
+  (let* ((texts (donkey--split-place-texts))
+         (kill (donkey--split-kill-text texts)))
+    (donkey--split-delete-spans
+     (mapcar (lambda (place) (cons (overlay-start place) (overlay-end place)))
+             donkey--split-places)
+     texts)
+    (when kill
+      (kill-new kill))))
 
 (defun donkey-split-wrap (char)
   "Wrap every place in the split in the pair CHAR names, or take it off.
@@ -10982,20 +10994,11 @@ one kill, as \\[donkey-split-change] puts it; characters do not."
     (if (seq-some #'donkey--split-cursor-selecting-p donkey--split-places)
         (donkey-split-change)
       (barf-if-buffer-read-only)
-      (let ((spans (mapcar (lambda (place)
-                             (donkey--split-cursor-span place (or count 1) nil))
-                           donkey--split-places))
-            (head buffer-undo-list)
-            (ops nil))
-        (donkey--split-atomic-change
-          (dolist (span (reverse spans))
-            (push (list (car span)
-                        (buffer-substring-no-properties (car span)
-                                                       (cadr span))
-                        "")
-                  ops)
-            (delete-region (car span) (cadr span))))
-        (donkey--split-record-ops head (nreverse ops) t))
+      (donkey--split-delete-spans
+       (mapcar (lambda (place)
+                 (let ((span (donkey--split-cursor-span place (or count 1) nil)))
+                   (cons (car span) (cadr span))))
+               donkey--split-places))
       (donkey--split-cursors-settle)
       (donkey--split-enter-edit nil 'start))))
 
@@ -11023,17 +11026,8 @@ one undo entry whatever the number of cursors, and the cursors stay."
                                     spans))))
       (if (seq-every-p (lambda (span) (= (car span) (cadr span))) spans)
           (message "Nothing to delete")
-        (let ((head buffer-undo-list)
-              (ops nil))
-          (donkey--split-atomic-change
-            (dolist (span (reverse spans))
-              (push (list (car span)
-                          (buffer-substring-no-properties (car span)
-                                                         (cadr span))
-                          "")
-                    ops)
-              (delete-region (car span) (cadr span))))
-          (donkey--split-record-ops head (nreverse ops) t))
+        (donkey--split-delete-spans
+         (mapcar (lambda (span) (cons (car span) (cadr span))) spans))
         (when kills
           (kill-new (donkey--split-cursors-kill-text
                      kills (donkey--split-cursors-whole-lines-p))))
@@ -11300,16 +11294,7 @@ the number of cursors."
                           spans)))
       (if (seq-every-p #'string-empty-p texts)
           (message "Nothing to kill")
-        (let ((head buffer-undo-list)
-              (ops nil))
-          (donkey--split-atomic-change
-            (dolist (span (reverse spans))
-              (push (list (car span)
-                          (buffer-substring-no-properties (car span) (cdr span))
-                          "")
-                    ops)
-              (delete-region (car span) (cdr span))))
-          (donkey--split-record-ops head (nreverse ops) t))
+        (donkey--split-delete-spans spans)
         (kill-new (donkey--split-cursors-kill-text texts))
         (setq donkey--split-did 'deleted)
         (donkey--split-cursors-deselect)))))
