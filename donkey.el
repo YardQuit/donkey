@@ -11748,24 +11748,24 @@ PREFIX is the accumulated key sequence string for the current path."
      map)
     (nreverse acc)))
 
-(defun donkey--desc-bindings-own-leaves (map)
-  "Return MAP's own leaf bindings, without the ones it gets from the floor.
+(defun donkey--without-floor (map fn)
+  "Call FN with MAP, MAP\\='s `donkey--normal-state-floor' parent lifted.
 
-`donkey-normal-mode-map' inherits `donkey--normal-state-floor', whose
-`undefined' answers every printable key nothing else binds.  That is
-the floor under the whole state rather than a binding made for a key,
-and a chart that listed it would bury what DONKEY does under fifty
-rows saying a key does nothing.
+The floor answers every printable key Normal state does not bind, and
+`map-keymap' walks a parent as if it were the map, so whatever reads a
+map for its OWN bindings reads it through here.  Two readers do: the
+`?' chart, which would otherwise list fifty keys that do nothing --
+the keys the map itself blocks, `,', `-' and `;', still show -- and
+the defaults the binding report compares against, where a floor key
+would read as one of DONKEY\\='s taken the moment a reader bound it.
 
-The keys DONKEY blocks in the map ITSELF -- `,', `-' and `;' -- are
-its own and still appear, which is the distinction a reader wants:
-those three were taken away from something, the rest were never
-anything."
+The floor is put back however FN returns.  A map with any other
+parent, or none, is passed as it is.  Returns what FN returns."
   (let ((floored (eq (keymap-parent map) donkey--normal-state-floor)))
     (unwind-protect
         (progn
           (when floored (set-keymap-parent map nil))
-          (donkey--desc-bindings-collect-leaves map ""))
+          (funcall fn map))
       (when floored (set-keymap-parent map donkey--normal-state-floor)))))
 
 (defun donkey--desc-bindings-group (full-key)
@@ -11797,7 +11797,8 @@ Single keys lead, the prefix groups follow in alphabetical order, and
 keys sort within their group.  Each group gets a header, and command
 names are clickable buttons."
   (let ((sorted-raw
-         (sort (donkey--desc-bindings-own-leaves map)
+         (sort (donkey--without-floor
+                map (lambda (map) (donkey--desc-bindings-collect-leaves map "")))
                (lambda (a b)
                  (let ((ga (donkey--desc-bindings-group (car a)))
                        (gb (donkey--desc-bindings-group (car b))))
@@ -14256,26 +14257,10 @@ so nothing under it is a default to defend."
      map)
     found))
 
-(defun donkey--map-own-bindings (map)
-  "Return MAP's own bindings, without the ones it inherits from the floor.
-
-`donkey--normal-state-floor' answers every printable key Normal state
-does not bind, and `map-keymap' walks a parent as if it were the map.
-Read through it, a key DONKEY never bound would go into the defaults
-holding `undefined' -- and a reader who then bound one of those, which
-is what `donkey-normal-mode-map' is FOR, would be told at every
-session start that a key of DONKEY's had been taken."
-  (let ((floored (eq (keymap-parent map) donkey--normal-state-floor)))
-    (unwind-protect
-        (progn
-          (when floored (set-keymap-parent map nil))
-          (donkey--map-bindings map))
-      (when floored (set-keymap-parent map donkey--normal-state-floor)))))
-
 (defun donkey--capture-default-normal-bindings ()
   "Record `donkey-normal-mode-map' as it stands at the end of the load."
   (setq donkey--default-normal-bindings
-        (donkey--map-own-bindings donkey-normal-mode-map)))
+        (donkey--without-floor donkey-normal-mode-map #'donkey--map-bindings)))
 
 (defun donkey--binding-changes ()
   "Return the DONKEY keys whose binding has changed, as (KEYS DEFAULT NOW).
