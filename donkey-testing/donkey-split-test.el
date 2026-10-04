@@ -2579,6 +2579,27 @@ minibuffer as text, and every cursor's line is searched."
       (should (= (length donkey--split-places) 2000))
       (should (< 0 (length donkey--split-cursor-marks) 500)))))
 
+(ert-deftest donkey-split-cursors-are-drawn-as-far-as-scaled-text-shows ()
+  "The cursors drawn reach as many lines as the window shows of scaled text."
+  (let ((buffer (get-buffer-create "*cursors-drawn-scaled*")))
+    (unwind-protect
+        (progn
+          (switch-to-buffer buffer)
+          (insert (mapconcat (lambda (i) (format "line %d" i))
+                             (number-sequence 1 2000) "\n"))
+          (goto-char (point-min))
+          (forward-line 999)
+          (let* ((rows (* 3 (window-body-height)))
+                 (spans (cl-letf (((symbol-function 'window-screen-lines)
+                                   (lambda () (float rows))))
+                          (donkey--split-draw-spans))))
+            (should (= (count-lines (car (car spans)) (cdr (car spans)))
+                       (* 4 rows)))
+            (should (= (count-lines (window-start)
+                                    (cdr (car (last spans))))
+                       (* 2 rows)))))
+      (kill-buffer buffer))))
+
 (defconst donkey-split-test--ragged
   "alpha beta gamma\nx yy zzz wwww\nlonger words here\nab\n"
   "Lines whose words differ in length, for lining the cursors up.")

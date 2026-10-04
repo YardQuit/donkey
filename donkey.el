@@ -4028,13 +4028,28 @@ by one column, and not at the end of a line or of the buffer."
 
 A list of (BEG . END), in buffer order and apart.")
 
+(defun donkey--window-lines (&optional window)
+  "Return how many lines of its buffer WINDOW can show at once.
+
+WINDOW defaults to the selected one.  Counted in the buffer\\='s own
+line height, so text scaled down shows more lines than
+`window-body-height' counts, and never fewer than it counts.  The
+rectangle highlight and the split\\='s drawn cursors both size what they
+draw from this."
+  (let ((window (or window (selected-window))))
+    (max (window-body-height window)
+         (condition-case nil
+             (with-selected-window window
+               (ceiling (window-screen-lines)))
+           (error 0)))))
+
 (defun donkey--rectangle-window-span (window)
   "Return the stretches WINDOW could show, as `donkey--rectangle-span' is.
 
 What it shows and as much again below, and as much around its point,
 where a command that moved point is about to scroll it."
   (with-current-buffer (window-buffer window)
-    (let* ((height (window-body-height window))
+    (let* ((height (donkey--window-lines window))
            (reach (lambda (from lines)
                     (save-excursion
                       (goto-char from)
@@ -9813,13 +9828,13 @@ same around point, where a command that moved it is about to scroll."
                    (goto-char from)
                    (forward-line lines)
                    (point)))))
-    (cons (let ((height (window-body-height)))
+    (cons (let ((height (donkey--window-lines)))
             (cons (funcall reach (point) (- (* 2 height)))
                   (funcall reach (point) (* 2 height))))
           (mapcar (lambda (window)
                     (cons (window-start window)
                           (funcall reach (window-start window)
-                                   (* 2 (window-body-height window)))))
+                                   (* 2 (donkey--window-lines window)))))
                   (get-buffer-window-list nil nil t)))))
 
 (defun donkey--split-cursor-mark (pos shape)

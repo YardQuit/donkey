@@ -8278,6 +8278,41 @@ edit on other rows leaves the claim to be read when asked."
       (should (< 0 (length (nthcdr 5 rol)) 1000))
       (funcall redisplay-unhighlight-region-function rol))))
 
+(ert-deftest donkey-rectangle-highlight-covers-the-rows-scaled-text-shows ()
+  "With text scaled down, the highlight reaches every row the window shows.
+
+A window showing three times its frame lines of the buffer's own text,
+as `text-scale-decrease' makes it, has every one of them lit."
+  (donkey-test-keys--harness "*rect-highlight-scaled*" #'text-mode ()
+      (mapconcat (lambda (i) (format "line %d" i)) (number-sequence 1 3000) "\n")
+      "l m v G"
+    (let* ((rows (* 3 (window-body-height)))
+           (rol (cl-letf (((symbol-function 'window-screen-lines)
+                           (lambda () (float rows))))
+                  (funcall redisplay-highlight-region-function
+                           (region-beginning) (region-end) (selected-window)
+                           nil))))
+      (unwind-protect
+          (let ((lit (make-hash-table)))
+            (dolist (ov (nthcdr 5 rol))
+              (puthash (line-number-at-pos (overlay-start ov)) t lit))
+            (should (= rows (seq-count
+                             (lambda (line) (gethash line lit))
+                             (number-sequence (- 3001 rows) 3000)))))
+        (funcall redisplay-unhighlight-region-function rol)))))
+
+(ert-deftest donkey-window-lines-is-never-below-the-body-height ()
+  "The lines a window shows count scaled text, and never fall below its height."
+  (dolist (case '((0.5 . 0) (3.0 . 2)))
+    (cl-letf (((symbol-function 'window-screen-lines)
+               (lambda () (* (car case) (window-body-height)))))
+      (should (= (donkey--window-lines)
+                 (max (window-body-height)
+                      (ceiling (* (car case) (window-body-height))))))))
+  (cl-letf (((symbol-function 'window-screen-lines)
+             (lambda () (error "No display"))))
+    (should (= (donkey--window-lines) (window-body-height)))))
+
 (provide 'donkey-marking-test)
 
 ;;; donkey-marking-test.el ends here
