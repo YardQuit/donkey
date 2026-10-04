@@ -2514,6 +2514,19 @@ blank line away still works."
 ;;; Wrap Region Commands
 ;;; ---------------------------------------------------------------------------
 
+(defun donkey--set-and-reread (symbol value)
+  "Set SYMBOL to VALUE, then read again every option Emacs has to be told.
+
+The `:set' of each option DONKEY builds a keymap from or hands to
+`electric-pair-mode': the wrap keys, the refused insert commands and
+the delimiters Emacs pairs are all read again, so setting any one of
+those options through Customize or `setopt' reaches all three.  Does
+nothing more while the file is still loading; see
+`donkey--reread-options'."
+  (set-default symbol value)
+  (when (fboundp 'donkey--reread-options)
+    (donkey--reread-options)))
+
 (defcustom donkey-wrap-delimiters 'all
   "Characters that wrap an active region in Normal state.
 
@@ -2540,10 +2553,7 @@ once; after a plain `setq' or `add-to-list', run
 \\[donkey-refresh-wrap-keys]."
   :type '(choice (const :tag "Every pair donkey-mark-pair-delimiters knows" all)
                  (repeat character))
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (when (fboundp 'donkey--claim-wrap-keys)
-           (donkey--claim-wrap-keys)))
+  :set #'donkey--set-and-reread
   :group 'donkey)
 
 (defcustom donkey-wrap-region-engine 'donkey
@@ -2569,10 +2579,7 @@ and the wrap `donkey-insert-digraph' does are DONKEY's own under
 both."
   :type '(choice (const :tag "DONKEY wraps, and unwraps" donkey)
                  (const :tag "The pairing package wraps" pairing-package))
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (when (fboundp 'donkey--claim-wrap-keys)
-           (donkey--claim-wrap-keys)))
+  :set #'donkey--set-and-reread
   :group 'donkey)
 
 (defconst donkey--wrap-delegated-delimiters '(?\( ?\[ ?\{ ?\" ?\' ?\`)
@@ -3017,10 +3024,7 @@ Anything here that is not a character is ignored, and a value that is
 not a proper list reads as the empty list: this is read from
 `post-self-insert-hook', where a signal would abort your own typing."
   :type '(repeat character)
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (when (fboundp 'donkey--pair-supply-electric-pair)
-           (donkey--pair-supply-electric-pair)))
+  :set #'donkey--set-and-reread
   :group 'donkey)
 
 (defcustom donkey-pair-delimiters 'safe
@@ -3053,10 +3057,7 @@ of `donkey-wrap-delimiters'."
   :type '(choice (const :tag "The table, less ordinary punctuation" safe)
                  (const :tag "Every pair donkey-mark-pair-delimiters knows" all)
                  (repeat character))
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (when (fboundp 'donkey--pair-supply-electric-pair)
-           (donkey--pair-supply-electric-pair)))
+  :set #'donkey--set-and-reread
   :group 'donkey)
 
 (defcustom donkey-pair-excluded-modes nil
@@ -3475,7 +3476,7 @@ for it.  Emacs\\='s pairing is told the set instead of asking for it, so
 a plain `setq' or `add-to-list' on either variable does not reach it
 until this runs.  \\[customize-variable] and `setopt' need no help."
   (interactive)
-  (donkey--pair-supply-electric-pair)
+  (donkey--reread-options)
   (message "DONKEY: %d delimiter%s handed to electric-pair-mode"
            (length donkey--pair-supplied)
            (if (= (length donkey--pair-supplied) 1) "" "s")))
@@ -4428,15 +4429,7 @@ moment after `donkey-mode' comes on, which is after your init file has
 finished.  \\[donkey-refresh-wrap-keys] asks for them there and then."
   :type '(alist :key-type (character :tag "Open")
                 :value-type (character :tag "Close"))
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (when (fboundp 'donkey--claim-wrap-keys)
-           (donkey--claim-wrap-keys))
-         ;; And hand the set to Emacs again, for the same reason the
-         ;; wrap keys are claimed again: a pair added here is one
-         ;; `electric-pair-mode' has to be TOLD about.
-         (when (fboundp 'donkey--pair-supply-electric-pair)
-           (donkey--pair-supply-electric-pair)))
+  :set #'donkey--set-and-reread
   :group 'donkey)
 
 (defun donkey--mark-pair-digraph-keys ()
@@ -14041,10 +14034,7 @@ to sit here.  What is NOT here still types: this is a list, not a
 rule, and a mode with an insert command of its own that nobody has met
 yet goes on the list when somebody meets it."
   :type '(repeat symbol)
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (when (fboundp 'donkey--suppress-insert-commands)
-           (donkey--suppress-insert-commands)))
+  :set #'donkey--set-and-reread
   :group 'donkey)
 
 (defvar donkey--suppressed-insert-commands nil
@@ -14074,7 +14064,7 @@ was given."
 For a reader who changed the list with `setq' or `add-to-list', which
 Customize never hears about."
   (interactive)
-  (donkey--suppress-insert-commands)
+  (donkey--reread-options)
   (message "DONKEY: %d insert command%s refused in Normal state"
            (length donkey--suppressed-insert-commands)
            (if (= (length donkey--suppressed-insert-commands) 1) "" "s")))
@@ -14273,7 +14263,7 @@ which Customize never hears about.  A character whose key already runs
 something is not taken; those are named in the message log, as
 `donkey-check-bindings' names them."
   (interactive)
-  (donkey--claim-wrap-keys)
+  (donkey--reread-options)
   (let ((left (donkey--delimiters-that-cannot-wrap t)))
     (if (null left)
         (message "DONKEY: every wrap delimiter has its key")
@@ -14710,26 +14700,36 @@ comes on; see `donkey-report-binding-changes'."
 (defvar donkey--binding-report-timer nil
   "The one-shot timer that reports what has taken DONKEY's keys, or nil.")
 
+(defun donkey--reread-options ()
+  "Read again every option a keymap or `electric-pair-mode' is built from.
+
+These options are read once and acted on rather than read at every
+press: `donkey-wrap-delimiters' and `donkey-mark-pair-delimiters'
+decide which keys wrap, `donkey-self-insert-commands' which commands
+Normal state refuses, and the pair options what `electric-pair-mode'
+is handed.  A plain `setq' or `add-to-list' on any of them tells
+nobody, so every way of catching up calls this: the `:set' of each,
+the first idle moment after the mode comes on, and the three refresh
+commands."
+  (donkey--claim-wrap-keys)
+  (donkey--suppress-insert-commands)
+  (donkey--pair-supply-electric-pair))
+
 (defun donkey--settle-bindings-once ()
-  "Claim the wrap keys once more, then say what has taken DONKEY's keys.
+  "Read the options again, then say what has taken DONKEY's keys.
 
-The one-shot the mode arms at first idle.  The claim comes first, and
-comes at all, because `donkey-mark-pair-delimiters' is read for the
-wrap keys and a reader who adds a pair with `add-to-list' changes it
-without telling anyone -- and does so AFTER this file loaded and
-claimed what the table held then.  First idle is the earliest moment
-an init file is certainly finished, so a pair added there needs no
-call of its own.
+The one-shot the mode arms at first idle, the earliest moment an init
+file is certainly finished: a pair, a wrap delimiter or a refused
+command added there with `add-to-list' needs no call of its own.  See
+`donkey--reread-options'.
 
-Then the report, which would otherwise name the keys this claim is
-about to bind.
-
-The claim is wrapped for the same reason the report is: this runs from
-a timer, and a reader whose table cannot be read should lose neither
-the keys that ARE readable nor the report that would tell them so."
+Then the report, which would otherwise name the keys the re-read is
+about to bind.  The re-read is wrapped for the same reason the report
+is: this runs from a timer, and a reader whose options cannot be read
+should not lose the report that would tell them so."
   (condition-case err
-      (donkey--claim-wrap-keys)
-    (error (message "DONKEY: could not claim the wrap keys: %s"
+      (donkey--reread-options)
+    (error (message "DONKEY: could not read its options again: %s"
                     (error-message-string err))))
   (donkey--report-binding-changes-once))
 

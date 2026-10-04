@@ -4052,6 +4052,41 @@ is certainly finished, so it claims once more before it reports."
       (donkey--claim-wrap-keys)
       (should (eq (keymap-lookup donkey-normal-mode-map "#") 'undefined)))))
 
+(ert-deftest donkey-the-first-idle-reads-every-option-an-init-file-changed ()
+  "Options changed with `add-to-list' all reach Emacs by the first idle moment.
+
+A pair added to the table is handed to `electric-pair-mode' as well as
+given its wrap key, and a command added to `donkey-self-insert-commands'
+is refused in Normal state -- with no refresh command run."
+  (require 'elec-pair)
+  (let ((table donkey-mark-pair-delimiters)
+        (commands donkey-self-insert-commands)
+        (pairs (copy-sequence (default-value 'electric-pair-pairs)))
+        (was-on (bound-and-true-p donkey-pair-mode)))
+    (unwind-protect
+        (progn
+          (donkey-pair-mode 1)
+          (setq donkey-mark-pair-delimiters (cons (cons ?# ?#) table))
+          (setq donkey-self-insert-commands
+                (cons 'donkey-test-insert-command commands))
+          (should-not (assq ?# (default-value 'electric-pair-pairs)))
+          (should-not (keymap-lookup donkey-normal-mode-map
+                                     "<remap> <donkey-test-insert-command>"))
+          (donkey-report-test--collect (donkey--settle-bindings-once))
+          (should (eq (keymap-lookup donkey-normal-mode-map "#")
+                      #'donkey-wrap-region))
+          (should (equal (assq ?# (default-value 'electric-pair-pairs))
+                         '(?# . ?#)))
+          (should (eq (keymap-lookup donkey-normal-mode-map
+                                     "<remap> <donkey-test-insert-command>")
+                      'undefined)))
+      (donkey-pair-mode (if was-on 1 -1))
+      (setq donkey-mark-pair-delimiters table
+            donkey-self-insert-commands commands)
+      (donkey--reread-options)
+      (set-default 'electric-pair-pairs pairs)
+      (should (eq (keymap-lookup donkey-normal-mode-map "#") 'undefined)))))
+
 (ert-deftest donkey-the-pair-table-claims-its-keys-when-it-is-set ()
   "Setting the pair table through Customize binds the keys at once.
 
@@ -4298,7 +4333,7 @@ them what happened."
                  (lambda (fmt &rest args) (when fmt (push (apply #'format fmt args) said)))))
         (donkey--settle-bindings-once)))
     (should (member "the report ran" said))
-    (should (seq-find (lambda (l) (string-match-p "could not claim the wrap keys" l))
+    (should (seq-find (lambda (l) (string-match-p "could not read its options again" l))
                       said))))
 
 (ert-deftest donkey-a-delimiter-description-is-not-read-as-a-command-name ()
