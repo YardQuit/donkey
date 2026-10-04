@@ -331,14 +331,14 @@ the wrap keys, which never claim such a row, read it."
         (should (string-match-p "places in the buffer ([0-9]+ hidden matches left out)"
                                 (donkey--split-hint)))))))
 
-(ert-deftest donkey-split-takes-hidden-matches-where-search-invisible-is-t ()
-  "With `search-invisible' t a split holds hidden matches too."
+(ert-deftest donkey-split-leaves-out-hidden-matches-whatever-search-invisible-says ()
+  "With `search-invisible' t a split still leaves hidden matches out."
   (donkey-split-test--on "%foo"
     (donkey-test-keys--harness "*split-hidden-on*" #'text-mode
         ((search-invisible t))
         donkey-split-test--folded "f"
-      (should (equal (donkey-split-test--place-lines) '(1 2 3 4 5)))
-      (should-not (string-match-p "hidden" (donkey--split-hint))))))
+      (should (equal (donkey-split-test--place-lines) '(1 2 5)))
+      (should (string-match-p "hidden matches left out" (donkey--split-hint))))))
 
 (ert-deftest donkey-split-says-when-every-match-is-hidden ()
   "A split finding only hidden matches opens nothing and says why."

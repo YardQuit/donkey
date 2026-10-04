@@ -7402,9 +7402,9 @@ RANGES is a list of (BEG . END) in buffer order, as
 `donkey--split-bounds' returns them.  Case is ignored as
 `replace-regexp' ignores it: where `case-fold-search' is on and REGEXP
 holds no capital letter, unless `search-upper-case' says otherwise.  A
-match hidden from view, in a folded subtree for one, is left out unless
-`search-invisible' is t, and `donkey--split-hidden' counts those left
-out; see `donkey--split-hidden-p'."
+match hidden from view, in a folded subtree for one, is always left
+out, whatever `search-invisible' says, and `donkey--split-hidden'
+counts those left out; see `donkey--split-hidden-p'."
   (let ((case-fold-search (if (and case-fold-search search-upper-case)
                               (isearch-no-upper-case-p regexp t)
                             case-fold-search))
@@ -7412,7 +7412,6 @@ out; see `donkey--split-hidden-p'."
         ;; Most text hides nothing: asked once for the whole search, so
         ;; a search over every line asks nothing more of each match.
         (hiding (and ranges
-                     (not (eq search-invisible t))
                      (let ((beg (car (car ranges)))
                            (end (cdr (car (last ranges)))))
                        (or (get-char-property beg 'invisible)
@@ -9465,9 +9464,10 @@ reaches the kill ring one per line.  Case is ignored as
 Refuses matches that touch, since text typed where two meet would
 belong to both, and an empty REGEXP.  A REGEXP that matches the empty
 string -- `^', `$', `\\b', `x*' -- holds an empty place wherever it
-does.  A match hidden from view, as in a folded subtree, is left out
-unless `search-invisible' is t, and the opening message says how many
-were.
+does.  A match hidden from view, as in a folded subtree, is always
+left out, and the opening message says how many were: \\[replace-regexp]
+and \\[query-replace] are the way to change folded text, the second
+after unfolding it to answer each match.
 
 There is no limit on the number of matches.  Past
 `donkey--split-eager-places' of them, a keystroke writes the matches a

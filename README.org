@@ -840,7 +840,10 @@ of the search; =\%= or =[%]= at the start searches for a percent sign.
 A match hidden from view — inside a folded Org subtree or outline
 heading, or in any other invisible text — is left out, so nothing is
 written where you cannot see it, and the reminder says how many were
-left out. Set =search-invisible= to =t= to hold them too.
+left out. Folded text is never changed by =f=, whatever
+=search-invisible= says. To change it, use =r r= (=replace-regexp=) or
+=r q= (=query-replace=); for =r q=, unfold first, so you can see each
+match you answer =y= or =n= to.
 
 Banked lines are how the split reaches lines that are not next to each
 other. Each run of banked lines is searched up to the end of its last
