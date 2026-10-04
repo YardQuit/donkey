@@ -210,21 +210,24 @@ hooks, where a function that signals is dropped for the session."
         ((symbolp value) (list value))
         (t nil)))
 
-(defun donkey--major-mode-in-p (mode-list)
-  "Return non-nil if the current major mode is in MODE-LIST.
+(defun donkey--mode-list-entry-for (mode-list)
+  "Return the entry of MODE-LIST the current major mode answers to, or nil.
 
-Checks both exact membership and derivation via `derived-mode-p', so a
-concrete mode (e.g. `shell-mode', derived from `comint-mode') is
-caught even when only its parent mode is listed.
+The mode itself where it is listed, otherwise the ancestor that is,
+so a concrete mode (e.g. `shell-mode', derived from `comint-mode') is
+caught even when only its parent mode is listed.  The answer is
+non-nil exactly when the mode is in the list, and names the entry
+that decided it.
 
 MODE-LIST is read through `donkey--mode-list', so a mis-set user
 option cannot signal from here."
   (let ((modes (donkey--mode-list mode-list)))
-    (or (memq major-mode modes)
-        (apply #'derived-mode-p modes))))
+    (or (car (memq major-mode modes))
+        (seq-find (lambda (mode) (provided-mode-derived-p major-mode mode))
+                  modes))))
 
 (defun donkey--memo-major-mode-in-p (cache-var mode-list)
-  "Return `donkey--major-mode-in-p' of MODE-LIST, memoized in CACHE-VAR.
+  "Return `donkey--mode-list-entry-for' MODE-LIST, memoized in CACHE-VAR.
 
 CACHE-VAR names a buffer-local variable holding a cons of the key
 \(MAJOR-MODE . SNAPSHOT) and the RESULT, SNAPSHOT being a copy of
@@ -241,7 +244,7 @@ it is rather than copied."
              (eq (car (car cache)) major-mode)
              (equal (cdr (car cache)) mode-list))
         (cdr cache)
-      (let ((result (donkey--major-mode-in-p mode-list)))
+      (let ((result (donkey--mode-list-entry-for mode-list)))
         (set cache-var (cons (cons major-mode
                                    (if (proper-list-p mode-list)
                                        (copy-sequence mode-list)
@@ -14499,20 +14502,6 @@ prefix map has no name of its own; anything else is printed."
   (cond ((symbolp binding) (symbol-name binding))
         ((keymapp binding) "a prefix")
         (t (format "%S" binding))))
-
-(defun donkey--mode-list-entry-for (mode-list)
-  "Return the entry of MODE-LIST the current major mode answers to.
-
-The mode itself where it is listed, otherwise the ancestor that is,
-otherwise nil -- which is the question `donkey--major-mode-in-p'
-answers yes or no to, asked so the answer can be named.
-
-MODE-LIST is read through `donkey--mode-list', so a mis-set user
-option cannot signal from here."
-  (let ((modes (donkey--mode-list mode-list)))
-    (or (car (memq major-mode modes))
-        (seq-find (lambda (mode) (provided-mode-derived-p major-mode mode))
-                  modes))))
 
 (defun donkey--state-availability-line ()
   "Return a line saying what decided Normal state here, or nil.
