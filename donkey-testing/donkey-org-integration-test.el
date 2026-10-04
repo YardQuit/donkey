@@ -1145,6 +1145,18 @@ until I re-ran it without."
             (should (equal (cons text visited)
                            (cons text "https://example.com")))))))))
 
+(ert-deftest donkey-org-ret-runs-a-rule-command-written-as-a-lambda ()
+  "RET runs an Enter rule whose command is an interactive lambda.
+
+A rule's commands are tried in order and the first that is a command
+runs, a symbol or a lambda alike; an unbound symbol is passed over."
+  (let ((donkey--enter-rules
+         (cons '(item :checkbox donkey-test--no-such-command
+                      (lambda () (interactive) (insert "Z")))
+               donkey--enter-rules)))
+    (donkey-org-key-test "- [ ] item\n" "RET"
+      (should (equal (buffer-string) "Z- [ ] item\n")))))
+
 (ert-deftest donkey-org-ret-does-nothing-where-no-rule-matches ()
   "RET on prose, a table or an empty buffer leaves the text alone.
 
