@@ -9320,9 +9320,7 @@ cursors as the refused one found them."
            (prog1 (atomic-change-group ,@body)
              (setq ,done t))
          (when (and ,states (not ,done))
-           (dolist (state ,states)
-             (when (overlay-buffer (car state))
-               (apply #'donkey--split-cursor-set state)))
+           (donkey--split-cursors-put-back ,states)
            (donkey--split-cursors-settle))))))
 
 (defun donkey-split-wrap (char)
@@ -10593,8 +10591,7 @@ messages are shown."
                   (push states donkey--split-run-history)
                   (setq donkey--split-run-redo nil)))
             (t
-             (dolist (state states)
-               (apply #'donkey--split-cursor-set state))
+             (donkey--split-cursors-put-back states)
              (signal (car err) (cdr err))))
         (set-marker (mark-marker) (marker-position mark))
         (set-marker mark nil)
@@ -10688,11 +10685,18 @@ edge, since a cursor stays on its own line."
   (message "%s is not run at the cursors -- each stays on its line"
            (key-description (this-single-command-keys))))
 
+(defun donkey--split-cursors-put-back (states)
+  "Put every cursor still standing back as STATES noted it.
+
+STATES is what `donkey--split-cursor-state' answered for each place; a
+place deleted since, by a merge, is passed over."
+  (dolist (state states)
+    (when (overlay-buffer (car state))
+      (apply #'donkey--split-cursor-set state))))
+
 (defun donkey--split-cursors-restore (snapshot)
   "Restore every cursor from SNAPSHOT, and show them."
-  (dolist (state snapshot)
-    (when (overlay-buffer (car state))
-      (apply #'donkey--split-cursor-set state)))
+  (donkey--split-cursors-put-back snapshot)
   (setq donkey--split-cursor-last 'donkey-mark-run-step-back)
   (donkey--split-cursors-settle))
 
