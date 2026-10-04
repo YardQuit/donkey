@@ -7872,23 +7872,16 @@ Kept rather than made for each undo: a buffer made and killed runs
 what a configuration hangs on the buffer hooks.  Emptied once the
 places are checked.")
 
-(defun donkey--split-check-buffer ()
-  "Return `donkey--split-check-buffer', making it where it is not live."
-  (unless (buffer-live-p donkey--split-check-buffer)
-    (setq donkey--split-check-buffer
-          (get-buffer-create " *donkey-split-check*" t))
-    (with-current-buffer donkey--split-check-buffer
-      (setq buffer-undo-list t)))
-  donkey--split-check-buffer)
+(defun donkey--split-hidden-buffer (variable name)
+  "Return the buffer in VARIABLE, making it as NAME where it is not live.
 
-(defun donkey--split-text-buffer ()
-  "Return `donkey--split-text-buffer', making it where it is not live."
-  (unless (buffer-live-p donkey--split-text-buffer)
-    (setq donkey--split-text-buffer
-          (get-buffer-create " *donkey-split-text*" t))
-    (with-current-buffer donkey--split-text-buffer
-      (setq buffer-undo-list t)))
-  donkey--split-text-buffer)
+A hidden buffer with no hooks run and undo off, kept for the next use."
+  (let ((buffer (symbol-value variable)))
+    (unless (buffer-live-p buffer)
+      (setq buffer (set variable (get-buffer-create name t)))
+      (with-current-buffer buffer
+        (setq buffer-undo-list t)))
+    buffer))
 
 (defun donkey--split-set-target (old new)
   "Make NEW, in place of OLD, the text every place is to hold.
@@ -7911,7 +7904,8 @@ hooks are told is what was typed; any other place is rewritten whole."
          (back (compare-strings (reverse old) 0 room (reverse new) 0 room))
          (suffix (if (eq back t) room (1- (abs back))))
          (multibyte enable-multibyte-characters))
-    (with-current-buffer (donkey--split-text-buffer)
+    (with-current-buffer (donkey--split-hidden-buffer
+                          'donkey--split-text-buffer " *donkey-split-text*")
       (erase-buffer)
       (set-buffer-multibyte multibyte)
       (insert new old))
@@ -8172,7 +8166,8 @@ place, so no place holds anything but what it held; see
       ;; Where one string stands at every position it is compared from a
       ;; buffer of its own, so the check copies no text at any position.
       (let ((one (and (stringp now) now))
-            (scratch (donkey--split-check-buffer))
+            (scratch (donkey--split-hidden-buffer
+                      'donkey--split-check-buffer " *donkey-split-check*"))
             (multibyte enable-multibyte-characters)
             (case-fold-search nil))
         (when one
