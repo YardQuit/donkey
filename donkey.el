@@ -1362,11 +1362,6 @@ is the one place the mode is tested for the Org rules."
                 (setq result (seq-find #'donkey--callable-command-p rule-cmds))))))))
     result))
 
-(defun donkey--execute-handler (cmd)
-  "Execute CMD if it exists and is callable."
-  (when (donkey--callable-command-p cmd)
-    (call-interactively cmd)))
-
 (defun donkey--org-mode-enter-handler ()
   "Handle Enter in `org-mode'.  Return t if handled.
 
@@ -1375,7 +1370,7 @@ Derivation counts: a mode built on `org-mode', such as
 `donkey--find-enter-handler'."
   (let ((handler (donkey--find-enter-handler)))
     (when handler
-      (donkey--execute-handler handler)
+      (call-interactively handler)
       t)))
 
 (defun donkey--markdown-enter-handler ()
