@@ -4055,6 +4055,32 @@ from \"two two.\" itself, held first."
                                                              (region-end)))
                        case))))))
 
+(ert-deftest donkey-mark-sentence-reads-a-negative-count-as-the-others-do ()
+  "`C-u -N m s' marks the N sentences behind, as `m w', `m W' and `m p' do.
+
+Zero is a plain press; where nothing lies behind, the press is refused
+and point and the mark stay where they were.  Mid-run a negative count
+walks the selection's end back, as it does for `m w'."
+  (dolist (case '(("C-u - 1 m s" "Two thing.")
+                  ("C-u - 2 m s" "One thing.  Two thing.")
+                  ("C-u - 9 m s" "One thing.  Two thing.")
+                  ("C-u 0 m s"   "Three thing.")))
+    (donkey-mark-test--keys "One thing.  Two thing.  Three thing." (concat "w w w w l " (car case))
+      (should (equal (list (car case) (donkey-mark-test--selection))
+                     case))))
+  ;; Blank before the first sentence is not part of it, and running out
+  ;; of sentences near the buffer's start marks what there is.
+  (dolist (text '("  One thing.  Two thing." "\n\nOne thing.  Two thing."))
+    (donkey-mark-test--keys text "G b C-u - 9 m s"
+      (should (equal (donkey-mark-test--selection) "One thing."))))
+  (donkey-mark-test--keys "One thing.  Two thing.  Three thing." "m s m s C-u - 1 m s"
+    (should (equal (donkey-mark-test--selection) "One thing.  ")))
+  (donkey-mark-test--keys "  One thing.  Two thing." "l l l C-SPC C-SPC l"
+    (let ((mark (mark t)) (ring (length mark-ring)))
+      (should-error (execute-kbd-macro (kbd "C-u - 1 m s")) :type 'user-error)
+      (should (equal (list (point) (mark t) (length mark-ring))
+                     (list 5 mark ring))))))
+
 (ert-deftest donkey-mark-sentence-treats-counts-below-one-as-one ()
   "Unlike the other mark commands, this one clamps a count below 1.
 
@@ -4733,9 +4759,8 @@ reports a marked word rather than erroring."
   "`C-u 0' and `C-u -2' mean a plain press for all three backward keys.
 
 Zero and negative counts already reach behind point elsewhere in the
-family (`C-u -2 m w'), and these commands ARE the backward direction,
-so they have nothing left to name here -- the same reading
-`donkey-mark-sentence' gives its own counts below 1.
+family (`C-u -2 m w', `C-u -2 m s'), and these commands ARE the
+backward direction, so they have nothing left to name here.
 
 Checked both fresh and as a continuation, because only the second can
 tell the clamp apart from delegation: a fresh press hands no count to

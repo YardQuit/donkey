@@ -5004,9 +5004,8 @@ so the two commands cannot drift apart."
   "Return COUNT as the number of objects for a forward mark key.
 
 Nil and zero are one; anything else is itself.  `donkey-mark-word',
-`donkey-mark-symbol' and `donkey-mark-paragraph' read their COUNT
-through this, so the three agree, and `donkey-mark-sentence' reads
-every count below one as one for a reason of its own -- see there.
+`donkey-mark-symbol', `donkey-mark-sentence' and `donkey-mark-paragraph'
+read their COUNT through this, so the four agree.
 
 A NEGATIVE count keeps its meaning, the objects behind the one point
 normalizes onto."
@@ -6443,13 +6442,12 @@ ahead, the last one.  `donkey-mark-sentence-backward' takes the one
 BEHIND from the same gap; see `donkey--mark-reach' for the rule and the
 report behind it.
 
-COUNT marks that many sentences.  Unlike the other mark commands a COUNT
-below 1 is treated as 1 here: `mark-end-of-sentence' counts from the
-start this command normalizes onto, so a count of 0 selects nothing at
-all and a negative one reaches back over the sentence already behind
-that start -- neither of which is a sentence at point.  A COUNT reaching
-past the last sentence marks what there is and stops, the way every
-other counted command does.
+COUNT marks that many sentences, read as `donkey-mark-word' reads its
+own: zero is one, and a negative COUNT marks the sentences behind the
+one point is in, refusing where there is none; mid-run it walks the
+selection's end back instead.  A COUNT reaching past the last sentence
+marks what there is and stops, the way every other counted command
+does.
 
 Pressing the key again immediately EXTENDS the selection by another
 sentence rather than re-marking the same one, and keeps extending until
@@ -6490,14 +6488,29 @@ same run from the other end, as does every member of
   ;; `mark-end-of-sentence''s own extension fires from the mark.
   (let ((last-command (if extending this-command last-command))
         ;; A deactivated run must still grow.
-        (mark-even-if-inactive t))
-    (condition-case nil
-        (mark-end-of-sentence (max 1 (or count 1)))
-      ;; A count running past the last sentence marks what there is
-      ;; and stops.
-      (end-of-buffer (push-mark (point-max) nil t))
-      (error (goto-char origin)
-             (user-error "No sentence at or before point"))))
+        (mark-even-if-inactive t)
+        (n (donkey--object-count count)))
+    (if (and (not extending) (< n 0))
+        (let ((far (donkey--object-end-before
+                    (point) #'backward-sentence #'forward-sentence)))
+          ;; Running out of sentences marks what there is; Emacs's own
+          ;; motion signals near the buffer's start rather than stopping.
+          (condition-case nil
+              (backward-sentence (- n))
+            (error (goto-char (point-min))))
+          (skip-chars-forward "[:space:]\n" far)
+          (unless (< (point) far)
+            (goto-char origin)
+            (user-error "No sentence before point"))
+          (push-mark far t)
+          (activate-mark))
+      (condition-case nil
+          (mark-end-of-sentence n)
+        ;; A count running past the last sentence marks what there is
+        ;; and stops.
+        (end-of-buffer (push-mark (point-max) nil t))
+        (error (goto-char origin)
+               (user-error "No sentence at or before point")))))
   ;; A blank buffer is refused here, the motions not signaling on one.
   (unless extending
     (donkey--refuse-blank-mark "sentence" origin))
