@@ -6331,7 +6331,8 @@ before the one point normalizes onto, and a COUNT of zero marks one, as
 a bare press does -- see `donkey--object-count'."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (let ((extend (donkey--mark-run-continuing-p)))
+  (let ((extend (donkey--mark-run-continuing-p))
+        (start (point)))
     (unless extend
      (let ((origin (point)))
       ;; From a gap, onto the word ahead or, for a backward press and
@@ -6364,6 +6365,10 @@ a bare press does -- see `donkey--object-count'."
           (let ((far (donkey--object-end-before
                       (point) #'backward-word #'forward-word)))
             (forward-word n)
+            ;; Nothing behind the first word to count back over.
+            (when (>= (point) far)
+              (goto-char start)
+              (user-error "No word before point"))
             (push-mark far t)
             (activate-mark))
         (mark-word n extend))))
@@ -6467,9 +6472,9 @@ behind ORIGIN -- the first in its list -- the answer is ORIGIN itself."
   "Drop the region and report when it is nothing but whitespace.
 
 OBJECT names what was asked for, so the message reads \"No sentence at
-or before point\" or \"No paragraph at or before point\" -- the two
-commands whose motions walk to the end of a blank buffer and back
-rather than signaling, and so end up \"marking\" the blank.
+or before point\" -- the command whose motions walk to the end of a
+blank stretch and back rather than signaling, and so can end up
+\"marking\" the blank.
 
 ORIGIN is where the key was pressed, and point goes back there before
 the report, so a refusal leaves the cursor where the key was.  For a
@@ -6512,6 +6517,9 @@ same run from the other end, as does every member of
   (donkey--ensure-non-rectangle-selection)
   (let ((origin (point))
         (extending (donkey--mark-run-continuing-p)))
+   ;; Nothing but blank to mark: refused before the mark moves.
+   (unless (or extending (donkey--text-before-p (point-max)))
+     (user-error "No sentence at or before point"))
    ;; Only a fresh press normalizes onto a sentence start.
    (condition-case nil
       (unless extending
@@ -6646,11 +6654,19 @@ marks one, as a bare press does -- see `donkey--object-count'."
       (let ((start (point)))
         (forward-paragraph n)
         (donkey--absorb-paragraph-blank start)
+        ;; Nothing but blank between the two ends -- a blank buffer, or
+        ;; a negative count from the first paragraph -- is refused
+        ;; before the mark moves, with the cursor where it was.
+        (when (save-excursion
+                (let ((end (max start (point))))
+                  (goto-char (min start (point)))
+                  (skip-chars-forward "[:space:]\n" end)
+                  (= (point) end)))
+          (goto-char origin)
+          (user-error "No paragraph at or before point"))
         (push-mark (point) nil t)
         (goto-char start))
       (activate-mark))
-    (unless extending
-      (donkey--refuse-blank-mark "paragraph" origin))
     (message "Paragraph marked")))
 
 (defun donkey-mark-paragraph-backward (&optional count)
@@ -6700,7 +6716,8 @@ before the one point normalizes onto, and a COUNT of zero marks one, as
 a bare press does -- see `donkey--object-count'."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (let ((n (donkey--object-count count)))
+  (let ((n (donkey--object-count count))
+        (start (point)))
    (if (donkey--mark-run-continuing-p)
       ;; Grown by moving the mark; the punctuation trim runs again for
       ;; the new end.
@@ -6733,6 +6750,10 @@ a bare press does -- see `donkey--object-count'."
                      (point))))
           (donkey--forward-sexps n)
           (donkey--trim-symbol-prefix)
+          ;; Nothing behind the first symbol to count back over.
+          (when (>= (point) far)
+            (goto-char start)
+            (user-error "No symbol before point"))
           (push-mark far t))
       (let ((moved (donkey--forward-sexps n)))
         (when (> moved 0)

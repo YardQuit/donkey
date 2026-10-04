@@ -8062,6 +8062,50 @@ a trailing period when there is a symbol in front of it to keep."
                                      (region-beginning) (region-end)))
                          (cons text twice))))))))
 
+(ert-deftest donkey-a-negative-count-with-nothing-behind-is-refused ()
+  "A negative count from the first object refuses, leaving point and mark."
+  (dolist (case '((text-mode "foo bar baz\n" "foo" "C-u - 1 m w")
+                  (text-mode "foo bar baz\n" "foo" "C-u - 3 m w")
+                  (text-mode "foo bar baz\n" "oo" "C-u - 1 m w")
+                  (emacs-lisp-mode "foo bar baz\n" "oo" "C-u - 1 m W")
+                  (emacs-lisp-mode "foo bar baz\n" "foo" "C-u - 1 m W")
+                  (emacs-lisp-mode "(a b)" "a" "C-u - 1 m W")
+                  (text-mode "one\ntwo\n\nthree\n" "one" "C-u - 1 m p")))
+    (pcase-let ((`(,mode ,text ,at ,keys) case))
+      (donkey-test-keys--harness "*donkey-negative-none*" mode ()
+          text ""
+        (search-forward at)
+        (goto-char (match-beginning 0))
+        (set-mark (point-max))
+        (deactivate-mark)
+        (let ((where (point)))
+          (should-error (execute-kbd-macro (kbd keys)) :type 'user-error)
+          (should (equal (list keys (point) (mark t) mark-active)
+                         (list keys where (point-max) nil))))))))
+
+(ert-deftest donkey-a-negative-count-takes-what-there-is-behind ()
+  "A negative count reaching past the first object marks what lies behind."
+  (donkey-test-keys--harness "*donkey-negative-some*" #'text-mode ()
+      "foo bar baz\n" ""
+    (search-forward "baz")
+    (goto-char (match-beginning 0))
+    (execute-kbd-macro (kbd "C-u - 3 m w"))
+    (should (equal (buffer-substring-no-properties (region-beginning)
+                                                   (region-end))
+                   "foo bar"))))
+
+(ert-deftest donkey-a-refused-sentence-or-paragraph-leaves-the-mark ()
+  "In a blank buffer the sentence and paragraph keys leave mark and ring alone."
+  (dolist (keys '("m s" "m S" "m p" "m P"))
+    (donkey-test-keys--harness "*donkey-blank-refusal*" #'text-mode ()
+        "   \n\n  " ""
+      (set-mark 2)
+      (deactivate-mark)
+      (setq mark-ring nil)
+      (should-error (execute-kbd-macro (kbd keys)) :type 'user-error)
+      (should (equal (list keys (point) (mark t) mark-ring)
+                     (list keys 1 2 nil))))))
+
 (ert-deftest donkey-mark-commands-never-announce-an-empty-selection ()
   "No mark command reports success with nothing selected.
 
