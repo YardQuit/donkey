@@ -3988,8 +3988,9 @@ Inside a rectangle this moves as `k' does there, through
 
 If a region is already active (e.g. from `donkey-mark-inner') when
 enabling, `rectangle-mark-mode' reinterprets that existing region as
-a rectangle using its own corners.  Only a fresh selection is widened
-by one column, and not at the end of a line or of the buffer."
+a rectangle using its own corners.  Only a fresh selection is widened,
+by the character under the cursor in the text's own order, and not at
+the end of a line or of the buffer."
   (interactive)
   (if (bound-and-true-p rectangle-mark-mode)
       (progn
@@ -4003,11 +4004,12 @@ by one column, and not at the end of a line or of the buffer."
       (add-hook 'deactivate-mark-hook #'donkey--clear-selection-hint nil t)
       ;; One column of width for a fresh selection.  Not at the end of
       ;; the buffer, where there is nothing to widen into, and not at
-      ;; the end of a line, where `right-char' would move the block to
-      ;; column 0 of the next line.
+      ;; the end of a line, where `forward-char' would move the block to
+      ;; column 0 of the next line.  `forward-char', not `right-char',
+      ;; which in right-to-left text moves back.
       (unless (or had-active-region (eolp))
         (condition-case nil
-            (right-char 1)
+            (forward-char 1)
           (end-of-buffer nil)))
       ;; Last, so it is what stays.
       (message "%s" donkey--rectangle-hint))))

@@ -2957,7 +2957,7 @@ its initial widening."
 (ert-deftest donkey-rectangle-mark-mode-at-end-of-line-stays-on-its-column ()
   "The initial widening must not step over the newline.
 
-Regression test: `right-char' at end of line moves to column 0 of the
+Regression test: `forward-char' at end of line moves to column 0 of the
 NEXT line, so the widening did not widen the rectangle -- it moved it,
 to the far side of the buffer from the column being looked at.
 
@@ -2998,10 +2998,28 @@ cannot drift apart: mid-line keeps its one column of width."
       (should (equal (rectangle--pos-cols (region-beginning) (region-end))
                      (cons 0 1))))))
 
+(ert-deftest donkey-rectangle-mark-mode-takes-the-character-in-right-to-left-text ()
+  "In right-to-left text `m v' takes the character under the cursor too.
+
+Mid-line it is that character, not the one before it, and at the start
+of a line the block stays on the line."
+  (dolist (case '(("مرحبا بالعالم\nسطر ثاني\n" 4 "ب")
+                  ("שלום\nעולם\n" 6 "ע")
+                  ("hello world\nsecond\n" 4 "l")))
+    (pcase-let ((`(,text ,pos ,want) case))
+      (with-temp-buffer
+        (let ((transient-mark-mode t))
+          (insert text)
+          (goto-char pos)
+          (donkey-rectangle-mark-mode)
+          (should (equal (list text (substring-no-properties
+                                     (funcall region-extract-function nil)))
+                         (list text want))))))))
+
 (ert-deftest donkey-rectangle-mark-mode-takes-one-character-not-one-column ()
   "The initial widening is one CHARACTER, which is not always one column.
 
-The widening is `right-char', so what it takes is a character; a
+The widening is `forward-char', so what it takes is a character; a
 rectangle is measured in COLUMNS, and the two only coincide for
 ordinary text:
 
@@ -3091,7 +3109,7 @@ other way round, passing live and failing in batch."
     (should-not (region-active-p))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-empty ()
-  "In an empty buffer, `right-char' has nowhere to go but does not error."
+  "In an empty buffer, `forward-char' has nowhere to go but does not error."
   (with-temp-buffer
     (should (equal (buffer-string) ""))
     (donkey-rectangle-mark-mode)
@@ -3107,9 +3125,9 @@ other way round, passing live and failing in batch."
     (should (<= (point) (point-max)))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-at-buffer-end ()
-  "At buffer end, `right-char' has nowhere to go but does not error.
+  "At buffer end, `forward-char' has nowhere to go but does not error.
 
-Regression test: `right-char' signals `end-of-buffer' with nothing
+Regression test: `forward-char' signals `end-of-buffer' with nothing
 left to widen the rectangle into.  Confirmed live in `emacs -nw':
 pressing `m v' at the end of a buffer used to surface an uncaught
 \"End of buffer\" error message instead of cleanly toggling on (with a
@@ -3123,7 +3141,7 @@ valid, if zero-width, initial rectangle selection)."
     (should (= (mark) (point-max)))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-single-character ()
-  "On a single character, `right-char' has one column to move into."
+  "On a single character, `forward-char' has one column to move into."
   (with-temp-buffer
     (insert "x")
     (goto-char 1)
@@ -3183,7 +3201,7 @@ valid, if zero-width, initial rectangle selection)."
           (end (point)))
       (should (< beg end)))))
 
-(ert-deftest donkey-rectangle-mark-mode-edge-after-right-char ()
+(ert-deftest donkey-rectangle-mark-mode-edge-after-forward-char ()
   "Point advances exactly one character after activation."
   (with-temp-buffer
     (insert "01234")
@@ -3213,7 +3231,7 @@ valid, if zero-width, initial rectangle selection)."
 (ert-deftest donkey-rectangle-mark-mode-edge-empty-at-start ()
   "An empty buffer at `point-min' does not error.
 
-Here `right-char' has nowhere to go, but must not signal."
+Here `forward-char' has nowhere to go, but must not signal."
   (with-temp-buffer
     (goto-char (point-min))
     (donkey-rectangle-mark-mode)
