@@ -2330,36 +2330,7 @@ copies nothing at all.  A letter with its combining marks, or a joined
 emoji sequence, is one character, as `delete-forward-char' counts it;
 see `donkey--grapheme-end'."
   (interactive "p")
-  (let* ((n (or count 1))
-         (target (donkey--character-target n)))
-   ;; Only a copy that happened clears the selection.
-   (let ((copied
-          (cond
-           ;; Before the bank: the live selection wins.
-           ((donkey--live-rectangle-p)
-            ;; A no-width copy is not a copy, so it must not clear the
-            ;; selection.
-            (donkey--kill-rectangle-guarded
-             #'copy-rectangle-as-kill
-             "Nothing to copy -- the rectangle has no width"))
-           ((donkey--banked-selection-p)
-            (donkey--copy-banked-selection) t)
-           ((donkey--selection-to-act-on-p)
-            (let ((bounds (donkey--visual-line-region-bounds)))
-              (kill-ring-save (car bounds) (cdr bounds)))
-            t)
-           ((zerop n) nil)
-           ((/= target (point))
-            (kill-ring-save (point) target)
-            t)
-           ((< n 0)
-            (message "Beginning of buffer -- nothing to copy")
-            nil)
-           (t
-            (message "End of buffer -- nothing to copy")
-            nil))))
-     (when copied
-       (deactivate-mark)))))
+  (donkey--copy-or-delete count t))
 
 (defun donkey-delete (&optional count)
   "Delete character or region.
@@ -2405,29 +2376,49 @@ whatever was already on the ring, not the three characters just removed.
 `undo' is what brings those back.  `donkey-change' draws the same line in
 the same place."
   (interactive "p")
+  (donkey--copy-or-delete count nil))
+
+(defun donkey--copy-or-delete (count copy)
+  "Copy, where COPY is non-nil, or delete what `y' and `d' act on.
+
+The one dispatch of `donkey-copy' and `donkey-delete': a live
+rectangle, then banked lines, then a selection, then COUNT characters
+at point.  Only a copy that happened clears the selection."
   (let* ((n (or count 1))
-         (target (donkey--character-target n)))
-   (cond
-    ;; Before the bank: the live selection wins.
-    ((donkey--live-rectangle-p)
-     ;; The guard is for the no-width press.
-     (donkey--kill-rectangle-guarded
-      #'kill-rectangle
-      "Nothing to delete -- the rectangle has no width"))
-    ((donkey--banked-selection-p)
-     (donkey--delete-banked-selection))
-    ((donkey--selection-to-act-on-p)
-     (let ((bounds (donkey--visual-line-region-bounds)))
-       (kill-region (car bounds) (cdr bounds))))
-    ((zerop n) nil)
-    ((/= target (point))
-     (donkey--refuse-hidden-text (point) target)
-     (delete-region (point) target))
-   ((< n 0)
-    (message "Beginning of buffer -- nothing to delete"))
-   (t
-    ;; At `point-max' `delete-char' would signal a bare `end-of-buffer'.
-    (message "End of buffer -- nothing to delete")))))
+         (target (donkey--character-target n))
+         (verb (if copy "copy" "delete"))
+         (done
+          (cond
+           ((donkey--live-rectangle-p)
+            ;; A no-width take is not one, and keeps the rectangle.
+            (donkey--kill-rectangle-guarded
+             (if copy #'copy-rectangle-as-kill #'kill-rectangle)
+             (format "Nothing to %s -- the rectangle has no width" verb)))
+           ((donkey--banked-selection-p)
+            (if copy
+                (donkey--copy-banked-selection)
+              (donkey--delete-banked-selection))
+            t)
+           ((donkey--selection-to-act-on-p)
+            (let ((bounds (donkey--visual-line-region-bounds)))
+              (funcall (if copy #'kill-ring-save #'kill-region)
+                       (car bounds) (cdr bounds)))
+            t)
+           ((zerop n) nil)
+           ((/= target (point))
+            (if copy
+                (kill-ring-save (point) target)
+              (donkey--refuse-hidden-text (point) target)
+              (delete-region (point) target))
+            t)
+           (t
+            ;; At `point-max' `delete-char' would signal a bare
+            ;; `end-of-buffer'.
+            (message "%s of buffer -- nothing to %s"
+                     (if (< n 0) "Beginning" "End") verb)
+            nil))))
+    (when (and copy done)
+      (deactivate-mark))))
 
 (defun donkey-redo (&optional count)
   "Redo what was last undone, through whatever is managing undo here.
