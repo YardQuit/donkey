@@ -7755,7 +7755,10 @@ not be made at every place"))))))
          (donkey--split-close-edit t)
          (donkey--split-dissolve t)
          (message "Split ended -- %s" (error-message-string err))))
-      (setq donkey--split-synced-tick (buffer-chars-modified-tick))
+      ;; Noted only for a split that is still here: one that just ended
+      ;; keeps nothing.
+      (when donkey--split-places
+        (setq donkey--split-synced-tick (buffer-chars-modified-tick)))
       ;; Whatever the command did was looked at above; what an input
       ;; method shows next is weighed against the buffer as it is now.
       (when donkey--split-writing
@@ -8915,6 +8918,30 @@ undo entry puts it back.  A place stops a character short of the next."
     (when taken
       (setq donkey--split-edge-texts texts))))
 
+(defconst donkey--split-local-state
+  '(donkey--split-places donkey--split-primary donkey--split-text
+    donkey--split-phase donkey--split-did donkey--split-scope
+    donkey--split-agree donkey--split-edge-edits donkey--split-strayed
+    donkey--split-lost donkey--split-seen-tick donkey--split-seen-size
+    donkey--split-seen-undo donkey--split-unseen donkey--split-pending
+    donkey--split-tick donkey--split-target donkey--split-behind
+    donkey--split-sweep-timer donkey--split-writing
+    donkey--split-edit-head donkey--split-edit-initial
+    donkey--split-edit-mark donkey--split-edit-base
+    donkey--split-synced-tick donkey--split-edge-texts
+    donkey--split-changes donkey--split-hidden-count
+    donkey--split-cursors donkey--split-cursor-order
+    donkey--split-column donkey--split-cursor-marks
+    donkey--split-cursors-selecting donkey--split-run-history
+    donkey--split-run-redo donkey--split-running donkey--split-repeat
+    donkey--split-count)
+  "Every buffer-local variable a split keeps its state in.
+
+`donkey--split-dissolve' gives each but the scope its default again
+as the split ends, and `donkey--split-disown' takes the copies a cloned buffer
+starts with: one list, so a variable added to the split is cleared by
+both.  A test recounts it against the file\\='s `defvar-local's.")
+
 (defun donkey--split-remove-local-hooks ()
   "Take every buffer-local hook a split puts on this buffer off it."
   (remove-hook 'post-command-hook #'donkey--split-sync t)
@@ -8961,41 +8988,11 @@ the current one, so both are cleared."
           (mapc #'donkey--split-cursor-release donkey--split-places))
         (mapc #'delete-overlay donkey--split-cursor-marks)
         (mapc #'delete-overlay donkey--split-places)
-        (setq donkey--split-places nil
-              donkey--split-primary nil
-              donkey--split-text nil
-              donkey--split-phase nil
-              donkey--split-did nil
-              donkey--split-agree nil
-              donkey--split-hidden-count 0
-              donkey--split-count nil
-              donkey--split-edge-edits nil
-              donkey--split-strayed nil
-              donkey--split-lost nil
-              donkey--split-unseen nil
-              donkey--split-seen-tick nil
-              donkey--split-seen-size nil
-              donkey--split-seen-undo nil
-              donkey--split-pending nil
-              donkey--split-tick nil
-              donkey--split-target nil
-              donkey--split-behind nil
-              donkey--split-writing nil
-              donkey--split-edit-head nil
-              donkey--split-edit-mark nil
-              donkey--split-edit-base nil
-              donkey--split-edit-initial nil
-              donkey--split-edge-texts nil
-              donkey--split-changes nil
-              donkey--split-cursors nil
-              donkey--split-running nil
-              donkey--split-run-history nil
-              donkey--split-run-redo nil
-              donkey--split-repeat nil
-              donkey--split-cursor-order nil
-              donkey--split-column nil
-              donkey--split-cursor-marks nil
-              donkey--split-cursors-selecting nil)
+        (donkey--split-sweep-cancel)
+        ;; All but the scope, which a new split notes before it takes
+        ;; down the one it replaces.
+        (dolist (variable (remq 'donkey--split-scope donkey--split-local-state))
+          (kill-local-variable variable))
         (donkey--split-remove-local-hooks)))
     (remove-hook 'post-gc-hook #'donkey--split-note-gc)
     (remove-hook 'delete-terminal-functions #'donkey--split-terminal-deleted)
@@ -9028,11 +9025,9 @@ one of the split\\='s own, where it still stands as the copy was made."
                              (overlay-properties overlay))
                        copied)
           (delete-overlay overlay)))))
-  (dolist (variable '(donkey--split-places donkey--split-primary
-                      donkey--split-text donkey--split-phase
-                      donkey--split-writing donkey--split-cursors
-                      donkey--split-cursor-marks donkey--split-behind
-                      donkey--split-target donkey--split-sweep-timer))
+  ;; The timer is the split's own, in its own buffer: only the copy of
+  ;; the reference goes.
+  (dolist (variable donkey--split-local-state)
     (kill-local-variable variable)))
 
 (defun donkey--split-terminal-deleted (terminal)

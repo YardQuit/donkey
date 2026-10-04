@@ -1451,6 +1451,54 @@ afterward."
           (should (equal (buffer-string) "a fooXY b\nc fooXY d\n")))
         (should (null painted))))))
 
+;; Recounted against the file, so a variable the split adds is cleared
+;; at its end and taken out of a clone without a second list to edit.
+(ert-deftest donkey-split-local-state-names-every-local-of-the-split ()
+  "`donkey--split-local-state' is every `defvar-local' of the split."
+  (let ((file (replace-regexp-in-string "\\.elc\\'" ".el"
+                                        (symbol-file 'donkey-split 'defun)))
+        found)
+    (with-temp-buffer
+      (insert-file-contents file)
+      (while (re-search-forward "^(defvar-local \\(donkey--split-[-a-z]+\\)"
+                                nil t)
+        (push (intern (match-string 1)) found)))
+    (should (equal (sort (copy-sequence donkey--split-local-state)
+                         #'string<)
+                   (sort found #'string<)))))
+
+(ert-deftest donkey-split-a-clone-keeps-none-of-the-split-s-state ()
+  "A clone made while writing has every split variable at its default."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-clone-state*" "a foo b\nc foo d\n"
+        "v G f a X"
+      (let (kept)
+        (donkey-split-test--from-indirect t "C-g"
+          (setq kept (with-current-buffer "*split-indirect*"
+                       (seq-remove (lambda (variable)
+                                     (equal (symbol-value variable)
+                                            (default-value variable)))
+                                   donkey--split-local-state)))
+          (should (eq donkey--split-phase 'edit)))
+        (should (null kept))))))
+
+(ert-deftest donkey-split-ends-with-every-split-variable-at-its-default ()
+  "Once a split ends, no split variable of its buffer holds anything.
+
+The scope excepted, which the next split notes before it takes the
+last one down."
+  (donkey-split-test--on "foo"
+    (dolist (keys '("v G f a X C-g" "v G f d" "t m w d C-g"))
+      (donkey-split-test--keys "*split-end-state*" "a foo b\nc foo d\n" keys
+        (should (equal (list keys nil)
+                       (list keys
+                             (seq-remove
+                              (lambda (variable)
+                                (equal (symbol-value variable)
+                                       (default-value variable)))
+                              (remq 'donkey--split-scope
+                                    donkey--split-local-state)))))))))
+
 (ert-deftest donkey-split-survives-an-undo-while-writing ()
   "An undo while writing puts every place back together, and writing goes on."
   (donkey-split-test--on "foo"
