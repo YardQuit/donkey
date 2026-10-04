@@ -8949,11 +8949,7 @@ the current one, so both are cleared."
         (message "%s" (with-current-buffer (or home (current-buffer))
                         (donkey--split-report
                          (length donkey--split-places))))))
-    (when donkey--split-exit-function
-      (let ((donkey--split-keeping t)
-            (disarm donkey--split-exit-function))
-        (setq donkey--split-exit-function nil)
-        (funcall disarm)))
+    (donkey--split-disarm)
     (setq donkey--split-buffer nil
           donkey--split-terminal nil)
     (setq donkey--split-cursor-last nil)
@@ -9142,6 +9138,14 @@ caller has read it already."
      (t (donkey--split-note-kill (string-join texts "\n") (length texts)
                                  nil)))))
 
+(defun donkey--split-disarm ()
+  "Take the split\\='s map off its terminal, leaving the split standing."
+  (when donkey--split-exit-function
+    (let ((donkey--split-keeping t)
+          (disarm donkey--split-exit-function))
+      (setq donkey--split-exit-function nil)
+      (funcall disarm))))
+
 (defun donkey--split-enter-edit (clear where)
   "Leave the chooser and open Insert state over the places.
 
@@ -9195,11 +9199,7 @@ be written."
           donkey--split-target nil
           donkey--split-behind nil)
     ;; Dismissing the chooser on purpose must not take the split with it.
-    (when donkey--split-exit-function
-      (let ((donkey--split-keeping t)
-            (disarm donkey--split-exit-function))
-        (setq donkey--split-exit-function nil)
-        (funcall disarm)))
+    (donkey--split-disarm)
     (let ((first (or (and donkey--split-cursors
                           (memq donkey--split-primary donkey--split-places)
                           donkey--split-primary)
