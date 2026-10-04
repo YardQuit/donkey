@@ -5036,16 +5036,16 @@ fresh backward press makes; the forward commands read it, and it is
 four forward commands are the user's keys, whose one argument is the
 COUNT, and this is not something a keypress can ask for.")
 
-(defun donkey--text-before-p (position)
-  "Return non-nil if anything but whitespace lies before POSITION.
+(defun donkey--text-between-p (beg end)
+  "Return non-nil if anything but whitespace lies between BEG and END.
 
-Whether a gap has an object behind it at all, asked by the sentence
-and paragraph keys before stepping back from a gap.  The newline is
-named because `[:space:]' is whitespace SYNTAX, which a newline has not
-got in every major mode."
+Whether a gap has an object behind it at all, from `point-min', and
+whether a selection holds anything but blank, from its own start.  The
+newline is named because `[:space:]' is whitespace SYNTAX, which a
+newline has not got in every major mode."
   (save-excursion
-    (goto-char (point-min))
-    (re-search-forward "[^[:space:]\n]" position t)))
+    (goto-char beg)
+    (re-search-forward "[^[:space:]\n]" end t)))
 
 (defun donkey--mark-reach-from-gap (ahead behind)
   "Move point from a gap onto the object a fresh press takes there.
@@ -6387,19 +6387,6 @@ COUNT marks or extends by that many words."
                          #'donkey-mark-word
                          "Word"))
 
-(defun donkey--region-blank-p ()
-  "Return non-nil if only whitespace and newlines lie in the region.
-
-Walks the region in place, a paragraph selection being large.  Both
-bounds are read before point moves, `region-end' being a function of
-point."
-  (let ((beg (region-beginning))
-        (end (region-end)))
-    (save-excursion
-      (goto-char beg)
-      (skip-chars-forward "[:space:]\n" end)
-      (= (point) end))))
-
 (defun donkey--object-end-before (origin backward forward)
   "Return where the object just before ORIGIN ends.
 
@@ -6435,7 +6422,7 @@ blank stretch and back rather than signaling, and so can end up
 ORIGIN is where the key was pressed, and point goes back there before
 the report, so a refusal leaves the cursor where the key was.  For a
 FRESH press only: a run may legitimately cover blank."
-  (when (donkey--region-blank-p)
+  (unless (donkey--text-between-p (region-beginning) (region-end))
     (deactivate-mark)
     (when origin
       (goto-char origin))
@@ -6474,7 +6461,7 @@ same run from the other end, as does every member of
   (let ((origin (point))
         (extending (donkey--mark-run-continuing-p)))
    ;; Nothing but blank to mark: refused before the mark moves.
-   (unless (or extending (donkey--text-before-p (point-max)))
+   (unless (or extending (donkey--text-between-p (point-min) (point-max)))
      (user-error "No sentence at or before point"))
    ;; Only a fresh press normalizes onto a sentence start.
    (condition-case nil
@@ -6489,7 +6476,7 @@ same run from the other end, as does every member of
         ;; lies behind.
         (when (and (eq donkey--mark-reach 'behind)
                    (> (point) origin)
-                   (donkey--text-before-p origin))
+                   (donkey--text-between-p (point-min) origin))
           (backward-sentence 1)))
     ;; At `point-max' with no trailing newline the forward step
     ;; signals; the sentence behind is the answer.
@@ -6603,7 +6590,7 @@ marks one, as a bare press does -- see `donkey--object-count'."
                  (beginning-of-line)
                  (looking-at-p "[[:space:]]*$"))
                (eq donkey--mark-reach 'behind)
-               (donkey--text-before-p origin))
+               (donkey--text-between-p (point-min) origin))
           (backward-paragraph 1)
         (forward-paragraph 1)
         (backward-paragraph 1))
@@ -6613,11 +6600,8 @@ marks one, as a bare press does -- see `donkey--object-count'."
         ;; Nothing but blank between the two ends -- a blank buffer, or
         ;; a negative count from the first paragraph -- is refused
         ;; before the mark moves, with the cursor where it was.
-        (when (save-excursion
-                (let ((end (max start (point))))
-                  (goto-char (min start (point)))
-                  (skip-chars-forward "[:space:]\n" end)
-                  (= (point) end)))
+        (unless (donkey--text-between-p (min start (point))
+                                        (max start (point)))
           (goto-char origin)
           (user-error "No paragraph at or before point"))
         (push-mark (point) nil t)
@@ -11206,8 +11190,8 @@ they end."
 The split\\='s `donkey-unbank-line': it only ever removes."
   (interactive)
   (donkey--split-live-p)
-  (dolist (span (donkey--split-cursors-line-spans))
-    (donkey--delete-banked-overlays (donkey--banked-overlays-at (car span))))
+  (donkey--delete-banked-overlays
+   (donkey--banked-overlays-in-spans (donkey--split-cursors-line-spans)))
   (message "Unbanked at %s (%d banked in all)"
            (donkey--split-places-phrase (length donkey--split-places))
            (donkey--banked-line-count)))
@@ -11301,20 +11285,17 @@ span is widened to the whole lines its overlay touches, two overlays
 that come to share a line are reported once, and spans that merely
 touch stay separate."
   (donkey--prune-banked-overlays)
-  (let ((spans (sort (delq nil
-                           (mapcar (lambda (ov)
-                                     (let ((start (overlay-start ov))
-                                           (end (overlay-end ov)))
-                                       (and (>= start (point-min))
-                                            (<= end (point-max))
-                                            (donkey--whole-line-span start end))))
-                                   donkey--banked-overlays))
-                     (lambda (a b) (< (car a) (car b)))))
-        merged)
-    (dolist (span spans (nreverse merged))
-      (if (and merged (< (car span) (cdr (car merged))))
-          (setcdr (car merged) (max (cdr (car merged)) (cdr span)))
-        (push span merged)))))
+  (donkey--merge-spans
+   (sort (delq nil
+               (mapcar (lambda (ov)
+                         (let ((start (overlay-start ov))
+                               (end (overlay-end ov)))
+                           (and (>= start (point-min))
+                                (<= end (point-max))
+                                (donkey--whole-line-span start end))))
+                       donkey--banked-overlays))
+         #'car-less-than-car)
+   t))
 
 (defun donkey-banked-spans ()
   "Return this buffer's banked lines as a list of (START . END) conses.
@@ -11339,11 +11320,15 @@ Prefer this over the internal it wraps: the double-dashed name is
 donkey's own and free to change shape, this one is not."
   (donkey--banked-spans))
 
-(defun donkey--merge-spans (spans)
-  "Merge overlapping or touching SPANS, a list of (START . END) in order."
+(defun donkey--merge-spans (spans &optional strict)
+  "Merge overlapping or touching SPANS, a list of (START . END) in order.
+
+With STRICT, spans that only touch stay apart."
   (let (merged)
     (dolist (span spans (nreverse merged))
-      (if (and merged (<= (car span) (cdr (car merged))))
+      (if (and merged (if strict
+                          (< (car span) (cdr (car merged)))
+                        (<= (car span) (cdr (car merged)))))
           (setcdr (car merged) (max (cdr (car merged)) (cdr span)))
         (push (cons (car span) (cdr span)) merged)))))
 
@@ -11437,7 +11422,7 @@ else."
                       (save-excursion
                         (forward-line (1- (max 1 (or count 1))))
                         (line-end-position)))))
-             (lines (count-lines (car span) (cdr span)))
+             (lines (donkey--span-line-count (list span)))
              (unbanking (donkey--toggle-bank-spans (list span))))
         (deactivate-mark)
         (message "%s %d line%s (%d total)%s"
@@ -11464,22 +11449,10 @@ else."
 (defun donkey--banked-overlays-at (pos)
   "Return every banked overlay touching the line POS is on.
 
-The test is whether the overlay and the line share any text, asked of
-the whole line rather than of POS.  A list, because one line can hold
-several: two banked lines joined into one keep both overlays.
-Candidates come from `overlays-in'; the `donkey-banked' property tells
-this package's overlays from any other package's."
-  (let ((span (donkey--whole-line-span pos pos)))
-    (seq-filter (lambda (ov) (overlay-get ov 'donkey-banked))
-                (overlays-in (car span) (cdr span)))))
-
-(defun donkey--banked-overlay-at (pos)
-  "Return a banked overlay covering the line POS is on, or nil.
-
-The yes-or-no form of `donkey--banked-overlays-at', for the callers
-that only ask whether the line is banked.  Anything that REMOVES a bank
-goes through the list, since a line can carry more than one overlay."
-  (car (donkey--banked-overlays-at pos)))
+A list, because one line can hold several: two banked lines joined
+into one keep both overlays.  Non-nil is the answer to whether the
+line is banked.  See `donkey--banked-overlays-in-spans'."
+  (donkey--banked-overlays-in-spans (list (donkey--whole-line-span pos pos))))
 
 (defun donkey--delete-banked-overlays (overlays)
   "Delete OVERLAYS, so the lines they covered are unbanked.
@@ -11533,7 +11506,7 @@ at."
   (let ((run (donkey--banked-run-at (point))))
     (if (not run)
         (message "No banked section at point")
-      (let ((lines (count-lines (car run) (cdr run))))
+      (let ((lines (donkey--span-line-count (list run))))
         (donkey--unbank-span (car run) (cdr run))
         (message "Unbanked %d line%s (%d total)"
                  lines
@@ -11569,7 +11542,7 @@ single-line toggle follows."
   (let ((all t))
     (donkey--map-line-spans beg end
       (lambda (span)
-        (unless (donkey--banked-overlay-at (car span))
+        (unless (donkey--banked-overlays-at (car span))
           (setq all nil))))
     all))
 
@@ -11606,7 +11579,7 @@ edge of a banked line -- a line opened or pasted above or below it --
 stays outside the bank."
   (donkey--map-line-spans beg end
     (lambda (line-span)
-      (unless (donkey--banked-overlay-at (car line-span))
+      (unless (donkey--banked-overlays-at (car line-span))
         ;; Front advance and no rear advance: an insertion at the
         ;; start of the line lands before the overlay, one at the start
         ;; of the next line after it.

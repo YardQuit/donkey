@@ -1234,7 +1234,6 @@ lookup must not bank, unbank or count a line for a stranger's overlay."
     (let ((foreign (make-overlay 1 4)))
       (overlay-put foreign 'face 'highlight)
       (should (null (donkey--banked-overlays-at 1)))
-      (should (null (donkey--banked-overlay-at 1)))
       (donkey-bank-selection)
       (should (= 1 (donkey--banked-line-count)))
       (should (= 1 (length (donkey--banked-overlays-at 1))))
@@ -1295,7 +1294,7 @@ on the line -- the start-anchored lookup did not."
     (should (equal (buffer-string) "abcdef\nghi\n"))
     (should (equal (donkey-banked-spans) '((1 . 8))))
     (should (= 1 (donkey--banked-line-count)))
-    (should (donkey--banked-overlay-at (point)))))
+    (should (donkey--banked-overlays-at (point)))))
 
 (ert-deftest donkey-a-bank-joined-onto-the-line-above-is-let-go-of-by-m-u ()
   "`m u' on the joined line finds the mid-line overlay and removes it.
@@ -1730,7 +1729,7 @@ shuffled order of seed 2 handed this one a `kill-region' and it read
 (ert-deftest donkey-collapsed-bank-does-not-block-banking-that-line-again ()
   "A ghost bank must not make its line permanently un-bankable.
 
-Regression: `donkey--banked-overlay-at' requires POS strictly inside
+Regression: the line lookup required POS strictly inside
 the overlay, which no position ever is for an empty range -- so the
 ghost could neither be toggled off nor banked over."
   (with-temp-buffer
@@ -1938,7 +1937,7 @@ single-line toggle's rule."
 (ert-deftest donkey-banked-final-line-without-newline-toggles-at-point-max ()
   "A banked final line with no trailing newline can be unbanked at `point-max'.
 
-Regression: `donkey--banked-overlay-at' tested POS strictly inside the
+Regression: the line lookup tested POS strictly inside the
 overlay, and there the overlay ends exactly at point -- so the lookup
 found nothing and the bank key re-banked the line instead of toggling
 it off."
@@ -2150,7 +2149,7 @@ path handed a symbol to `string' and signalled `wrong-type-argument'."
 (ert-deftest donkey-banking-a-large-region-is-not-quadratic ()
   "Banking scales with the number of lines, not their square.
 
-Regression: `donkey--banked-overlay-at' scanned `donkey--banked-overlays'
+Regression: the line lookup scanned `donkey--banked-overlays'
 linearly and `donkey--bank-span' calls it once per line, so banking cost
 quadratic time -- 0.01s for 200 lines, 0.22s for 1000 and 1.81s for 3000,
 a visible freeze for selecting a whole file and banking it.  Candidates
