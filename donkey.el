@@ -15243,34 +15243,27 @@ next command otherwise.  Never signals."
 (defvar donkey--cursor-last-type nil
   "The `cursor-type' it left behind, to notice one another package set.")
 
-(defun donkey--insert-cursor-setting ()
-  "Return the shape Insert state asks for in this buffer.
-
-Three kinds of buffer reach Insert state and they do not want the
-same cursor: `donkey-cursor-support' where the mode line says
-\\=`[S]\\=', `donkey-cursor-excluded' where it says \\=`[E]\\=', and
-`donkey-cursor-insert' where it says \\=`[I]\\='.
-
-The kind comes from `donkey--insert-state-kind', which the mode line
-reads for its letter, so the cursor and the letter cannot disagree.
-The shape is read fresh from the option, so changing one takes effect
-at the next command without anything to invalidate."
-  (pcase (donkey--insert-state-kind)
-    ('support donkey-cursor-support)
-    ('excluded donkey-cursor-excluded)
-    (_ donkey-cursor-insert)))
-
 (defun donkey--cursor-setting ()
   "Return the cursor setting the current buffer's DONKEY state asks for.
 
-Insert state answers through `donkey--insert-cursor-setting', which
-tells a support mode and an excluded mode apart from a buffer you
-write in.
+`donkey-cursor-normal' in Normal state.  Three kinds of buffer reach
+Insert state and they do not want the same cursor:
+`donkey-cursor-support' where the mode line says \\=`[S]\\=',
+`donkey-cursor-excluded' where it says \\=`[E]\\=', and
+`donkey-cursor-insert' where it says \\=`[I]\\='.  The kind comes from
+`donkey--insert-state-kind', which the mode line reads for its letter,
+so the cursor and the letter cannot disagree.  Each shape is read
+fresh from its option, so changing one takes effect at the next
+command without anything to invalidate.
 
 The symbol `none' when neither state is active, which is not a
 setting any state asks for and so cannot be mistaken for one."
   (cond ((bound-and-true-p donkey-normal-mode) donkey-cursor-normal)
-        ((bound-and-true-p donkey-insert-mode) (donkey--insert-cursor-setting))
+        ((bound-and-true-p donkey-insert-mode)
+         (pcase (donkey--insert-state-kind)
+           ('support donkey-cursor-support)
+           ('excluded donkey-cursor-excluded)
+           (_ donkey-cursor-insert)))
         (t 'none)))
 
 (defun donkey--update-cursor (&optional passive)
@@ -15286,13 +15279,9 @@ about the last update is dropped, since the state has just moved
 under it."
   (unless passive
     (setq donkey--cursor-last-buffer nil))
-  (cond
-   ((bound-and-true-p donkey-normal-mode)
-    (donkey--apply-cursor-setting donkey-cursor-normal))
-   ((bound-and-true-p donkey-insert-mode)
-    (donkey--apply-cursor-setting (donkey--insert-cursor-setting)))
-   ((not passive)
-    (donkey--apply-cursor-setting nil))))
+  (let ((setting (donkey--cursor-setting)))
+    (cond ((not (eq setting 'none)) (donkey--apply-cursor-setting setting))
+          ((not passive) (donkey--apply-cursor-setting nil)))))
 
 (defun donkey--update-cursor-passive ()
   "Resync the cursor via `donkey--update-cursor', passively.

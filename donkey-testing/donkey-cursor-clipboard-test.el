@@ -1143,6 +1143,11 @@ would have actually been lost for real at that point."
     (when (get-buffer "*DONKEY Platform Debug*")
       (kill-buffer "*DONKEY Platform Debug*"))))
 
+(defun donkey-cursor-test--insert-setting ()
+  "Return the cursor setting Insert state asks for in this buffer."
+  (let ((donkey-normal-mode nil) (donkey-insert-mode t))
+    (donkey--cursor-setting)))
+
 (ert-deftest donkey-each-kind-of-insert-buffer-asks-for-its-own-cursor ()
   "A support mode, an excluded mode and a buffer you write in differ.
 
@@ -1164,21 +1169,21 @@ call it a bug."
           (donkey-support-modes '((text-mode))))
       (with-temp-buffer
         (text-mode)
-        (should (eq (donkey--insert-cursor-setting) 'box))
+        (should (eq (donkey-cursor-test--insert-setting) 'box))
         (should (equal (donkey--insert-state-lighter) " DONKEY[S]"))))
     ;; the excluded list wins over the section
     (let ((donkey-excluded-modes '(text-mode))
           (donkey-support-modes '((text-mode))))
       (with-temp-buffer
         (text-mode)
-        (should (equal (donkey--insert-cursor-setting) '(bar . 2)))
+        (should (equal (donkey-cursor-test--insert-setting) '(bar . 2)))
         (should (equal (donkey--insert-state-lighter) " DONKEY[E]"))))
     ;; and a mode on neither list, which is a buffer you write in
     (let ((donkey-excluded-modes nil)
           (donkey-support-modes nil))
       (with-temp-buffer
         (prog-mode)
-        (should (equal (donkey--insert-cursor-setting) '(hbar . 1)))
+        (should (equal (donkey-cursor-test--insert-setting) '(hbar . 1)))
         (should (equal (donkey--insert-state-lighter) " DONKEY[I]"))))))
 
 (ert-deftest donkey-the-lighter-and-the-cursor-read-the-same-kind ()
@@ -1203,7 +1208,7 @@ across all three kinds, and with shapes that tell them apart."
             (text-mode)
             (should (eq (donkey--insert-state-kind) kind))
             (should (equal (donkey--insert-state-lighter) letter))
-            (should (eq (donkey--insert-cursor-setting) shape))))))))
+            (should (eq (donkey-cursor-test--insert-setting) shape))))))))
 
 (ert-deftest donkey-the-shipped-cursor-shapes-are-the-four-intended ()
   "Normal and support modes share one shape, Insert and excluded modes another.
