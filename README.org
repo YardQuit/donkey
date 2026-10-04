@@ -1995,11 +1995,10 @@ graphical frame:
 In Normal state =RET= tries these in order and stops at the first that
 answers:
 
-1. An =org-agenda= buffer — whatever the agenda binds =RET= to.
-2. An Org buffer — the rules below: follow the link, toggle the
+1. An Org buffer — the rules below: follow the link, toggle the
    checkbox, flip the TODO.
-3. A Markdown buffer — follow the link at point.
-4. A mode not listed in =donkey-editing-modes= — whatever the mode
+2. A Markdown buffer — follow the link at point.
+3. A mode not listed in =donkey-editing-modes= — whatever the mode
    itself binds =RET= to, asked at the moment you press it. A command
    that would type or break a line is refused, so =RET= stays inert
    rather than inserting a newline in a buffer you are reading.

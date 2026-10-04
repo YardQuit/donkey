@@ -17,7 +17,6 @@
 ;; pristine tree.  Stub only what is already loaded.
 (require 'browse-url)
 
-(defvar org-agenda-mode-map nil)
 (defvar this-original-command)
 (defvar last-command-event)
 
@@ -602,7 +601,7 @@ nothing: the mode derives from `text-mode' as well, which makes it an
 editing mode, and the non-editing fallback never fires in one.  The
 same headline under plain `org-mode' toggled.  Confirmed in a live
 frame before the handler moved to `derived-mode-p', which is how
-`donkey-editing-modes' and the agenda handler already match."
+`donkey-editing-modes' already matches."
   (eval '(define-derived-mode donkey-test--journalish-mode org-mode
            "Journalish")
         t)
@@ -621,87 +620,42 @@ frame before the handler moved to `derived-mode-p', which is how
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-enter-dwim dispatcher - Org-Agenda Mode
-;;;
-;;; `donkey--org-agenda-enter-handler' detects agenda mode via
-;;; `derived-mode-p', which reads the dynamically-bound `major-mode'
-;;; below directly -- no mock of a detection predicate is needed.
 ;;; ---------------------------------------------------------------------------
 
-(ert-deftest donkey-enter-dwim-agenda-calls-native-agenda-ret ()
-  "In org-agenda-mode, calls native agenda RET (org-agenda-switch-to)."
-  (let (called-cmd)
-    (cl-letf (((symbol-function 'lookup-key)
-               (lambda (_map _key) 'org-agenda-switch-to))
-              ((symbol-function 'org-agenda-switch-to)
-               (lambda () (interactive) nil))
-              ((symbol-function 'call-interactively)
-               (lambda (cmd) (setq called-cmd cmd))))
-      (let ((org-agenda-mode-map (make-sparse-keymap))
-            (major-mode 'org-agenda-mode))
-        (donkey-enter-dwim)))
-    (should (eq called-cmd 'org-agenda-switch-to))))
+(ert-deftest donkey-enter-in-an-org-agenda-is-the-agenda-s-own ()
+  "RET in a real Org agenda visits the entry, as the agenda binds it.
 
-(ert-deftest donkey-enter-dwim-agenda-with-undefined-ret-does-nothing ()
-  "In org-agenda-mode with undefined RET, nothing happens."
-  (let (called-cmd)
-    (cl-letf (((symbol-function 'lookup-key)
-               (lambda (_map _key) 'undefined))
-              ((symbol-function 'call-interactively)
-               (lambda (cmd) (setq called-cmd cmd))))
-      (let ((org-agenda-mode-map (make-sparse-keymap))
-            (major-mode 'org-agenda-mode))
-        (donkey-enter-dwim)))
-    (should (null called-cmd))))
-
-(ert-deftest donkey-enter-dwim-agenda-with-keymap-ret-does-nothing ()
-  "In org-agenda-mode where RET is bound to a keymap, nothing happens."
-  (let (called-cmd)
-    (cl-letf (((symbol-function 'lookup-key)
-               (lambda (_map _key) (make-sparse-keymap)))
-              ((symbol-function 'call-interactively)
-               (lambda (cmd) (setq called-cmd cmd))))
-      (let ((org-agenda-mode-map (make-sparse-keymap))
-            (major-mode 'org-agenda-mode))
-        (donkey-enter-dwim)))
-    (should (null called-cmd))))
-
-(ert-deftest donkey-enter-dwim-agenda-takes-priority-over-rules ()
-  "Agenda mode dispatch takes priority over all other handlers."
-  (let (called-cmd)
-    (cl-letf (((symbol-function 'lookup-key)
-               (lambda (_map _key) 'org-agenda-switch-to))
-              ((symbol-function 'org-agenda-switch-to)
-               (lambda () (interactive) nil))
-              ((symbol-function 'org-element-at-point)
-               (lambda () '(item (:checkbox t))))
-              ((symbol-function 'org-toggle-checkbox)
-               (lambda () (interactive) nil))
-              ((symbol-function 'call-interactively)
-               (lambda (cmd) (setq called-cmd cmd))))
-      (let ((org-agenda-mode-map (make-sparse-keymap))
-            (major-mode 'org-agenda-mode))
-        (donkey-enter-dwim)))
-    (should (eq called-cmd 'org-agenda-switch-to))))
-
-(ert-deftest donkey-enter-dwim-agenda-requires-derived-mode ()
-  "Agenda dispatch requires a derived agenda mode.
-
-Agenda dispatch does not fire when major-mode is unrelated, even with
-org-agenda-mode-map bound, confirming `derived-mode-p' (not just boundp)
-gates the handler."
-  (let (called-cmd)
-    (cl-letf (((symbol-function 'lookup-key)
-               (lambda (_map _key) 'org-agenda-switch-to))
-              ((symbol-function 'call-interactively)
-               (lambda (cmd) (setq called-cmd cmd))))
-      (let ((org-agenda-mode-map (make-sparse-keymap))
-            (major-mode 'fundamental-mode))
-        (donkey-enter-dwim)))
-    (should (null called-cmd))))
-
-;;; ---------------------------------------------------------------------------
-;;; donkey-enter-dwim dispatcher - Markdown Mode
-;;; ---------------------------------------------------------------------------
+As shipped the agenda is a support buffer and the key is the mode\\='s.
+Kept in Normal state through `donkey-support-mode-exceptions', the
+same key reaches `donkey-enter-dwim', which runs what the agenda binds
+\\`RET' to."
+  (require 'org-agenda)
+  (let ((org-agenda-files nil)
+        (org-agenda-sticky nil))
+    (dolist (case '((nil . nil) (t . t)))
+      (let ((donkey-support-mode-exceptions
+             (if (car case) '(org-agenda-mode occur-edit-mode)
+               donkey-support-mode-exceptions))
+            (visited nil)
+            agenda)
+        (unwind-protect
+            (progn
+              (donkey-mode 1)
+              (org-agenda-list)
+              (setq agenda (window-buffer (selected-window)))
+              (switch-to-buffer agenda)
+              (should (eq major-mode 'org-agenda-mode))
+              (should (eq (and (bound-and-true-p donkey-normal-mode) t)
+                          (cdr case)))
+              (cl-letf (((symbol-function 'org-agenda-switch-to)
+                         (lambda (&rest _) (interactive) (setq visited t))))
+                (let ((transient-mark-mode t) (prefix-arg nil)
+                      (current-prefix-arg nil) (unread-command-events nil)
+                      (this-command nil) (last-command nil))
+                  (execute-kbd-macro (kbd "RET"))))
+              (should visited))
+          (when (buffer-live-p agenda)
+            (kill-buffer agenda)))))))
 
 (ert-deftest donkey-enter-dwim-markdown-follows-the-link-at-point ()
   "In `markdown-mode' RET on a link runs `markdown-follow-thing-at-point'.

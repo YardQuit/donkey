@@ -1367,17 +1367,6 @@ is the one place the mode is tested for the Org rules."
   (when (donkey--callable-command-p cmd)
     (call-interactively cmd)))
 
-(defun donkey--org-agenda-enter-handler ()
-  "Handle Enter in `org-agenda' mode.  Return t if handled, otherwise nil."
-  (when (and (boundp 'org-agenda-mode-map)
-             (derived-mode-p 'org-agenda-mode))
-    (let ((ret-cmd (lookup-key org-agenda-mode-map (kbd "RET"))))
-      (when (and ret-cmd
-                 (not (eq ret-cmd 'undefined))
-                 (commandp ret-cmd))
-        (call-interactively ret-cmd)
-        t))))
-
 (defun donkey--org-mode-enter-handler ()
   "Handle Enter in `org-mode'.  Return t if handled.
 
@@ -1508,29 +1497,26 @@ a support buffer, where Enter is the mode's own key and this command
 is not reached.  Tries, in order, stopping at the first one that
 reports it handled the key:
 
-1. `donkey--org-agenda-enter-handler' -- in an Org agenda buffer in
-   Normal state, which it is only when it is not a support buffer,
-   delegates to whatever `org-agenda-mode-map' itself binds RET to.
-2. `donkey--org-mode-enter-handler' -- in `org-mode' buffers, derived
+1. `donkey--org-mode-enter-handler' -- in `org-mode' buffers, derived
    modes such as `org-journal-mode' included, dispatches via
    `donkey--find-enter-handler' against the element at point (see
    `donkey-add-enter-rule' to register more element-type/command
    rules, e.g. from `config.el').
-3. `donkey--markdown-enter-handler' -- in `markdown-mode' and
+2. `donkey--markdown-enter-handler' -- in `markdown-mode' and
    `gfm-mode' buffers, follows the link at point through
    `markdown-follow-thing-at-point', Markdown's own key for it.
-4. `donkey--non-editing-enter-handler' -- outside `donkey-editing-modes',
+3. `donkey--non-editing-enter-handler' -- outside `donkey-editing-modes',
    falls through to whatever the key means underneath Normal state's
    own keymap, asked at the press -- selecting a tab in the tab
-   switcher.  A command that would type or break a line is refused:
-   see `donkey--line-break-commands'.
+   switcher, visiting an entry in an Org agenda kept in Normal state.
+   A command that would type or break a line is refused: see
+   `donkey--line-break-commands'.
 
 If none of these handle it -- ordinary `prog-mode'/`text-mode' buffers
 being edited as code or plain text -- RET does nothing at all, on
 purpose."
   (interactive)
   (cond
-   ((donkey--org-agenda-enter-handler))
    ((donkey--org-mode-enter-handler))
    ((donkey--markdown-enter-handler))
    ((donkey--non-editing-enter-handler))))
