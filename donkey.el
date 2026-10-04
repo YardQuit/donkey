@@ -8915,6 +8915,15 @@ undo entry puts it back.  A place stops a character short of the next."
     (when taken
       (setq donkey--split-edge-texts texts))))
 
+(defun donkey--split-remove-local-hooks ()
+  "Take every buffer-local hook a split puts on this buffer off it."
+  (remove-hook 'post-command-hook #'donkey--split-sync t)
+  (remove-hook 'kill-buffer-hook #'donkey--split-flush t)
+  (remove-hook 'change-major-mode-hook #'donkey--split-flush t)
+  (remove-hook 'before-save-hook #'donkey--split-save-flush t)
+  (remove-hook 'before-change-functions #'donkey--split-note-change t)
+  (remove-hook 'after-change-functions #'donkey--split-noted-change t))
+
 (defun donkey--split-dissolve (&optional quiet)
   "Take the split down, saying so unless QUIET.
 
@@ -8991,12 +9000,7 @@ the current one, so both are cleared."
               donkey--split-column nil
               donkey--split-cursor-marks nil
               donkey--split-cursors-selecting nil)
-        (remove-hook 'post-command-hook #'donkey--split-sync t)
-        (remove-hook 'kill-buffer-hook #'donkey--split-flush t)
-        (remove-hook 'change-major-mode-hook #'donkey--split-flush t)
-        (remove-hook 'before-save-hook #'donkey--split-save-flush t)
-        (remove-hook 'before-change-functions #'donkey--split-note-change t)
-        (remove-hook 'after-change-functions #'donkey--split-noted-change t)))
+        (donkey--split-remove-local-hooks)))
     (remove-hook 'post-gc-hook #'donkey--split-note-gc)
     (remove-hook 'delete-terminal-functions #'donkey--split-terminal-deleted)
     (setq donkey--split-gc-note nil)
@@ -9014,12 +9018,7 @@ makes one, starts with copies of the split\\='s buffer-local hooks, of
 its state and of its places and cursors, none of which is a split.
 The hooks and the state go, and so does every overlay here that copies
 one of the split\\='s own, where it still stands as the copy was made."
-  (remove-hook 'post-command-hook #'donkey--split-sync t)
-  (remove-hook 'kill-buffer-hook #'donkey--split-flush t)
-  (remove-hook 'change-major-mode-hook #'donkey--split-flush t)
-  (remove-hook 'before-save-hook #'donkey--split-save-flush t)
-  (remove-hook 'before-change-functions #'donkey--split-note-change t)
-  (remove-hook 'after-change-functions #'donkey--split-noted-change t)
+  (donkey--split-remove-local-hooks)
   (let ((copied (make-hash-table :test #'equal)))
     (dolist (overlay (append donkey--split-places donkey--split-cursor-marks))
       (when (overlay-buffer overlay)
