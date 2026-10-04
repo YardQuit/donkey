@@ -560,16 +560,6 @@ the rule would never fire for the one case it ships for."
        (or (and donkey-support-modes (donkey--support-mode-section) t)
            (donkey--program-buffer-p))))
 
-(defvar-local donkey--normal-state-off-cache nil
-  "Memo for `donkey--normal-state-off-p', or nil.
-
-The six things the answer depends on, then the answer.  Compared with
-`eq' rather than `equal': this runs after every command in every
-buffer, and `equal' over the support sections is most of what the
-predicate costs.  A list a reader replaces -- `setopt',
-`customize', `add-to-list', all of which build a new one -- is a
-new object and fails the `eq', so the answer is computed again.")
-
 (defun donkey--normal-state-off-p ()
   "Return non-nil if NORMAL state does not run in this buffer.
 
@@ -581,24 +571,11 @@ Both sit in Insert state, so the major mode\\='s keys answer.
 The predicate every caller wants that has to decide whether to enter
 NORMAL state, leave it, or intercept a quit.  Use `donkey--excluded-mode-p'
 or `donkey--support-mode-p' only where the two have to be told apart,
-which is the mode line and the diagnostics."
-  (let ((c donkey--normal-state-off-cache))
-    (if (and c
-             (eq (nth 0 c) major-mode)
-             (eq (nth 1 c) buffer-read-only)
-             (eq (nth 2 c) donkey-excluded-modes)
-             (eq (nth 3 c) donkey-excluded-mode-exceptions)
-             (eq (nth 4 c) donkey-support-modes)
-             (eq (nth 5 c) donkey-support-mode-exceptions))
-        (nth 6 c)
-      (let ((result (or (donkey--excluded-mode-p)
-                        (donkey--support-mode-p))))
-        (setq donkey--normal-state-off-cache
-              (list major-mode buffer-read-only
-                    donkey-excluded-modes donkey-excluded-mode-exceptions
-                    donkey-support-modes donkey-support-mode-exceptions
-                    result))
-        result))))
+which is the mode line and the diagnostics.
+
+Read off `donkey--insert-state-kind' and its memo, which the mode-line
+letter and the cursor read too, so the three cannot disagree."
+  (not (eq (donkey--insert-state-kind) 'insert)))
 
 (defvar-local donkey--insert-state-was-forced nil
   "Non-nil when Insert state here was forced by an excluded major mode.
@@ -641,8 +618,9 @@ open."
   "What `donkey--insert-state-kind' last answered here, and from what.
 
 The six inputs to that answer followed by the answer.  Kept because
-the question is asked twice for every command -- once by the mode
-line, which is a `:eval' form, and once by the cursor -- and reaching
+the question is asked several times for every command -- by the mode
+line, which is a `:eval' form, by the cursor, and by
+`donkey--normal-state-off-p' for the state machinery -- and reaching
 it the long way runs `donkey--support-mode-p', whose own memo
 compares `donkey-support-modes' whole.")
 
