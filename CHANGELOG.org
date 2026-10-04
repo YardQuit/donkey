@@ -9,6 +9,209 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.17.2 — 2026-10-04
+
+Every part of the package was gone over for what happens where two
+features meet — a fold under a line selection, an input method or
+overwrite mode while typing at a split, read-only text under an edit
+at many places, two clients of one daemon, a mistyped setting — and
+what turned up is fixed here, in sixty-two changes, most of them in
+places that changed or lost text without saying so.
+
+*Fixed — you will notice these*
+
+- =)=, =]= and ="= in overwrite mode with =donkey-pair-mode= on: a
+  closer typed where two stood deleted the second, so =)= before the
+  =))= of =f(g(x))= left =f(g(x)=, and an opener typed over text wrote
+  a closer that pushed the line along. Pairing now does nothing in
+  overwrite mode: a delimiter replaces the character under the cursor,
+  as in plain Emacs.
+- =V=, =J=, =K= on a folded Org or outline heading: a line selection
+  counted the lines hidden in the fold, so =V K d= from the heading
+  below a folded one deleted a hidden body line, and =V d= on the
+  folded heading left its body under the heading above. A folded
+  heading and its body are now one line, as =kill-whole-line= takes
+  it, and =m l= banks them together.
+- =A=, =a=, =x=, =d=, =c= on a folded heading: =A= typed at the end of
+  the hidden body, and =x=/=d= joined or deleted hidden text where
+  Org's own =C-d= refuses. =A= and =a= now type at the end of the
+  heading, and =x=, =d= and =c= with a count refuse over hidden text.
+- =t=, =T=: a cursor could land on a line hidden in a fold, and typing
+  then went into the hidden text. They now pass over folded lines, as
+  =j= and =k= do.
+- =O=: the line it opened above was re-indented as well as the new
+  one, so a Makefile recipe lost its tab, a Python statement after a
+  block moved into the block, and an indented line in Text mode lost
+  its indentation. Only the new line is indented now, at the cursors
+  too.
+- =p=: every press put the clipboard's text on the kill ring again, so
+  =y= then =p p p= left four identical kills, =C-u 200 p= pushed every
+  older kill off the ring, and =M-y= after =p= found the duplicate.
+  The clipboard's text goes on the ring once now.
+- =RET= in =hexl-mode=: one press wrote a carriage-return byte over the
+  byte at point. In =picture-mode= it broke the line. It does nothing
+  in either now.
+- =RET= on the blank line under a TODO heading toggled the heading, and
+  could add a CLOSED line. Only =RET= on the heading line itself
+  toggles it now.
+- =C= on an Org source block's =#+begin_src= or =#+end_src= line
+  commented a line of code instead; it now refuses there, and a
+  selection comments exactly the lines of code it covers.
+- =x=, =d=, =y=, =c= on an accented letter written with a combining
+  mark, or an emoji built from several joined ones: they took one code
+  point and left the rest standing. A character drawn as one is taken
+  as one now, as =C-d= takes it.
+- =P= over a =V= selection: the rectangle's last row was glued onto the
+  line after the selection. The rows now replace the selected lines as
+  lines of their own, as =p= replaces them.
+- =C-x C-x= in a =V= selection silently ended it, so =y= then lost the
+  last newline and =d= left an empty line behind. It now trades the
+  selection's ends, as =o= does in Vim, and =C-SPC= ends it.
+- =m i=, =m a= one level out (a second press, or =C-u 2=) picked the
+  sibling pair where a closer sat right before the inner opener:
+  =m i { m i= in =\frac{a}{b}= selected =a=. They now find the pair
+  around.
+- =m I=, =m A= from inside a string or comment refused, or picked the
+  parens inside a regexp string. They now mark the expression around
+  the string.
+- =m W= with a count past the end of a list raised a scan error and
+  moved the cursor; it now marks what there is and stops, as =m w=
+  does.
+- In a split, =M-u=, =M-l= or =M-c= reaching past a place while writing
+  corrupted undo (=u= gave back =a foo  bar=, with a second space) and
+  could delete text at the other places. They undo exactly now.
+- In a split, =revert-buffer= while writing made the next =u= fail and
+  leave the buffer nearly empty. The revert now ends the writing with
+  undo whole.
+- In a split, an edit made from an indirect buffer (=C-x 4 c=) while
+  writing could never be undone, and text typed into another place
+  from there was written over. Such an edit now ends the writing and
+  keeps its own undo.
+- In a split of thousands of places, =C-x C-s= right after typing saved
+  a half-written file: 2,000 of 20,000 places. A save now writes every
+  place first.
+- In overwrite mode, writing at a split or at the cursors stopped after
+  one character at the first place. It now writes over every place.
+- =p= at the cursors after =D=, =d=, =y= or =c= left the last cursor's
+  text empty pasted the whole kill at every cursor; =V y= at the
+  cursors on a last line with no final newline added a blank line to
+  the kill; =V p= at the cursors opened an empty line under every line.
+  Each cursor gets its own text back now, and lines stay lines.
+- =g h v j j t=, the way to select two whole lines, made three cursors.
+  It makes two.
+- =C-u 2 g h= at the cursors sent every cursor to its line's end; it
+  goes to each line's start.
+- An edit at the cursors that read-only text refused part of the way
+  left the cursors where the edit had moved them, and the next key
+  acted on that. They are left as they were.
+- =m l=: a line typed, opened or pasted at the edge of a banked line
+  was banked with it, so =y= and =d= took lines nobody banked.
+- Banks after =M-x text-mode=, =revert-buffer= or an Org restart: the
+  highlight stayed, =y= copied a single character, and nothing could
+  clear them. Banks survive a change of major mode now.
+- =d=, =p= over several banks with read-only text on one of them deleted
+  some lines, killed all of them and spent the banks. Nothing changes
+  now when any part is refused.
+- =u= in a mark run spent a press on a key that changed nothing, such
+  as =w= past the last word.
+- =M= with several clients of one daemon: presses on one client went
+  into the other client's run, and a run armed on a client that
+  closed stayed armed. Each run now hears only its own client, and
+  ends with it. A split ends with its client too.
+- =DEL= between the halves of a pair in Dired, a help buffer or any
+  read-only buffer ran DONKEY's pair delete and said "Buffer is
+  read-only". It is the mode's own =DEL= there again.
+- =C-x C-q= in a fundamental-mode or diff-mode buffer showed
+  =DONKEY[S]= while =h j k l= said "Buffer is read-only". They work at
+  once now, and making the buffer writable again gives Normal state
+  back whole.
+- =SPC C-g=, =g C-g=, =m C-g= in a help or other support buffer rang the
+  bell and stopped a keyboard macro; they quit quietly, as in Normal
+  state.
+- In a terminal, every change between Normal and Insert state paused
+  10 ms (=i C-g= took 10.5 ms in =emacs -nw= and =emacsclient -t=), and
+  leaving Emacs left the shell with Insert state's bar cursor. The
+  pause is gone, and the terminal gets its own cursor shape back when
+  Emacs exits or is suspended, or a terminal frame closes.
+- With =donkey-setup-smartparens=, =C-g= could not leave a minibuffer
+  that had Smartparens on; it leaves it now.
+
+*Changed — you will notice these*
+
+- In a split, =M-d=, =C-k=, =M-\=, =M-z= and =C-t= at a place's edge
+  were repeated at the other places by count, whatever the text there:
+  =M-d= turned =c foo bazooka= into =c fooooka=. They are now repeated
+  only where the same text follows every place, and end the split,
+  saying so, everywhere else. Backspace and =C-d= behave as before.
+- =f= leaves out matches inside folded or otherwise invisible text, and
+  says how many: "Split: 2 places in the buffer (2 hidden matches left
+  out)". =%f= used to write into folds where nothing on screen showed
+  it. With =search-invisible= set to =t= every match is held, as
+  before.
+- =g h= and =g l= inside a mark run ignore a count, so the selection's
+  ends never cross. =C-u 0 g l= used to flip the selection to a lone
+  newline. Outside a run both keys take a count as before.
+- =x= with a negative count over an accented letter takes the whole
+  letter, accent included. To remove only an accent, use =DEL= in
+  Insert state.
+- A mark key that reaches nothing says so and leaves the mark alone:
+  =C-u - 1 m w= on the first word said "Word marked" over an empty
+  selection, and =m s= or =m p= in a blank buffer refused only after
+  moving the mark.
+
+*Fixed*
+
+- PRIMARY after a rectangle: a middle-click pasted the rectangle's rows
+  as they were at the time of the click, so text typed there after the
+  rectangle ended — a password — was what the next middle-click
+  pasted. With DONKEY off it pasted the plain stretch between the
+  corners, and with rectangles live in two windows, the other one's
+  block. PRIMARY now keeps the block that was selected.
+- A split no longer keeps a copy of the text last written in its hidden
+  working buffers after it ends.
+- A dotted list in a mode or pair option — ='(comint-mode . Info-mode)=,
+  or a pair added with =append= and no list round it — made =find-file=
+  fail, made =(donkey-pair-mode 1)= stop the rest of the init file, or
+  made every key typed in Insert state signal. Such a value now reads
+  as no list at all. =donkey-position-ring-max= set to =1.0e+INF= no
+  longer switches position tracking off for the session.
+- An input method waiting for Insert state survives =revert-buffer= and
+  a change of major mode.
+- With text scaled down, every visible row of a tall rectangle is
+  highlighted and every cursor of =t= and =f= is drawn.
+- =m v= in right-to-left text takes the character under the cursor.
+- With the =pairing-package= wrap engine and only =donkey-pair-mode=
+  pairing, a delimiter over a selection put =()= at point and dropped
+  the selection; it wraps as DONKEY does there.
+- Rebinding or removing a Normal state prefix is reported in one line
+  naming it, not as "g g is 1 now" once per key under it. The =?= chart
+  names =donkey-mark-run-toggle= when =M= is unbound.
+- The README's "Long lines" section had =j=, =k=, =J=, =K= and =V=
+  backwards; "Configuring the Enter Key" now gives the order Enter is
+  answered in. The tutor says =C-g=, not =RET=, abandons a prompt.
+
+*Under the hood*
+
+- Unbanking or spending a large bank is linear: =y= over 87,732 banked
+  lines 7.1 s → 0.3 s.
+- =DEL= at the cursors drops a cursor in linear time: 1.4 s → 40 ms at
+  40,000 cursors.
+- Leaving Insert state walks only the overlays the windows show: 25 ms
+  → 0.7 ms at 100,000 overlays.
+- =DEL= in Insert state with =donkey-pair-mode= on costs 0.3 us where it
+  cost 10; a typed delimiter 6 us where it cost 14.
+- A command that changes nothing at a split of 300,000 places costs
+  0.2 ms where it cost 1.4.
+- Help, Man and compilation buffers build their support map once per
+  shape, not once per buffer: 160 → 64 us a buffer.
+
+*Upgrading*
+
+Nothing to do. If you relied on =M-d= or =C-k= at a split's edge
+reaching the same number of characters at every place, use =DEL= or
+=C-d= with a count, which still do. To have =f= hold matches inside
+folds, set =search-invisible= to =t=, or unfold first.
+
 * 1.17.1 — 2026-09-27
 
 A key taken out of NORMAL state no longer reaches the major mode. A
