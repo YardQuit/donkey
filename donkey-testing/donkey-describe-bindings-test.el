@@ -325,6 +325,34 @@ listed again here, so a key added to the mode cannot go undocumented."
                                      text)
                                     t)))))))))
 
+(ert-deftest donkey-describe-bindings-names-the-mark-run-command-without-a-key ()
+  "With no key on `donkey-mark-run-toggle', the chart names the command.
+
+The line under the mark run\\='s title says how the mode is started,
+and with the key unbound that is the command by name, never an empty
+gap where the key would be."
+  (let ((was (keymap-lookup donkey-normal-mode-map "M"))
+        (buf (get-buffer "*DONKEY Bindings*")))
+    (when buf (kill-buffer buf))
+    (unwind-protect
+        (progn
+          (keymap-unset donkey-normal-mode-map "M" t)
+          (should-not (where-is-internal 'donkey-mark-run-toggle
+                                         donkey-normal-mode-map t))
+          (save-window-excursion
+            (donkey-describe-bindings)
+            (with-current-buffer "*DONKEY Bindings*"
+              (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+                (should (string-match-p
+                         (concat "-- "
+                                 (regexp-quote
+                                  (substitute-command-keys
+                                   "\\[donkey-mark-run-toggle]"))
+                                 " starts it")
+                         text))
+                (should (string-match-p "donkey-mark-run-toggle starts it" text))))))
+      (keymap-set donkey-normal-mode-map "M" was))))
+
 ;;; --- Pre-condition error ---
 
 (ert-deftest donkey-describe-bindings-errors-without-map ()
@@ -829,6 +857,25 @@ falsify a paragraph nobody thinks to re-read."
                         ("<prior>" scroll-down-command)))
           (should (eq (key-binding (kbd (car pair))) (cadr pair)))))
     (donkey-mode -1)))
+
+(ert-deftest donkey-tutor-claim-c-g-aborts-the-prompts-it-opens ()
+  "The tutor names the quit key, not Enter, as what abandons its prompts.
+
+Enter in a prompt confirms it: the save prompt saves the buffer under
+its own name, and the command prompt runs whatever command it offers."
+  (unwind-protect
+      (progn
+        (donkey-tutor)
+        (with-current-buffer "*DONKEY Tutor*"
+          (goto-char (point-min))
+          (should (search-forward "to abort" nil t))
+          (let ((line (buffer-substring-no-properties
+                       (line-beginning-position) (line-end-position))))
+            (should (string-match-p "then C-g to abort" line))
+            (should-not (string-match-p "RET to abort" line)))))
+    (when (get-buffer "*DONKEY Tutor*") (kill-buffer "*DONKEY Tutor*")))
+  (should (memq (keymap-lookup minibuffer-local-map "C-g")
+                '(abort-minibuffers abort-recursive-edit minibuffer-keyboard-quit))))
 
 (ert-deftest donkey-tutor-claim-normal-state-costs-exactly-four-things ()
   "The four differences the tutor names, and no fifth one.
@@ -4287,6 +4334,30 @@ two answers cannot drift apart."
           (keymap-set donkey-normal-mode-map "#" was)
         (keymap-unset donkey-normal-mode-map "#" t)))))
 
+(ert-deftest donkey-a-prefix-that-is-no-longer-one-is-reported-once ()
+  "A prefix bound to a command, or taken out, is one line naming the prefix.
+
+Not one line for every key DONKEY had under it, and nothing in the
+half only a buffer can answer."
+  (let ((g (donkey-report-test--own-binding "g"))
+        (z (donkey-report-test--own-binding "z")))
+    (should (keymapp g))
+    (should (keymapp z))
+    (unwind-protect
+        (progn
+          (keymap-set donkey-normal-mode-map "g" #'goto-line)
+          (keymap-unset donkey-normal-mode-map "z" t)
+          (should (equal (donkey--binding-report-lines)
+                         '("g is goto-line now, was a prefix"
+                           "z is unbound now, was a prefix")))
+          (with-temp-buffer
+            (text-mode)
+            (donkey-normal-mode 1)
+            (should (equal (donkey--shadowed-normal-bindings) nil))))
+      (keymap-set donkey-normal-mode-map "g" g)
+      (keymap-set donkey-normal-mode-map "z" z)
+      (should (equal (donkey--binding-changes) nil)))))
+
 (ert-deftest donkey-does-not-trust-what-is-in-the-wrap-delimiters ()
   "Anything in `donkey-wrap-delimiters' that is not a character is skipped.
 
@@ -4295,6 +4366,22 @@ signals is worse than the misconfiguration it was meant to explain."
   (let ((donkey-wrap-delimiters (list ?\( "not a character" nil 'x)))
     (should (equal (donkey--delimiters-that-cannot-wrap) nil))
     (should (equal (donkey-report-test--collect (donkey--say-binding-changes)) nil))))
+
+(ert-deftest donkey-a-dotted-wrap-delimiter-list-reads-as-all ()
+  "A `donkey-wrap-delimiters' left dotted reads as `all', and nothing signals.
+
+The keys asked for, the delimiters the report names and the line in
+the platform report all read it the way `all' is read."
+  (let ((as-all (let ((donkey-wrap-delimiters 'all))
+                  (list (donkey--wrap-delimiter-characters)
+                        (donkey--delimiters-that-cannot-wrap)))))
+    (let ((donkey-wrap-delimiters '(?\( . ?\[)))
+      (should (equal (list (donkey--wrap-delimiter-characters)
+                           (donkey--delimiters-that-cannot-wrap))
+                     as-all))
+      (should (seq-find (lambda (line)
+                          (string-match-p "all of donkey-mark-pair-delimiters" line))
+                        (donkey--debug-donkey-lines))))))
 
 (ert-deftest donkey-keeps-the-leader-whole-in-what-it-remembers ()
   "The leader is one entry, so its own rebuilds are not reported as losses.

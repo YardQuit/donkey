@@ -917,29 +917,176 @@ that does not exist."
       (should-not (donkey--support-mode-package-keys)))))
 
 (ert-deftest donkey-a-buffer-that-becomes-read-only-gets-the-support-map ()
-  "The two caches have to agree, or the buffer gets neither state.
+  "\\[read-only-mode] in Normal state makes a support buffer whose keys move.
 
-`donkey--normal-state-off-p' reads `buffer-read-only' and switches
-NORMAL state off; the installer has to read it too, or the support map
-is never put in and the buffer is left with no keys at all."
+In a mode outside `prog-mode', `text-mode' and `conf-mode' the flag
+alone makes the buffer a support mode: \\`h' \\`j' \\`k' \\`l' move at
+once, and \\[read-only-mode] again gives Normal state back with no
+support map left behind."
+  (donkey-test-keys--harness "*donkey-ro-turn*" #'fundamental-mode ()
+      "alpha\nbeta\ngamma\n"
+      "C-x C-q j l"
+    (should buffer-read-only)
+    (should (bound-and-true-p donkey-insert-mode))
+    (should (equal (donkey--insert-state-lighter) " DONKEY[S]"))
+    (should (= (line-number-at-pos) 2))
+    (should (= (current-column) 1))
+    (execute-kbd-macro (kbd "C-x C-q"))
+    (should-not buffer-read-only)
+    (should (bound-and-true-p donkey-normal-mode))
+    (should-not (local-variable-p 'donkey--emulation-mode-map-alist))
+    (execute-kbd-macro (kbd "x"))
+    (should (equal (buffer-string) "alpha\nbta\ngamma\n"))))
+
+(ert-deftest donkey-insert-state-in-a-buffer-turned-read-only-has-the-support-keys ()
+  "Insert state the reader asked for gets the support map with the flag too.
+
+The keys of a buffer that cannot be typed into are the support map\\='s
+whatever state the buffer is in, so \\`j' moves rather than signaling
+that the buffer is read-only."
+  (donkey-test-keys--harness "*donkey-ro-insert*" #'fundamental-mode ()
+      "alpha\nbeta\n"
+      "i C-x C-q j"
+    (should buffer-read-only)
+    (should (equal (donkey--insert-state-lighter) " DONKEY[S]"))
+    (should (= (line-number-at-pos) 2))))
+
+(defvar-local donkey-test--late-mode nil
+  "Non-nil where `donkey-test--late-mode-map' answers as a minor mode map.")
+
+(defvar donkey-test--late-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "x" #'ignore)
+    map)
+  "A minor mode map that binds one of Normal state's letters.")
+
+(ert-deftest donkey-a-support-buffer-made-writable-gives-normal-state-its-map ()
+  "A buffer read-only from the start and then made writable is plain Normal state.
+
+The support map goes with the flag, so Normal state answers before a
+minor mode map again and \\`x' deletes rather than running what that
+map put there."
+  (donkey-test-keys--harness "*donkey-ro-start*"
+      (lambda ()
+        (insert "alpha\n")
+        (setq buffer-read-only t)
+        (fundamental-mode)
+        (setq donkey-test--late-mode t)
+        (setq-local minor-mode-overriding-map-alist
+                    (list (cons 'donkey-test--late-mode
+                                donkey-test--late-mode-map))))
+      () ""
+      "C-x C-q x"
+    (should-not buffer-read-only)
+    (should (bound-and-true-p donkey-normal-mode))
+    (should-not (local-variable-p 'donkey--emulation-mode-map-alist))
+    (should (equal (buffer-string) "lpha\n"))))
+
+(defun donkey-support-test--map ()
+  "Return the current buffer\\='s support map, or nil where it has none."
+  (and (local-variable-p 'donkey--emulation-mode-map-alist)
+       (cdr (assq 'donkey-mode donkey--emulation-mode-map-alist))))
+
+(ert-deftest donkey-the-support-map-installer-is-keyed-on-every-input ()
+  "Moving any one input the installer reads gives the map that input asks for.
+
+Each input is moved over a cache warmed immediately before, to an
+answer the stale one is not.  `major-mode' is in the key and is not
+moved, since every way of changing it clears the buffer\\='s cache."
+  (let ((donkey-support-modes '((fundamental-mode prose)))
+        (donkey-support-mode-exceptions nil)
+        (donkey-excluded-modes nil)
+        (donkey-excluded-mode-exceptions nil)
+        (donkey-key-packages '((prose "w"))))
+    (with-temp-buffer
+      (fundamental-mode)
+      (setq donkey--mode-keys-cache nil)
+      ;; the section
+      (donkey--install-mode-keys)
+      (should (donkey-support-test--map))
+      (let ((donkey-support-modes nil))
+        (donkey--install-mode-keys)
+        (should-not (donkey-support-test--map)))
+      ;; the exceptions to the sections
+      (donkey--install-mode-keys)
+      (should (donkey-support-test--map))
+      (let ((donkey-support-mode-exceptions '(fundamental-mode)))
+        (donkey--install-mode-keys)
+        (should-not (donkey-support-test--map)))
+      ;; the packages
+      (donkey--install-mode-keys)
+      (should (eq (lookup-key (donkey-support-test--map) "w") 'forward-word))
+      (let ((donkey-key-packages '((prose "b"))))
+        (donkey--install-mode-keys)
+        (should-not (lookup-key (donkey-support-test--map) "w")))
+      ;; the excluded list
+      (donkey--install-mode-keys)
+      (should (donkey-support-test--map))
+      (let ((donkey-excluded-modes '(fundamental-mode)))
+        (donkey--install-mode-keys)
+        (should-not (donkey-support-test--map))
+        ;; and its exceptions, warmed as excluded
+        (let ((donkey-excluded-mode-exceptions '(fundamental-mode)))
+          (donkey--install-mode-keys)
+          (should (donkey-support-test--map))))
+      ;; the read-only flag
+      (let ((donkey-support-modes nil))
+        (donkey--install-mode-keys)
+        (should-not (donkey-support-test--map))
+        (setq buffer-read-only t)
+        (donkey--install-mode-keys)
+        (should (donkey-support-test--map))))))
+
+(ert-deftest donkey-the-section-memo-is-keyed-on-the-option ()
+  "A replaced `donkey-support-modes' is searched again, not answered stale."
   (with-temp-buffer
     (fundamental-mode)
-    (donkey-mode 1)
-    (unwind-protect
-        (progn
-          (donkey--ensure-default-state)
-          (should-not (donkey--support-mode-p))
-          (should (eq (key-binding "l") 'forward-char))
-          ;; the flag alone makes this a program buffer
-          (setq buffer-read-only t)
-          (donkey--install-mode-keys)
-          (donkey--ensure-default-state)
-          (should (donkey--support-mode-p))
-          (should (local-variable-p 'donkey--emulation-mode-map-alist))
-          (should (eq (key-binding "h") 'backward-char))
-          (should (eq (key-binding "l") 'forward-char))
-          (should (eq (key-binding "j") 'next-line)))
-      (donkey-mode -1))))
+    (let ((donkey-support-modes '((fundamental-mode (?l . ignore)))))
+      (setq donkey--support-mode-cache nil)
+      (should (equal (donkey--support-mode-section)
+                     '(fundamental-mode (?l . ignore))))
+      (let ((donkey-support-modes '((text-mode))))
+        (should-not (donkey--support-mode-section))))))
+
+(ert-deftest donkey-a-support-map-is-built-once-for-what-it-is-made-of ()
+  "Buffers whose map would be the same share one; any input moved builds anew.
+
+The inputs are the leader, the package\\='s pairs, read through
+`donkey-normal-mode-map', and the section\\='s pairs.  Each is moved
+over a map just built, to a map the old one is not."
+  (let ((donkey-support-modes '((fundamental-mode prose)))
+        (donkey-key-packages '((prose "w"))))
+    (cl-flet ((map-here ()
+                (with-temp-buffer
+                  (fundamental-mode)
+                  (setq donkey--support-mode-cache nil)
+                  (donkey--install-support-mode-keys)
+                  (donkey-support-test--map))))
+      (let ((first (map-here)))
+        ;; shared
+        (should (eq (map-here) first))
+        ;; the package's pairs, through a key the reader rebinds
+        (let ((was (keymap-lookup donkey-normal-mode-map "w")))
+          (unwind-protect
+              (progn
+                (keymap-set donkey-normal-mode-map "w" #'ignore)
+                (should (eq (lookup-key (map-here) "w") #'ignore)))
+            (keymap-set donkey-normal-mode-map "w" was)))
+        (should (eq (lookup-key (map-here) "w") 'forward-word))
+        ;; the section's pairs
+        (let ((donkey-support-modes '((fundamental-mode prose (?H . ignore)))))
+          (should (eq (lookup-key (map-here) "H") #'ignore)))
+        (should-not (lookup-key (map-here) "H"))
+        ;; the leader
+        (let ((was (keymap-lookup donkey-normal-mode-map "SPC"))
+              (leader (make-sparse-keymap)))
+          (unwind-protect
+              (progn
+                (keymap-set donkey-normal-mode-map "SPC" (cons "leader" leader))
+                (should (eq (lookup-key (map-here) " ") leader)))
+            (keymap-set donkey-normal-mode-map "SPC" (cons "leader" was))))
+        (should (eq (lookup-key (map-here) " ")
+                    (keymap-lookup donkey-normal-mode-map "SPC")))))))
 
 (ert-deftest donkey-a-section-may-not-name-a-command-that-types ()
   "Rule 74 is a floor a section does not get to lower either.
@@ -1700,10 +1847,13 @@ mistake."
   "`donkey--excluded-mode-p' never signals, whatever the option holds.
 
 `memq' and `derived-mode-p' both signal on a non-list, and this
-predicate is reached from `post-command-hook'."
+predicate is reached from `post-command-hook'.  A dotted list reads
+as the empty list."
   (with-temp-buffer
     (let ((major-mode 'text-mode))
-      (dolist (val '(dired-mode "dired-mode" 42 nil))
+      (dolist (val '(dired-mode "dired-mode" 42 nil
+                     (comint-mode . text-mode)
+                     (comint-mode text-mode . dired-mode)))
         (let ((donkey-excluded-modes val))
           (should-not (donkey--excluded-mode-p))))
       ;; The bare symbol still has to WORK, not merely fail to signal.
@@ -1737,10 +1887,21 @@ switched to rather than merely made current for the same reason
 SELECTED WINDOW's buffer, so keys sent to an undisplayed
 `with-temp-buffer' land somewhere else entirely.
 
-Both options that reach `donkey--major-mode-in-p' are covered."
-  (dolist (var '(donkey-excluded-modes donkey-editing-modes))
-    (let ((orig (symbol-value var))
-          (buf (get-buffer-create "*donkey-mode-list-test*")))
+Every option a command hook reads through
+`donkey--memo-major-mode-in-p' is covered, each with a bare symbol and
+with a dotted list, and a major mode started with the option mis-set
+must not signal either: `after-change-major-mode-hook' runs outside
+the mode function's own error handling, so a signal there fails
+`find-file'."
+  (dolist (case '((donkey-excluded-modes . dired-mode)
+                  (donkey-excluded-modes . (comint-mode . dired-mode))
+                  (donkey-excluded-mode-exceptions . dired-mode)
+                  (donkey-excluded-mode-exceptions . (comint-mode . dired-mode))
+                  (donkey-support-mode-exceptions . dired-mode)
+                  (donkey-support-mode-exceptions . (comint-mode . dired-mode))))
+    (let* ((var (car case))
+           (orig (symbol-value var))
+           (buf (get-buffer-create "*donkey-mode-list-test*")))
       (unwind-protect
           (progn
             (donkey-mode 1)
@@ -1752,10 +1913,12 @@ Both options that reach `donkey--major-mode-in-p' are covered."
             (donkey-enter-normal)
             (should (memq #'donkey--check-post-command-non-editing
                           (default-value 'post-command-hook)))
-            (set var 'dired-mode)
+            (set var (cdr case))
             (execute-kbd-macro (kbd "l"))
             (should (memq #'donkey--check-post-command-non-editing
-                          (default-value 'post-command-hook))))
+                          (default-value 'post-command-hook)))
+            (fundamental-mode)
+            (should (bound-and-true-p donkey-normal-mode)))
         (set var orig)
         (when (buffer-live-p buf) (kill-buffer buf))
         (donkey-mode -1)))))
@@ -1911,20 +2074,64 @@ fallback \(donkey-normal-mode 1) is not called."
     (should-not force-called)))
 
 (ert-deftest donkey-state-exit-insert-minibuffer-delegates-to-keyboard-quit ()
-  "In the minibuffer, delegates to `keyboard-quit' and skips all other steps."
-  (let (quit-called deactivated entered-normal)
-    (cl-letf (((symbol-function 'minibufferp)
-               (lambda () t))
-              ((symbol-function 'keyboard-quit)
-               (lambda () (setq quit-called t)))
-              ((symbol-function 'deactivate-mark)
-               (lambda () (setq deactivated t)))
-              ((symbol-function 'donkey-enter-normal)
-               (lambda () (setq entered-normal t))))
-      (donkey--exit-insert))
-    (should quit-called)
-    (should-not deactivated)
-    (should-not entered-normal)))
+  "In the minibuffer, with no quit key of its own, delegates to `keyboard-quit'.
+
+It skips all other steps.  A minibuffer keymap that puts this very
+command on the quit key counts as having none."
+  (dolist (map (list (make-sparse-keymap)
+                     (let ((m (make-sparse-keymap)))
+                       (define-key m (kbd "C-g") #'donkey--exit-insert)
+                       m)))
+    (let (quit-called deactivated entered-normal)
+      (with-temp-buffer
+        (use-local-map map)
+        (cl-letf (((symbol-function 'minibufferp)
+                   (lambda (&rest _) t))
+                  ((symbol-function 'keyboard-quit)
+                   (lambda () (setq quit-called t)))
+                  ((symbol-function 'deactivate-mark)
+                   (lambda () (setq deactivated t)))
+                  ((symbol-function 'donkey-enter-normal)
+                   (lambda () (setq entered-normal t))))
+          (donkey--exit-insert)))
+      (should quit-called)
+      (should-not deactivated)
+      (should-not entered-normal))))
+
+(defvar-local donkey-test--quit-key-mode nil
+  "Non-nil where `donkey-test--quit-key-map' answers as a minor mode map.")
+
+(defvar donkey-test--quit-key-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-g") #'donkey--exit-insert)
+    map)
+  "A minor mode map with the quit key on `donkey--exit-insert'.")
+
+(defun donkey-test--quit-the-minibuffer (setup)
+  "Type 1 and the quit key into \\[eval-expression], SETUP run in the minibuffer.
+Answer `left' when the minibuffer was left and `trapped' when
+`keyboard-quit' ran there instead, which leaves it open."
+  (catch 'donkey-test--trapped
+    (cl-letf (((symbol-function 'keyboard-quit)
+               (lambda () (interactive) (throw 'donkey-test--trapped 'trapped))))
+      (minibuffer-with-setup-hook setup
+        (condition-case nil
+            (execute-kbd-macro (kbd "M-: 1 C-g"))
+          (quit nil)))
+      (if (zerop (minibuffer-depth)) 'left 'open))))
+
+(ert-deftest donkey-the-quit-key-leaves-a-minibuffer-a-minor-mode-gave-it-to ()
+  "The quit key leaves the minibuffer where a minor mode binds it to DONKEY.
+
+`donkey--exit-insert' runs the minibuffer\\='s own quit there, as the
+key would without the minor mode."
+  (should (eq (donkey-test--quit-the-minibuffer
+               (lambda ()
+                 (setq donkey-test--quit-key-mode t)
+                 (setq-local minor-mode-overriding-map-alist
+                             (list (cons 'donkey-test--quit-key-mode
+                                         donkey-test--quit-key-map)))))
+              'left)))
 
 (ert-deftest donkey-state-exit-insert-insert-mode-inactive-delegates-to-keyboard-quit ()
   "With Insert state inactive, the command delegates to `keyboard-quit'.
@@ -2123,8 +2330,8 @@ real raw-key check firing."
                     (default-value hook))
         (lambda (a b) (string< (symbol-name a) (symbol-name b)))))
 
-(ert-deftest donkey-mode-puts-six-functions-on-the-command-hooks ()
-  "Two pre-command and four post-command functions with the mode on, none off.
+(ert-deftest donkey-mode-puts-seven-functions-on-the-command-hooks ()
+  "Two pre-command and five post-command functions with the mode on, none off.
 
 This is the package's whole per-command cost between keystrokes,
 a few microseconds; a function added to either hook is a change
@@ -2142,10 +2349,11 @@ prefix DONKEY owns."
                    '(donkey--check-post-command-non-editing
                      donkey--show-selection-hint
                      donkey--track-position
-                     donkey--update-cursor-passive)))
+                     donkey--update-cursor-passive
+                     donkey--visual-line-follow-exchange)))
     (donkey-enter-normal)
     (should (= 2 (length (donkey-state-test--own-hook-functions 'pre-command-hook))))
-    (should (= 4 (length (donkey-state-test--own-hook-functions 'post-command-hook)))))
+    (should (= 5 (length (donkey-state-test--own-hook-functions 'post-command-hook)))))
   (should (null (donkey-state-test--own-hook-functions 'pre-command-hook)))
   (should (null (donkey-state-test--own-hook-functions 'post-command-hook))))
 
@@ -2474,6 +2682,24 @@ This holds when there is a saved method and none currently active."
           (donkey--on-insert-entry))))
     (should (equal restored "swedish-postfix"))))
 
+(ert-deftest donkey-an-input-method-set-aside-survives-a-major-mode ()
+  "A method Normal state set aside comes back in Insert state after a mode change.
+
+\\`C-g' puts the method aside, the major mode starts again in Normal
+state, and \\`i' brings the method back."
+  (donkey-test-keys--harness "*donkey-im-mode*" #'text-mode () "alpha\n"
+      "i"
+    (unwind-protect
+        (progn
+          (set-input-method "latin-1-prefix")
+          (execute-kbd-macro (kbd "C-g"))
+          (should-not current-input-method)
+          (text-mode)
+          (should (bound-and-true-p donkey-normal-mode))
+          (execute-kbd-macro (kbd "i"))
+          (should (equal current-input-method "latin-1-prefix")))
+      (deactivate-input-method))))
+
 (ert-deftest donkey-state-on-insert-entry-skips-when-no-saved-method ()
   "When no saved input method, does nothing."
   (let (activated)
@@ -2743,6 +2969,14 @@ found bound."
   (require 'smartparens)
   (donkey-setup-smartparens)
   (should (eq (keymap-lookup smartparens-mode-map "C-g") #'donkey--exit-insert)))
+
+(ert-deftest donkey-the-quit-key-leaves-a-minibuffer-smartparens-is-on-in ()
+  "After `donkey-setup-smartparens', the quit key still leaves the minibuffer."
+  (skip-unless (featurep 'smartparens))
+  (require 'smartparens)
+  (donkey-setup-smartparens)
+  (should (eq (donkey-test--quit-the-minibuffer (lambda () (smartparens-mode 1)))
+              'left)))
 
 (ert-deftest donkey-setup-smartparens-no-error-without-keymaps ()
   "Smartparens setup does not error without the keymaps.
@@ -3126,6 +3360,33 @@ real `emacs -nw' session."
 ;;; ---------------------------------------------------------------------------
 ;;; Deferred Cleanup Timer
 ;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-the-overlay-cleanup-walks-what-the-windows-show ()
+  "A shown buffer is cleared where its windows show it, and nowhere else.
+
+The window\\='s end is fixed by a stub, since a batch Emacs never draws
+and reports every window as showing its whole buffer."
+  (let ((buffer (get-buffer-create "*donkey-overlay-span*")))
+    (unwind-protect
+        (with-current-buffer buffer
+          (switch-to-buffer buffer)
+          (dotimes (_ 50) (insert "(alpha)\n"))
+          (goto-char (point-min))
+          (let ((near (make-overlay 1 2))
+                (far (make-overlay (- (point-max) 3) (- (point-max) 2))))
+            (overlay-put near 'face 'show-paren-match)
+            (overlay-put far 'face 'show-paren-match)
+            (cl-letf (((symbol-function 'window-end) (lambda (&rest _) 40)))
+              (should (= (donkey--clear-transient-overlays) 1)))
+            (should-not (overlay-start near))
+            (should (overlay-start far))
+            ;; and a buffer no window shows is walked whole
+            (switch-to-buffer (other-buffer buffer t))
+            (set-buffer buffer)
+            (should-not (get-buffer-window-list nil nil t))
+            (should (= (donkey--clear-transient-overlays) 1))
+            (should-not (overlay-start far))))
+      (kill-buffer buffer))))
 
 (ert-deftest donkey-schedule-overlay-cleanup-creates-timer ()
   "Creates a deferred timer."
@@ -3899,6 +4160,77 @@ nil or `undefined' is taken."
                  (lambda () (vector ?m ?\C-g))))
         (donkey--intercept-quit-after-prefix)
         (should (null this-command))))))
+
+(ert-deftest donkey-the-quit-key-after-a-prefix-is-quiet-in-a-support-buffer ()
+  "SPC, g and m and then the quit key quit quietly in a support buffer.
+
+The leader is DONKEY\\='s there, and a `prose' section makes \\`g' and
+\\`m' prefixes of DONKEY\\='s: the quit key after one abandons the
+sequence rather than saying it is undefined, and \\`C-x' and then the
+quit key is still Emacs\\='s."
+  (skip-unless (fboundp 'help-mode))
+  (let ((said nil))
+    (unwind-protect
+        (progn
+          (donkey-mode 1)
+          (switch-to-buffer (get-buffer-create "*donkey-prefix-quit-support*"))
+          (help-mode)
+          (let ((inhibit-read-only t))
+            (erase-buffer)
+            (insert "alpha bravo\ncharlie\n"))
+          (goto-char (point-min))
+          (should (equal (donkey--insert-state-lighter) " DONKEY[S]"))
+          (cl-letf* ((orig (symbol-function 'message))
+                     ((symbol-function 'message)
+                      (lambda (fmt &rest args)
+                        (when fmt (push (apply #'format fmt args) said))
+                        (apply orig fmt args))))
+            (dolist (prefix '("SPC" "g" "m"))
+              (setq said nil)
+              (should (eq 'quit
+                          (condition-case nil
+                              (progn (execute-kbd-macro
+                                      (kbd (concat prefix " C-g")))
+                                     'no-signal)
+                            (quit 'quit))))
+              (should-not (seq-find (lambda (m) (string-match-p "undefined" m))
+                                    said)))
+            (let ((this-command nil))
+              (cl-letf (((symbol-function 'this-single-command-keys)
+                         (lambda () (vconcat (kbd "C-x") (vector ?\C-g)))))
+                (donkey--intercept-quit-after-prefix)
+                (should (null this-command))))))
+      (when (get-buffer "*donkey-prefix-quit-support*")
+        (kill-buffer "*donkey-prefix-quit-support*"))
+      (donkey-mode -1))))
+
+(define-derived-mode donkey-test--prefix-mode special-mode "Prefix-Test"
+  "A buffer a program made, with a `g' prefix of its own.")
+(define-key donkey-test--prefix-mode-map (kbd "g d") #'ignore)
+
+(ert-deftest donkey-a-support-buffers-own-prefix-keeps-its-quit-key ()
+  "A prefix a support buffer\\='s mode owns keeps the quit key after it.
+
+\\`g' is a prefix of Normal state\\='s and of this mode\\='s own; with no
+section taking it, \\`g' and the quit key are left to Emacs."
+  (with-temp-buffer
+    (donkey-test--prefix-mode)
+    (donkey-mode 1)
+    (unwind-protect
+        (progn
+          (donkey--ensure-default-state)
+          (should (donkey--support-map))
+          (let ((this-command nil))
+            (cl-letf (((symbol-function 'this-single-command-keys)
+                       (lambda () (vector ?g ?\C-g))))
+              (donkey--intercept-quit-after-prefix)
+              (should (null this-command))))
+          (let ((this-command nil))
+            (cl-letf (((symbol-function 'this-single-command-keys)
+                       (lambda () (vconcat (kbd "SPC") (vector ?\C-g)))))
+              (donkey--intercept-quit-after-prefix)
+              (should (eq this-command 'donkey--quit-the-sequence)))))
+      (donkey-mode -1))))
 
 (ert-deftest donkey-a-cancelled-donkey-prompt-does-not-end-insert-state ()
   "Cancelling one of DONKEY's own prompts cancels the prompt, and no more.

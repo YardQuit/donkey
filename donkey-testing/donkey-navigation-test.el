@@ -13,6 +13,7 @@
 (defvar donkey--last-tracked-state)
 (defvar donkey-position-ring-max)
 (defvar donkey-visual-anchor)
+(defvar donkey--visual-line-mark)
 
 (defmacro donkey--goto-line (n)
   "Move point to the start of absolute line N (1-based) in the current buffer."
@@ -474,6 +475,21 @@ pinned here so making the junk cases safe did not quietly change it."
         (should (progn (donkey--track-position) t))
         (should-not donkey--position-ring)))))
 
+(ert-deftest donkey-track-position-survives-a-non-finite-ring-max ()
+  "An infinite or NaN ring max is read as \"off\" rather than signaling."
+  (dolist (junk (list 1.0e+INF -1.0e+INF 0.0e+NaN))
+    (with-temp-buffer
+      (insert "a\nb\nc\n")
+      (goto-char (point-min))
+      (let ((donkey--position-ring nil)
+            (donkey--position-index 0)
+            (donkey--last-tracked-state nil)
+            (donkey-position-ring-max junk))
+        (donkey--track-position)
+        (goto-char 3)
+        (should (progn (donkey--track-position) t))
+        (should-not donkey--position-ring)))))
+
 (ert-deftest donkey-track-position-truncates-a-float-ring-max ()
   "A float ring max keeps working, truncated rather than rejected.
 
@@ -864,6 +880,7 @@ and clears the anchor."
     (insert "hello world\n")
     (goto-char 1)
     (let ((donkey-visual-anchor (point))
+          (donkey--visual-line-mark (point))
           (last-command 'donkey-visual-line-toggle))
       ;; Real sessions install this hook in the same breath as setting
       ;; the anchor; the cancel branch clears the anchor through it, so
@@ -978,6 +995,134 @@ Only the bare press cancels: a count is an instruction about size."
       "a\nb\nc\nd\ne\n" "C-u 3 V d"
     (should (equal (buffer-string) "d\ne\n"))
     (should (equal (car kill-ring) "a\nb\nc\n"))))
+
+(ert-deftest donkey-exchange-in-a-V-session-trades-its-ends ()
+  "\\[exchange-point-and-mark] in a `V' session keeps whole lines and trades the ends.
+
+After the exchange the far end is fixed and `J' and `K' move the end the
+cursor went to, from either layout."
+  (dolist (case '((0 "V J J C-x C-x y" "a1\nb2\nc3\n")
+                  (0 "V J J C-x C-x J y" "b2\nc3\n")
+                  (1 "V J C-x C-x K y" "a1\nb2\nc3\n")
+                  (3 "V K K C-x C-x J y" "b2\nc3\nd4\ne5\n")
+                  (3 "V K K C-x C-x K y" "b2\nc3\n")
+                  (0 "V J J C-x C-x C-x C-x J y" "a1\nb2\nc3\nd4\n")
+                  (2 "V J k C-x C-x y" "c3\n")))
+    (pcase-let ((`(,line ,keys ,want) case))
+      (donkey-test-keys--harness "*donkey-V-exchange*" #'text-mode ()
+          "a1\nb2\nc3\nd4\ne5\n" ""
+        (forward-line line)
+        (execute-kbd-macro (kbd keys))
+        (should (equal (list keys (car kill-ring)) (list keys want))))))
+  (donkey-test-keys--harness "*donkey-V-exchange*" #'text-mode ()
+      "a1\nb2\nc3\nd4\n" "V J J C-x C-x d"
+    (should (equal (buffer-string) "d4\n"))
+    (should (equal (car kill-ring) "a1\nb2\nc3\n"))))
+
+(ert-deftest donkey-setting-the-mark-ends-a-V-session ()
+  "\\[set-mark-command] in a `V' session ends it, even on a one-line session.
+
+The mark it sets lands on the line's end, where an upward session keeps
+its mark, so only the session's own record of its mark tells them apart."
+  (donkey-test-keys--harness "*donkey-V-set-mark*" #'text-mode ()
+      "alpha\nbeta\ngamma\n" "j V C-SPC"
+    (should (region-active-p))
+    (should-not (donkey--visual-line-session-active-p))
+    (execute-kbd-macro (kbd "d"))
+    (should (string-prefix-p "alpha\nbeta" (buffer-string)))))
+
+(defconst donkey-nav-test--folded-text
+  "* A\na body\n* B\nb1\nb2\nb3\n* C\nc body\n"
+  "An Org outline whose heading B is folded by `donkey-nav-test--fold-b'.")
+
+(defun donkey-nav-test--fold-b ()
+  "Fold heading B of `donkey-nav-test--folded-text' and put point on it."
+  (goto-char (point-min))
+  (re-search-forward "^\\* B")
+  (beginning-of-line)
+  (let ((last-command nil))
+    (org-cycle))
+  (should (invisible-p (line-end-position))))
+
+(ert-deftest donkey-V-takes-a-folded-heading-with-its-hidden-body ()
+  "`V d' on a folded heading removes the heading and the body it hides."
+  (skip-unless (require 'org nil t))
+  (donkey-test-keys--harness "*donkey-V-fold*" #'org-mode ()
+      donkey-nav-test--folded-text ""
+    (donkey-nav-test--fold-b)
+    (execute-kbd-macro (kbd "V d"))
+    (should (equal (buffer-string) "* A\na body\n* C\nc body\n"))
+    (should (equal (car kill-ring) "* B\nb1\nb2\nb3\n"))))
+
+(ert-deftest donkey-K-steps-over-a-fold-as-one-line ()
+  "`V K' from below a folded heading takes the heading, not a hidden line.
+
+A count counts the folded heading once, and `K' from the folded heading
+itself keeps it whole on the anchor's side."
+  (skip-unless (require 'org nil t))
+  (donkey-test-keys--harness "*donkey-V-fold*" #'org-mode ()
+      donkey-nav-test--folded-text ""
+    (donkey-nav-test--fold-b)
+    (re-search-forward "^\\* C")
+    (beginning-of-line)
+    (execute-kbd-macro (kbd "V C-u 2 K y"))
+    (should (equal (car kill-ring) "a body\n* B\nb1\nb2\nb3\n* C\n"))
+    (re-search-forward "^\\* B")
+    (beginning-of-line)
+    (execute-kbd-macro (kbd "V K y"))
+    (should (equal (car kill-ring) "a body\n* B\nb1\nb2\nb3\n"))
+    (re-search-forward "^\\* C")
+    (beginning-of-line)
+    (execute-kbd-macro (kbd "V K d"))
+    (should (equal (buffer-string) "* A\na body\nc body\n"))
+    (should (equal (car kill-ring) "* B\nb1\nb2\nb3\n* C\n"))))
+
+(ert-deftest donkey-J-and-a-count-step-over-a-fold-as-one-line ()
+  "`J' and a counted `V' count a folded heading as the one line it shows."
+  (skip-unless (require 'org nil t))
+  (donkey-test-keys--harness "*donkey-V-fold*" #'org-mode ()
+      donkey-nav-test--folded-text ""
+    (donkey-nav-test--fold-b)
+    (execute-kbd-macro (kbd "g g V J J y"))
+    (should (equal (car kill-ring) "* A\na body\n* B\nb1\nb2\nb3\n"))
+    (execute-kbd-macro (kbd "g g j V C-u 2 J y"))
+    (should (equal (car kill-ring) "a body\n* B\nb1\nb2\nb3\n* C\n"))
+    (goto-char (point-min))
+    (re-search-forward "^\\* B")
+    (beginning-of-line)
+    (execute-kbd-macro (kbd "C-u 2 V y"))
+    (should (equal (car kill-ring) "* B\nb1\nb2\nb3\n* C\n"))
+    (goto-char (point-min))
+    (re-search-forward "^\\* B")
+    (beginning-of-line)
+    (execute-kbd-macro (kbd "C-u - 2 V y"))
+    (should (equal (car kill-ring) "a body\n* B\nb1\nb2\nb3\n"))
+    (should (equal (buffer-string) donkey-nav-test--folded-text))))
+
+(ert-deftest donkey-a-hidden-line-belongs-to-the-folded-line-above-it ()
+  "A position inside a fold spans the folded heading's whole line."
+  (skip-unless (require 'org nil t))
+  (with-temp-buffer
+    (org-mode)
+    (insert donkey-nav-test--folded-text)
+    (donkey-nav-test--fold-b)
+    (let ((heading (point))
+          (hidden (save-excursion (search-forward "b2") (point)))
+          (next (save-excursion (re-search-forward "^\\* C")
+                                (line-beginning-position))))
+      (should (equal (donkey--whole-line-span hidden hidden)
+                     (cons heading next))))))
+
+(ert-deftest donkey-V-takes-an-outline-fold-made-with-overlays ()
+  "An `outline-mode' fold, hidden by an overlay, is one line to `V' too."
+  (donkey-test-keys--harness "*donkey-V-fold*" #'outline-mode ()
+      "* A\na\n* B\nb1\nb2\n* C\n" ""
+    (goto-char (point-min))
+    (re-search-forward "^\\* B")
+    (outline-hide-subtree)
+    (beginning-of-line)
+    (execute-kbd-macro (kbd "V J y"))
+    (should (equal (car kill-ring) "* B\nb1\nb2\n* C\n"))))
 
 (ert-deftest donkey-V-with-a-count-is-still-refused-inside-a-mark-run ()
   "The mark run's refusal of `V' does not depend on the count.
@@ -1172,6 +1317,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 2)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1188,6 +1334,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 2)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1207,6 +1354,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 4)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1234,6 +1382,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 1)))
       (donkey--goto-line 2)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1249,6 +1398,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 2)))
       (donkey--goto-line 1)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1301,6 +1451,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 4)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1317,6 +1468,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 4)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1336,6 +1488,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 3)))
       (donkey--goto-line 2)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1362,6 +1515,7 @@ original anchor line instead of extending \"hello\" by one line."
     (insert "single line\n")
     (goto-char (point-min))
     (let ((donkey-visual-anchor (point-min))
+          (donkey--visual-line-mark (point-min))
           (last-command 'donkey-visual-line-toggle))
       (set-mark (point-min))
       (end-of-line)
@@ -1378,6 +1532,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 1)))
       (donkey--goto-line 2)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)
@@ -1393,6 +1548,7 @@ original anchor line instead of extending \"hello\" by one line."
     (let ((anchor (donkey--bol 2)))
       (donkey--goto-line 3)
       (let ((donkey-visual-anchor anchor)
+            (donkey--visual-line-mark anchor)
             (last-command 'donkey-visual-line-toggle))
         (set-mark anchor)
         (end-of-line)

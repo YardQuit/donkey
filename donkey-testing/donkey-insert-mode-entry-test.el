@@ -380,24 +380,18 @@ afterward, unlike every sibling command in the same category."
       (should entered)
       (should (= (point) 12)))))
 
-(ert-deftest donkey-insert-end-of-line-call-order ()
-  "`move-end-of-line' executes before donkey-enter-insert."
-  (let (order)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (let ((orig-eol (symbol-function 'move-end-of-line)))
-        (cl-letf (((symbol-function 'move-end-of-line)
-                   (lambda (n)
-                     (push 'eol order)
-                     (funcall orig-eol n)))
-                  ((symbol-function 'donkey-enter-insert)
-                   (lambda ()
-                     (push 'enter order))))
-          (donkey-insert-end-of-line))))
-    (should (eq (nth 0 order) 'enter))
-    (should (eq (nth 1 order) 'eol))
-    (should (= (length order) 2))))
+(ert-deftest donkey-insert-end-of-line-in-visual-line-mode-goes-to-the-whole-line-end ()
+  "`A' under `visual-line-mode' types at the end of the line, not of the screen line."
+  (donkey-test-keys--harness "*donkey-A-visual*"
+      (lambda () (text-mode) (visual-line-mode 1)) ()
+      (concat (mapconcat (lambda (i) (format "word%02d" i))
+                         (number-sequence 1 40) " ")
+              "\nnext\n")
+      "A X C-g"
+    (goto-char (point-min))
+    (should (equal (buffer-substring-no-properties
+                    (- (line-end-position) 7) (line-end-position))
+                   "word40X"))))
 
 (ert-deftest donkey-insert-end-of-line-from-second-line ()
   "Point on second line moves to end of second line."
@@ -443,7 +437,7 @@ afterward, unlike every sibling command in the same category."
     (should (= (point) 8))))
 
 (ert-deftest donkey-insert-end-of-line-skips-trailing-whitespace ()
-  "`move-end-of-line' moves past trailing whitespace to the newline position."
+  "`A' moves past trailing whitespace to the newline position."
   (with-temp-buffer
     (insert "hello   \n")
     (goto-char 1)
@@ -453,7 +447,7 @@ afterward, unlike every sibling command in the same category."
     (should (= (point) 9))))
 
 (ert-deftest donkey-insert-end-of-line-with-tabs ()
-  "`move-end-of-line' handles tabs correctly."
+  "`A' handles tabs correctly."
   (with-temp-buffer
     (insert "\thello\n")
     (goto-char 1)
@@ -513,41 +507,24 @@ afterward, unlike every sibling command in the same category."
       (should (= (point) 1))
       (should (= (buffer-size) 7)))))
 
-(ert-deftest donkey-open-above-call-order ()
-  "Executes bol, newline, `forward-line' -1, indent, then enter-insert."
-  (let (order)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 3)
-      (let ((orig-bol (symbol-function 'move-beginning-of-line))
-            (orig-forward-line (symbol-function 'forward-line)))
-        (cl-letf (((symbol-function 'region-active-p)
-                   (lambda () nil))
-                  ((symbol-function 'move-beginning-of-line)
-                   (lambda (n)
-                     (push 'bol order)
-                     (funcall orig-bol n)))
-                  ((symbol-function 'newline-and-indent)
-                   (lambda ()
-                     (push 'newline order)
-                     (insert "\n")))
-                  ((symbol-function 'forward-line)
-                   (lambda (n)
-                     (push 'forward-line order)
-                     (funcall orig-forward-line n)))
-                  ((symbol-function 'indent-according-to-mode)
-                   (lambda ()
-                     (push 'indent order)))
-                  ((symbol-function 'donkey-enter-insert)
-                   (lambda ()
-                     (push 'enter order))))
-          (donkey-open-above))))
-    (should (eq (nth 0 order) 'enter))
-    (should (eq (nth 1 order) 'indent))
-    (should (eq (nth 2 order) 'forward-line))
-    (should (eq (nth 3 order) 'newline))
-    (should (eq (nth 4 order) 'bol))
-    (should (= (length order) 5))))
+(ert-deftest donkey-open-above-leaves-the-line-below-as-it-was ()
+  "`O' indents the line it opens and leaves the line it came from untouched.
+
+Pinned where a mode would indent that line differently: a recipe's
+tab in a Makefile, a statement after a Python block, indentation the
+mode has no opinion on in Text mode."
+  (pcase-dolist (`(,mode ,text ,keys ,line)
+                 '((text-mode "top\n    indented line\n" "j O" "    indented line")
+                   (makefile-mode "all:\n\techo hi\n" "j O" "\techo hi")
+                   (python-mode "if a:\n    b()\nc()\n" "j j O" "c()")
+                   (emacs-lisp-mode "(let ((a 1))\n      a)\n" "j O" "      a)")))
+    (donkey-test-keys--harness "*donkey-open-above*" mode ()
+        text keys
+      (should (bound-and-true-p donkey-insert-mode))
+      (should (equal (list mode (buffer-substring-no-properties
+                                 (line-beginning-position 2)
+                                 (line-end-position 2)))
+                     (list mode line))))))
 
 (ert-deftest donkey-open-above-deactivates-active-region ()
   "When region is active, deactivates the mark before proceeding."
@@ -1976,6 +1953,23 @@ is where it is worth saying."
              (should (string-match-p "electric-pair-mode is on in this buffer" said)))
          (electric-pair-local-mode -1))))))
 
+(ert-deftest donkey-the-toggle-names-donkey-pairing-when-it-is-the-package ()
+  "With only `donkey-pair-mode' pairing, the toggle says DONKEY wraps here."
+  (donkey-wrap-test--engine-restored
+   (unwind-protect
+       (with-temp-buffer
+         (text-mode)
+         (donkey-pair-mode 1)
+         (set-default 'donkey-wrap-region-engine 'donkey)
+         (let (said)
+           (cl-letf (((symbol-function 'message)
+                      (lambda (fmt &rest args)
+                        (when fmt (setq said (apply #'format fmt args))))))
+             (donkey-toggle-wrap-engine))
+           (should (string-match-p
+                    "that is donkey-pair-mode, so DONKEY wraps and unwraps" said))))
+     (donkey-pair-mode -1))))
+
 (ert-deftest donkey-a-named-list-is-taken-as-it-stands-under-either-engine ()
   "`all' is narrowed while delegating; a list the reader named is not.
 
@@ -2368,6 +2362,31 @@ one, as it did before there was an engine to choose."
       ((donkey-wrap-region-engine 'pairing-package))
       "say \"word\" now" "w w m i \""
     (should (equal (buffer-string) "say \"\"word\" now"))))
+
+(ert-deftest donkey-the-pairing-package-engine-wraps-as-donkey-where-only-donkey-pairs ()
+  "Where only `donkey-pair-mode' pairs, a press wraps as DONKEY\\='s engine does.
+
+Under `pairing-package' the selection is wrapped, and a pair standing
+round it is taken off, rather than a pair typed at point.  In a mode
+`donkey-pair-mode' does not pair in, nothing pairs, and the press
+types its one character as it does with the mode off."
+  (unwind-protect
+      (progn
+        (donkey-pair-mode 1)
+        (donkey-test-keys--harness "*donkey-wrap-engine*" #'text-mode
+            ((donkey-wrap-region-engine 'pairing-package))
+            "alpha beta" "m w ("
+          (should (equal (buffer-string) "(alpha) beta")))
+        (donkey-test-keys--harness "*donkey-wrap-engine*" #'text-mode
+            ((donkey-wrap-region-engine 'pairing-package))
+            "say \"word\" now" "w w m i \""
+          (should (equal (buffer-string) "say word now")))
+        (donkey-test-keys--harness "*donkey-wrap-engine*" #'text-mode
+            ((donkey-wrap-region-engine 'pairing-package)
+             (donkey-pair-excluded-modes '(text-mode)))
+            "alpha beta" "m w ("
+          (should (equal (buffer-string) "(alpha beta"))))
+    (donkey-pair-mode -1)))
 
 (ert-deftest donkey-a-take-off-over-read-only-delimiters-is-refused ()
   "A take-off whose delimiters are read-only refuses and changes nothing.

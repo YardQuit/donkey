@@ -5,6 +5,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'donkey)
+(require 'donkey-test-keys)
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--cursor-type-to-decscusr
@@ -93,7 +94,8 @@ on screen to say why.
 
 A bare string is read as the one prefix it looks like, since that is
 what the reader who wrote it meant; a list keeps its strings and drops
-the rest; anything else denies nothing.  None of the five signals."
+the rest; anything else, a dotted list included, denies nothing.  None
+of them signals."
   (cl-letf ((noninteractive nil)
             ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
             ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color")))
@@ -102,6 +104,7 @@ the rest; anything else denies nothing.  None of the five signals."
                     ("dumb"           . t)      ; a bare string that does not
                     ((dumb linux)     . t)      ; symbols, dropped
                     ((42 "xterm")     . nil)    ; the string in it still counts
+                    (("dumb" . "xterm") . t)    ; dotted, denies nothing
                     (t                . t)))    ; nonsense denies nothing
       (let ((donkey-decscusr-denied-terminals (car case)))
         (should (equal (cons (car case)
@@ -126,62 +129,65 @@ Every test below that stubs a capable terminal binds `noninteractive'
 to nil for the same reason, the suite itself being the batch run this
 guards against."
   (cl-letf ((noninteractive t)
-            ((symbol-function 'display-graphic-p) (lambda () nil))
-            ((symbol-function 'tty-type) (lambda () "xterm-256color")))
+            ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+            ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color")))
     (should (null (donkey--terminal-supports-decscusr-p)))))
 
 (ert-deftest donkey-terminal-supports-decscusr-p-returns-nil-in-gui ()
   "Nil when `display-graphic-p' returns t.
 The terminal type is not consulted, even if it would otherwise
 qualify."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda () t)))
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t)))
     (should (null (donkey--terminal-supports-decscusr-p)))))
 
 (ert-deftest donkey-terminal-supports-decscusr-p-returns-nil-when-tty-type-is-dumb ()
   "Nil when `tty-type' returns 'dumb'."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
-            ((symbol-function 'tty-type) (lambda () "dumb")))
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+            ((symbol-function 'tty-type) (lambda (&rest _) "dumb")))
     (should (null (donkey--terminal-supports-decscusr-p)))))
 
 (ert-deftest donkey-terminal-supports-decscusr-p-returns-nil-when-tty-type-is-linux ()
   "Nil for Linux framebuffer console."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
-            ((symbol-function 'tty-type) (lambda () "linux")))
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+            ((symbol-function 'tty-type) (lambda (&rest _) "linux")))
     (should (null (donkey--terminal-supports-decscusr-p)))))
 
 (ert-deftest donkey-terminal-supports-decscusr-p-returns-nil-for-cons25 ()
   "Nil for cons25 terminals."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
-            ((symbol-function 'tty-type) (lambda () "cons25")))
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+            ((symbol-function 'tty-type) (lambda (&rest _) "cons25")))
     (should (null (donkey--terminal-supports-decscusr-p)))))
 
 (ert-deftest donkey-terminal-supports-decscusr-p-returns-t-for-xterm ()
   "Non-nil for xterm-256color."
   (cl-letf ((noninteractive nil)
-            ((symbol-function 'display-graphic-p) (lambda () nil))
-            ((symbol-function 'tty-type) (lambda () "xterm-256color")))
+            ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+            ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color")))
     (should (donkey--terminal-supports-decscusr-p))))
 
-(ert-deftest donkey-terminal-supports-decscusr-p-falls-back-to-TERM-env ()
-  "Uses TERM env var when `tty-type' returns nil."
+(ert-deftest donkey-a-terminal-that-is-not-a-tty-gets-no-cursor-shape ()
+  "Nil where `tty-type' has no type, whatever `TERM' says.
+
+That is a daemon\\='s initial terminal, whose output is the daemon\\='s
+standard output."
   (cl-letf ((noninteractive nil)
-            ((symbol-function 'display-graphic-p) (lambda () nil))
-            ((symbol-function 'tty-type) (lambda () nil))
-            ((symbol-function 'getenv) (lambda (var) "xterm-256color")))
-    (should (donkey--terminal-supports-decscusr-p))))
+            ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+            ((symbol-function 'tty-type) (lambda (&rest _) nil))
+            ((symbol-function 'getenv) (lambda (_var) "xterm-256color")))
+    (should-not (donkey--terminal-supports-decscusr-p))))
 
 (ert-deftest donkey-terminal-supports-decscusr-p-returns-nil-when-both-tty-and-term-nil ()
   "Nil when no terminal type can be determined at all."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
-            ((symbol-function 'tty-type) (lambda () nil))
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+            ((symbol-function 'tty-type) (lambda (&rest _) nil))
             ((symbol-function 'getenv) (lambda (var) nil)))
     (should (null (donkey--terminal-supports-decscusr-p)))))
 
 (ert-deftest donkey-terminal-supports-decscusr-p-accepts-terms-that-contain-denied-prefix ()
   "Allows terminal types that contain (but don't start with) a denied prefix."
   (cl-letf ((noninteractive nil)
-            ((symbol-function 'display-graphic-p) (lambda () nil))
-            ((symbol-function 'tty-type) (lambda () "xterm-dumb")))
+            ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+            ((symbol-function 'tty-type) (lambda (&rest _) "xterm-dumb")))
     (should (donkey--terminal-supports-decscusr-p))))
 
 ;;; ---------------------------------------------------------------------------
@@ -191,29 +197,30 @@ qualify."
 (ert-deftest donkey-send-cursor-sequence-noop-in-gui ()
   "No-op in GUI mode."
   (let ((send-called nil))
-    (cl-letf (((symbol-function 'display-graphic-p) (lambda () t))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (setq send-called t))))
       (donkey--send-cursor-sequence 'box)
       (should-not send-called))))
 
 (ert-deftest donkey-send-cursor-sequence-sends-in-supported-terminal ()
-  "Sends sequence twice (double-send for reliability) in a supported terminal."
-  (let ((send-count 0))
+  "Sends the sequence once in a supported terminal, and waits for nothing."
+  (let ((send-count 0) (waited nil))
     (cl-letf ((noninteractive nil)
-              ((symbol-function 'display-graphic-p) (lambda () nil))
-              ((symbol-function 'tty-type) (lambda () "xterm-256color"))
+              ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+              ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (cl-incf send-count)))
-              ((symbol-function 'sit-for) (lambda (&rest _) t)))
+              ((symbol-function 'sit-for) (lambda (&rest _) (setq waited t))))
       (donkey--send-cursor-sequence 'box)
-      (should (= send-count 2)))))
+      (should (= send-count 1))
+      (should-not waited))))
 
 (ert-deftest donkey-send-cursor-sequence-suppressed-for-denied-terminal ()
   "Suppressed for denied ('dumb') terminals."
   (let ((send-called nil))
-    (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil))
-              ((symbol-function 'tty-type) (lambda () "dumb"))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+              ((symbol-function 'tty-type) (lambda (&rest _) "dumb"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (setq send-called t))))
       (donkey--send-cursor-sequence 'box)
@@ -222,8 +229,8 @@ qualify."
 (ert-deftest donkey-send-cursor-sequence-swallows-io-errors ()
   "Silently absorbs I/O errors from `send-string-to-terminal'."
   (cl-letf ((noninteractive nil)
-            ((symbol-function 'display-graphic-p) (lambda () nil))
-            ((symbol-function 'tty-type) (lambda () "xterm-256color"))
+            ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+            ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color"))
             ((symbol-function 'send-string-to-terminal)
              (lambda (&rest _) (signal 'file-error "I/O failure")))
             ((symbol-function 'sit-for) (lambda (&rest _) t)))
@@ -393,8 +400,8 @@ thing that moved."
   (let ((send-called nil))
     (clrhash donkey--last-applied-cursor-settings)
     (cl-letf ((noninteractive nil)
-              ((symbol-function 'display-graphic-p) (lambda () nil))
-              ((symbol-function 'tty-type) (lambda () "xterm-256color"))
+              ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+              ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (setq send-called t)))
               ((symbol-function 'sit-for) (lambda (&rest _) t)))
@@ -414,8 +421,8 @@ nobody sees and paused for redisplay in the caller's critical section."
   (let ((send-called nil))
     (clrhash donkey--last-applied-cursor-settings)
     (cl-letf ((noninteractive nil)
-              ((symbol-function 'display-graphic-p) (lambda () nil))
-              ((symbol-function 'tty-type) (lambda () "xterm-256color"))
+              ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+              ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (setq send-called t)))
               ((symbol-function 'sit-for) (lambda (&rest _) t)))
@@ -436,13 +443,13 @@ Regression test: `donkey-normal-mode' and `donkey-insert-mode' each
 toggle the other off as part of their own body, so a single state
 transition runs `donkey--update-cursor' (and thus
 `donkey--apply-cursor-setting') twice -- once from each mode's hook.
-Without deduplication, that doubles DECSCUSR terminal I/O and the
-synchronous `sit-for' delay on every single transition."
+Without deduplication, that doubles DECSCUSR terminal I/O on every
+single transition."
   (let ((send-count 0))
     (clrhash donkey--last-applied-cursor-settings)
     (cl-letf ((noninteractive nil)
-              ((symbol-function 'display-graphic-p) (lambda () nil))
-              ((symbol-function 'tty-type) (lambda () "xterm-256color"))
+              ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+              ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (setq send-count (1+ send-count))))
               ((symbol-function 'sit-for) (lambda (&rest _) t)))
@@ -450,18 +457,17 @@ synchronous `sit-for' delay on every single transition."
         (set-window-buffer nil (current-buffer))
         (donkey--apply-cursor-setting 'bar)
         (donkey--apply-cursor-setting 'bar)
-        ;; Each real call sends the sequence twice (see
-        ;; donkey--send-cursor-sequence); two IDENTICAL calls to
-        ;; donkey--apply-cursor-setting should only send once, not twice.
-        (should (= send-count 2))))))
+        ;; Two IDENTICAL calls to donkey--apply-cursor-setting send the
+        ;; sequence once, not twice.
+        (should (= send-count 1))))))
 
 (ert-deftest donkey-apply-cursor-setting-resends-on-actual-change ()
   "Still sends DECSCUSR when the setting genuinely changes."
   (let ((sent nil))
     (clrhash donkey--last-applied-cursor-settings)
     (cl-letf ((noninteractive nil)
-              ((symbol-function 'display-graphic-p) (lambda () nil))
-              ((symbol-function 'tty-type) (lambda () "xterm-256color"))
+              ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+              ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (seq &rest _) (push seq sent)))
               ((symbol-function 'sit-for) (lambda (&rest _) t)))
@@ -512,6 +518,88 @@ mode's body toggles the other off."
         (donkey-normal-mode 1))
       (should (= send-count 1)))))
 
+(defmacro donkey-cursor-test--on-a-tty (log &rest body)
+  "Run BODY as on an xterm, each sequence sent pushed onto LOG.
+LOG is a symbol; each entry is (SEQUENCE . TERMINAL)."
+  (declare (indent 1))
+  `(progn
+     (clrhash donkey--last-applied-cursor-settings)
+     (setq donkey--cursor-last-buffer nil)
+     (cl-letf ((noninteractive nil)
+               ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+               ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color"))
+               ((symbol-function 'send-string-to-terminal)
+                (lambda (seq &optional terminal)
+                  (push (cons seq (or terminal (frame-terminal))) ,log))))
+       (unwind-protect
+           (progn ,@body)
+         (clrhash donkey--last-applied-cursor-settings)))))
+
+(ert-deftest donkey-the-terminal-gets-its-own-cursor-shape-back ()
+  "Giving the cursor back sends the terminal its own shape, once.
+
+The terminal is forgotten, so the next state change sends DONKEY\\='s
+shape again, and a terminal DONKEY never shaped is sent nothing."
+  (let ((log nil))
+    (donkey-cursor-test--on-a-tty log
+      (with-temp-buffer
+        (set-window-buffer nil (current-buffer))
+        (donkey--apply-cursor-setting '(bar . 2))
+        (setq log nil)
+        (donkey--give-back-terminal-cursor)
+        (should (equal log (list (cons "\e[0 q" (frame-terminal)))))
+        (should (zerop (hash-table-count donkey--last-applied-cursor-settings)))
+        (setq log nil)
+        (donkey--give-back-terminal-cursor)
+        (should-not log)
+        (donkey--apply-cursor-setting '(bar . 2))
+        (should (equal (mapcar #'car log) '("\e[6 q")))))))
+
+(ert-deftest donkey-a-denied-terminal-gets-no-cursor-shape-back ()
+  "A terminal on `donkey-decscusr-denied-terminals' is forgotten, not sent to."
+  (let ((log nil))
+    (donkey-cursor-test--on-a-tty log
+      (with-temp-buffer
+        (set-window-buffer nil (current-buffer))
+        (donkey--apply-cursor-setting 'box)
+        (setq log nil)
+        (let ((donkey-decscusr-denied-terminals '("xterm")))
+          (donkey--give-back-terminal-cursor (frame-terminal)))
+        (should-not log)
+        (should (zerop (hash-table-count donkey--last-applied-cursor-settings)))))))
+
+(ert-deftest donkey-a-resumed-terminal-gets-the-state-shape-at-once ()
+  "On resume, the shape the current state asks for is sent without a key.
+
+Whether or not it was given back on the way out: what the terminal
+shows after a suspension is not known."
+  (dolist (given-back '(t nil))
+    (let ((log nil))
+      (donkey-cursor-test--on-a-tty log
+        (with-temp-buffer
+          (set-window-buffer nil (current-buffer))
+          (donkey-normal-mode 1)
+          (donkey--update-cursor-passive)
+          (when given-back (donkey--give-back-terminal-cursor))
+          (setq log nil)
+          (donkey--resync-terminal-cursor)
+          (should (equal (mapcar #'car log) '("\e[2 q")))
+          (donkey-normal-mode -1))))))
+
+(ert-deftest donkey-the-cursor-is-given-back-on-exit-suspend-and-close ()
+  "The give-back and the resync are on the hooks that end and resume a terminal."
+  (donkey-mode 1)
+  (unwind-protect
+      (progn
+        (dolist (hook '(kill-emacs-hook suspend-hook suspend-tty-functions
+                        delete-terminal-functions))
+          (should (memq #'donkey--give-back-terminal-cursor
+                        (default-value hook))))
+        (dolist (hook '(suspend-resume-hook resume-tty-functions))
+          (should (memq #'donkey--resync-terminal-cursor
+                        (default-value hook)))))
+    (donkey-mode -1)))
+
 (ert-deftest donkey-apply-cursor-setting-cache-is-shared-across-buffers ()
   "Regression test: the dedup cache is keyed by terminal, not by buffer.
 
@@ -530,8 +618,8 @@ sequence at all for the return trip until this was fixed."
   (let ((send-log nil))
     (clrhash donkey--last-applied-cursor-settings)
     (cl-letf ((noninteractive nil)
-              ((symbol-function 'display-graphic-p) (lambda () nil))
-              ((symbol-function 'tty-type) (lambda () "xterm-256color"))
+              ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+              ((symbol-function 'tty-type) (lambda (&rest _) "xterm-256color"))
               ((symbol-function 'send-string-to-terminal)
                (lambda (&rest _) (push 'sent send-log)))
               ((symbol-function 'sit-for) (lambda (&rest _) t)))
@@ -640,7 +728,7 @@ real platform instead of the intended one."
   (let ((system-type 'gnu/linux)
         (donkey--clipboard-executables 'unknown))
     (cl-letf (((symbol-function 'executable-find) (lambda (&rest _) nil))
-              ((symbol-function 'display-graphic-p) (lambda () t)))
+              ((symbol-function 'display-graphic-p) (lambda (&rest _) t)))
       (should (eq (donkey--detect-clipboard-tools) t)))))
 
 (ert-deftest donkey-detect-clipboard-tools-returns-nil-when-no-tools-and-terminal ()
@@ -648,7 +736,7 @@ real platform instead of the intended one."
   (let ((system-type 'gnu/linux)
         (donkey--clipboard-executables 'unknown))
     (cl-letf (((symbol-function 'executable-find) (lambda (&rest _) nil))
-              ((symbol-function 'display-graphic-p) (lambda () nil)))
+              ((symbol-function 'display-graphic-p) (lambda (&rest _) nil)))
       (should (null (donkey--detect-clipboard-tools))))))
 
 (ert-deftest donkey-detect-clipboard-tools-returns-t-when-wl-copy-found ()
@@ -657,52 +745,30 @@ real platform instead of the intended one."
         (donkey--clipboard-executables 'unknown))
     (cl-letf (((symbol-function 'executable-find)
                (lambda (name) (equal name "wl-copy")))
-              ((symbol-function 'display-graphic-p) (lambda () nil)))
+              ((symbol-function 'display-graphic-p) (lambda (&rest _) nil)))
       (should (eq (donkey--detect-clipboard-tools) t)))))
 
 ;;; ---------------------------------------------------------------------------
-;;; donkey--clipboard-yank
+;;; donkey--take-clipboard
 ;;; ---------------------------------------------------------------------------
 
-(ert-deftest donkey-clipboard-yank-uses-clipboard-yank-when-available ()
-  "A successful `clipboard-yank' is the whole story; `yank' is not called."
-  (let ((clipboard-called nil)
-        (yank-called nil))
-    (cl-letf (((symbol-function 'clipboard-yank)
-               (lambda () (setq clipboard-called t)))
-              ((symbol-function 'yank)
-               (lambda () (setq yank-called t))))
-      (donkey--clipboard-yank)
-      (should clipboard-called)
-      (should-not yank-called))))
+(ert-deftest donkey-yank-takes-another-programs-copy-over-the-kill-ring ()
+  "`p' pastes what another program copied last, not the older kill."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "EXT" ((kill-ring (list "K")))
+      "x\n" "p"
+    (should (equal (buffer-string) "EXTx\n"))
+    (should (equal kill-ring '("EXT" "K")))))
 
-(ert-deftest donkey-clipboard-yank-falls-back-to-yank-on-clipboard-error ()
-  "An erroring `clipboard-yank' falls back to `yank' and says so.
-
-The ONE fallback this function has.  A second test used to assert a
-fallback for `clipboard-yank' not being defined, by stubbing `fboundp'
-itself to say no -- manufacturing a world the package's version floor
-rules out, since the function is preloaded in every Emacs from 29 on.
-When the branch it reached was removed, that test kept passing anyway:
-its stubbed `clipboard-yank' signaled, so the ERROR path caught it --
-green for a reason unrelated to what it claimed to check, which is the
-recurring failure mode this suite keeps being cured of.
-
-The message is asserted as well as the call, since naming the platform
-is the part a bug report leans on."
-  (let ((yank-called nil) said)
-    (cl-letf (((symbol-function 'clipboard-yank)
-               (lambda () (signal 'error '("Clipboard inaccessible"))))
-              ((symbol-function 'yank)
-               (lambda () (setq yank-called t)))
-              ((symbol-function 'message)
-               (lambda (fmt &rest args)
-                 (when (and fmt (not said))
-                   (setq said (apply #'format fmt args))))))
-      (donkey--clipboard-yank)
-      (should yank-called)
-      (should (string-match-p "Clipboard unavailable on .*yanked from kill ring"
-                              said)))))
+(ert-deftest donkey-yank-with-an-unreadable-clipboard-pastes-the-kill-ring ()
+  "A clipboard read that signals leaves `p' pasting the newest kill."
+  (donkey-test-keys--harness "*donkey-p-test*" #'text-mode
+      ((interprogram-paste-function
+        (lambda () (error "Clipboard inaccessible")))
+       (kill-ring (list "K")))
+      "x\n" "p"
+    (should (equal (buffer-string) "Kx\n"))
+    (should (equal kill-ring '("K")))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey--delete-active-region-safe
@@ -758,23 +824,13 @@ that would do exactly that; it is not passed."
 ;;; donkey-yank (clipboard-layer coverage)
 ;;; ---------------------------------------------------------------------------
 
-(ert-deftest donkey-yank-deletes-region-then-yanks ()
-  "Deletes active region before yanking.
-
-The kill ring is stocked because `donkey-yank' now checks there is
-something to paste BEFORE removing anything -- with it empty the command
-correctly does nothing at all, which is a different test below."
-  (let ((delete-called nil)
-        (yank-called nil)
-        (kill-ring (list "something")))
-    (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-              ((symbol-function 'delete-active-region)
-               (lambda (&optional _killp) (setq delete-called t)))
-              ((symbol-function 'clipboard-yank)
-               (lambda () (setq yank-called t))))
-      (donkey-yank)
-      (should delete-called)
-      (should yank-called))))
+(ert-deftest donkey-yank-over-a-selection-pastes-another-programs-copy ()
+  "`p' over a selection replaces it with the clipboard; the selection is not killed."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "EXT" ((kill-ring (list "K")))
+      "hello world\n" "v l l l l l p"
+    (should (equal (buffer-string) "EXT world\n"))
+    (should (equal kill-ring '("EXT" "K")))))
 
 (ert-deftest donkey-clipboard-tip-is-shown-once-per-session ()
   "The missing-tools tip fires on the first paste and not again.
@@ -792,17 +848,17 @@ asserted here, with the variable bound rather than read from whatever
 the session left behind."
   (let ((donkey--clipboard-warning-shown nil)
         (kill-ring (list "text"))
+        (interprogram-paste-function nil)
         (messages nil))
     (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
               ((symbol-function 'donkey--detect-clipboard-tools) (lambda () nil))
-              ((symbol-function 'clipboard-yank) (lambda () nil))
               ((symbol-function 'message)
                (lambda (fmt &rest args)
                  (push (apply #'format fmt args) messages))))
       (let ((system-type 'gnu/linux))
         (with-temp-buffer
-          (donkey--clipboard-yank)
-          (donkey--clipboard-yank))))
+          (donkey--take-clipboard)
+          (donkey--take-clipboard))))
     (should donkey--clipboard-warning-shown)
     (should (= 1 (length (seq-filter
                           (lambda (m) (string-prefix-p "Tip: Install" m))
@@ -818,21 +874,21 @@ the flag was latched on the first paste whatever the answer, so the
 GUI paste permanently suppressed the tty tip."
   (let ((donkey--clipboard-warning-shown nil)
         (kill-ring (list "text"))
+        (interprogram-paste-function nil)
         (graphic t)
         (messages nil))
     (cl-letf (((symbol-function 'display-graphic-p)
                (lambda (&rest _) graphic))
               ((symbol-function 'donkey--detect-clipboard-tools)
                (lambda () nil))
-              ((symbol-function 'clipboard-yank) (lambda () nil))
               ((symbol-function 'message)
                (lambda (fmt &rest args)
                  (push (apply #'format fmt args) messages))))
       (let ((system-type 'gnu/linux))
         (with-temp-buffer
-          (donkey--clipboard-yank)      ; GUI frame: tip ineligible
+          (donkey--take-clipboard)      ; GUI frame: tip ineligible
           (setq graphic nil)
-          (donkey--clipboard-yank))))   ; tty frame: tip must still fire
+          (donkey--take-clipboard))))   ; tty frame: tip must still fire
     (should donkey--clipboard-warning-shown)
     (should (= 1 (length (seq-filter
                           (lambda (m) (string-prefix-p "Tip: Install" m))
@@ -891,12 +947,12 @@ where both answer t."
 
 (ert-deftest donkey-platform-info-display-type-gui ()
   "Reports 'gui when `display-graphic-p' is non-nil."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda () t)))
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t)))
     (should (eq (plist-get (donkey--platform-info) :display-type) 'gui))))
 
 (ert-deftest donkey-platform-info-display-type-terminal ()
   "Reports 'terminal when `display-graphic-p' is nil."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda () nil)))
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil)))
     (should (eq (plist-get (donkey--platform-info) :display-type) 'terminal))))
 
 (ert-deftest donkey-platform-info-reflects-clipboard-tools-available ()

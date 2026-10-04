@@ -417,7 +417,10 @@ distinguishable from \"was called and did nothing\"."
   "In `org-mode' with TODO headline, calls `donkey-org-todo'."
   (let (called-cmd)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(headline (:todo-type todo))))
+               ;; Begins on the line point is on, as a heading point is on does.
+               (lambda () (list 'headline
+                                (list :begin (line-beginning-position)
+                                      :todo-type 'todo))))
               ((symbol-function 'org-element-context)
                (lambda () nil))
               ((symbol-function 'org-element-property)
@@ -907,6 +910,25 @@ refuse the insertion by itself and prove nothing."
     (should (equal (donkey-enter-test--press binding "alpha")
                    (cons nil "alpha")))))
 
+(ert-deftest donkey-enter-changes-nothing-in-hexl-and-picture-mode ()
+  "Enter in Normal state leaves `hexl-mode' and `picture-mode' buffers alone.
+
+Both buffers are Normal state and outside `donkey-editing-modes', so
+Enter asks what the mode binds: `hexl-self-insert-command', which
+writes a byte, and `picture-newline', which breaks a line."
+  (progn
+    (donkey-test-keys--harness "*donkey-enter-hexl*"
+        ;; With no undo information, so `hexl-mode' has nothing to ask.
+        (lambda () (insert "abc\ndef\n") (setq buffer-undo-list nil) (hexl-mode)) ()
+        "" "RET"
+      (should (bound-and-true-p donkey-normal-mode))
+      (should (equal (buffer-substring-no-properties 1 25)
+                     "00000000: 6162 630a 6465")))
+    (donkey-test-keys--harness "*donkey-enter-picture*" #'picture-mode ()
+        "abc\ndef\n" "G RET"
+      (should (bound-and-true-p donkey-normal-mode))
+      (should (equal (buffer-string) "abc\ndef\n")))))
+
 (ert-deftest donkey-enter-has-a-floor-no-setting-can-take-away ()
   "Enter still refuses to type when `donkey-self-insert-commands' is junk.
 
@@ -1049,6 +1071,43 @@ on the developer's own Org configuration."
        ,text ,keys
      ,@body))
 
+(defmacro donkey-org-fold-test (keys &rest body)
+  "Type KEYS into an Org buffer whose first heading is folded, then run BODY.
+
+The buffer is \"* H1\\nbody line\\n* H2\\n\" with H1 folded, so the
+heading line ends in a line break that is hidden along with the body.
+`org-catch-invisible-edits' is bound so the result does not depend on
+the Org version's default."
+  (declare (indent 1))
+  `(donkey-test-keys--harness "*donkey-org-fold-test*"
+       (lambda ()
+         (org-mode)
+         (insert "* H1\nbody line\n* H2\n")
+         (goto-char (point-min))
+         (org-fold-hide-subtree))
+       ((org-catch-invisible-edits 'smart))
+       "" ,keys
+     ,@body))
+
+(ert-deftest donkey-insert-end-of-line-on-a-folded-heading-types-on-the-heading ()
+  "`A' on a folded heading types at the end of the heading, not inside the fold."
+  (donkey-org-fold-test "A X C-g"
+    (should (equal (buffer-string) "* H1X\nbody line\n* H2\n"))))
+
+(ert-deftest donkey-insert-after-at-a-folded-headings-end-types-on-the-heading ()
+  "`a' at the end of a folded heading types there, not after the hidden text."
+  (donkey-org-fold-test "g l a X C-g"
+    (should (equal (buffer-string) "* H1X\nbody line\n* H2\n"))))
+
+(ert-deftest donkey-delete-and-change-refuse-hidden-text ()
+  "`x', `d' and `c' without a selection refuse to take hidden text, and change nothing."
+  (dolist (keys '("x" "d" "C-u 3 x" "c" "C-u 3 c"))
+    (donkey-org-fold-test "g l"
+      (should-error (execute-kbd-macro (kbd keys)) :type 'user-error)
+      (should (equal (list keys (buffer-string))
+                     (list keys "* H1\nbody line\n* H2\n")))
+      (should (bound-and-true-p donkey-normal-mode)))))
+
 (defun donkey-org-key-test--line ()
   "Return the current line, without properties."
   (buffer-substring-no-properties
@@ -1091,6 +1150,15 @@ otherwise."
     (should (equal (donkey-org-key-test--line) "* TODO write it")))
   (donkey-org-key-test "* TODO write it\n" "RET RET"
     (should (equal (donkey-org-key-test--line) "* TODO write it"))))
+
+(ert-deftest donkey-org-ret-under-a-heading-leaves-the-heading-alone ()
+  "RET on a blank line under a TODO or DONE heading changes nothing.
+
+Org counts those lines as part of the headline; RET on the heading
+line itself still cycles it."
+  (dolist (text '("* TODO Task\n\nmore\n" "* DONE Task\n\n"))
+    (donkey-org-key-test text "j RET"
+      (should (equal (cons text (buffer-string)) (cons text text))))))
 
 (ert-deftest donkey-org-ret-toggles-a-checkbox ()
   "RET ticks and unticks a checkbox item."

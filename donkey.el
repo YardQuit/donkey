@@ -231,7 +231,11 @@ CACHE-VAR names a buffer-local variable holding a cons of the key
 MODE-LIST as it was when the entry was computed.  The entry is reused
 only while the buffer's `major-mode' is `eq' and MODE-LIST is `equal'
 to that snapshot, so a mode change or any change to the user option,
-in place or not, recomputes on the next call."
+in place or not, recomputes on the next call.
+
+Never signals, whatever MODE-LIST holds: it is read through
+`donkey--mode-list', and a value that is not a proper list is kept as
+it is rather than copied."
   (let ((cache (symbol-value cache-var)))
     (if (and cache
              (eq (car (car cache)) major-mode)
@@ -239,7 +243,7 @@ in place or not, recomputes on the next call."
         (cdr cache)
       (let ((result (donkey--major-mode-in-p mode-list)))
         (set cache-var (cons (cons major-mode
-                                   (if (listp mode-list)
+                                   (if (proper-list-p mode-list)
                                        (copy-sequence mode-list)
                                      mode-list))
                              result))
@@ -468,10 +472,11 @@ The first section whose mode this buffer\\='s `major-mode' is or derives
 from, so a parent covers its children and a mode listed twice is
 answered by whichever was written first.
 
-Memoized per buffer on the major mode and a copy of the option, the
-way `donkey--memo-major-mode-in-p' is: this runs from
-`post-command-hook' in every buffer, so the sections are read rather
-than searched on all but the first command after a change.
+Memoized per buffer on the major mode and the option itself, both
+compared with `eq' as the state memos compare them: a list a reader
+replaces is a new object and is searched again, and one edited in
+place is seen at the buffer\\='s next major mode.  Nothing of the
+option is copied into the buffer.
 
 A row that is not a cons whose car is a symbol, or whose tail is not
 a proper list, is skipped -- so neither this function nor the callers
@@ -479,7 +484,7 @@ that walk the tail can signal on a mis-typed option."
   (let ((cache donkey--support-mode-cache))
     (if (and cache
              (eq (car (car cache)) major-mode)
-             (equal (cdr (car cache)) donkey-support-modes))
+             (eq (cdr (car cache)) donkey-support-modes))
         (cdr cache)
       (let ((result
              (and (proper-list-p donkey-support-modes)
@@ -492,7 +497,7 @@ that walk the tail can signal on a mis-typed option."
                                                                 (car row)))))
                             donkey-support-modes))))
         (setq donkey--support-mode-cache
-              (cons (cons major-mode (copy-tree donkey-support-modes)) result))
+              (cons (cons major-mode donkey-support-modes) result))
         result))))
 
 (defun donkey--program-buffer-p ()
@@ -704,11 +709,17 @@ Both directions, because `donkey-excluded-modes' can change under a
 buffer that is already open and no major mode changes when it does:
 Normal state in a mode that is now excluded becomes Insert, and Insert
 state this package forced becomes Normal again once the mode is off
-the list.  Insert state the reader asked for is left alone.
+the list.  Insert state the reader asked for is left alone.  So can
+`buffer-read-only', which makes a buffer a support mode or stops it
+being one, so the support map is put in or taken out first, through
+`donkey--install-mode-keys', whatever the state.
 
-The second test is a buffer-local variable that is nil nearly
-everywhere, so the cost in an ordinary buffer is one `and' that fails
-at its first branch."
+The installer compares seven values and stops, and the second test
+below is a buffer-local variable that is nil nearly everywhere, so the
+cost in an ordinary buffer is those comparisons and one `and' that
+fails at its first branch."
+  (unless (minibufferp)
+    (donkey--install-mode-keys))
   (cond
    ((and (bound-and-true-p donkey-normal-mode)
          (donkey--normal-state-off-p))
@@ -760,18 +771,20 @@ shows the binding in force."
 
 Zero switches position tracking off: nothing is retained, so
 `donkey-jump-back' has nowhere to go and says so.  Anything that is not
-a number is read the same way rather than signaling."
+a finite number is read the same way rather than signaling."
   :type 'integer
   :group 'donkey)
 
 (defun donkey--position-ring-limit ()
   "Return `donkey-position-ring-max' as a usable count, never signaling.
 
-A non-number or a negative value reads as 0, tracking off; a float is
-truncated."
-  (if (numberp donkey-position-ring-max)
-      (max 0 (truncate donkey-position-ring-max))
-    0))
+A non-number, an infinite or NaN float, or a negative value reads as
+0, tracking off; a finite float is truncated."
+  (let ((limit donkey-position-ring-max))
+    ;; Infinity and NaN fail the comparison; `truncate' signals on both.
+    (if (and (numberp limit) (< (abs limit) 1.0e+INF))
+        (max 0 (truncate limit))
+      0)))
 
 (defvar-local donkey--position-ring nil
   "List of markers recording previous cursor positions, most recent first.")
@@ -940,7 +953,9 @@ Takes no COUNT."
 (defun donkey-insert-after ()
   "Insert after the character at point, and enter INSERT state.
 
-At the very end of the buffer point stays put.
+At the very end of the buffer point stays put, and so it does before
+hidden text: at the end of a folded heading the typing lands at the
+end of the heading, not inside the fold.
 
 Any active selection is dropped, a rectangle included, and banked
 lines are left standing; `donkey-change' is the insert-entry key that
@@ -949,9 +964,10 @@ acts on them instead.
 Takes no COUNT."
   (interactive)
   (donkey--deactivate-region-if-active)
-  (condition-case _err
-      (forward-char 1)
-    (end-of-buffer nil))
+  (unless (invisible-p (point))
+    (condition-case _err
+        (forward-char 1)
+      (end-of-buffer nil)))
   (donkey-enter-insert))
 
 (defun donkey-insert-beginning-of-line ()
@@ -970,6 +986,11 @@ Takes no COUNT."
 (defun donkey-insert-end-of-line ()
   "Move to the end of the line, and enter INSERT state.
 
+The end of the line in the buffer: on a folded heading that is the end
+of the heading itself, not of the hidden text after it, and under
+`visual-line-mode' the end of the whole line rather than of the screen
+line point is on.
+
 Any active selection is dropped, a rectangle included, and banked
 lines are left standing; `donkey-change' is the insert-entry key that
 acts on them instead.
@@ -977,7 +998,7 @@ acts on them instead.
 Takes no COUNT."
   (interactive)
   (donkey--deactivate-region-if-active)
-  (move-end-of-line 1)
+  (end-of-line)
   (donkey-enter-insert))
 
 (defun donkey-open-below (&optional count)
@@ -1009,6 +1030,17 @@ the cursor's line."
       (save-excursion (insert (make-string extra ?\n)))))
   (donkey-enter-insert))
 
+(defun donkey--open-line-above ()
+  "Open an empty line above this one, indented by the mode, with point on it.
+
+Only the new line is indented: the line point was on moves down with
+its own indentation untouched, whatever the mode would indent it to.
+What `donkey-open-above' and the cursors\\=' `O' both do at each line."
+  (move-beginning-of-line 1)
+  (insert "\n")
+  (forward-line -1)
+  (indent-according-to-mode))
+
 (defun donkey-open-above (&optional count)
   "Open COUNT new lines above the current one, and enter INSERT state.
 
@@ -1022,10 +1054,7 @@ cursor on it, and COUNT - 1 empty lines above that.  A COUNT below 1
 opens one line, as a bare press does."
   (interactive "p")
   (donkey--deactivate-region-if-active)
-  (move-beginning-of-line 1)
-  (newline-and-indent)
-  (forward-line -1)
-  (indent-according-to-mode)
+  (donkey--open-line-above)
   ;; Inserted at the line's start, so the line is pushed down and the
   ;; cursor stays beside the line it came from.
   (let ((extra (1- (or count 1))))
@@ -1034,6 +1063,86 @@ opens one line, as a bare press does."
       (insert (make-string extra ?\n))
       (end-of-line)))
   (donkey-enter-insert))
+
+(defun donkey--grapheme-end (pos)
+  "Return where the character at POS ends, a grapheme cluster counting as one.
+
+Counted as `delete-forward-char' counts: characters Emacs composes into
+one glyph -- a letter and its combining marks, a joined emoji sequence
+-- are one character.  Which characters compose depends on the display,
+as it does for that command; elsewhere a character is a code point."
+  (let ((cmp (find-composition pos)))
+    (cond
+     ((null cmp) (1+ pos))
+     ;; A static composition, made by `compose-region'.
+     ((and (= (length cmp) 3) (booleanp (nth 2 cmp)))
+      (max (1+ pos) (cadr cmp)))
+     ((<= (cadr cmp) pos) (1+ pos))
+     (t (lgstring-glyph-boundary (nth 2 cmp) (car cmp) (1+ pos))))))
+
+(defun donkey--grapheme-start (pos)
+  "Return the start of the character before POS, a cluster counting as one.
+
+Counted as `donkey--grapheme-end' counts, backward."
+  (let ((cmp (find-composition (1- pos))))
+    (if (and cmp (< (car cmp) pos))
+        (let ((start (car cmp))
+              next)
+          (while (< (setq next (donkey--grapheme-end start)) pos)
+            (setq start next))
+          start)
+      (1- pos))))
+
+(defun donkey--character-target (n)
+  "Return the position N characters from point, within the accessible text.
+
+A grapheme cluster counts as one character, as in
+`donkey--grapheme-end'; a negative N counts back from point.  A count
+running past the accessible text stops at its edge.  The text is
+searched once for a composition rather than asked about at every
+character, so a large count costs one search per cluster it crosses."
+  (let ((pos (point)))
+    (if (>= n 0)
+        (while (and (> n 0) (< pos (point-max)))
+          (let* ((limit (min (point-max) (+ pos n)))
+                 (cmp (find-composition pos limit))
+                 (from (and cmp (max pos (car cmp)))))
+            (cond
+             ;; No cluster before the limit: every character is one.
+             ((or (null from) (>= from limit))
+              (setq n (- n (- limit pos)) pos limit))
+             ((> from pos)
+              (setq n (- n (- from pos)) pos from))
+             (t
+              (setq pos (min (point-max) (donkey--grapheme-end pos))
+                    n (1- n))))))
+      (while (and (< n 0) (> pos (point-min)))
+        (let* ((limit (max (point-min) (+ pos n)))
+               (cmp (find-composition (1- pos) limit))
+               (to (and cmp (min pos (cadr cmp)))))
+          (cond
+           ((or (null to) (<= to limit))
+            (setq n (+ n (- pos limit)) pos limit))
+           ((< to pos)
+            (setq n (+ n (- pos to)) pos to))
+           (t
+            (setq pos (max (point-min) (donkey--grapheme-start pos))
+                  n (1+ n)))))))
+    pos))
+
+(defun donkey--refuse-hidden-text (beg end)
+  "Signal a `user-error' when any text between BEG and END is invisible.
+
+The guard the counted branches of `donkey-delete' and `donkey-change'
+share: text a fold or an outline hides is not deleted unseen, as Org\\='s
+own `org-delete-char' does not delete it.  Checked before anything is
+removed."
+  (let ((pos (min beg end))
+        (limit (max beg end)))
+    (while (< pos limit)
+      (when (invisible-p pos)
+        (user-error "Hidden text there -- nothing deleted; show it first"))
+      (setq pos (next-single-char-property-change pos 'invisible nil limit)))))
 
 (defun donkey-change (&optional count)
   "Delete the active region (or the character at point) and enter INSERT state.
@@ -1072,7 +1181,10 @@ the very end of the buffer.
 COUNT changes that many characters when no selection is active.  A
 negative COUNT changes that many characters before point, and a COUNT of
 zero changes none while still entering INSERT state, the same reading
-`donkey-delete' gives its own argument."
+`donkey-delete' gives its own argument, grapheme clusters included.
+Where those characters include hidden text, such as the line break at
+the end of a folded heading, the change is refused and INSERT state is
+not entered."
   (interactive "p")
   (if (donkey--selection-to-act-on-p)
       (if (bound-and-true-p rectangle-mark-mode)
@@ -1086,9 +1198,9 @@ zero changes none while still entering INSERT state, the same reading
         (donkey-enter-insert))
     ;; Not killed: no selection was made, so there is nothing to put
     ;; back.
-    (delete-region (point)
-                   (max (point-min)
-                        (min (point-max) (+ (point) (or count 1)))))
+    (let ((target (donkey--character-target (or count 1))))
+      (donkey--refuse-hidden-text (point) target)
+      (delete-region (point) target))
     (donkey-enter-insert)))
 
 ;;; ---------------------------------------------------------------------------
@@ -1109,16 +1221,22 @@ zero changes none while still entering INSERT state, the same reading
     comment-indent-new-line
     default-indent-new-line
     open-line
-    split-line)
-  "Commands Normal state refuses on Enter, because they break a line.
+    split-line
+    picture-newline
+    hexl-self-insert-command)
+  "Commands Normal state refuses on Enter, because they break a line or type.
+
+`picture-newline' breaks a line in `picture-mode'.
+`hexl-self-insert-command' is what `hexl-mode' binds Enter to, and
+writes a carriage-return byte over the byte at point.
 
 Enter in a mode outside `donkey-editing-modes' runs what that mode
-itself puts on the key -- `dired-find-file' in Dired,
-`Info-follow-nearest-node' in Info.  A mode that puts nothing there
-leaves the key to the global map, where RET is `newline', and a mode
-that asks for a line break outright arrives at the same place by
-another route.  Both are refused and Enter does nothing, as it does in
-a mode that IS in `donkey-editing-modes'.
+itself puts on the key -- `tab-switcher-select' in the tab switcher.
+A mode that puts nothing there leaves the key to the global map, where
+RET is `newline', and a mode that asks for a line break outright
+arrives at the same place by another route.  Both are refused and
+Enter does nothing, as it does in a mode that IS in
+`donkey-editing-modes'.
 
 Normal state does not type, and Enter is the last key that should put
 a newline in a buffer being read rather than written.  A constant
@@ -1137,8 +1255,8 @@ being edited as code or plain text -- inserting a literal newline via
 Enter in Normal state is rarely what's wanted there.  See
 `donkey-enter-dwim' for what happens instead in modes NOT in this
 list: it falls through to Org/markdown-aware dispatch, or to
-whatever RET was originally bound to before Normal state's keymap
-took over (e.g. `dired-find-file' in `dired-mode').
+whatever RET means underneath Normal state's keymap (e.g.
+`tab-switcher-select' in the tab switcher).
 
 Add a major mode here if Enter should also be a no-op for it; remove
 one if you'd rather it fall through to its own original RET binding."
@@ -1185,6 +1303,18 @@ Set to nil in `config.el' if you want to define rules manually."
   "Return non-nil if CMD is a bound, callable interactive command."
   (and cmd (fboundp cmd) (commandp cmd)))
 
+(defun donkey--enter-element-here-p (elem)
+  "Return non-nil when the Org element ELEM may answer Enter at point.
+
+A headline answers only with point on its own heading line.  Org counts
+the blank lines under a heading as part of the headline, and Enter on
+one of them is not Enter on the heading.  Every other element answers
+wherever Org says point is in it."
+  (or (not (eq (car-safe elem) 'headline))
+      (let ((begin (and (fboundp 'org-element-property)
+                        (org-element-property :begin elem))))
+        (and begin (= begin (line-beginning-position))))))
+
 (defun donkey--find-enter-handler ()
   "Find command for Enter key based on element at point.
 
@@ -1221,7 +1351,8 @@ is the one place the mode is tested for the Org rules."
               (rule-cmds (nthcdr 2 rule)))
           (when (and ctx
                      (eq (car ctx) rule-type)
-                     (null (nth 1 rule)))
+                     (null (nth 1 rule))
+                     (donkey--enter-element-here-p ctx))
             (setq result (seq-find #'donkey--callable-command-p rule-cmds))))))
     ;; Parent, then its line-start fallback, then ancestors — ALL rules
     ;; checked per element level, most specific first
@@ -1234,6 +1365,7 @@ is the one place the mode is tested for the Org rules."
                   (rule-cmds (nthcdr 2 rule)))
               (when (and elem
                          (eq (car elem) rule-type)
+                         (donkey--enter-element-here-p elem)
                          (or (null rule-prop)
                              (and (fboundp 'org-element-property)
                                   (org-element-property rule-prop elem))))
@@ -1379,11 +1511,16 @@ A headline with no keyword is left alone."
 (defun donkey-enter-dwim ()
   "Smart Return handler for DONKEY Normal state.
 
-Bound to both RET and <enter> in `donkey-normal-mode-map'.  Tries, in
-order, stopping at the first one that reports it handled the key:
+Bound to both RET and <enter> in `donkey-normal-mode-map', so it
+answers Enter in a buffer in Normal state and nowhere else.  A buffer
+a program made -- Dired, help, a compilation log, the Org agenda -- is
+a support buffer, where Enter is the mode's own key and this command
+is not reached.  Tries, in order, stopping at the first one that
+reports it handled the key:
 
-1. `donkey--org-agenda-enter-handler' -- delegates to whatever
-   `org-agenda-mode-map' itself binds RET to (open item, visit entry).
+1. `donkey--org-agenda-enter-handler' -- in an Org agenda buffer in
+   Normal state, which it is only when it is not a support buffer,
+   delegates to whatever `org-agenda-mode-map' itself binds RET to.
 2. `donkey--org-mode-enter-handler' -- in `org-mode' buffers, derived
    modes such as `org-journal-mode' included, dispatches via
    `donkey--find-enter-handler' against the element at point (see
@@ -1392,11 +1529,11 @@ order, stopping at the first one that reports it handled the key:
 3. `donkey--markdown-enter-handler' -- in `markdown-mode' and
    `gfm-mode' buffers, follows the link at point through
    `markdown-follow-thing-at-point', Markdown's own key for it.
-4. `donkey--non-editing-enter-handler' -- outside `donkey-editing-modes'
-   (`org-agenda-mode', `compilation-mode', etc.), falls through to
-   whatever the key means underneath Normal state's own keymap, asked
-   at the press.  A command that would type or break a line is
-   refused: see `donkey--line-break-commands'.
+4. `donkey--non-editing-enter-handler' -- outside `donkey-editing-modes',
+   falls through to whatever the key means underneath Normal state's
+   own keymap, asked at the press -- selecting a tab in the tab
+   switcher.  A command that would type or break a line is refused:
+   see `donkey--line-break-commands'.
 
 If none of these handle it -- ordinary `prog-mode'/`text-mode' buffers
 being edited as code or plain text -- RET does nothing at all, on
@@ -1419,45 +1556,67 @@ purpose."
        (let ((elem (org-element-at-point)))
          (and (consp elem) (eq (car elem) 'src-block)))))
 
+(defun donkey--org-src-block-lines ()
+  "Return the line numbers of the #+begin and #+end of the Org block point is in.
+
+A cons (BEGIN . END) of the line numbers of the block\\='s #+begin and
+#+end lines, when point is on one of them or on a line of the code
+between.  Nil outside a source block, and on the block\\='s own keyword
+lines before #+begin and the blank lines after #+end, which Org counts
+as part of the block."
+  (when (and (donkey--in-org-src-block-p)
+             (fboundp 'org-element-property))
+    (let* ((elem (org-element-at-point))
+           (begin (org-element-property :post-affiliated elem))
+           (end (org-element-property :end elem)))
+      (when (and begin end)
+        (let ((here (line-number-at-pos))
+              (first (line-number-at-pos begin))
+              (last (save-excursion
+                      (goto-char end)
+                      (skip-chars-backward " \t\n")
+                      (line-number-at-pos))))
+          (when (<= first here last)
+            (cons first last)))))))
+
 (defun donkey-comment-dwim ()
   "Comment/uncomment whole lines in region, or current line if no region.
 
-When inside an Org source block, delegates to the block's native
-major mode via `org-edit-special' for language-aware commenting,
-then returns to the Org buffer."
+With point in an Org source block, comments the lines of the block\\='s
+code that the line or region takes in, through the block\\='s native
+major mode via `org-edit-special' for language-aware commenting, then
+returns to the Org buffer.  A region reaching outside the block
+comments only its lines of code.  On the block\\='s #+begin or #+end line
+with nothing selected, there is no code to comment and it refuses:
+commenting either line alone breaks the block."
   (interactive)
   (cond
-   ((donkey--in-org-src-block-p)
-    (let ((has-region (use-region-p))
-          (cur-line (line-number-at-pos))
-          (reg-beg-line (when (use-region-p)
-                          (line-number-at-pos (region-beginning))))
-          (reg-end-line (when (use-region-p)
-                          (line-number-at-pos (region-end)))))
+   ((donkey--org-src-block-lines)
+    (let* ((block (donkey--org-src-block-lines))
+           (has-region (use-region-p))
+           ;; The org lines asked for, cut to the block's code.
+           (from (max (1+ (car block))
+                      (line-number-at-pos
+                       (if has-region (region-beginning) (point)))))
+           (to (min (1- (cdr block))
+                    (line-number-at-pos
+                     (if has-region (region-end) (point))))))
+      (when (> from to)
+        (user-error "Not commented: a source block's #+begin or #+end line -- select lines of its code"))
       (condition-case err
           (progn
             (org-edit-special)
             ;; `org-edit-special' stays outside the `unwind-protect':
             ;; with no edit buffer there is nothing to exit from.
             (unwind-protect
-                (if has-region
-                    (let* ((cur-line-in-edit (line-number-at-pos))
-                           (diff (- cur-line-in-edit cur-line))
-                           (last-line (line-number-at-pos (point-max)))
-                           ;; Clamp to the edit buffer's own line range; the
-                           ;; region may reach past either end of the block.
-                           (edit-beg-line (max 1 (+ reg-beg-line diff)))
-                           (edit-end-line (min last-line (+ reg-end-line diff))))
-                      (save-excursion
-                        (goto-char (point-min))
-                        (forward-line (1- edit-beg-line))
-                        (let ((beg (line-beginning-position)))
-                          (forward-line (- edit-end-line edit-beg-line))
-                          (comment-or-uncomment-region
-                           beg (line-beginning-position 2)))))
-                  (comment-or-uncomment-region
-                   (line-beginning-position)
-                   (line-beginning-position 2)))
+                ;; The edit buffer's first line is the line after #+begin.
+                (save-excursion
+                  (goto-char (point-min))
+                  (forward-line (- from (car block) 1))
+                  (let ((beg (point)))
+                    (forward-line (- to from))
+                    (comment-or-uncomment-region
+                     beg (line-beginning-position 2))))
               (org-edit-src-exit))
             (when has-region (deactivate-mark)))
         (error
@@ -1553,20 +1712,22 @@ availability.  Useful for debugging platform-specific issues."
 (defvar donkey-insert-mode) ;(donkey-debug-platform); defined below, in "Donkey Mode Definitions"
 
 (defun donkey--pair-table ()
-  "Return `donkey-mark-pair-delimiters' when it is a list, else nil.
+  "Return `donkey-mark-pair-delimiters' when it is a proper list, else nil.
 
 One address for the question every reader of that option asks first.
 It is a defcustom and holds whatever it was given, and `assq',
 `rassq', `seq-filter' and `length' all signal on a value that is not a
-list -- so `m i', a wrap key, the `?' chart, the platform report and
-the typing hook would each signal in their own way at a reader who
-typed one bracket too few (rules 3 and 10).
+proper list -- so `m i', a wrap key, the `?' chart, the platform report
+and the typing hook would each signal in their own way at a reader who
+typed one bracket too few (rules 3 and 10).  A dotted list is one of
+those: `append' leaves one when a pair is added without a list round
+it.
 
 Where that signal lands decides how bad it is rather than whether it
 is wrong: from `post-self-insert-hook' it aborts the reader\\='s own
 typing, from a key it is an ordinary command error.  Every reader goes
 through here either way."
-  (and (listp donkey-mark-pair-delimiters) donkey-mark-pair-delimiters))
+  (and (proper-list-p donkey-mark-pair-delimiters) donkey-mark-pair-delimiters))
 
 (defun donkey--debug-pair-line ()
   "Return the platform report\\='s line about `donkey-pair-mode'.
@@ -1648,7 +1809,7 @@ two places to read it."
            (format "Wrap engine:    %s" donkey-wrap-region-engine)
            (format "Wrap keys:      %d of %d claimed (%s)"
                    claimed (length halves)
-                   (if (listp donkey-wrap-delimiters)
+                   (if (proper-list-p donkey-wrap-delimiters)
                        "a list of characters"
                      "all of donkey-mark-pair-delimiters"))
            (format "Pair table:     %d pairs" (length (donkey--pair-table)))
@@ -1743,32 +1904,66 @@ Output goes to a temporary buffer named '*DONKEY Platform Debug*'."
 ;;; Yank, Copy, and Delete Commands
 ;;; ---------------------------------------------------------------------------
 
-(defun donkey--clipboard-yank ()
-  "Yank from the system clipboard with `kill-ring' fallback.
+(defun donkey--take-clipboard ()
+  "Read the system clipboard once for a paste, and say whether there is one.
 
-If `clipboard-yank' signals an error (empty or inaccessible clipboard),
-falls back to `yank' from the kill ring and emits an informative message
-with platform context.  Shows platform-appropriate installation tips
-only once per session."
-  (condition-case err
-      (clipboard-yank)
-    (error
-     (yank)
-     (message "Clipboard unavailable on %s; yanked from kill ring (%s)."
-              (cond
-               ((eq system-type 'darwin) "macOS")
-               ((eq system-type 'windows-nt) "Windows")
-               (t "Linux/BSD"))
-              (error-message-string err))))
-  ;; The tip fires once, on the first paste where it is eligible;
-  ;; `display-graphic-p' is frame-dependent.
-  (when (and (not donkey--clipboard-warning-shown)
-             (not (display-graphic-p))
-             (not (eq system-type 'darwin))
-             (not (eq system-type 'windows-nt))
-             (not (donkey--detect-clipboard-tools)))
-    (setq donkey--clipboard-warning-shown t)
-    (message "Tip: Install wl-clipboard (Wayland) or xclip/xsel (X11) for system clipboard.")))
+Returns non-nil when there is something to paste, nil when neither the
+clipboard nor the `kill-ring' holds anything.  Called once per press,
+before anything is removed; the paste that follows inserts through
+`donkey--yank-kill', which does not read the clipboard again.
+
+The clipboard is read the way \\[yank] reads it, through
+`interprogram-paste-function', with `select-enable-clipboard' on
+whatever that option says, so the paste keys take the clipboard in
+every configuration.  Emacs\\='s own test of whether the clipboard has
+changed since Emacs last looked still applies: text Emacs put there
+with a copy, or text an earlier paste already took, is not added to
+the kill ring again.  Text another program put there is added once, as
+\\[yank] adds it -- unless it is the same string as the newest kill,
+which a clipboard nobody copied to since and a clipboard manager that
+takes over every copy both hand back.  A clipboard that cannot be read
+leaves the kill ring to answer.
+
+On a terminal with no clipboard tool the first paste also shows a
+one-time tip naming the tools to install."
+  (prog1
+      (condition-case nil
+          (let* ((select-enable-clipboard t)
+                 (read interprogram-paste-function)
+                 (interprogram-paste-function
+                  (and read
+                       (lambda ()
+                         ;; A clipboard that cannot be read is no
+                         ;; clipboard; the kill ring answers.
+                         (let ((text (condition-case nil
+                                         (funcall read)
+                                       (error nil))))
+                           (unless (and (stringp text)
+                                        kill-ring
+                                        (string= text (car kill-ring)))
+                             text))))))
+            (current-kill 0 t)
+            t)
+        (error nil))
+    ;; The tip fires once, on the first paste where it is eligible;
+    ;; `display-graphic-p' is frame-dependent.
+    (when (and (not donkey--clipboard-warning-shown)
+               (not (display-graphic-p))
+               (not (eq system-type 'darwin))
+               (not (eq system-type 'windows-nt))
+               (not (donkey--detect-clipboard-tools)))
+      (setq donkey--clipboard-warning-shown t)
+      (message "Tip: Install wl-clipboard (Wayland) or xclip/xsel (X11) for system clipboard."))))
+
+(defun donkey--yank-kill ()
+  "Insert the kill a paste has taken, without reading the clipboard again.
+
+The inserter every paste key's count repeats; `donkey--take-clipboard'
+has already brought the clipboard's text onto the `kill-ring', once per
+press.  Inserts through \\[yank], so \\[yank-pop] after a paste
+reaches the kill before it."
+  (let ((interprogram-paste-function nil))
+    (yank)))
 
 (defun donkey--delete-active-region-safe ()
   "Delete the active region, if there is one, to make room for a paste.
@@ -1778,21 +1973,6 @@ killing first would make the yank that follows pull back the text just
 removed.  The replaced text stays recoverable through \\[undo]."
   (when (use-region-p)
     (delete-active-region)))
-
-(defun donkey--nothing-to-paste-p ()
-  "Return non-nil when there is nothing for a paste to insert.
-
-`current-kill' is the same source `yank' reads, so this also picks up
-the system clipboard through `interprogram-paste-function' rather than
-looking at `kill-ring' alone -- a clipboard with content in it is
-something to paste even when the kill ring is empty.  DO-NOT-MOVE keeps
-the probe from rotating `kill-ring-yank-pointer' underneath the paste
-that follows.
-
-Checked before anything is removed."
-  (condition-case nil
-      (progn (current-kill 0 t) nil)
-    (error t)))
 
 (defun donkey--rectangle-top-left (start end)
   "Return the buffer position of the top-left corner of the rectangle.
@@ -1851,8 +2031,10 @@ zero."
   (dotimes (_ (max 0 n))
     (funcall inserter)))
 
-(defun donkey--paste-restoring-line-ending (n took-newline)
+(defun donkey--paste-restoring-line-ending (n took-newline &optional inserter)
   "Paste N times at point, giving back a line ending the delete took.
+
+INSERTER is what one paste calls, `donkey--yank-kill' when nil.
 
 The tail end of pasting over a line selection.  Both of DONKEY's line
 selections -- a \"V\" session and banked lines -- are removed whole,
@@ -1872,14 +2054,16 @@ line below.
 Whether anything was pasted is measured by point, not by N: a paste
 of nothing restores no newline."
   (let ((before (point)))
-    (donkey--paste-times n #'donkey--clipboard-yank)
+    (donkey--paste-times n (or inserter #'donkey--yank-kill))
     (when (and took-newline
                (> (point) before)
                (not (eq (char-before) ?\n)))
       (save-excursion (insert "\n")))))
 
-(defun donkey--replace-visual-lines-with-paste (n)
+(defun donkey--replace-visual-lines-with-paste (n &optional inserter)
   "Replace the visual-line selection's whole lines with N pastes.
+
+INSERTER is what one paste calls, `donkey--yank-kill' when nil.
 
 The \"V\" counterpart of `donkey--replace-banked-selection-with-paste':
 the session's lines are deleted whole -- widened exactly as `y' and `d'
@@ -1896,7 +2080,21 @@ counterpart gives its own count of zero."
     (delete-region (car span) (cdr span))
     (deactivate-mark)
     (goto-char (car span))
-    (donkey--paste-restoring-line-ending n took-newline)))
+    (donkey--paste-restoring-line-ending n took-newline inserter)))
+
+(defun donkey--replace-visual-lines-with-rows (n)
+  "Replace the `V' selection's whole lines with `killed-rectangle's rows.
+
+The rows become lines of their own, one row to a line, and replace the
+lines the way \\[donkey-yank] replaces them with text -- the same result
+as pasting the rows joined by newlines.  N widens each row to N copies
+of itself, as a count does for \\[donkey-yank-rectangle]; an N below 1
+pastes nothing, and the lines are still removed."
+  (let ((rows (mapconcat (lambda (row)
+                           (apply #'concat (make-list (max 0 n) row)))
+                         killed-rectangle "\n")))
+    (donkey--replace-visual-lines-with-paste
+     (if (> n 0) 1 0) (lambda () (insert rows)))))
 
 (defun donkey-yank (&optional count)
   "Paste clipboard content, replacing the active region if present.
@@ -1905,9 +2103,14 @@ Linear text only.  A rectangle is a block of columns and lives in its
 own store, `killed-rectangle'; \\[donkey-yank-rectangle] is the key that
 pastes it.
 
-Falls back to the kill ring when the system clipboard is inaccessible,
-so behavior is the same across GUI and terminal Emacs on Linux
-\(X11/Wayland), macOS, and Windows.
+Pastes what \\[yank] would: what another program last copied to the
+system clipboard, when that has changed since Emacs last looked, and
+the newest kill otherwise -- whatever `select-enable-clipboard' says.
+The clipboard is read once per press, and another program's copy goes
+on the `kill-ring' once however often it is pasted; see
+`donkey--take-clipboard'.  Where there is no clipboard to reach the
+kill ring is used, so behavior is the same across GUI and terminal
+Emacs on Linux \(X11/Wayland), macOS, and Windows.
 
 Banked lines are a selection, and a paste replaces a selection: with
 lines banked, they are replaced by what is pasted rather than the paste
@@ -1941,17 +2144,17 @@ which is what asking to replace it with nothing means."
     (cond
      ((bound-and-true-p rectangle-mark-mode)
       (call-interactively #'undefined))
-     ((donkey--banked-selection-p)
-      (if (donkey--nothing-to-paste-p)
-          (message "Nothing to paste")
-        (donkey--replace-banked-selection-with-paste n)))
-     ((donkey--nothing-to-paste-p)
+     ;; Before anything is removed, and the one read of the clipboard
+     ;; this press makes.
+     ((not (donkey--take-clipboard))
       (message "Nothing to paste"))
+     ((donkey--banked-selection-p)
+      (donkey--replace-banked-selection-with-paste n))
      ((donkey--visual-line-session-active-p)
       (donkey--replace-visual-lines-with-paste n))
      (t
       (donkey--delete-active-region-safe)
-      (donkey--paste-times n #'donkey--clipboard-yank)))))
+      (donkey--paste-times n #'donkey--yank-kill)))))
 
 (defun donkey-yank-rectangle (&optional count)
   "Paste `killed-rectangle' as a block of columns.
@@ -1974,6 +2177,11 @@ Banked lines are not a selection here.  \\[donkey-yank] replaces them,
 because linear text can stand in for whole lines; a block of columns
 cannot, so this key leaves the bank alone and lands at point.
 
+A visual-line selection made with `V' is replaced by the rows as lines,
+one row to a line, keeping the buffer's line structure: the same text
+\\[donkey-yank] gives over it with the rows joined by newlines.  See
+`donkey--replace-visual-lines-with-rows'.
+
 COUNT repeats each ROW sideways rather than stacking copies, so the
 block gets wider.  A COUNT below 1 inserts nothing, as it does for
 \\[donkey-yank]."
@@ -1985,6 +2193,8 @@ block gets wider.  A COUNT below 1 inserts nothing, as it does for
     (message "No rectangle to paste"))
    ((bound-and-true-p rectangle-mark-mode)
     (donkey--replace-rectangle-selection-with-killed-rectangle))
+   ((donkey--visual-line-session-active-p)
+    (donkey--replace-visual-lines-with-rows (or count 1)))
    (t
     (donkey--delete-active-region-safe)
     (donkey--yank-rectangle-times (or count 1)))))
@@ -2101,10 +2311,12 @@ is pushed onto the `kill-ring' at all.
 COUNT copies that many characters when no region is active.  A negative
 COUNT copies that many characters before point, matching how
 `delete-char' and friends read a negative argument.  A COUNT of zero
-copies nothing at all."
+copies nothing at all.  A letter with its combining marks, or a joined
+emoji sequence, is one character, as `delete-forward-char' counts it;
+see `donkey--grapheme-end'."
   (interactive "p")
   (let* ((n (or count 1))
-         (target (max (point-min) (min (point-max) (+ (point) n)))))
+         (target (donkey--character-target n)))
    ;; Only a copy that happened clears the selection.
    (let ((copied
           (cond
@@ -2161,7 +2373,11 @@ and wins, and the banks survive untouched.  See
 COUNT deletes that many characters when no region is active.
 A count larger than the text remaining stops at the end rather than
 signaling.  A negative COUNT deletes that many characters before point
-and a COUNT of zero deletes none, matching `delete-char'.
+and a COUNT of zero deletes none, matching `delete-char'.  A letter
+with its combining marks, or a joined emoji sequence, is one character,
+as `delete-forward-char' counts it.  Characters
+that include hidden text, such as the line break at the end of a
+folded heading, are refused rather than deleted unseen.
 
 Those characters are NOT put on the `kill-ring', and neither is a
 counted run of them: only a selection is saved.  A character deleted
@@ -2175,7 +2391,7 @@ whatever was already on the ring, not the three characters just removed.
 the same place."
   (interactive "p")
   (let* ((n (or count 1))
-         (target (max (point-min) (min (point-max) (+ (point) n)))))
+         (target (donkey--character-target n)))
    (cond
     ;; Before the bank: the live selection wins.
     ((donkey--live-rectangle-p)
@@ -2190,6 +2406,7 @@ the same place."
        (kill-region (car bounds) (cdr bounds))))
     ((zerop n) nil)
     ((/= target (point))
+     (donkey--refuse-hidden-text (point) target)
      (delete-region (point) target))
    ((< n 0)
     (message "Beginning of buffer -- nothing to delete"))
@@ -2340,9 +2557,11 @@ takes it off again.
 `pairing-package' hands the press to `self-insert-command' with the
 mark still active and lets whatever is on `post-self-insert-hook'
 decide -- `electric-pair-mode' wraps `(', `[', `{' and `\"',
-Smartparens wraps the pairs it has for the mode, and with neither
-enabled the character is merely inserted at point.  Nothing is taken
-off again under this setting.
+Smartparens wraps the pairs it has for the mode, and with nothing
+pairing the character is merely inserted at point.  Nothing is taken
+off again under this setting.  Where `donkey-pair-mode' is the only
+thing pairing in the buffer it is the pairing package, and the wrap
+is DONKEY\\='s own, taking a pair off included.
 
 Read at each press, so a change takes effect on the next one, and any
 value but `pairing-package' reads as `donkey'.  A rectangle selection
@@ -2372,27 +2591,33 @@ instead, and a named list is always taken as it stands.  This narrows
 only what `all' DERIVES.")
 
 (defun donkey--wrap-pairing-package-here ()
-  "Return the name of the pairing package live in this buffer, or nil.
+  "Return the mode of the pairing package live in this buffer, or nil.
 
 `smartparens-mode' and `electric-pair-mode' are asked for by name --
 a list, and it says where it stops: another package on
-`post-self-insert-hook' pairs just as well and is not named here.  Used
-only to tell a reader what to expect from the `pairing-package'
-engine, never to decide anything."
-  (cond ((bound-and-true-p smartparens-mode) "smartparens-mode")
+`post-self-insert-hook' pairs just as well and is not named here.
+Where neither is on and `donkey-pair-mode' pairs in the buffer, the
+answer is `donkey-pair-mode', and under the `pairing-package' engine
+`donkey-wrap-region' then wraps with DONKEY\\='s own engine.  The
+toggle asks the same question, so what it says is what a press does."
+  (cond ((bound-and-true-p smartparens-mode) 'smartparens-mode)
         ((or (bound-and-true-p electric-pair-local-mode)
              (bound-and-true-p electric-pair-mode))
-         "electric-pair-mode")))
+         'electric-pair-mode)
+        ((and (bound-and-true-p donkey-pair-mode)
+              (not (donkey--pair-off-here-p)))
+         'donkey-pair-mode)))
 
 (defun donkey-toggle-wrap-engine ()
   "Switch who wraps a selection: DONKEY itself, or your pairing package.
 
 Flips `donkey-wrap-region-engine' between its two values and says
-which is in force.  Under `pairing-package' it also says whether
-anything is pairing in THIS buffer, since with nothing on
-`post-self-insert-hook' a press inserts one character and no pair --
-which is the setting doing exactly what it says, and not what a reader
-who forgot to turn Smartparens on is expecting.
+which is in force.  Under `pairing-package' it also says what is
+pairing in THIS buffer: with nothing on `post-self-insert-hook' a
+press inserts one character and no pair -- which is the setting doing
+exactly what it says, and not what a reader who forgot to turn
+Smartparens on is expecting -- and where only `donkey-pair-mode'
+pairs, DONKEY wraps and unwraps as its own engine does.
 
 The value is global, and is read at each press, so the next key obeys
 it.  Reached by name: a setting changed to compare two behaviors is
@@ -2410,12 +2635,17 @@ not something fingers repeat."
    (if (eq donkey-wrap-region-engine 'donkey)
        "DONKEY wraps and unwraps now"
      (let ((package (donkey--wrap-pairing-package-here)))
-       (if package
-           (format "the pairing package wraps now -- %s is on in this buffer"
-                   package)
+       (cond
+        ((eq package 'donkey-pair-mode)
+         (concat "the pairing package wraps now -- in this buffer that is"
+                 " donkey-pair-mode, so DONKEY wraps and unwraps"))
+        (package
+         (format "the pairing package wraps now -- %s is on in this buffer"
+                 package))
+        (t
          (concat "the pairing package wraps now -- but nothing this package"
                  " knows of is pairing in this buffer, so a press will"
-                 " insert one character"))))))
+                 " insert one character")))))))
 
 (defvar donkey-mark-pair-delimiters) ;(donkey--wrap-close-char); defined below, in "Mark and Text Object Selection Commands"
 
@@ -2715,7 +2945,9 @@ its own start/end column instead; see `donkey--wrap-rectangle-region'.
 
 `donkey-wrap-region-engine' set to `pairing-package' hands the press
 to the pairing package instead, and nothing is taken off then; the
-rectangle is DONKEY's own under either setting.
+rectangle is DONKEY's own under either setting, and so is the whole
+press where `donkey-pair-mode' is the only thing pairing in the
+buffer.
 
 A read-only buffer is refused before anything is changed, and
 read-only text the same way and at the same moment, through
@@ -2734,7 +2966,9 @@ keyboard."
    ;; or a function key does not.
    ((not (characterp last-command-event))
     (call-interactively #'undefined))
-   ((eq donkey-wrap-region-engine 'pairing-package)
+   ((and (eq donkey-wrap-region-engine 'pairing-package)
+         ;; DONKEY's own pairing as the package wraps as DONKEY does.
+         (not (eq (donkey--wrap-pairing-package-here) 'donkey-pair-mode)))
     ;; Refused here, before any state changes, so the selection
     ;; outlives the refusal.
     (barf-if-buffer-read-only)
@@ -2778,7 +3012,7 @@ exactly as it stands.  To drop a delimiter in ONE major mode rather
 than everywhere, see `donkey-pair-delimiter-exceptions'.
 
 Anything here that is not a character is ignored, and a value that is
-not a list reads as the empty list: this is read from
+not a proper list reads as the empty list: this is read from
 `post-self-insert-hook', where a signal would abort your own typing."
   :type '(repeat character)
   :set (lambda (symbol value)
@@ -2939,38 +3173,49 @@ Cleared by `donkey--pair-reset' before each command.")
 (defun donkey--pair-characters ()
   "Return the OPEN characters that pair while typing, as a list.
 
-`donkey-pair-delimiters' taken as it stands when it is a list; every
-OPEN character of `donkey-mark-pair-delimiters' under `all'; and that
-table less `donkey-pair-safe-exclusions' under `safe', which is
-what any other value reads as.
+`donkey-pair-delimiters' taken as it stands when it is a proper
+list; every OPEN character of `donkey-mark-pair-delimiters' under
+`all'; and that table less `donkey-pair-safe-exclusions' under `safe',
+which is what any other value reads as.
 
 Both variables are defcustoms and hold whatever they were given, so
 this is where the coercion happens: a character naming no pair in the
 table is dropped, and so is anything that is not a character.  The
-table comes through `donkey--pair-table' and is then read through
-`consp' rather than `car', an entry that is not a pair at all being
-the shape a reader gets from one bracket too few."
-  (let* ((pairs (seq-filter #'consp (donkey--pair-table)))
-         (asked (cond ((listp donkey-pair-delimiters) donkey-pair-delimiters)
-                      ((eq donkey-pair-delimiters 'all) (mapcar #'car pairs))
-                      ;; `safe' and anything else: the table less the
-                      ;; punctuation that is text far more often than it
-                      ;; is a delimiter.
-                      (t (let ((out (and (listp donkey-pair-safe-exclusions)
-                                         donkey-pair-safe-exclusions)))
-                           (seq-remove (lambda (char) (memq char out))
-                                       (mapcar #'car pairs)))))))
-    (seq-filter (lambda (char)
-                  (and (characterp char)
-                       (characterp (cdr (assq char pairs)))))
-                asked)))
+table comes through `donkey--pair-table' and its rows are read only
+when they are conses, an entry that is not a pair at all being the
+shape a reader gets from one bracket too few."
+  ;; Plain loops: this is asked for each delimiter typed and for each
+  ;; DEL between the two halves of a pair.
+  (let* ((table (donkey--pair-table))
+         (named (proper-list-p donkey-pair-delimiters))
+         ;; `safe' and anything else but `all': the table less the
+         ;; punctuation that is text far more often than it is a
+         ;; delimiter.
+         (out (and (not named)
+                   (not (eq donkey-pair-delimiters 'all))
+                   (proper-list-p donkey-pair-safe-exclusions)
+                   donkey-pair-safe-exclusions))
+         asked chars)
+    (if named
+        (setq asked donkey-pair-delimiters)
+      (dolist (pair table)
+        (when (and (consp pair) (not (memq (car pair) out)))
+          (push (car pair) asked)))
+      (setq asked (nreverse asked)))
+    (dolist (char asked)
+      (when (and (characterp char)
+                 (characterp (cdr (assq char table))))
+        (push char chars)))
+    (nreverse chars)))
 
 (defun donkey--pair-close-for (open)
   "Return the closing half of the pair OPEN opens, or nil.
 
-A plain lookup: `assq' passes over a table row that is not a cons, and
-every caller has already put OPEN through `donkey--pair-characters',
-which is where a row holding something that is not a character is
+A plain lookup, and one that never signals: `donkey--pair-table' hands
+it a proper list, and `assq' passes over a row that is not a cons.
+What comes back need not be a character, the table holding whatever it
+was given, so a caller that writes it into the buffer puts OPEN
+through `donkey--pair-characters' first, which is where such a row is
 refused."
   (cdr (assq open (donkey--pair-table))))
 
@@ -3000,12 +3245,13 @@ Reads `donkey-pair-delimiter-exceptions', first matching row only.
 
 Coerced at every level it is walked, because this runs from
 `post-self-insert-hook' and a signal there aborts the reader\\='s own
-typing (rules 3 and 81): the option is walked only when it is a list,
-a row is read only when it is a cons whose car is a symbol, and its
-tail only when that tail is a proper list.  A row whose tail is a
-single value -- `(text-mode . 5)', the shape a reader gets from one
-dot too many -- passes `consp' and would otherwise signal here."
-  (let ((row (and (listp donkey-pair-delimiter-exceptions)
+typing (rules 3 and 81): the option is walked only when it is a
+proper list, a row is read only when it is a cons whose car is a
+symbol, and its tail only when that tail is a proper list.  A row
+whose tail is a single value -- `(text-mode . 5)', the shape a reader
+gets from one dot too many -- passes `consp' and would otherwise
+signal here."
+  (let ((row (and (proper-list-p donkey-pair-delimiter-exceptions)
                   (seq-find (lambda (entry)
                               (and (consp entry)
                                    (symbolp (car entry))
@@ -3027,7 +3273,7 @@ row naming a character the table has no closer for would signal from
 
 Coerced at every level it is walked (rules 3 and 81), exactly as
 `donkey--pair-exception-p' is."
-  (let ((row (and (listp donkey-pair-delimiter-inclusions)
+  (let ((row (and (proper-list-p donkey-pair-delimiter-inclusions)
                   (seq-find (lambda (entry)
                               (and (consp entry)
                                    (symbolp (car entry))
@@ -3119,9 +3365,12 @@ in it before any of them has had a turn.
 Does nothing under a count: \\[universal-argument] 3 and a delimiter
 types three of them and pairs none, which is what a count means to
 `self-insert-command' and what a count already means to
-`donkey-wrap-region'.  Does nothing either where
+`donkey-wrap-region'.  Does nothing in `overwrite-mode' either, where
+the press has replaced the character under point rather than gone in
+before it, so there is no closer to write and none to step over;
+`electric-pair-mode' writes no closer there either.  Nor where
 `donkey--pair-off-here-p' says the buffer is not DONKEY\\='s to pair
-in, and at most once per command."
+in, and it acts at most once per command."
   (unless donkey--pair-done-this-command
     ;; Set first, and for every press rather than only the ones acted
     ;; on: what this stops is a second run of the whole hook, and by
@@ -3130,6 +3379,7 @@ in, and at most once per command."
     (let ((char last-command-event))
       (when (and (characterp char)
                  (null current-prefix-arg)
+                 (not overwrite-mode)
                  ;; Cheapest and most selective first: this runs for
                  ;; every character typed, and almost every character
                  ;; typed is a letter, which is in neither half of the
@@ -3239,19 +3489,21 @@ use this to tell a pair from two ordinary characters."
         (after (char-after)))
     (and before
          after
-         ;; Asked before the table is, so that a delimiter the reader
-         ;; never asked for cannot reach `donkey--pair-close-for'.
-         (memq before (donkey--pair-characters-here))
+         ;; The plain lookup first: it settles almost every press, so the
+         ;; list of what pairs here is built only between two halves.
          (eq after (donkey--pair-close-for before))
+         (memq before (donkey--pair-characters-here))
          (not (donkey--pair-exception-p before)))))
 
 (defun donkey--pair-empty-pair-here-p ()
   "Return non-nil when \\`DEL' here should take a whole empty pair.
 
-`donkey--pair-between-halves-p' and a buffer
-`donkey--pair-off-here-p' leaves to DONKEY, so \\`DEL' goes back to
-the major mode everywhere else."
-  (and (donkey--pair-between-halves-p)
+`donkey--pair-between-halves-p', in a buffer that can be edited and
+that `donkey--pair-off-here-p' leaves to DONKEY, so \\`DEL' goes back
+to the major mode everywhere else -- Dired\\='s, a help buffer\\='s,
+any read-only buffer\\='s, wherever point stands."
+  (and (not buffer-read-only)
+       (donkey--pair-between-halves-p)
        (not (donkey--pair-off-here-p))))
 
 (defun donkey--pair-delete-filter (command)
@@ -3361,6 +3613,18 @@ this is set -- there, a delimiter key wraps the selection instead."
 (defvar-local donkey-visual-anchor nil
   "Anchor position for visual line selection.")
 
+(defvar-local donkey--visual-line-mark nil
+  "Where the visual-line session put the mark, or nil.
+
+Set with the mark by `donkey--visual-line-set-mark', so a session is
+one whose mark nothing else has moved; see
+`donkey--visual-line-session-active-p'.")
+
+(defun donkey--visual-line-set-mark (pos)
+  "Set the mark of a visual-line session at POS, and note it there."
+  (set-mark pos)
+  (setq donkey--visual-line-mark pos))
+
 (defun donkey--ensure-non-rectangle-selection ()
   "Clear the selection state an earlier selection may have left behind.
 
@@ -3375,7 +3639,8 @@ leaves the old selection standing whole, kind and all; the object
 commands call it before their search, whose refusals mark nothing."
   (when (bound-and-true-p rectangle-mark-mode)
     (rectangle-mark-mode -1))
-  (setq donkey-visual-anchor nil))
+  (setq donkey-visual-anchor nil
+        donkey--visual-line-mark nil))
 
 (defun donkey--clear-visual-anchor ()
   "Clear `donkey-visual-anchor' whenever the mark is deactivated.
@@ -3383,18 +3648,26 @@ commands call it before their search, whose refusals mark nothing."
 On `deactivate-mark-hook', installed buffer-locally by
 `donkey-visual-line-toggle' when it sets the anchor, so the anchor
 never survives its region."
-  (setq donkey-visual-anchor nil))
+  (setq donkey-visual-anchor nil
+        donkey--visual-line-mark nil))
 
 
 (defun donkey--visual-line-session-active-p ()
   "Return non-nil if point is continuing an active visual-line selection.
 
 Requires an active region, a recorded `donkey-visual-anchor', and that
-the mark still sits where a visual-line command would have left it --
+the mark still sits where a visual-line command left it --
 either exactly AT the anchor (a line beginning) or at that anchor
 line's end.  Those are the only two values `donkey-visual-line-toggle',
 `donkey-visual-next-line' and `donkey-visual-previous-line' ever set
-the mark to, depending on which side of the anchor point is on.
+the mark to, depending on which side of the anchor point is on.  A line
+is the line the screen shows, so a folded heading ends where its hidden
+body does; see `donkey--visible-line-end'.
+
+Point may move freely, but the mark may not: a command that moves it --
+\\[set-mark-command] included, even onto the anchor line's other end --
+ends the session.  \\[exchange-point-and-mark] is the exception, and
+trades the session's ends; see `donkey--visual-line-follow-exchange'.
 
 An anchor outside the accessible portion is not a session this can
 continue."
@@ -3404,10 +3677,62 @@ continue."
        (<= (point-min) donkey-visual-anchor)
        (<= donkey-visual-anchor (point-max))
        (mark)
+       (eql (mark) donkey--visual-line-mark)
        (or (= (mark) donkey-visual-anchor)
-           (= (mark) (save-excursion
-                       (goto-char donkey-visual-anchor)
-                       (line-end-position))))))
+           (= (mark) (donkey--visible-line-end donkey-visual-anchor)))))
+
+(defun donkey--visual-line-follow-exchange ()
+  "Trade the ends of a visual-line session whose point and mark traded.
+
+On `post-command-hook' for the life of `donkey-mode'.  A command that
+leaves the cursor where the session's mark was, and the mark somewhere
+else, traded the ends -- \\[exchange-point-and-mark] or any other.
+The end the cursor left is then the fixed end and the line it is on the
+new anchor, so `J' and `K' move the end the cursor is now at, as Vim's
+`o' trades the ends of a line selection.  The selection still covers
+the same whole lines."
+  (when (and donkey-visual-anchor
+             donkey--visual-line-mark
+             mark-active
+             (mark t)
+             (= (point) donkey--visual-line-mark)
+             (/= (mark t) donkey--visual-line-mark))
+    (let ((far (mark t)))
+      (setq donkey-visual-anchor (donkey--visible-line-start far))
+      (donkey--visual-line-set-mark
+       (if (> far (point))
+           (donkey--visible-line-end donkey-visual-anchor)
+         donkey-visual-anchor)))))
+
+(defun donkey--visible-line-start (&optional pos)
+  "Return the start of the visible line POS is on.
+
+POS defaults to point.  A line hidden in a fold belongs to the line
+above it that the screen shows, as `forward-visible-line' counts lines,
+so inside a folded Org heading's body this is the heading's start."
+  (save-excursion
+    (when pos (goto-char pos))
+    (beginning-of-line)
+    ;; The line break before is asked first, so a buffer with nothing
+    ;; hidden pays one property lookup a line.
+    (when (and (not (bobp)) (invisible-p (1- (point))))
+      (forward-visible-line 0))
+    (point)))
+
+(defun donkey--visible-line-end (&optional pos)
+  "Return the end of the visible line POS is on, before its newline.
+
+POS defaults to point.  A folded heading ends where its hidden body
+does, as `end-of-visible-line' finds it: one line on the screen, one
+line to `donkey-visual-line-toggle', `donkey-visual-next-line' and the
+whole-line selections, as it is one line to the command
+`kill-whole-line'."
+  (save-excursion
+    (when pos (goto-char pos))
+    (end-of-line)
+    (when (and (not (eobp)) (invisible-p (point)))
+      (end-of-visible-line))
+    (point)))
 
 (defvar donkey--visual-line-hint
   "Visual line: J/K whole lines, j/k by char, V to cancel"
@@ -3540,7 +3865,11 @@ emptying it, `y' gives a kill that pastes back as a complete line, and
 Emacs's own \\[kill-region], \\[kill-ring-save] and \\[copy-to-register]
 take the same whole lines; a command that reads point and mark itself,
 such as `keep-lines', sees the highlighted region.  See
-`donkey--visual-line-extract-region'."
+`donkey--visual-line-extract-region'.
+
+A row is a line the screen shows: a folded heading is one row, its
+hidden body with it, for the count, for `J' and `K', and for what `y',
+`d' and `p' take."
   (interactive "P")
   (let ((n (prefix-numeric-value arg)))
     (cond
@@ -3563,19 +3892,19 @@ motions leave, so `J' and `K' pick it up as theirs: rows downward keep
 the mark at the anchor with point at the last row's end, rows upward
 put the mark at the anchor line's end with point at the first row's
 start -- the two layouts `donkey--visual-line-session-active-p' knows.
-N below zero counts upward; the motion is `forward-line', which stops
-at the buffer's edge the way the session's `J' and `K' do."
+N below zero counts upward; the motion is `forward-visible-line', which
+stops at the buffer's edge the way the session's `J' and `K' do, and
+counts a folded heading as the one line the screen shows."
   (donkey--ensure-non-rectangle-selection)
   (add-hook 'deactivate-mark-hook #'donkey--clear-visual-anchor nil t)
-  (setq donkey-visual-anchor (line-beginning-position))
+  (setq donkey-visual-anchor (donkey--visible-line-start))
   (if (> n 0)
       (progn
-        (set-mark (line-beginning-position))
-        (forward-line (1- n))
-        (end-of-line))
-    (set-mark (line-end-position))
-    (forward-line (1+ n))
-    (beginning-of-line))
+        (donkey--visual-line-set-mark donkey-visual-anchor)
+        (forward-visible-line (1- n))
+        (end-of-visible-line))
+    (donkey--visual-line-set-mark (donkey--visible-line-end))
+    (forward-visible-line (1+ n)))
   (activate-mark)
   (message "%s" donkey--visual-line-hint))
 
@@ -3598,6 +3927,8 @@ COUNT defaults to 1, and a negative COUNT moves up instead.  The
 selection is re-derived from the anchor and wherever point lands, not
 accumulated as it goes, so a count needs no special handling: the
 branch below is the same one a run of single presses would end on.
+In a session a line is the line the screen shows, so a folded heading
+and its hidden body are one step.
 
 Inside a rectangle this moves as `j' does there, through
 `rectangle-next-line', which keeps the column, so the block grows by a
@@ -3605,16 +3936,14 @@ row.  `donkey-visual-previous-line' mirrors it."
   (interactive "p")
   (cond
    ((donkey--visual-line-session-active-p)
-    (forward-line (or count 1))
-    (if (> (line-beginning-position) donkey-visual-anchor)
+    (forward-visible-line (or count 1))
+    (if (> (donkey--visible-line-start) donkey-visual-anchor)
         (progn
-          (set-mark donkey-visual-anchor)
-          (end-of-line))
-      (progn
-        (set-mark (save-excursion
-                    (goto-char donkey-visual-anchor)
-                    (line-end-position)))
-        (beginning-of-line)))
+          (donkey--visual-line-set-mark donkey-visual-anchor)
+          (end-of-visible-line))
+      (donkey--visual-line-set-mark
+       (donkey--visible-line-end donkey-visual-anchor))
+      (forward-visible-line 0))
     (activate-mark))
    ((bound-and-true-p rectangle-mark-mode)
     (rectangle-next-line (or count 1)))
@@ -3640,16 +3969,14 @@ Inside a rectangle this moves as `k' does there, through
   (interactive "p")
   (cond
    ((donkey--visual-line-session-active-p)
-    (forward-line (- (or count 1)))
-    (if (< (line-beginning-position) donkey-visual-anchor)
+    (forward-visible-line (- (or count 1)))
+    (if (< (donkey--visible-line-start) donkey-visual-anchor)
         (progn
-          (set-mark (save-excursion
-                      (goto-char donkey-visual-anchor)
-                      (line-end-position)))
-          (beginning-of-line))
-      (progn
-        (set-mark donkey-visual-anchor)
-        (end-of-line)))
+          (donkey--visual-line-set-mark
+           (donkey--visible-line-end donkey-visual-anchor))
+          (forward-visible-line 0))
+      (donkey--visual-line-set-mark donkey-visual-anchor)
+      (end-of-visible-line))
     (activate-mark))
    ((bound-and-true-p rectangle-mark-mode)
     (rectangle-previous-line (or count 1)))
@@ -3661,24 +3988,28 @@ Inside a rectangle this moves as `k' does there, through
 
 If a region is already active (e.g. from `donkey-mark-inner') when
 enabling, `rectangle-mark-mode' reinterprets that existing region as
-a rectangle using its own corners.  Only a fresh selection is widened
-by one column, and not at the end of a line or of the buffer."
+a rectangle using its own corners.  Only a fresh selection is widened,
+by the character under the cursor in the text's own order, and not at
+the end of a line or of the buffer."
   (interactive)
   (if (bound-and-true-p rectangle-mark-mode)
       (progn
-        (rectangle-mark-mode -1)
+        ;; Deactivated first, as \\[keyboard-quit] does, so what the
+        ;; rectangle leaves in PRIMARY is the rectangle.
         (deactivate-mark)
+        (rectangle-mark-mode -1)
         (message "Rectangle: canceled"))
     (let ((had-active-region mark-active))
       (rectangle-mark-mode 1)
       (add-hook 'deactivate-mark-hook #'donkey--clear-selection-hint nil t)
       ;; One column of width for a fresh selection.  Not at the end of
       ;; the buffer, where there is nothing to widen into, and not at
-      ;; the end of a line, where `right-char' would move the block to
-      ;; column 0 of the next line.
+      ;; the end of a line, where `forward-char' would move the block to
+      ;; column 0 of the next line.  `forward-char', not `right-char',
+      ;; which in right-to-left text moves back.
       (unless (or had-active-region (eolp))
         (condition-case nil
-            (right-char 1)
+            (forward-char 1)
           (end-of-buffer nil)))
       ;; Last, so it is what stays.
       (message "%s" donkey--rectangle-hint))))
@@ -3699,13 +4030,28 @@ by one column, and not at the end of a line or of the buffer."
 
 A list of (BEG . END), in buffer order and apart.")
 
+(defun donkey--window-lines (&optional window)
+  "Return how many lines of its buffer WINDOW can show at once.
+
+WINDOW defaults to the selected one.  Counted in the buffer\\='s own
+line height, so text scaled down shows more lines than
+`window-body-height' counts, and never fewer than it counts.  The
+rectangle highlight and the split\\='s drawn cursors both size what they
+draw from this."
+  (let ((window (or window (selected-window))))
+    (max (window-body-height window)
+         (condition-case nil
+             (with-selected-window window
+               (ceiling (window-screen-lines)))
+           (error 0)))))
+
 (defun donkey--rectangle-window-span (window)
   "Return the stretches WINDOW could show, as `donkey--rectangle-span' is.
 
 What it shows and as much again below, and as much around its point,
 where a command that moved point is about to scroll it."
   (with-current-buffer (window-buffer window)
-    (let* ((height (window-body-height window))
+    (let* ((height (donkey--window-lines window))
            (reach (lambda (from lines)
                     (save-excursion
                       (goto-char from)
@@ -3774,14 +4120,31 @@ still finds its rows lit.  An error falls back to the whole rectangle."
             (funcall next orig start end window rol)))
       (error (funcall next orig start end window rol)))))
 
-(defvar donkey--rectangle-primary-overlay nil
-  "The overlay PRIMARY holds for a rectangle, or nil.
+(defvar-local donkey--rectangle-primary-overlay nil
+  "The overlay given to PRIMARY for this buffer\\='s rectangle, or nil.
 
 `gui-set-selection' takes an overlay as a selection whose text is read
 when a program asks for it.  This one has no face; its property
-donkey-rectangle is `live' while its rectangle is, or the rectangle\\='s
+donkey-rectangle is `live' while its rectangle is, the rectangle\\='s
 \(STARTCOL . ENDCOL) once it has ended, the overlay then spanning the
-rectangle\\='s corners.")
+rectangle\\='s corners, and the rectangle\\='s text once anything would
+have changed what the corners read; see
+`donkey--rectangle-primary-snapshot'.  One a buffer, so a rectangle
+in one buffer never moves or answers for another\\='s.")
+
+(defvar donkey--rectangle-primary-claim nil
+  "The value PRIMARY was last given in this Emacs, or nil.
+
+Noted after every `gui-set-selection' by
+`donkey--rectangle-note-claim', so DONKEY can tell whether PRIMARY still
+holds one of its overlays.")
+
+(defun donkey--rectangle-note-claim (type value)
+  "Note VALUE as the value of PRIMARY, when TYPE names that selection.
+
+After `gui-set-selection', while `donkey-mode' is on.  Never signals."
+  (when (member type '(nil PRIMARY "PRIMARY"))
+    (setq donkey--rectangle-primary-claim value)))
 
 (defvar-local donkey--rectangle-primary nil
   "Non-nil while this buffer\\='s live rectangle is what PRIMARY answers with.
@@ -3838,24 +4201,75 @@ asks.  Never signals."
 
 STATE is as the property donkey-rectangle of
 `donkey--rectangle-primary-overlay' holds it.  The overlay from an
-earlier rectangle goes."
+earlier rectangle goes.  Once PRIMARY holds it, a change to its rows or
+the buffer going away first keeps its text; see
+`donkey--rectangle-primary-snapshot'."
   (when (overlayp donkey--rectangle-primary-overlay)
     (delete-overlay donkey--rectangle-primary-overlay))
   (let ((overlay (make-overlay beg end nil nil t)))
     (overlay-put overlay 'donkey-rectangle state)
     (setq donkey--rectangle-primary-overlay overlay)
-    (donkey--rectangle-primary-set overlay)))
+    (when (donkey--rectangle-primary-set overlay)
+      (donkey--rectangle-primary-arm t))))
+
+(defun donkey--rectangle-primary-arm (on)
+  "Arm `donkey--rectangle-primary-snapshot' here, or with ON nil disarm it."
+  (if on
+      (progn
+        (add-hook 'before-change-functions
+                  #'donkey--rectangle-primary-snapshot nil t)
+        (add-hook 'kill-buffer-hook #'donkey--rectangle-primary-snapshot nil t))
+    (remove-hook 'before-change-functions #'donkey--rectangle-primary-snapshot t)
+    (remove-hook 'kill-buffer-hook #'donkey--rectangle-primary-snapshot t)))
+
+(defun donkey--rectangle-primary-snapshot (&optional beg end)
+  "Keep the text this buffer\\='s rectangle gives PRIMARY before it can change.
+
+On `before-change-functions' and `kill-buffer-hook', buffer-locally,
+while PRIMARY holds this buffer\\='s rectangle.  A change between BEG
+and END that touches an ended rectangle\\='s rows, or the buffer going
+away with any rectangle of its own in PRIMARY, turns what PRIMARY holds
+into the text it reads now, so a program asking later is given what was
+selected and never what was typed there since.  Once PRIMARY holds
+something else there is nothing to keep, and the hooks go.  Never
+signals."
+  (condition-case nil
+      (let* ((overlay donkey--rectangle-primary-overlay)
+             (state (and (overlayp overlay) (overlay-buffer overlay)
+                         (overlay-get overlay 'donkey-rectangle))))
+        (cond
+         ((or (not (eq donkey--rectangle-primary-claim overlay))
+              (stringp state)
+              (null state))
+          (donkey--rectangle-primary-arm nil))
+         ((and beg (or (eq state 'live)
+                       (> beg (save-excursion
+                                (goto-char (overlay-end overlay))
+                                (line-end-position)))
+                       (< end (save-excursion
+                                (goto-char (overlay-start overlay))
+                                (line-beginning-position)))))
+          ;; A live rectangle keeps its own text before a change, and a
+          ;; change on other rows changes nothing PRIMARY reads.
+          nil)
+         (t
+          (overlay-put overlay 'donkey-rectangle
+                       (donkey--rectangle-primary-text overlay))
+          (donkey--rectangle-primary-arm nil))))
+    (error nil)))
 
 (defun donkey--rectangle-primary-text (value)
   "Return the text PRIMARY holding VALUE gives, or nil if VALUE is not ours.
 
 VALUE is ours when it is an overlay DONKEY gave PRIMARY; see
 `donkey--rectangle-primary-overlay'.  A live rectangle is answered as
-Emacs would have answered it, and an ended one from its corners."
+Emacs would have answered it, an ended one from its corners, and one
+whose text was kept with that text."
   (when (and (overlayp value) (overlay-get value 'donkey-rectangle))
     (let ((state (overlay-get value 'donkey-rectangle))
           (buffer (overlay-buffer value)))
       (cond
+       ((stringp state) state)
        ((not (buffer-live-p buffer)) "")
        ((eq state 'live)
         (if (buffer-local-value 'rectangle-mark-mode buffer)
@@ -3882,7 +4296,7 @@ rectangle is turned into its text only here, when a program asks."
            (or (donkey--rectangle-primary-text value) value)))
 
 (defun donkey--rectangle-primary-set (value)
-  "Give PRIMARY VALUE, where Emacs still owns it.
+  "Give PRIMARY VALUE, where Emacs still owns it, and return VALUE if given.
 
 A string replaces the overlay an earlier rectangle left there."
   (when (gui-backend-selection-owner-p 'PRIMARY)
@@ -3934,6 +4348,22 @@ Never signals."
            (substring-no-properties (funcall region-extract-function nil)))))
     (error nil)))
 
+(defun donkey--rectangle-primary-release ()
+  "Let go of this buffer\\='s rectangle overlay, PRIMARY keeping its text.
+
+As `donkey-mode' goes off, and the converters that read the overlay go
+with it: where PRIMARY still holds the overlay it is given the text
+instead, and the overlay and its hooks go."
+  (let ((overlay donkey--rectangle-primary-overlay))
+    (when (overlayp overlay)
+      (when (and (eq donkey--rectangle-primary-claim overlay)
+                 (gui-backend-selection-owner-p 'PRIMARY))
+        (gui-set-selection 'PRIMARY
+                           (or (donkey--rectangle-primary-text overlay) "")))
+      (delete-overlay overlay)
+      (setq donkey--rectangle-primary-overlay nil))
+    (donkey--rectangle-primary-arm nil)))
+
 (defun donkey--rectangle-primary-follow ()
   "Answer PRIMARY from the rectangle while it lives, and keep it as it ends.
 
@@ -3962,7 +4392,8 @@ itself, which a program asking for it is answered from; see
     (let ((overlay (make-overlay (region-beginning) (region-end) nil nil t)))
       (overlay-put overlay 'donkey-rectangle 'live)
       (setq donkey--rectangle-primary-overlay overlay)
-      (gui-set-selection 'PRIMARY overlay)))
+      (gui-set-selection 'PRIMARY overlay)
+      (donkey--rectangle-primary-arm t)))
    ((not rectangle-mark-mode)
     (donkey--rectangle-primary-freeze))))
 
@@ -4254,11 +4685,13 @@ count does, the same one the nesting-aware path signals."
 ON-OPENER is passed through to `donkey--mark-pair-positions' for the
 first level; see there for what it means.  LEVELS of 1 is the pair that
 function finds on its own.
-Each level beyond that steps just outside the pair already found and
-searches again, so from inside the inner parentheses of
+Each level beyond that scans outward from the opener of the pair
+already found, so from inside the inner parentheses of
 \"(up at (the hospital) bemoaning)\" a LEVELS of 2 gives the outer pair.
 The forward and backward scans count depth, so the pair already stepped
-out of is skipped rather than re-matched.
+out of is skipped rather than re-matched, and so is a sibling pair
+right beside it: from inside the second braces of \"{\\frac{a}{b}}\"
+a LEVELS of 2 gives the outer braces, not the first pair.
 
 A symmetric delimiter has no depth to count, so it goes through
 `donkey--mark-pair-widen-symmetric' instead, which counts occurrences
@@ -4276,13 +4709,18 @@ Signals a `user-error' when there is no enclosing pair left."
       (when (<= (car span) (point-min))
         (user-error "No enclosing `%c' beyond that level" open-char))
       (setq span (save-excursion
-                   (goto-char (1- (car span)))
+                   (goto-char (car span))
                    ;; Running out of enclosing pairs is ordinary -- a bare
                    ;; \\[universal-argument] asks for four levels -- so
                    ;; it is a `user-error' naming the level, not the
                    ;; scan's own message.
                    (condition-case nil
-                       (donkey--mark-pair-positions open-char close-char nil)
+                       (let* ((case-fold-search nil)
+                              (start (donkey--mark-pair-scan-backward
+                                      open-char close-char)))
+                         (goto-char (1+ start))
+                         (cons start (donkey--mark-pair-scan-forward
+                                      open-char close-char)))
                      (error
                       (user-error "No enclosing `%c' beyond that level"
                                   open-char))))))
@@ -4428,7 +4866,9 @@ same command repeats.")
 
 Uses the syntax table to identify delimiters (parentheses, brackets,
 braces).  If point is on an opening or closing delimiter, uses that
-pair; if point is inside a pair, finds the enclosing delimiters.
+pair; if point is inside a pair, finds the enclosing delimiters.  From
+inside a string or a comment the expression around it is the one at
+point: the brackets its text holds are text, not delimiters.
 
 COUNT selects how many levels out to go, so a count of 2 marks the pair
 enclosing the one that would be marked without it.  Point already on an
@@ -4457,7 +4897,12 @@ expression has been found."
           (save-excursion
             (goto-char anchor)
             (condition-case nil
-                (backward-up-list (if (looking-at "\\s(") (1- levels) levels))
+                (let ((in (nth 8 (syntax-ppss))))
+                  (if in
+                      ;; From inside a string or comment, the expression
+                      ;; around it, not the parens the text happens to hold.
+                      (progn (goto-char in) (backward-up-list levels))
+                    (backward-up-list (if (looking-at "\\s(") (1- levels) levels))))
               (scan-error
                (user-error "Not inside a balanced expression")))
             (let ((start (if inner-p (1+ (point)) (point))) end)
@@ -4485,7 +4930,9 @@ Uses the syntax table to identify delimiters (parentheses,
 brackets, braces).  If point is on an opening or closing
 delimiter, marks content within that pair.  If point is inside
 a pair, finds the enclosing delimiters and marks everything
-within, excluding the delimiters themselves.
+within, excluding the delimiters themselves.  From inside a string
+or a comment it is the expression around the string or comment,
+whatever brackets the text holds.
 
 Point is left at the START of the selection and the mark at its end,
 which is where `mark-sexp' leaves them and where the other DONKEY
@@ -4501,7 +4948,9 @@ COUNT selects how many levels out to go."
 Uses the syntax table to identify delimiters (parentheses,
 brackets, braces).  If point is on a delimiter, marks that
 pair.  If point is inside a pair, finds the enclosing pair
-and marks it including delimiters.
+and marks it including delimiters.  From inside a string or a
+comment it is the expression around the string or comment, whatever
+brackets the text holds.
 
 Point is left at the START of the selection and the mark at its end,
 which is where `mark-sexp' leaves them and where the other DONKEY
@@ -4867,38 +5316,44 @@ See `donkey-mark-run-left' for why the mode wraps its motions."
 
 (defun donkey-mark-run-line-start (&optional count)
   "Stretch the run back to the line start, or move there.
-With COUNT, the start of the line COUNT - 1 lines down.  Stands in
-for `g h'; see `donkey-mark-run-left' for why the mode wraps its
-motions.
+Stands in for `g h'; see `donkey-mark-run-left' for why the mode wraps
+its motions.
 
 The pair owns FIXED ENDS, the way the object keys do: this one takes
 the selection's start, `donkey-mark-run-line-end' its end, so they add
 up -- `M g h g l' is the line's text from one edge to the other, in
-either order.  With no run in progress the key is just a motion."
+either order.  A run stretches to the start of the line point is on
+whatever COUNT says, so its ends never cross.  With no run in progress
+the key is just a motion, and COUNT moves to the start of the line
+COUNT - 1 lines down."
   (interactive "p")
-  (let ((extending (donkey--mark-run-continuing-p)))
-    (beginning-of-line count)
-    ;; Moving point activates nothing; the same re-assertion the
-    ;; backward object keys make, for the same reason.
-    (when extending
-      (activate-mark))))
+  (if (donkey--mark-run-continuing-p)
+      (progn
+        (beginning-of-line)
+        ;; Moving point activates nothing; the same re-assertion the
+        ;; backward object keys make, for the same reason.
+        (activate-mark))
+    (beginning-of-line count)))
 
 (defun donkey-mark-run-line-end (&optional count)
   "Stretch the run forward to the line end, or move there.
-With COUNT, the end of the line COUNT - 1 lines down.  Stands in for
-`g l'; see `donkey-mark-run-line-start' for the pair's fixed ends.
+Stands in for `g l'; see `donkey-mark-run-line-start' for the pair's
+fixed ends.
 
 This one pushes the MARK, the forward end, so it cannot shrink what
 is selected: the end of a line is never behind the position it is
 measured from.  Measured from the MARK rather than from point, which
 is what makes it the forward end's key -- on a run already spanning
 lines it reaches the end of the line the selection stops on, not the
-end of the line the cursor happens to sit in."
+end of the line the cursor happens to sit in.  A run stretches to that
+line's end whatever COUNT says.  With no run in progress the key is
+just a motion, and COUNT moves to the end of the line COUNT - 1 lines
+down."
   (interactive "p")
   (if (donkey--mark-run-continuing-p)
       (set-mark (save-excursion
                   (goto-char (mark t))
-                  (move-end-of-line count)
+                  (move-end-of-line 1)
                   (point)))
     (move-end-of-line count)))
 
@@ -5141,6 +5596,14 @@ it back, and any OTHER press in the run empties it, a new branch
 having nothing to redo onto.  Emptied with the history whenever the
 mode is disarmed.")
 
+(defvar donkey--mark-run-recorded nil
+  "The step the press now running recorded, or nil when it recorded none.
+
+A cons (STEP . REDO): the entry `donkey--mark-run-mode-pre-command'
+pushed on `donkey--mark-run-history', and the `donkey--mark-run-redo'
+it dropped.  `donkey--mark-run-forget-empty-step' takes both back after
+a press that changed nothing.")
+
 (defvar donkey--mark-run-armed-in-macro nil
   "Non-nil when mark run mode was armed from inside a keyboard macro.
 
@@ -5210,6 +5673,11 @@ A \`.' is recorded as the command it repeats, which
 It also names the nameless press -- see the comment below -- which is
 the one thing here that is not about the history.
 
+A command from another terminal is not the run's, and is left alone:
+it neither records a step nor is renamed.  A press that turns out to
+change nothing is taken back off the history after it has run, by
+`donkey--mark-run-forget-empty-step'.
+
 Nothing here signals, which is what a `pre-command-hook' function has
 to be able to say: one that errors is removed for the session and
 takes the run's history with it.  Nothing here needs a guard to say
@@ -5218,21 +5686,41 @@ membership tests are over constants, `push' allocates, and `mark' is
 called with the argument that makes it answer nil where it would
 otherwise refuse.  Its sibling on `post-command-hook' does its work
 through overlays and is guarded instead."
-  ;; Name the nameless press: a sequence that resolved to nothing
-  ;; arrives with `this-command' nil, and `undefined' -- a family
-  ;; member -- is what its other spelling, a single unbound key, runs.
-  (when (null this-command)
-    (setq this-command 'undefined))
-  (let ((command (donkey--mark-run-press-command)))
-    (when (and (memq command donkey--mark-run-commands)
-               (not (memq command donkey--mark-run-inert-commands))
-               (not (memq command '(donkey-mark-run-step-back
-                                    donkey-mark-run-step-forward))))
-      (push (list (point) (mark t) (and mark-active t))
-            donkey--mark-run-history)
-      ;; A step off the path is a new branch, and there is nothing to
-      ;; redo onto it -- the bargain every undo system strikes.
-      (setq donkey--mark-run-redo nil))))
+  (when (donkey--mark-run-answers-p)
+    (setq donkey--mark-run-recorded nil)
+    ;; Name the nameless press: a sequence that resolved to nothing
+    ;; arrives with `this-command' nil, and `undefined' -- a family
+    ;; member -- is what its other spelling, a single unbound key, runs.
+    (when (null this-command)
+      (setq this-command 'undefined))
+    (let ((command (donkey--mark-run-press-command)))
+      (when (and (memq command donkey--mark-run-commands)
+                 (not (memq command donkey--mark-run-inert-commands))
+                 (not (memq command '(donkey-mark-run-step-back
+                                      donkey-mark-run-step-forward))))
+        (push (list (point) (mark t) (and mark-active t))
+              donkey--mark-run-history)
+        (setq donkey--mark-run-recorded
+              (cons (car donkey--mark-run-history) donkey--mark-run-redo))
+        ;; A step off the path is a new branch, and there is nothing to
+        ;; redo onto it -- the bargain every undo system strikes.
+        (setq donkey--mark-run-redo nil)))))
+
+(defun donkey--mark-run-forget-empty-step ()
+  "Take back the step the press just run recorded, when it changed nothing.
+
+A family press that leaves point, the mark and the mark\\='s activation
+as they were -- a word key past the last word, a line key at the
+buffer\\='s edge, a refusal -- is no step for \`u' to take back, and no
+new branch either: the history and the redo are put back as the press
+found them."
+  (let ((recorded donkey--mark-run-recorded))
+    (setq donkey--mark-run-recorded nil)
+    (when (and recorded
+               (eq (car donkey--mark-run-history) (car recorded))
+               (equal (car recorded) (list (point) (mark t) (and mark-active t))))
+      (pop donkey--mark-run-history)
+      (setq donkey--mark-run-redo (cdr recorded)))))
 
 (defun donkey-mark-run-step-back ()
   "Put the run back where the last press found it.
@@ -5241,10 +5729,12 @@ Bound to \`u' inside `donkey-mark-run-mode-map'.  One press, one step:
 `M w w s' and three of these is the first word again, a fourth
 reporting rather than guessing.  Every press the mode counts as its
 own steps back this way, the motions and \`*' included -- a simpler
-rule to hold than one that undid the object keys only.
+rule to hold than one that undid the object keys only.  A press that
+changed nothing, such as \`w' past the last word, is no step.
 
 What it leaves is kept, so `donkey-mark-run-step-forward' on \`U' can
-hand it back, until any other press in the run drops the redo.  A
+hand it back, until any other press in the run that changes the
+selection drops the redo.  A
 member of `donkey--mark-run-commands', so the run carries on: `M w w u
 w' grows from the restored selection instead of marking afresh."
   (interactive)
@@ -5288,6 +5778,9 @@ shape before the first recorded press comes back as it was."
         (set-mark mk)
       (deactivate-mark))))
 
+(defvar donkey--mark-run-terminal nil
+  "The terminal the armed mark run's map lives on, or nil.")
+
 (defun donkey--mark-run-mode-post-command ()
   "Repaint the mark run reminder, or end a mode that outlived its map.
 
@@ -5298,6 +5791,10 @@ The reminder is repainted after the mode's family commands and after
 nothing else, and not while a count is being typed: count entry is
 told apart by `prefix-arg', since the keys of a count arrive under the
 name of the family member they followed.
+
+A command from another terminal is not the run's: it repaints nothing
+and ends nothing.  A run whose terminal has gone is ended here, for a
+terminal Emacs deleted without running `delete-terminal-functions'.
 
 The exit is the transient map's backstop, for a command that armed
 the map while it was already running.  A command that is neither a
@@ -5315,9 +5812,14 @@ command.  Its sibling on `pre-command-hook' needs no guard, and says
 why."
   (condition-case nil
       (cond
+       ((donkey--mark-run-terminal-gone-p)
+        (donkey--mark-run-forget-terminal donkey--mark-run-terminal))
+       ((not (donkey--mark-run-answers-p))
+        nil)
        ((and donkey--mark-run-armed-in-macro (not executing-kbd-macro))
         (donkey--mark-run-exit))
        ((memq this-command donkey--mark-run-commands)
+        (donkey--mark-run-forget-empty-step)
         ;; A count's keys arrive under the family member's name.
         (unless prefix-arg
           (donkey--repaint-hint donkey--mark-run-mode-hint)))
@@ -5327,9 +5829,6 @@ why."
        (t
         (donkey--mark-run-exit)))
     (error nil)))
-
-(defvar donkey--mark-run-terminal nil
-  "The terminal the armed mark run's map lives on, or nil.")
 
 (defun donkey--mark-run-mode-keep-p ()
   "Return non-nil while mark run mode should stay active.
@@ -5438,6 +5937,28 @@ with nothing to act on."
           (setq donkey--mark-run-suspended nil)))
     (error nil)))
 
+(defun donkey--mark-run-terminal-gone-p ()
+  "Return non-nil when the terminal the run was armed on has been deleted."
+  (let ((terminal donkey--mark-run-terminal))
+    (and (eq (type-of terminal) 'terminal)
+         (not (terminal-live-p terminal)))))
+
+(defun donkey--mark-run-forget-terminal (terminal)
+  "End the mark run armed on TERMINAL, and forget one kept for it.
+
+On `delete-terminal-functions' while `donkey-mode' is on, so a client
+that goes takes its run with it; `donkey--mark-run-mode-post-command'
+calls it as well, for a terminal deleted without that hook."
+  (condition-case nil
+      (progn
+        (when (eq terminal donkey--mark-run-terminal)
+          (donkey--mark-run-exit))
+        (when (eq terminal (nth 1 donkey--mark-run-pending))
+          (setq donkey--mark-run-pending nil))
+        (when (eq terminal (nth 1 donkey--mark-run-suspended))
+          (setq donkey--mark-run-suspended nil)))
+    (error nil)))
+
 (defun donkey--mark-run-resume-when-shown (&rest _)
   "Arm a suspended run again once its buffer is in the selected window.
 
@@ -5536,6 +6057,7 @@ that said something of its own keeps its echo."
     (add-hook 'post-command-hook #'donkey--mark-run-settle))
   (setq donkey--mark-run-history nil)
   (setq donkey--mark-run-redo nil)
+  (setq donkey--mark-run-recorded nil)
   ;; The reminder must not outlive the mode; cleared only when it is
   ;; what is showing.
   (when (equal (current-message) donkey--mark-run-mode-hint)
@@ -5809,7 +6331,8 @@ before the one point normalizes onto, and a COUNT of zero marks one, as
 a bare press does -- see `donkey--object-count'."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (let ((extend (donkey--mark-run-continuing-p)))
+  (let ((extend (donkey--mark-run-continuing-p))
+        (start (point)))
     (unless extend
      (let ((origin (point)))
       ;; From a gap, onto the word ahead or, for a backward press and
@@ -5842,6 +6365,10 @@ a bare press does -- see `donkey--object-count'."
           (let ((far (donkey--object-end-before
                       (point) #'backward-word #'forward-word)))
             (forward-word n)
+            ;; Nothing behind the first word to count back over.
+            (when (>= (point) far)
+              (goto-char start)
+              (user-error "No word before point"))
             (push-mark far t)
             (activate-mark))
         (mark-word n extend))))
@@ -5929,20 +6456,25 @@ number of objects forward again happens to land.
 BACKWARD and FORWARD are the object\\='s own motions.  Going back one and
 forward one lands on the end of the object behind, from any position a
 caller has normalized; the `min' is for a caller that has not, where
-FORWARD could return past where it started."
+FORWARD could return past where it started.  Where there is no object
+behind ORIGIN -- the first in its list -- the answer is ORIGIN itself."
   (save-excursion
     (goto-char origin)
-    (funcall backward 1)
-    (funcall forward 1)
-    (min (point) origin)))
+    (condition-case nil
+        (progn
+          (funcall backward 1)
+          (funcall forward 1)
+          (min (point) origin))
+      ;; No object behind ORIGIN in its list: nothing to reach back to.
+      (scan-error origin))))
 
 (defun donkey--refuse-blank-mark (object &optional origin)
   "Drop the region and report when it is nothing but whitespace.
 
 OBJECT names what was asked for, so the message reads \"No sentence at
-or before point\" or \"No paragraph at or before point\" -- the two
-commands whose motions walk to the end of a blank buffer and back
-rather than signaling, and so end up \"marking\" the blank.
+or before point\" -- the command whose motions walk to the end of a
+blank stretch and back rather than signaling, and so can end up
+\"marking\" the blank.
 
 ORIGIN is where the key was pressed, and point goes back there before
 the report, so a refusal leaves the cursor where the key was.  For a
@@ -5985,6 +6517,9 @@ same run from the other end, as does every member of
   (donkey--ensure-non-rectangle-selection)
   (let ((origin (point))
         (extending (donkey--mark-run-continuing-p)))
+   ;; Nothing but blank to mark: refused before the mark moves.
+   (unless (or extending (donkey--text-before-p (point-max)))
+     (user-error "No sentence at or before point"))
    ;; Only a fresh press normalizes onto a sentence start.
    (condition-case nil
       (unless extending
@@ -6119,11 +6654,19 @@ marks one, as a bare press does -- see `donkey--object-count'."
       (let ((start (point)))
         (forward-paragraph n)
         (donkey--absorb-paragraph-blank start)
+        ;; Nothing but blank between the two ends -- a blank buffer, or
+        ;; a negative count from the first paragraph -- is refused
+        ;; before the mark moves, with the cursor where it was.
+        (when (save-excursion
+                (let ((end (max start (point))))
+                  (goto-char (min start (point)))
+                  (skip-chars-forward "[:space:]\n" end)
+                  (= (point) end)))
+          (goto-char origin)
+          (user-error "No paragraph at or before point"))
         (push-mark (point) nil t)
         (goto-char start))
       (activate-mark))
-    (unless extending
-      (donkey--refuse-blank-mark "paragraph" origin))
     (message "Paragraph marked")))
 
 (defun donkey-mark-paragraph-backward (&optional count)
@@ -6173,14 +6716,14 @@ before the one point normalizes onto, and a COUNT of zero marks one, as
 a bare press does -- see `donkey--object-count'."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
-  (let ((n (donkey--object-count count)))
+  (let ((n (donkey--object-count count))
+        (start (point)))
    (if (donkey--mark-run-continuing-p)
       ;; Grown by moving the mark; the punctuation trim runs again for
       ;; the new end.
       (set-mark (save-excursion
                   (goto-char (mark t))
-                  (forward-sexp n)
-                  (when (> n 0)
+                  (when (> (donkey--forward-sexps n) 0)
                     (donkey--trim-symbol-punctuation))
                   (point)))
     (let ((origin (point)))
@@ -6205,19 +6748,41 @@ a bare press does -- see `donkey--object-count'."
                                  (point) #'backward-sexp #'forward-sexp))
                      (donkey--trim-symbol-punctuation)
                      (point))))
-          (forward-sexp n)
+          (donkey--forward-sexps n)
           (donkey--trim-symbol-prefix)
+          ;; Nothing behind the first symbol to count back over.
+          (when (>= (point) far)
+            (goto-char start)
+            (user-error "No symbol before point"))
           (push-mark far t))
-      (forward-sexp n)
-      (when (> n 0)
-        (donkey--trim-symbol-punctuation))
-      (push-mark (point) t)
-      ;; Back over the same number of symbols the first step covered.
-      (backward-sexp n)
-      (when (> n 0)
-        (donkey--trim-symbol-prefix)))
+      (let ((moved (donkey--forward-sexps n)))
+        (when (> moved 0)
+          (donkey--trim-symbol-punctuation))
+        (push-mark (point) t)
+        ;; Back over the same number of symbols the first step covered.
+        (donkey--forward-sexps (- moved))
+        (when (> moved 0)
+          (donkey--trim-symbol-prefix))))
     (activate-mark)))
   (message "Symbol marked"))
+
+(defun donkey--forward-sexps (n)
+  "Move over N balanced expressions, fewer where they run out; return how many.
+
+A negative N moves backward.  The end of the enclosing list or of the
+buffer stops the walk where it got to rather than signaling, the way a
+count of words stops at the buffer\\='s end."
+  (let ((step (if (< n 0) -1 1))
+        (done 0))
+    (condition-case nil
+        (while (/= done n)
+          (let ((before (point)))
+            (forward-sexp step)
+            (if (= (point) before)
+                (setq n done)
+              (setq done (+ done step)))))
+      (scan-error nil))
+    done))
 
 (defun donkey-mark-symbol-backward (&optional count)
   "Select the symbol at point, or grow a symbol selection BACKWARD.
@@ -6374,6 +6939,73 @@ places by `donkey--split-copy-edges'.")
 (defvar-local donkey--split-strayed nil
   "Non-nil where the running command changed text away from the places.")
 
+(defvar-local donkey--split-lost nil
+  "Non-nil where the running command made a change the writing cannot record.
+
+The writing\\='s undo record is then left as Emacs made it; see
+`donkey--split-writing-entry'.")
+
+(defvar-local donkey--split-seen-tick nil
+  "`buffer-chars-modified-tick' as the change hooks last saw a change end.
+
+Set as a writing opens over the places, after every change the hooks
+see and after every command while it lasts, with
+`donkey--split-seen-size' and `donkey--split-seen-undo'; see
+`donkey--split-changed-unseen-p'.")
+
+(defvar-local donkey--split-seen-size nil
+  "`buffer-size' as `donkey--split-seen-tick' was last set.")
+
+(defvar-local donkey--split-seen-undo nil
+  "The newest entry of `buffer-undo-list' as the hooks last saw it.
+
+The list\\='s first cons holding an entry other than a boundary, as
+`donkey--split-undo-top' finds it.")
+
+(defvar-local donkey--split-unseen nil
+  "Non-nil where a change began with the text changed since the hooks last looked.")
+
+(defun donkey--split-undo-top ()
+  "Return the first cons of `buffer-undo-list' holding a change, or nil.
+
+Boundaries are passed over, since the command loop pushes them between
+commands.  Nil also where undo is off."
+  (let ((tail (and (listp buffer-undo-list) buffer-undo-list)))
+    (while (and (consp tail) (null (car tail)))
+      (setq tail (cdr tail)))
+    (and (consp tail) tail)))
+
+(defun donkey--split-note-seen (&optional undo)
+  "Note the buffer as the split\\='s hooks see it now.
+
+Sets `donkey--split-seen-tick' and `donkey--split-seen-size', and with
+UNDO non-nil `donkey--split-seen-undo' too."
+  (setq donkey--split-seen-tick (buffer-chars-modified-tick)
+        donkey--split-seen-size (buffer-size))
+  (when undo
+    (setq donkey--split-seen-undo (donkey--split-undo-top))))
+
+(defun donkey--split-changed-unseen-p ()
+  "Return non-nil where the text changed since the split\\='s hooks last looked.
+
+The tick has moved and the change shows: the buffer is not the size it
+was, or the undo list has an entry the hooks never saw.  So a change
+made out of sight -- from an indirect buffer sharing the text, or with
+the change hooks bound off -- is found, and a change that put back what
+it took away with undo off is not: that is how an input method such as
+`swedish-postfix' shows the key it is waiting on, and it changes
+nothing.  Coverage stops there: a change out of sight that keeps the
+size, with undo off as well, is not found."
+  (and (not (eql (buffer-chars-modified-tick) donkey--split-seen-tick))
+       (or (not (eql (buffer-size) donkey--split-seen-size))
+           (and (listp buffer-undo-list)
+                (not (eq (donkey--split-undo-top) donkey--split-seen-undo))))))
+
+(defconst donkey--split-unseen-message
+  "the text changed where the split could not follow it, so undo will \
+not reach every place"
+  "What is said as a writing ends over a change its hooks did not see.")
+
 (defvar donkey--split-copying nil
   "Bound non-nil while Split mode makes its own copies, which are not noted.")
 
@@ -6476,8 +7108,9 @@ at 850,000 places is a tenth of a second.")
   "A hidden buffer holding the target\\='s texts, for comparing places against.
 
 Filled by `donkey--split-set-target', NEW from its start and OLD after
-it.  `compare-buffer-substrings' against it allocates nothing, where a
-`buffer-substring' at every place costs a string each.")
+it, and emptied when the split ends.  `compare-buffer-substrings'
+against it allocates nothing, where a `buffer-substring' at every
+place costs a string each.")
 
 (defvar donkey--split-buffer nil
   "The buffer an armed split belongs to, or nil when none is armed.
@@ -6508,6 +7141,14 @@ end it.")
   "Bound non-nil while a split should search the whole buffer.
 
 Whatever is selected; see `donkey-split'.")
+
+(defvar donkey--split-hidden 0
+  "How many matches the last search left out for being hidden.
+
+Counted by `donkey--split-search'; see `donkey--split-hidden-p'.")
+
+(defvar-local donkey--split-hidden-count 0
+  "How many hidden matches the live split left out, for its reminder.")
 
 (defvar donkey--split-banked nil
   "The banked spans a split is searching, bound while it is made.
@@ -6819,7 +7460,8 @@ is quit leaves the selection, and a split of cursors, as they were."
                           place))
                       spans))
         (setq donkey--split-agree
-              (donkey--split-places-agree-p donkey--split-places)))
+              (donkey--split-places-agree-p donkey--split-places)
+              donkey--split-hidden-count donkey--split-hidden))
       (length spans))))
 
 (defun donkey--split-places-agree-p (places)
@@ -6840,27 +7482,64 @@ places the copies were a third of what \\[donkey-split] cost."
                                      nil beg end nil start (+ start length)))))))
                  (cdr places))))
 
+(defun donkey--split-hidden-p (beg end)
+  "Return non-nil where the match from BEG to END is hidden from view.
+
+A match is hidden where any character of it is invisible, and an empty
+match where the character before it is, or at the buffer\\='s start the
+one after it: so a line\\='s start or end inside a folded subtree is
+hidden, and the end of the heading line folding it is not; see
+`invisible-p'."
+  (if (= beg end)
+      (invisible-p (if (= beg (point-min)) beg (1- beg)))
+    (let ((pos beg)
+          (hidden nil))
+      (while (and (not hidden) (< pos end))
+        (if (invisible-p pos)
+            (setq hidden t)
+          (setq pos (next-single-char-property-change pos 'invisible nil end))))
+      hidden)))
+
 (defun donkey--split-search (regexp ranges)
   "Return every REGEXP match inside RANGES as (BEG . END), in buffer order.
 
 RANGES is a list of (BEG . END) in buffer order, as
 `donkey--split-bounds' returns them.  Case is ignored as
 `replace-regexp' ignores it: where `case-fold-search' is on and REGEXP
-holds no capital letter, unless `search-upper-case' says otherwise."
+holds no capital letter, unless `search-upper-case' says otherwise.  A
+match hidden from view, in a folded subtree for one, is left out unless
+`search-invisible' is t, and `donkey--split-hidden' counts those left
+out; see `donkey--split-hidden-p'."
   (let ((case-fold-search (if (and case-fold-search search-upper-case)
                               (isearch-no-upper-case-p regexp t)
                             case-fold-search))
-        (spans nil))
+        (spans nil)
+        ;; Most text hides nothing: asked once for the whole search, so
+        ;; a search over every line asks nothing more of each match.
+        (hiding (and ranges
+                     (not (eq search-invisible t))
+                     (let ((beg (car (car ranges)))
+                           (end (cdr (car (last ranges)))))
+                       (or (get-char-property beg 'invisible)
+                           (< (next-single-char-property-change
+                               beg 'invisible nil end)
+                              end))))))
+    (setq donkey--split-hidden 0)
     (save-excursion
       (dolist (range ranges)
         (goto-char (car range))
         (let ((done nil))
           (while (and (not done)
                       (re-search-forward regexp (cdr range) t))
-            (unless (and (eobp) (bolp)
-                         (> (point-max) (point-min))
-                         (= (match-beginning 0) (match-end 0)))
-              (push (cons (match-beginning 0) (match-end 0)) spans))
+            (cond
+             ((and (eobp) (bolp)
+                   (> (point-max) (point-min))
+                   (= (match-beginning 0) (match-end 0))))
+             ((and hiding
+                   (donkey--split-hidden-p (match-beginning 0) (match-end 0)))
+              (setq donkey--split-hidden (1+ donkey--split-hidden)))
+             (t
+              (push (cons (match-beginning 0) (match-end 0)) spans)))
             ;; A zero-width match has to be stepped over or the search
             ;; never advances, and stepping past this range would leave
             ;; point on the wrong side of the bound `re-search-forward'
@@ -6907,9 +7586,26 @@ since the split was made, whichever verb ran."
         ('edited    (format "Split: edited at %s" places))
         (_         (format "Split ended -- %s left alone" places))))))
 
+(defvar-local donkey--split-count nil
+  "The list of places last counted, and how many it held, as (PLACES . N).
+
+See `donkey--split-place-count'.")
+
+(defun donkey--split-place-count ()
+  "Return the number of places in the split.
+
+Counted once for each list of places, rather than for every reminder
+repainted after every key: at 850,000 places a count is a millisecond
+and a half.  Every change to the places makes a new list, as
+`donkey--split-cursors-settle' does after a cursor is dropped."
+  (if (eq (car donkey--split-count) donkey--split-places)
+      (cdr donkey--split-count)
+    (cdr (setq donkey--split-count
+               (cons donkey--split-places (length donkey--split-places))))))
+
 (defun donkey--split-hint ()
   "Return the echo-area reminder for the phase the split is in."
-  (let ((n (length donkey--split-places)))
+  (let ((n (donkey--split-place-count)))
     (cond
      ((and donkey--split-cursors (eq donkey--split-phase 'edit))
       (format "Split: writing at %s -- C-g back to the cursors"
@@ -6931,9 +7627,10 @@ i a I A o O c d y p D, f find, C-g"
 \\[donkey-split-add-cursor-above]")))
      (t
       (format
-       "Split: %s in %s -- i before, a after, c change, d delete, w wrap, C-g"
+       "Split: %s in %s%s -- i before, a after, c change, d delete, w wrap, C-g"
        (if (= n 1) "1 place" (format "%d places" n))
-       donkey--split-scope)))))
+       donkey--split-scope
+       (donkey--split-hidden-note donkey--split-hidden-count))))))
 
 (defun donkey--split-sync ()
   "Copy the place point is in onto the others, and keep the reminder up.
@@ -6952,7 +7649,19 @@ deletion reaching just past its edge -- \\`DEL' at its start, \\`C-d' at
 its end -- is made at every other place\\='s edge too; see
 `donkey--split-copy-edges'.  An edit away from the places ends the
 split, as does a place that cannot be written, and says why.  Every
-place is copied whatever the buffer\\='s narrowing, or none is."
+place is copied whatever the buffer\\='s narrowing, or none is.  A
+change the hooks did not see ends the split before anything is copied;
+see `donkey--split-note-unseen'.
+
+In a buffer that is not the split\\='s own -- a clone of it, which
+starts with copies of the split\\='s hooks, state and places -- it takes
+the copies away instead; see `donkey--split-disown'."
+  (if (not (eq (current-buffer) donkey--split-buffer))
+      (donkey--split-disown)
+    (donkey--split-sync-home)))
+
+(defun donkey--split-sync-home ()
+  "Do `donkey--split-sync'\\='s work in the split\\='s own buffer."
   (when (memq this-command donkey--split-repeatable-verbs)
     (setq donkey--split-repeat
           (list :verb this-command current-prefix-arg last-command-event)))
@@ -6978,6 +7687,12 @@ place is copied whatever the buffer\\='s narrowing, or none is."
             (widen)
             (let ((here (donkey--split-place-at-point)))
               (cond
+               ;; The text changed where the hooks could not see it: nothing
+               ;; is copied over it, and Emacs's own record of it stands.
+               ((donkey--split-note-unseen)
+                (donkey--split-close-edit t)
+                (donkey--split-dissolve t)
+                (message "Split ended -- %s" donkey--split-unseen-message))
                ;; Insert state was left -- by the quit key, or by anything
                ;; else that reaches Normal state.  The writing is over, so
                ;; the split is: leaving the places held would keep them
@@ -6995,10 +7710,19 @@ place is copied whatever the buffer\\='s narrowing, or none is."
                ((null here)
                 ;; Only while editing.  During the chooser nothing has
                 ;; moved point yet, and ending the split there would end
-                ;; it on arrival.
+                ;; it on arrival.  What the command wrote in the place it
+                ;; left is copied first, so the split ends with every
+                ;; place holding it, as its report says.
                 (when (and (eq donkey--split-phase 'edit)
                            donkey--split-primary)
-                  (donkey--split-dissolve)))
+                  (if (or (not (overlay-buffer donkey--split-primary))
+                          (donkey--split-copy donkey--split-primary
+                                              edge-edits))
+                      (donkey--split-dissolve)
+                    (donkey--split-close-edit t)
+                    (donkey--split-dissolve t)
+                    (message "Split ended -- %s" "an edit beside a place \
+could not be made at every place"))))
                (t
                 (unless (eq here donkey--split-primary)
                   (let ((still (eql donkey--split-synced-tick
@@ -7017,9 +7741,13 @@ place is copied whatever the buffer\\='s narrowing, or none is."
                         donkey--split-text (donkey--split-place-text here)))
                 (if (donkey--split-copy here edge-edits)
                     (progn
-                      (setq donkey--split-changes nil)
+                      (setq donkey--split-changes nil
+                            donkey--split-lost nil)
                       (donkey--split-draw-cursors)
                       (donkey--repaint-hint (donkey--split-hint)))
+                  ;; Nothing more is copied: the other places keep what
+                  ;; they hold, and each is recorded as it stands.
+                  (donkey--split-close-edit t)
                   (donkey--split-dissolve t)
                   (message "Split ended -- %s" "an edit beside a place could \
 not be made at every place"))))))
@@ -7027,7 +7755,11 @@ not be made at every place"))))))
          (donkey--split-close-edit t)
          (donkey--split-dissolve t)
          (message "Split ended -- %s" (error-message-string err))))
-      (setq donkey--split-synced-tick (buffer-chars-modified-tick)))))
+      (setq donkey--split-synced-tick (buffer-chars-modified-tick))
+      ;; Whatever the command did was looked at above; what an input
+      ;; method shows next is weighed against the buffer as it is now.
+      (when donkey--split-writing
+        (donkey--split-note-seen t)))))
 
 (defun donkey--split-primary-start ()
   "Return where the place being written begins, or nil where none is."
@@ -7137,7 +7869,8 @@ places touching; signal where a place cannot be written."
   "The buffer an undo entry compares the places\\=' text from.
 
 Kept rather than made for each undo: a buffer made and killed runs
-what a configuration hangs on the buffer hooks.")
+what a configuration hangs on the buffer hooks.  Emptied once the
+places are checked.")
 
 (defun donkey--split-check-buffer ()
   "Return `donkey--split-check-buffer', making it where it is not live."
@@ -7293,8 +8026,8 @@ are still behind."
 
 The sweep\\='s timer function.  Nothing is done where the split has
 ended, or is choosing a verb rather than being written.  A place that
-refuses ends the split, saying why, as it would from
-`donkey--split-sync'."
+refuses, or a change the split\\='s hooks did not see, ends the split,
+saying why, as it would from `donkey--split-sync'."
   (donkey--split-holding-gc
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
@@ -7302,16 +8035,21 @@ refuses ends the split, saying why, as it would from
         (when (and donkey--split-behind
                    (eq donkey--split-buffer buffer)
                    (eq donkey--split-phase 'edit))
-          (condition-case err
-              (save-restriction
-                (widen)
-                (when (donkey--split-sweep)
-                  (donkey--split-sweep-arm))
-                (setq donkey--split-synced-tick (buffer-chars-modified-tick)))
-            (error
-             (donkey--split-close-edit t)
-             (donkey--split-dissolve t)
-             (message "Split ended -- %s" (error-message-string err)))))))))
+          (if (donkey--split-note-unseen)
+              (progn
+                (donkey--split-close-edit t)
+                (donkey--split-dissolve t)
+                (message "Split ended -- %s" donkey--split-unseen-message))
+            (condition-case err
+                (save-restriction
+                  (widen)
+                  (when (donkey--split-sweep)
+                    (donkey--split-sweep-arm))
+                  (setq donkey--split-synced-tick (buffer-chars-modified-tick)))
+              (error
+               (donkey--split-close-edit t)
+               (donkey--split-dissolve t)
+               (message "Split ended -- %s" (error-message-string err))))))))))
 
 (defun donkey--split-sweep-flush ()
   "Write every place still behind now, whatever keys are waiting."
@@ -7321,6 +8059,17 @@ refuses ends the split, saying why, as it would from
       (save-restriction
         (widen)
         (donkey--split-sweep nil t)))))
+
+(defun donkey--split-save-flush ()
+  "Write every place still behind before the split\\='s buffer is saved.
+
+On `before-save-hook' while a split is armed, ahead of the reader\\='s
+own functions there, so the file and whatever formats it get the text
+the buffer shows.  Nothing is written over a change the split did not
+see; see `donkey--split-note-unseen'.  A place that cannot be written
+is reported by Emacs, which saves all the same."
+  (unless (donkey--split-note-unseen)
+    (donkey--split-sweep-flush)))
 
 (defun donkey--split-text-at (texts i)
   "Return element I of TEXTS, as `donkey--split-texts' shapes them.
@@ -7431,27 +8180,32 @@ place, so no place holds anything but what it held; see
             (erase-buffer)
             (set-buffer-multibyte multibyte)
             (insert one)))
-        (while (< i n)
-          (let* ((pos (aref positions i))
-                 (text (donkey--split-text-at now i))
-                 (length (length text)))
-            (unless (and (<= (point-min) pos)
-                         (<= (+ pos length) (point-max))
-                         (if one
-                             (eq 0 (compare-buffer-substrings
-                                    scratch 1 (1+ length)
-                                    nil pos (+ pos length)))
-                           (string= text (buffer-substring-no-properties
-                                          pos (+ pos length)))))
-              (error "The split's places no longer hold what was \
+        (unwind-protect
+            (while (< i n)
+              (let* ((pos (aref positions i))
+                     (text (donkey--split-text-at now i))
+                     (length (length text)))
+                (unless (and (<= (point-min) pos)
+                             (<= (+ pos length) (point-max))
+                             (if one
+                                 (eq 0 (compare-buffer-substrings
+                                        scratch 1 (1+ length)
+                                        nil pos (+ pos length)))
+                               (string= text (buffer-substring-no-properties
+                                              pos (+ pos length)))))
+                  (error "The split's places no longer hold what was \
 written at them"))
-            ;; Where the text will stand once the ones before it
-            ;; have moved.
-            (aset moved i (+ pos shift))
-            (setq shift (+ shift
-                           (- (length (donkey--split-text-at then i))
-                              length))))
-          (setq i (1+ i))))
+                ;; Where the text will stand once the ones before it
+                ;; have moved.
+                (aset moved i (+ pos shift))
+                (setq shift (+ shift
+                               (- (length (donkey--split-text-at then i))
+                                  length))))
+              (setq i (1+ i)))
+          ;; The buffer outlives the undo: it keeps no text once checked.
+          (when one
+            (with-current-buffer scratch
+              (erase-buffer)))))
       (let ((buffer-undo-list t)
             (deactivate-mark nil)
             (donkey--split-put-back-places
@@ -7672,7 +8426,10 @@ the primary, and whatever the command that ended the writing changed
 deletions past its edges and changes away from the places included;
 see `donkey--split-writing-entry' and `donkey--split-record'.  With
 NO-FLUSH non-nil the places still behind are left as they are,
-because writing them is what failed.
+because writing them is what failed; so they are where two places have
+come to touch, since what was copied into one would land in the other,
+and where the text changed out of the split\\='s sight, see
+`donkey--split-note-unseen'.
 
 Nothing is replaced where what was recorded can no longer be found,
 which a garbage collection can bring about, or where a change reached
@@ -7680,6 +8437,10 @@ into a place so that the two cannot be told apart: the record then
 stays as Emacs made it, without the copies."
   (donkey--split-holding-gc
     (when donkey--split-writing
+      (when (or (donkey--split-note-unseen)
+                (and (not no-flush) donkey--split-behind
+                     (donkey--split-touching-p)))
+        (setq no-flush t))
       (setq donkey--split-writing nil)
       (unless no-flush
         (condition-case err
@@ -7709,7 +8470,9 @@ stays as Emacs made it, without the copies."
             donkey--split-edit-base nil
             donkey--split-edit-initial nil
             donkey--split-edge-texts nil
-            donkey--split-changes nil))))
+            donkey--split-changes nil
+            donkey--split-lost nil
+            donkey--split-unseen nil))))
 
 (defun donkey--split-open-record ()
   "Open the undo record of a writing over the places.
@@ -7783,13 +8546,17 @@ before.  Does nothing where no writing is open."
 A list (POSITIONS FROM TO) over every live place and every change
 the ending command made away from the places, in buffer order; nil
 where none of them changed anything, and `lost' where a change cannot
-be told apart from a place.  With NO-FLUSH non-nil each place is
-read for what it holds, since the places were not all written; so it
-is where the written place holds what was never copied."
-  (let ((strays (donkey--split-stray-changes)))
+be told apart from a place or could not be weighed at all, see
+`donkey--split-lost', or where two places have come to overlap, as a
+replacement reaching over several of them leaves them.  With NO-FLUSH
+non-nil each place is read for what it holds, since the places were
+not all written; so it is where the written place holds what was never
+copied."
+  (let ((strays (if donkey--split-lost 'lost (donkey--split-stray-changes))))
     (if (eq strays 'lost)
         'lost
-      (let ((initial donkey--split-edit-initial)
+      (catch 'donkey--split-overlap
+       (let ((initial donkey--split-edit-initial)
             (edges donkey--split-edge-texts)
             (read (or no-flush strays
                       (and donkey--split-primary
@@ -7799,6 +8566,7 @@ is where the written place holds what was never copied."
                                        donkey--split-text)))))
             (index -1)
             (changed nil)
+            (last-end nil)
             positions from to)
         (cl-flet ((take (position was now)
                     (unless (equal was now)
@@ -7811,6 +8579,9 @@ is where the written place holds what was never copied."
             (when (overlay-buffer place)
               (let ((beg (overlay-start place))
                     (cell (and edges (aref edges index))))
+                (when (and last-end (< beg last-end))
+                  (throw 'donkey--split-overlap 'lost))
+                (setq last-end (overlay-end place))
                 ;; A change before this place, or a deletion at its
                 ;; start, which stood before it.
                 (while (and strays
@@ -7826,7 +8597,7 @@ is where the written place holds what was never copied."
         (and changed
              (list (vconcat (nreverse positions))
                    (donkey--split-texts (nreverse from))
-                   (donkey--split-texts (nreverse to))))))))
+                   (donkey--split-texts (nreverse to)))))))))
 
 (defun donkey--split-stray-changes ()
   "Return what the ending command changed away from the places, or `lost'.
@@ -7905,47 +8676,58 @@ after it in the same command moved it; nil where there are none, and
   "Make EDITS, the deletions seen just past HERE\\='s edges, at every other place.
 
 Each is (SIDE . TEXT), as `donkey--split-edge-edits' holds them.  At
-every other place as many characters are deleted on the same side,
-where there are that many, they reach no other place, and a line break
-stands among them exactly where one stood in TEXT.  Return nil where a
-place fails that, having deleted at the places after it.  What was
-deleted at each other place is noted in `donkey--split-edge-texts'
-once every place has had its deletions; HERE\\='s own deletions were
-noted by `donkey--split-edge-note-primary'."
-  (let* ((places donkey--split-places)
+every other place the same deletion is made on the same side where it
+takes the same TEXT there.  Where the text there differs it is made by
+count instead -- as many characters as TEXT holds -- only where the
+running command did nothing but delete, or write over characters in
+`overwrite-mode', and took as many characters as its count asked for,
+as \\`DEL', \\`C-d' and a typed character there do; a deletion sized by
+the text itself, a word or the rest of a line, would take something
+else at another place.  Either way the characters must be there and
+hold a line break exactly where TEXT does.  Return nil where a place
+fails that, having deleted at the places after it.  A deletion reaching
+into another place leaves the two touching, which the caller refuses;
+see `donkey--split-copy'.
+What was deleted at each other place is noted in
+`donkey--split-edge-texts' once every place has had its deletions;
+HERE\\='s own deletions were noted by `donkey--split-edge-note-primary'."
+  (let* ((places (vconcat donkey--split-places))
          (n (length places))
-         (texts (donkey--split-edge-texts-copy n)))
+         (texts (donkey--split-edge-texts-copy n))
+         (by-count (and (seq-every-p
+                         (lambda (change)
+                           (or (= (car change) (cadr change))
+                               (and overwrite-mode
+                                    (= (- (cadr change) (car change))
+                                       (nth 2 change)))))
+                         donkey--split-changes)
+                        (abs (prefix-numeric-value current-prefix-arg)))))
     (catch 'unlike
       (dolist (edit edits)
-        (let ((after (eq (car edit) 'after))
-              (count (length (cdr edit)))
-              (breaks (donkey--split-line-breaks (cdr edit)))
-              (index n))
-          (dolist (place (reverse places))
+        (let* ((after (eq (car edit) 'after))
+               (count (length (cdr edit)))
+               (breaks (donkey--split-line-breaks (cdr edit)))
+               (index n))
+          (while (> index 0)
             (setq index (1- index))
-            (cond
-             ((not (overlay-buffer place)))
-             ((eq place here))
-             (t
-              (let* ((edge (if after (overlay-end place) (overlay-start place)))
-                     (beg (if after edge (- edge count)))
-                     (end (if after (+ edge count) edge)))
-                (unless (and (>= beg (point-min))
-                             (<= end (point-max))
-                             (equal breaks
-                                    (donkey--split-line-breaks
-                                     (buffer-substring-no-properties beg end)))
-                             (not (seq-some
-                                   (lambda (other)
-                                     (and (not (eq other place))
-                                          (overlay-get other 'donkey-split)
-                                          (< (overlay-start other) end)
-                                          (> (overlay-end other) beg)))
-                                   (overlays-in beg end))))
-                  (throw 'unlike nil))
-                (donkey--split-edge-note
-                 texts index after (buffer-substring-no-properties beg end))
-                (delete-region beg end)))))))
+            (let ((place (aref places index)))
+              (unless (or (not (overlay-buffer place)) (eq place here))
+                (let* ((edge (if after (overlay-end place) (overlay-start place)))
+                       (beg (if after edge (- edge count)))
+                       (end (if after (+ edge count) edge))
+                       (there (and (>= beg (point-min))
+                                   (<= end (point-max))
+                                   (buffer-substring-no-properties beg end))))
+                  (unless (and there
+                               (or (eql count by-count)
+                                   (string= (cdr edit) there))
+                               (if breaks
+                                   (equal breaks
+                                          (donkey--split-line-breaks there))
+                                 (not (string-search "\n" there))))
+                    (throw 'unlike nil))
+                  (donkey--split-edge-note texts index after there)
+                  (delete-region beg end)))))))
       (setq donkey--split-edge-texts texts)
       t)))
 
@@ -8003,16 +8785,21 @@ Just after it where AFTER is non-nil, else just before it; see
 
 On `before-change-functions' while a split is being written.  Split
 mode\\='s own copies and an undo are not noted -- an undo puts every
-place back at once.  Never signals: an error here would take every
-package\\='s change hooks with it."
+place back at once.  A change beginning on text that changed since the
+hooks last saw a change end sets `donkey--split-unseen'; see
+`donkey--split-changed-unseen-p'.  Never signals: an error here would
+take every package\\='s change hooks with it."
   (setq donkey--split-pending nil)
+  (when (donkey--split-changed-unseen-p)
+    (setq donkey--split-unseen t))
   (unless (or donkey--split-copying undo-in-progress)
     (condition-case nil
         (let ((place donkey--split-primary))
           (setq donkey--split-pending
                 (list beg end (overlay-start place) (overlay-end place)
                       (buffer-substring-no-properties beg end))))
-      (error (setq donkey--split-strayed t)))))
+      (error (setq donkey--split-strayed t
+                   donkey--split-lost t)))))
 
 (defun donkey--split-noted-change (beg end length)
   "Weigh the change noted as it began, now that it ended at BEG, END, LENGTH.
@@ -8022,19 +8809,46 @@ that left the text as it was -- a text property set -- is no change.
 A change inside the written place is left to the copying after the
 command; a deletion reaching just past the place\\='s start or end is
 kept in `donkey--split-edge-edits'; anything else away from the places
-sets `donkey--split-strayed'.  Never signals, for the reason
-`donkey--split-note-change' gives."
+sets `donkey--split-strayed'.  In `overwrite-mode' a character typed
+at the place\\='s end writes over the one after it: the place takes the
+typed character in, and the one written over is a deletion past its
+end.  What the change replaced is the part of
+the text noted as it began that BEG and LENGTH name, which is less
+than all of it where the change ended over less than it began over, as
+a case command does.  Every change ending here, Split mode\\='s own
+included, is noted as seen; see `donkey--split-note-seen'.  Never
+signals, for the reason `donkey--split-note-change' gives."
+  (donkey--split-note-seen (listp buffer-undo-list))
   (let ((pending donkey--split-pending))
     (setq donkey--split-pending nil)
     (when pending
       (condition-case nil
           (cl-destructuring-bind (old-beg old-end start finish text) pending
+            (let ((offset (- beg old-beg)))
+              (unless (and (<= 0 offset) (<= (+ offset length) (length text)))
+                (error "A change ended outside where it began"))
+              (setq text (substring text offset (+ offset length))
+                    old-beg beg
+                    old-end (+ beg length)))
             (unless (and (= length (- end beg))
                          (equal text (buffer-substring-no-properties beg end)))
               (push (list beg end length text) donkey--split-changes)
-              ;; What was inserted went in at OLD-BEG.
+              ;; Overwrite mode replaces the character after the place
+              ;; rather than inserting at its end, and the place does not
+              ;; take a replacement in: it takes it in here, and what was
+              ;; written over is a deletion just past its end.
+              (when (and overwrite-mode
+                         (> end beg) (> length 0)
+                         (= beg finish)
+                         (= beg (overlay-end donkey--split-primary)))
+                (move-overlay donkey--split-primary
+                              (overlay-start donkey--split-primary) end))
+              ;; What was put in has to be inside the written place as it
+              ;; now stands: text replaced just past an edge stays
+              ;; outside it.
               (when (and (> end beg)
-                         (not (<= start old-beg finish)))
+                         (not (and (<= (overlay-start donkey--split-primary) beg)
+                                   (<= end (overlay-end donkey--split-primary)))))
                 (setq donkey--split-strayed t))
               (when (< old-beg old-end)
                 (when (< old-beg start)
@@ -8056,7 +8870,22 @@ sets `donkey--split-strayed'.  Never signals, for the reason
                          (eq (char-before end) ?\n)
                          (= end (overlay-end donkey--split-primary)))
                 (donkey--split-take-blanks))))
-        (error (setq donkey--split-strayed t))))))
+        (error (setq donkey--split-strayed t
+                     donkey--split-lost t))))))
+
+(defun donkey--split-note-unseen ()
+  "Return non-nil where the writing\\='s text changed out of its hooks\\=' sight.
+
+While a split is being written its change hooks see every change in its
+buffer, Split mode\\='s own copies included.  A change made where they
+cannot see it -- from an indirect buffer sharing the text, or with the
+hooks bound off -- is found by `donkey--split-changed-unseen-p'.
+Nothing can then be copied over the places or recorded for them
+safely, so the writing is marked lost; see `donkey--split-lost'."
+  (when (and donkey--split-writing
+             (or donkey--split-unseen
+                 (donkey--split-changed-unseen-p)))
+    (setq donkey--split-lost t)))
 
 (defun donkey--split-take-blanks ()
   "Take the blanks just after each place into it, noted for undo.
@@ -8138,8 +8967,15 @@ the current one, so both are cleared."
               donkey--split-phase nil
               donkey--split-did nil
               donkey--split-agree nil
+              donkey--split-hidden-count 0
+              donkey--split-count nil
               donkey--split-edge-edits nil
               donkey--split-strayed nil
+              donkey--split-lost nil
+              donkey--split-unseen nil
+              donkey--split-seen-tick nil
+              donkey--split-seen-size nil
+              donkey--split-seen-undo nil
               donkey--split-pending nil
               donkey--split-tick nil
               donkey--split-target nil
@@ -8163,10 +8999,64 @@ the current one, so both are cleared."
         (remove-hook 'post-command-hook #'donkey--split-sync t)
         (remove-hook 'kill-buffer-hook #'donkey--split-flush t)
         (remove-hook 'change-major-mode-hook #'donkey--split-flush t)
+        (remove-hook 'before-save-hook #'donkey--split-save-flush t)
         (remove-hook 'before-change-functions #'donkey--split-note-change t)
         (remove-hook 'after-change-functions #'donkey--split-noted-change t)))
     (remove-hook 'post-gc-hook #'donkey--split-note-gc)
-    (setq donkey--split-gc-note nil)))
+    (remove-hook 'delete-terminal-functions #'donkey--split-terminal-deleted)
+    (setq donkey--split-gc-note nil)
+    ;; The hidden buffer the places were compared against keeps no text
+    ;; once there are no places.
+    (when (buffer-live-p donkey--split-text-buffer)
+      (with-current-buffer donkey--split-text-buffer
+        (erase-buffer)))))
+
+(defun donkey--split-disown ()
+  "Take a split\\='s copies out of this buffer, which is not the split\\='s own.
+
+A buffer cloned from the split\\='s own, as `clone-indirect-buffer'
+makes one, starts with copies of the split\\='s buffer-local hooks, of
+its state and of its places and cursors, none of which is a split.
+The hooks and the state go, and so does every overlay here that copies
+one of the split\\='s own, where it still stands as the copy was made."
+  (remove-hook 'post-command-hook #'donkey--split-sync t)
+  (remove-hook 'kill-buffer-hook #'donkey--split-flush t)
+  (remove-hook 'change-major-mode-hook #'donkey--split-flush t)
+  (remove-hook 'before-save-hook #'donkey--split-save-flush t)
+  (remove-hook 'before-change-functions #'donkey--split-note-change t)
+  (remove-hook 'after-change-functions #'donkey--split-noted-change t)
+  (let ((copied (make-hash-table :test #'equal)))
+    (dolist (overlay (append donkey--split-places donkey--split-cursor-marks))
+      (when (overlay-buffer overlay)
+        (puthash (list (overlay-start overlay) (overlay-end overlay)
+                       (overlay-properties overlay))
+                 t copied)))
+    (save-restriction
+      (widen)
+      (dolist (overlay (overlays-in (point-min) (point-max)))
+        (when (gethash (list (overlay-start overlay) (overlay-end overlay)
+                             (overlay-properties overlay))
+                       copied)
+          (delete-overlay overlay)))))
+  (dolist (variable '(donkey--split-places donkey--split-primary
+                      donkey--split-text donkey--split-phase
+                      donkey--split-writing donkey--split-cursors
+                      donkey--split-cursor-marks donkey--split-behind
+                      donkey--split-target donkey--split-sweep-timer))
+    (kill-local-variable variable)))
+
+(defun donkey--split-terminal-deleted (terminal)
+  "End the split armed on TERMINAL, which is being deleted.
+
+On `delete-terminal-functions' while a split is armed.  A client that
+disconnects takes its terminal with it, and a split noted there would
+stay armed, painted and holding its writing open, with no key left on
+that terminal that can end it.  Never signals."
+  (when (eq terminal donkey--split-terminal)
+    (condition-case err
+        (donkey--split-dissolve t)
+      (error (message "DONKEY: ending a split failed: %s"
+                      (error-message-string err))))))
 
 (defun donkey--split-flush ()
   "End the split as its buffer is killed or given a new major mode.
@@ -8174,10 +9064,13 @@ the current one, so both are cleared."
 Runs from `kill-buffer-hook' and `change-major-mode-hook' in the
 split\\='s buffer, while the places still count, so the report counts
 the real places and the chooser is disarmed at once rather than by the
-next key.  An error here would stop the buffer being killed, or its
-mode changing, so none is let out."
+next key.  In a buffer cloned from the split\\='s, it only takes the
+copies away; see `donkey--split-disown'.  An error here would stop the
+buffer being killed, or its mode changing, so none is let out."
   (condition-case err
-      (donkey--split-dissolve)
+      (if (eq (current-buffer) donkey--split-buffer)
+          (donkey--split-dissolve)
+        (donkey--split-disown))
     (error (message "DONKEY: ending a split failed: %s"
                     (error-message-string err)))))
 
@@ -8252,7 +9145,8 @@ caller has read it already."
     (cond
      ((seq-every-p #'string-empty-p texts) nil)
      (donkey--split-agree (car texts))
-     (t (string-join texts "\n")))))
+     (t (donkey--split-note-kill (string-join texts "\n") (length texts)
+                                 nil)))))
 
 (defun donkey--split-enter-edit (clear where)
   "Leave the chooser and open Insert state over the places.
@@ -8324,6 +9218,8 @@ be written."
             donkey--split-edit-initial donkey--split-text))
     (add-hook 'before-change-functions #'donkey--split-note-change nil t)
     (add-hook 'after-change-functions #'donkey--split-noted-change nil t)
+    (donkey--split-note-seen)
+    (setq donkey--split-unseen nil)
     (donkey-enter-insert)
     (donkey--repaint-hint (donkey--split-hint))))
 
@@ -8410,6 +9306,31 @@ Read from `donkey-mark-pair-delimiters', the one table
             (eq (char-after end) closer))))
    places))
 
+(defmacro donkey--split-atomic-change (&rest body)
+  "Run BODY, a change at the places of a split, as all of it or none of it.
+
+BODY runs under `atomic-change-group', so where it fails part of the
+way -- a cursor\\='s text is read-only, say -- every change it made is
+taken back.  In a split of cursors every cursor\\='s place, selection
+and memory are noted first and, where BODY does not finish, put back
+as noted and shown again, so the key after a refused one finds the
+cursors as the refused one found them."
+  (declare (indent 0) (debug t))
+  (let ((states (make-symbol "states"))
+        (done (make-symbol "done")))
+    `(let ((,states (and (donkey--split-cursors-live-p)
+                         (mapcar #'donkey--split-cursor-state
+                                 donkey--split-places)))
+           (,done nil))
+       (unwind-protect
+           (prog1 (atomic-change-group ,@body)
+             (setq ,done t))
+         (when (and ,states (not ,done))
+           (dolist (state ,states)
+             (when (overlay-buffer (car state))
+               (apply #'donkey--split-cursor-set state)))
+           (donkey--split-cursors-settle))))))
+
 (defun donkey-split-wrap (char)
   "Wrap every place in the split in the pair CHAR names, or take it off.
 
@@ -8454,7 +9375,7 @@ its own key, as `donkey-wrap-region' is reached in Normal state."
               (close (if (characterp closer)
                          (string closer)
                        (format "%s" closer))))
-          (atomic-change-group
+          (donkey--split-atomic-change
             (save-excursion
               (dolist (place targets)
                 (let ((beg (overlay-start place))
@@ -8606,6 +9527,8 @@ ends the split."
   (add-hook 'post-command-hook #'donkey--split-sync nil t)
   (add-hook 'kill-buffer-hook #'donkey--split-flush nil t)
   (add-hook 'change-major-mode-hook #'donkey--split-flush nil t)
+  (add-hook 'before-save-hook #'donkey--split-save-flush -90 t)
+  (add-hook 'delete-terminal-functions #'donkey--split-terminal-deleted)
   ;; From here on the holds can tell what a collection is due.
   (add-hook 'post-gc-hook #'donkey--split-note-gc)
   (donkey--split-note-gc)
@@ -8655,15 +9578,18 @@ The matches need not hold the same text: where they differ, \\`i' and
 reaches the kill ring one per line.  Case is ignored as
 `replace-regexp' ignores it: when REGEXP holds no capital letter.
 Refuses matches that touch, since text typed where two meet would
-belong to both, and an empty REGEXP, which would put a place at every
-character.
+belong to both, and an empty REGEXP.  A REGEXP that matches the empty
+string -- `^', `$', `\\b', `x*' -- holds an empty place wherever it
+does.  A match hidden from view, as in a folded subtree, is left out
+unless `search-invisible' is t, and the opening message says how many
+were.
 
 There is no limit on the number of matches.  Past
 `donkey--split-eager-places' of them, a keystroke writes the matches a
 window shows and the rest between keystrokes, the ones scrolled onto
-first; \\`C-g' waits for the last of them.  Once the split has ended
-its writing is one undo entry, whatever the number of matches; see
-`donkey--split-close-edit'.
+first; \\`C-g' waits for the last of them, and so does saving the
+buffer.  Once the split has ended its writing is one undo entry,
+whatever the number of matches; see `donkey--split-close-edit'.
 
 Bound to \\`f' in Normal state."
   (interactive
@@ -8679,7 +9605,8 @@ Bound to \\`f' in Normal state."
          (donkey--split-banked nil)
          (n (donkey--split-make regexp)))
     (if (zerop n)
-        (message "Nothing matched %s" regexp)
+        (message "Nothing matched %s%s" regexp
+                 (donkey--split-hidden-note donkey--split-hidden))
       ;; Letting go of the selection runs the reader's hooks, and a
       ;; split half made is worse than one whose selection lingers.
       (condition-case err
@@ -8698,6 +9625,12 @@ Bound to \\`f' in Normal state."
       ;; Spent last, once the split stands.
       (donkey--consume-banked-spans donkey--split-banked)
       (message "%s" (donkey--split-hint)))))
+
+(defun donkey--split-hidden-note (n)
+  "Return what to say of N hidden matches left out, or \"\" for none."
+  (if (zerop n)
+      ""
+    (format " (%d hidden match%s left out)" n (if (= n 1) "" "es"))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Split Cursors
@@ -8811,6 +9744,14 @@ On whichever keys `donkey-mark-run-mode-map' has them on, through
 `donkey-split-cursors-run-step-back' and its forward half, and the
 run\\='s keys that move a selection off its line are refused at the
 cursors by `donkey-split-cursors-run-refuse'.")
+
+(defconst donkey--split-cursor-countless
+  '(beginning-of-line donkey-mark-run-line-start)
+  "The replayed commands the cursors run without a count.
+
+With a count each goes to the start of another line, which a cursor
+never leaves; at the cursors the count is let go of, as
+`donkey-split-cursors-line-end' lets go of the count of \\`g l'.")
 
 (defun donkey--split-cursors-live-p ()
   "Return non-nil where a split of cursors is live in this buffer."
@@ -8932,13 +9873,13 @@ same around point, where a command that moved it is about to scroll."
                    (goto-char from)
                    (forward-line lines)
                    (point)))))
-    (cons (let ((height (window-body-height)))
+    (cons (let ((height (donkey--window-lines)))
             (cons (funcall reach (point) (- (* 2 height)))
                   (funcall reach (point) (* 2 height))))
           (mapcar (lambda (window)
                     (cons (window-start window)
                           (funcall reach (window-start window)
-                                   (* 2 (window-body-height window)))))
+                                   (* 2 (donkey--window-lines window)))))
                   (get-buffer-window-list nil nil t)))))
 
 (defun donkey--split-cursor-mark (pos shape)
@@ -9080,20 +10021,32 @@ sorted where a walk finds one out of place."
                             donkey--split-places)
                     #'car-less-than-car)))))
 
+(defun donkey--split-shown-line (above)
+  "Move to the start of the next line on the screen below point\\='s, or ABOVE it.
+
+Lines hidden inside a fold are passed over, as \\[next-line] passes over
+them; see `forward-visible-line'.  Return nil where there is no such
+line, the empty line after a buffer\\='s final newline included."
+  (let ((from (line-beginning-position)))
+    (forward-visible-line (if above -1 1))
+    (if above
+        (< (point) from)
+      (and (> (point) from) (not (eobp))))))
+
 (defun donkey--split-cursor-spots (from column n &optional above)
   "Return the N positions at COLUMN on the lines below FROM, nearest first.
 
 On the lines ABOVE it where ABOVE is non-nil.  A line shorter than
-COLUMN gives its end.  Signals a `user-error', changing nothing, where
-there are not N lines that way; the empty line after a buffer\\='s final
-newline is not one."
+COLUMN gives its end.  A line hidden in a fold is not one; see
+`donkey--split-shown-line'.  Signals a `user-error', changing nothing,
+where there are not N lines that way; the empty line after a
+buffer\\='s final newline is not one."
   (save-excursion
     (goto-char from)
     (let ((spots nil)
           (way (if above "above" "below")))
       (dotimes (_ n)
-        (unless (and (zerop (forward-line (if above -1 1)))
-                     (not (and (not above) (eobp) (bolp))))
+        (unless (donkey--split-shown-line above)
           (user-error (if spots
                           (format "Only %d line%s %s" (length spots)
                                   (if (cdr spots) "s" "") way)
@@ -9271,7 +10224,8 @@ many? " n))))))
 A region ending at a line\\='s start does not take that line, as
 `donkey--whole-line-span' reads it, except in a whole-line selection
 made with `donkey-visual-line-toggle', which takes every line it
-touches.  Nil without an active region."
+touches.  Lines hidden in a fold are left out; see
+`donkey--split-shown-line'.  Nil without an active region."
   (when (region-active-p)
     (let* ((beg (region-beginning))
            (end (region-end))
@@ -9288,8 +10242,7 @@ touches.  Nil without an active region."
         (while (and (< (point) (cdr span))
                     (not (and (eobp) (bolp) (> (point) (car span)))))
           (push (point) starts)
-          (forward-line 1)
-          (when (and (eobp) (not (bolp)))
+          (unless (donkey--split-shown-line nil)
             (goto-char (point-max)))))
       (nreverse starts))))
 
@@ -9303,9 +10256,10 @@ that many, and a negative COUNT adds above instead, as
 gets its cursor at its end.  Nothing is added where there are not
 COUNT lines below.  With a
 selection over two lines or more, the first press puts a cursor on
-every line it covers instead, the real one staying on point\\='s line:
-at point\\='s column, or at each line\\='s start for a whole-line
-selection made with \\[donkey-visual-line-toggle].  \\[donkey-split-add-cursor-above] adds above, and
+every line it covers instead, the real one staying on point\\='s line,
+or going to the nearest line the selection takes where it stops at the
+start of point\\='s: at point\\='s column, or at each line\\='s start
+for a whole-line selection made with \\[donkey-visual-line-toggle].  \\[donkey-split-add-cursor-above] adds above, and
 \\[donkey-split-drop-cursor] takes back the cursor added last.
 
 Every cursor then does what the real one does, on the keys Normal state
@@ -9329,13 +10283,21 @@ the selections, and with none ends the split."
                         0)
                        (t (current-column)))))
     (if (cdr lines)
-        (let* ((here (progn
+        (let* ((here (save-excursion
                        ;; Not the empty line after the final newline,
                        ;; which `donkey--split-cursor-spots' never takes.
                        (when (and (eobp) (bolp) (not (bobp)))
                          (forward-line -1))
-                       (line-beginning-position)))
-               (_ (move-to-column column))
+                       ;; A region that stops at the start of point's
+                       ;; line does not take that line: the real cursor
+                       ;; goes on the nearest line the region takes.
+                       (let ((line (line-beginning-position)))
+                         (if (memq line lines)
+                             line
+                           (or (car (last (seq-filter
+                                           (lambda (start) (< start line))
+                                           lines)))
+                               (car lines))))))
                (spots (delq nil
                             (mapcar (lambda (start)
                                       (unless (= start here)
@@ -9345,6 +10307,8 @@ the selections, and with none ends the split."
                                           (point))))
                                     lines))))
           (donkey--split-cursors-refuse-p (1+ (length spots)))
+          (goto-char here)
+          (move-to-column column)
           (donkey--split-cursors-start column)
           (donkey--split-cursors-add spots))
       (if (and count (< count 0))
@@ -9467,9 +10431,12 @@ The real cursor is never dropped: with only it left, the press beeps,
 and \\`C-g' ends the split."
   (interactive)
   (donkey--split-live-p)
+  ;; A cursor merged or dropped is a deleted overlay, so standing is
+  ;; asked of the overlay: a walk of the places for each would make a
+  ;; press cost the cursors squared.
   (setq donkey--split-cursor-order
         (seq-filter (lambda (place)
-                      (and (memq place donkey--split-places)
+                      (and (overlay-buffer place)
                            (not (eq place donkey--split-primary))))
                     donkey--split-cursor-order))
   (let ((place (or (car donkey--split-cursor-order)
@@ -9623,7 +10590,14 @@ messages are shown."
                 (when edit
                   (donkey--split-record-ops head (nreverse ops))
                   (setq donkey--split-did 'edited))
-                (when (and donkey--split-running (not edit))
+                ;; A press that moved no cursor's selection is no step,
+                ;; as at one cursor.
+                (when (and donkey--split-running (not edit)
+                           (not (equal (mapcar #'butlast states)
+                                       (mapcar (lambda (place)
+                                                 (butlast (donkey--split-cursor-state
+                                                           place)))
+                                               donkey--split-places))))
                   (push states donkey--split-run-history)
                   (setq donkey--split-run-redo nil)))
             (t
@@ -9643,7 +10617,7 @@ While the cursors are in a run, a command of
 `donkey--split-run-replayed' on those keys in `donkey-mark-run-mode-map'
 is run; otherwise the command Normal state has there, where it is one
 of `donkey--split-cursor-replayed'.  ARG is the prefix argument, given
-to every cursor."
+to every cursor, except to a command of `donkey--split-cursor-countless'."
   (interactive "P")
   (donkey--split-live-p)
   (let* ((keys (this-single-command-keys))
@@ -9656,7 +10630,8 @@ to every cursor."
                 (memq command donkey--split-cursor-replayed))
       (user-error "%s is not run at every cursor"
                   (key-description (this-single-command-keys))))
-    (donkey--split-cursors-run command arg)))
+    (donkey--split-cursors-run
+     command (unless (memq command donkey--split-cursor-countless) arg))))
 
 (defun donkey-split-cursors-run-toggle ()
   "Start a mark run at every cursor, or end it and let go of the selections.
@@ -9946,17 +10921,59 @@ non-nil for a selection."
       (let ((far (max (car line) (min (cdr line) (+ cursor count)))))
         (list (min cursor far) (max cursor far) nil))))))
 
-(defun donkey--split-cursors-kill-text (texts)
+(defvar donkey--split-kill-shape nil
+  "How the last kill a split made of several texts was put together, or nil.
+
+A list (KILL COUNT LINES): KILL is the string put on the `kill-ring',
+COUNT the number of texts in it, one for each place or cursor, and
+LINES non-nil where they are whole lines put together as they are
+rather than one text per line.  See `donkey--split-kill-pieces'.")
+
+(defun donkey--split-note-kill (kill count lines)
+  "Note KILL as made of COUNT texts, whole LINES or one per line; return KILL.
+
+See `donkey--split-kill-shape'."
+  (setq donkey--split-kill-shape (list kill count lines))
+  kill)
+
+(defun donkey--split-kill-pieces (text n)
+  "Return TEXT as N texts, one for each of N cursors, or nil where it is not.
+
+Where TEXT is the last kill a split made of N texts, each text comes
+back as it went, an empty one included; see `donkey--split-kill-shape'.
+Any other TEXT is N texts where it has N lines, a final newline ending
+the last of them.  A text that was a whole line comes back without its
+newline."
+  (when (> n 1)
+    (pcase-let ((`(,kill ,count ,lines) donkey--split-kill-shape))
+      (let* ((ours (and (stringp kill) (eql count n) (string= text kill)))
+             (pieces (split-string (if (and (string-suffix-p "\n" text)
+                                            (or lines (not ours)))
+                                       (substring text 0 -1)
+                                     text)
+                                   "\n")))
+        (and (= (length pieces) n) pieces)))))
+
+(defun donkey--split-cursors-whole-lines-p ()
+  "Return non-nil where every cursor has its whole line selected."
+  (seq-every-p (lambda (place) (overlay-get place 'donkey-line))
+               donkey--split-places))
+
+(defun donkey--split-cursors-kill-text (texts &optional lines)
   "Return what the cursors put on the `kill-ring' for TEXTS, one per cursor.
 
-Whole lines, which end in a newline, are put together as they are.
-Texts that agree are one copy of that text, and texts that differ are
-every text, one per line, as `donkey--split-kill-text' puts them."
-  (cond
-   ((seq-every-p (lambda (text) (string-suffix-p "\n" text)) texts)
-    (apply #'concat texts))
-   ((null (cdr (delete-dups (copy-sequence texts)))) (car texts))
-   (t (string-join texts "\n"))))
+With LINES non-nil the texts are whole lines, the buffer\\='s last of
+which may have no newline, and are put together as they are.
+Otherwise texts that agree are one copy of that text, and texts that
+differ are every text, one per line, as `donkey--split-kill-text' puts
+them.  What the kill holds is noted, so \\[donkey-split-cursors-yank]
+gives each cursor its own text back; see `donkey--split-kill-pieces'."
+  (donkey--split-note-kill
+   (cond
+    (lines (apply #'concat texts))
+    ((null (cdr (delete-dups (copy-sequence texts)))) (car texts))
+    (t (string-join texts "\n")))
+   (length texts) lines))
 
 (defun donkey-split-cursors-change (&optional count)
   "Empty every cursor\\='s selection, or COUNT characters, then type there.
@@ -9974,7 +10991,7 @@ one kill, as \\[donkey-split-change] puts it; characters do not."
                            donkey--split-places))
             (head buffer-undo-list)
             (ops nil))
-        (atomic-change-group
+        (donkey--split-atomic-change
           (dolist (span (reverse spans))
             (push (list (car span)
                         (buffer-substring-no-properties (car span)
@@ -10012,7 +11029,7 @@ one undo entry whatever the number of cursors, and the cursors stay."
           (message "Nothing to delete")
         (let ((head buffer-undo-list)
               (ops nil))
-          (atomic-change-group
+          (donkey--split-atomic-change
             (dolist (span (reverse spans))
               (push (list (car span)
                           (buffer-substring-no-properties (car span)
@@ -10022,7 +11039,8 @@ one undo entry whatever the number of cursors, and the cursors stay."
               (delete-region (car span) (cadr span))))
           (donkey--split-record-ops head (nreverse ops) t))
         (when kills
-          (kill-new (donkey--split-cursors-kill-text kills)))
+          (kill-new (donkey--split-cursors-kill-text
+                     kills (donkey--split-cursors-whole-lines-p))))
         (setq donkey--split-did 'deleted)
         (donkey--split-cursors-deselect)))))
 
@@ -10042,7 +11060,8 @@ the selections."
                          donkey--split-places)))
       (if (seq-every-p #'string-empty-p texts)
           (message "Nothing to copy")
-        (kill-new (donkey--split-cursors-kill-text texts))
+        (kill-new (donkey--split-cursors-kill-text
+                   texts (donkey--split-cursors-whole-lines-p)))
         (donkey--split-cursors-deselect)))))
 
 (defun donkey-split-cursors-yank (&optional count)
@@ -10051,9 +11070,13 @@ the selections."
 The split\\='s `donkey-yank'.  Where the kill has as many lines as there
 are cursors, each cursor gets its own line, top to bottom, so what
 \\[donkey-split-cursors-copy] took from the cursors goes back one line
-to each; otherwise every cursor gets the whole kill.  COUNT pastes that
-many copies.  The paste is one undo entry whatever the number of
-cursors."
+to each, an empty one included; otherwise every cursor gets the whole
+kill.  Over a whole line selected with
+\\[donkey-split-cursors-select-lines] the paste takes the line\\='s
+place and the line keeps its own ending, as \\[donkey-yank] keeps it
+over a line selection made with \\[donkey-visual-line-toggle].  COUNT
+pastes that many copies.  The paste is one undo entry whatever the
+number of cursors."
   (interactive "p")
   (donkey--split-live-p)
   (barf-if-buffer-read-only)
@@ -10062,17 +11085,12 @@ cursors."
       (if (or (null text) (string-empty-p text))
           (message "Nothing to paste")
         (let* ((places donkey--split-places)
-               (lines (split-string (if (string-suffix-p "\n" text)
-                                        (substring text 0 -1)
-                                      text)
-                                    "\n"))
-               (pieces (if (and (cdr places) (= (length lines) (length places)))
-                           lines
-                         (make-list (length places) text)))
+               (pieces (or (donkey--split-kill-pieces text (length places))
+                           (make-list (length places) text)))
                (n (max 0 (or count 1)))
                (head buffer-undo-list)
                (ops nil))
-          (atomic-change-group
+          (donkey--split-atomic-change
             (cl-loop
              for place in (reverse places)
              for piece in (reverse pieces)
@@ -10087,6 +11105,11 @@ cursors."
                   (goto-char beg)
                   (dotimes (_ n)
                     (insert-for-yank piece))
+                  ;; A whole line keeps its own line ending.
+                  (when (and (overlay-get place 'donkey-line)
+                             (> (point) beg)
+                             (eq (char-before) ?\n))
+                    (delete-char -1))
                   (push (list beg was
                               (buffer-substring-no-properties beg (point)))
                         ops)
@@ -10156,7 +11179,7 @@ cursor\\='s line recorded before and after."
   (donkey--split-holding-gc
     (let ((head buffer-undo-list)
           (ops nil))
-      (atomic-change-group
+      (donkey--split-atomic-change
         ;; Each cursor is read from its overlay, which the lines opened
         ;; above it have moved, so the order costs no bookkeeping.
         (dolist (place donkey--split-places)
@@ -10166,11 +11189,7 @@ cursor\\='s line recorded before and after."
                  (size (buffer-size))
                  (was (buffer-substring-no-properties start finish)))
             (if above
-                (progn
-                  (move-beginning-of-line 1)
-                  (newline-and-indent)
-                  (forward-line -1)
-                  (indent-according-to-mode))
+                (donkey--open-line-above)
               ;; The place `move-end-of-line' reaches, without the
               ;; display engine it runs in a live frame at every cursor.
               (end-of-visible-line)
@@ -10287,7 +11306,7 @@ the number of cursors."
           (message "Nothing to kill")
         (let ((head buffer-undo-list)
               (ops nil))
-          (atomic-change-group
+          (donkey--split-atomic-change
             (dolist (span (reverse spans))
               (push (list (car span)
                           (buffer-substring-no-properties (car span) (cdr span))
@@ -10312,31 +11331,39 @@ the live region."
   :group 'donkey)
 
 (defvar-local donkey--banked-overlays nil
-  "Overlays covering the whole lines banked in this buffer.")
+  "Overlays covering the whole lines banked in this buffer.
+
+Permanent: a new major mode or a revert keeps the banks, as it keeps
+the overlays that draw them.")
+(put 'donkey--banked-overlays 'permanent-local t)
 
 (defun donkey--whole-line-span (beg end)
   "Return (START . END) covering every whole line touched by BEG..END.
 
 END extends past the final line's newline when there is one, so a
 banked line carries its own line break and deleting it removes the
-line rather than leaving a blank."
+line rather than leaving a blank.  A line is the line the screen
+shows: a folded heading comes with its hidden body, as the command
+`kill-whole-line' takes it; see `donkey--visible-line-start' and
+`donkey--visible-line-end'."
   (save-excursion
-    (let ((start (progn (goto-char (min beg end))
-                        (line-beginning-position)))
+    (let ((start (donkey--visible-line-start (min beg end)))
           (finish (progn (goto-char (max beg end))
                          ;; A region ending exactly at a line beginning
                          ;; came from the line ABOVE -- do not swallow the
                          ;; next line just because point sits at its start.
                          (when (and (bolp) (> (point) (min beg end)))
                            (forward-char -1))
-                         (min (point-max) (1+ (line-end-position))))))
+                         (min (point-max) (1+ (donkey--visible-line-end))))))
       (cons start finish))))
 
 (defun donkey--prune-banked-overlays ()
-  "Drop banked overlays that no longer cover any text.
+  "Drop banked overlays that were deleted or no longer cover any text.
 
 An overlay collapses to zero width when the line it banked is removed
-by ordinary editing; such a bank highlights nothing, and is dropped."
+by ordinary editing; such a bank highlights nothing, and is dropped.
+An overlay `donkey--delete-banked-overlays' deleted is dropped here
+too."
   (setq donkey--banked-overlays
         (seq-filter (lambda (ov)
                       (or (and (overlay-buffer ov)
@@ -10536,10 +11563,12 @@ goes through the list, since a line can carry more than one overlay."
   (car (donkey--banked-overlays-at pos)))
 
 (defun donkey--delete-banked-overlays (overlays)
-  "Delete OVERLAYS and forget them, so the line they covered is unbanked."
-  (dolist (ov overlays)
-    (delete-overlay ov)
-    (setq donkey--banked-overlays (delq ov donkey--banked-overlays))))
+  "Delete OVERLAYS, so the lines they covered are unbanked.
+
+The list of banks forgets them the next time it is read, through
+`donkey--prune-banked-overlays', so letting go of any number of lines
+walks the list once."
+  (mapc #'delete-overlay overlays))
 
 (defun donkey--banked-run-at (pos)
   "Return the contiguous banked run covering POS as (START . END), or nil.
@@ -10639,11 +11668,16 @@ than one."
   "Bank every whole line in BEG..END that is not already banked.
 
 Creates one overlay per LINE, so any one line can be unbanked on its
-own; adjacent spans are merged at use time."
+own; adjacent spans are merged at use time.  Text inserted at either
+edge of a banked line -- a line opened or pasted above or below it --
+stays outside the bank."
   (donkey--map-line-spans beg end
     (lambda (line-span)
       (unless (donkey--banked-overlay-at (car line-span))
-        (let ((ov (make-overlay (car line-span) (cdr line-span) nil nil t)))
+        ;; Front advance and no rear advance: an insertion at the
+        ;; start of the line lands before the overlay, one at the start
+        ;; of the next line after it.
+        (let ((ov (make-overlay (car line-span) (cdr line-span) nil t nil)))
           (overlay-put ov 'face 'donkey-banked-selection)
           (overlay-put ov 'donkey-banked t)
           ;; Above `hl-line-overlay-priority', which is -50: at equal
@@ -10652,8 +11686,7 @@ own; adjacent spans are merged at use time."
           ;; redisplay draws at a nil primary priority, so a line that
           ;; is banked and selected still shows the selection.
           (overlay-put ov 'priority -25)
-          ;; Evaporate, so an emptied buffer does not regrow the bank
-          ;; over whatever replaces the line.
+          ;; Evaporate, so a bank goes with the text of its line.
           (overlay-put ov 'evaporate t)
           (push ov donkey--banked-overlays))))))
 
@@ -10667,10 +11700,12 @@ is how `donkey-copy' and `donkey-delete' count what they report."
 (defun donkey--span-line-count (spans)
   "Return how many buffer lines SPANS cover in total.
 
-Counts via `count-lines' rather than counting newlines in the extracted
-text, so a banked blank line still counts as a line."
-  (apply #'+ (mapcar (lambda (span) (count-lines (car span) (cdr span)))
-                     spans)))
+SPANS are whole lines in buffer order.  Counts via `count-lines' rather
+than counting newlines in the extracted text, so a banked blank line
+still counts as a line; spans that touch are counted as one stretch."
+  (let ((lines 0))
+    (dolist (span (donkey--merge-spans spans) lines)
+      (setq lines (+ lines (count-lines (car span) (cdr span)))))))
 
 (defun donkey--consume-banked-spans (spans)
   "Unbank only the lines in SPANS, leaving every other bank alone.
@@ -10681,8 +11716,40 @@ everything\" command and says so in its name.
 
 SPANS comes from `donkey--effective-line-spans', so it is exactly what
 was acted on, region included."
-  (dolist (span spans)
-    (donkey--unbank-span (car span) (cdr span))))
+  (donkey--delete-banked-overlays (donkey--banked-overlays-in-spans spans)))
+
+(defun donkey--banked-overlays-in-spans (spans)
+  "Return every banked overlay on the lines of SPANS.
+
+SPANS are whole lines, as `donkey--effective-line-spans' returns them."
+  (let (found)
+    (dolist (span spans found)
+      (dolist (ov (overlays-in (car span) (cdr span)))
+        (when (overlay-get ov 'donkey-banked)
+          (push ov found))))))
+
+(defun donkey--edit-banked-lines (spans edit)
+  "Run EDIT over the lines of SPANS as one edit, then spend their banks.
+
+EDIT runs under `atomic-change-group'.  Where it is refused part of the
+way -- read-only text, a signal, a quit -- every change it made is taken
+back, the banks whose lines it had deleted are banked again, and the
+selection stays.  Where it goes through, the banks on SPANS are spent."
+  (let* ((banks (donkey--banked-overlays-in-spans spans))
+         (where (mapcar (lambda (ov) (cons (overlay-start ov) (overlay-end ov)))
+                        banks))
+         done)
+    (unwind-protect
+        (progn
+          (atomic-change-group
+            (funcall edit))
+          (setq done t))
+      ;; The group has put the text back by now; a bank deleted with
+      ;; its line before the refusal evaporated, and goes back on it.
+      (unless done
+        (dolist (span where)
+          (donkey--bank-span (car span) (cdr span)))))
+    (donkey--delete-banked-overlays banks)))
 
 (defun donkey--copy-banked-selection ()
   "Copy every banked line (plus any active region's lines) as one kill."
@@ -10710,44 +11777,46 @@ still holds what is being pasted.  A paste bringing no newline of its
 own gets the taken line ending restored behind it, as
 `donkey--paste-restoring-line-ending' states for both line selections.
 
-Consumes the bank, the way `donkey-copy' and `donkey-delete' do, after
-the read-only check."
+One edit: where any line cannot be deleted -- read-only text --
+nothing changes, the bank stays and the selection with it.  Consumes
+the bank, the way `donkey-copy' and `donkey-delete' do, once the
+paste is in."
   (barf-if-buffer-read-only)
   (let* ((spans (donkey--effective-line-spans))
          (lines (donkey--span-line-count spans))
          (target (car (car spans)))
          ;; Read before the deletions below shift every position.
          (took-newline (eq (char-before (cdr (car spans))) ?\n)))
-    ;; BEFORE the deletions, as `donkey--delete-banked-selection' does:
-    ;; they shrink the buffer, and spans computed against the old text
-    ;; then point past `point-max'.
-    (donkey--consume-banked-spans spans)
-    (dolist (span (reverse spans))
-      (delete-region (car span) (cdr span)))
+    (donkey--edit-banked-lines
+     spans
+     (lambda ()
+       (dolist (span (reverse spans))
+         (delete-region (car span) (cdr span)))
+       (goto-char target)
+       (donkey--paste-restoring-line-ending (or count 1) took-newline)))
     (deactivate-mark)
-    (goto-char target)
-    (donkey--paste-restoring-line-ending (or count 1) took-newline)
     (message "Replaced %d line%s" lines (if (= 1 lines) "" "s"))))
 
 (defun donkey--delete-banked-selection ()
   "Kill every banked line (plus any active region's lines) as one kill.
 
-Deletes back to front so each span's positions stay valid while the
-earlier ones are still being removed.
-
-The read-only check runs first, before anything is consumed."
+One edit: where any line cannot be deleted -- read-only text --
+nothing changes, nothing is killed, and the bank stays and the
+selection with it.  The kill is made and the bank spent once every
+line has gone.  Deletes back to front so each span's positions stay
+valid while the earlier ones are still being removed."
   (barf-if-buffer-read-only)
   (let* ((spans (donkey--effective-line-spans))
          (lines (donkey--span-line-count spans))
          (text (mapconcat (lambda (span)
                             (buffer-substring (car span) (cdr span)))
                           spans "")))
+    (donkey--edit-banked-lines
+     spans
+     (lambda ()
+       (dolist (span (reverse spans))
+         (delete-region (car span) (cdr span)))))
     (kill-new text)
-    ;; BEFORE the deletions, not after: they shrink the buffer, and spans
-    ;; computed against the old text then point past `point-max'.
-    (donkey--consume-banked-spans spans)
-    (dolist (span (reverse spans))
-      (delete-region (car span) (cdr span)))
     (deactivate-mark)
     (message "Deleted %d line%s" lines (if (= 1 lines) "" "s"))))
 
@@ -10946,12 +12015,16 @@ documentation.")
       (insert (propertize (make-string 50 ?=)
                           'face 'font-lock-comment-face) "\n")
       ;; The key is looked up in `donkey-normal-mode-map' directly; no
-      ;; DONKEY map is active in this help buffer.
+      ;; DONKEY map is active in this help buffer.  With no key there,
+      ;; the command is named as it is reached.
       (insert (propertize
                (format "Live only while the mode is on -- %s starts it.\n"
-                       (key-description
-                        (where-is-internal 'donkey-mark-run-toggle
-                                           donkey-normal-mode-map t)))
+                       (let ((key (where-is-internal 'donkey-mark-run-toggle
+                                                     donkey-normal-mode-map t)))
+                         (if key
+                             (key-description key)
+                           (substitute-command-keys
+                            "\\[donkey-mark-run-toggle]"))))
                'face 'font-lock-comment-face))
       (insert (propertize (make-string 50 ?-)
                           'face 'font-lock-comment-face) "\n")
@@ -12647,7 +13720,7 @@ In NORMAL state, four things differ:
   - \\`DEL' and \\`<delete>' do nothing, so a slip cannot damage the
     buffer from NORMAL state.  Use DONKEY-DELETE-KEYS.
 
->> Try it: press \\`C-x' \\`C-s' below, or \\[execute-extended-command] and then \\`RET' to abort.  Neither is
+>> Try it: press \\`C-x' \\`C-s' below, or \\[execute-extended-command], and then \\`C-g' to abort.  Neither is
    DONKEY's, and both work from NORMAL state exactly as usual.
 
 Searching is Emacs' own and DONKEY leaves it alone: \\`C-s' forward,
@@ -13140,7 +14213,7 @@ pair added there needs no second line to become a key -- except while
 `donkey-wrap-region-engine' hands the press to a pairing package,
 where it means `donkey--wrap-delegated-delimiters', the six such a
 package pairs.  A list is taken as it stands whatever the engine, and
-a value that is neither `all' nor a list reads as `all'.
+a value that is neither `all' nor a proper list reads as `all'.
 
 Whatever the source, anything that is not a character is dropped here
 and nowhere else: both variables are defcustoms, and hold whatever
@@ -13148,7 +14221,8 @@ they were given.  The table is read for its OPEN characters through
 `consp' rather than `car', an entry that is not a pair at all being
 exactly the shape a reader gets by typing one bracket too few."
   (seq-filter #'characterp
-              (cond ((listp donkey-wrap-delimiters) donkey-wrap-delimiters)
+              (cond ((proper-list-p donkey-wrap-delimiters)
+                     donkey-wrap-delimiters)
                     ((eq donkey-wrap-region-engine 'pairing-package)
                      donkey--wrap-delegated-delimiters)
                     (t (mapcar #'car
@@ -13329,16 +14403,30 @@ A key that has become `donkey-wrap-region' since the snapshot, having
 held nothing or `undefined' in it, is DONKEY claiming a wrap key for a
 pair the reader added -- see `donkey--claim-wrap-keys'.  That is this
 package doing what it was asked, not somebody taking a key, and is not
-a change to report."
-  (let (changed)
+a change to report.
+
+A prefix that is no longer one -- bound to a command, or taken out --
+is answered once, as (PREFIX MAP NOW) with MAP an empty keymap standing
+for the prefix it was, rather than once for every key DONKEY had under
+it."
+  (let (changed prefixes)
     (pcase-dolist (`(,keys . ,default) donkey--default-normal-bindings)
-      (let ((now (donkey--binding-value (lookup-key donkey-normal-mode-map keys))))
-        (unless (or (eq now default)
-                    ;; The same three `donkey--wrap-key-free-p' calls
-                    ;; free, so the two answers cannot drift apart.
-                    (and (eq now 'donkey-wrap-region)
-                         (memq default '(nil undefined ignore))))
-          (push (list keys default now) changed))))
+      (let ((now (lookup-key donkey-normal-mode-map keys)))
+        (if (numberp now)
+            (let ((prefix (substring keys 0 now)))
+              (unless (member prefix prefixes)
+                (push prefix prefixes)
+                (push (list prefix (make-sparse-keymap)
+                            (donkey--binding-value
+                             (lookup-key donkey-normal-mode-map prefix)))
+                      changed)))
+          (setq now (donkey--binding-value now))
+          (unless (or (eq now default)
+                      ;; The same three `donkey--wrap-key-free-p' calls
+                      ;; free, so the two answers cannot drift apart.
+                      (and (eq now 'donkey-wrap-region)
+                           (memq default '(nil undefined ignore))))
+            (push (list keys default now) changed)))))
     (sort changed (lambda (a b) (string< (key-description (car a))
                                          (key-description (car b)))))))
 
@@ -13378,7 +14466,7 @@ installation is one a reader learns to skip.  Just those two: a pair
 the reader added is always answered, whatever its key holds, and so is
 everything when `donkey-wrap-delimiters' names its characters
 outright."
-  (let ((asked (or everything (listp donkey-wrap-delimiters)))
+  (let ((asked (or everything (proper-list-p donkey-wrap-delimiters)))
         taken)
     (dolist (ch (donkey--wrap-delimiter-characters))
       (dolist (half (list ch (donkey--wrap-close-char ch)))
@@ -13418,7 +14506,9 @@ called it a loss would cry wolf in every Org buffer."
       (pcase-dolist (`(,keys . ,_default) donkey--default-normal-bindings)
         (let ((own (donkey--binding-value (lookup-key donkey-normal-mode-map keys)))
               (effective (donkey--binding-value (key-binding keys))))
-          (when (and own (not (eq own effective))
+          ;; A number is a key under a prefix the map no longer has:
+          ;; not DONKEY's any more, and `donkey--binding-changes' says so.
+          (when (and own (not (numberp own)) (not (eq own effective))
                      ;; A PREFIX answers with a COMPOSED keymap where a
                      ;; map above Normal state's binds the same prefix:
                      ;; Emacs merges the prefix maps of the active maps
@@ -13535,10 +14625,10 @@ EVERYTHING are its.  Answer with the number of lines said."
 (defun donkey--binding-name (binding)
   "Return a name for BINDING a reader will recognize.
 
-A symbol is itself; a keymap is named as one, since a prefix map has
-no name of its own; anything else is printed."
+A symbol is itself; a keymap is named as the prefix it is, since a
+prefix map has no name of its own; anything else is printed."
   (cond ((symbolp binding) (symbol-name binding))
-        ((keymapp binding) "a keymap")
+        ((keymapp binding) "a prefix")
         (t (format "%S" binding))))
 
 (defun donkey--mode-list-entry-for (mode-list)
@@ -13774,26 +14864,26 @@ list does not stand in its way; where none does they are
 `backward-char' and `forward-char'.")
 
 (defvar-local donkey--mode-keys-cache nil
-  "What `donkey--install-mode-keys' last built here.
+  "What `donkey--install-mode-keys' last built here, or nil.
 
-Everything the answer depends on, so that the map is rebuilt when one
-of them changes rather than on every pass.
+A vector of everything the answer depends on, compared with `eq', so
+that the map is rebuilt when one of them changes and a command that
+changed none of them pays seven comparisons.
 
 It has to be the same set `donkey--normal-state-off-p' reads, and for
 the same buffer: that predicate decides whether NORMAL state runs, this
 one decides whether the support map is installed, and a buffer where
 the two disagree gets neither.  `buffer-read-only' is in it for that
 reason -- `donkey--program-buffer-p' reads it, so a buffer becomes a
-support mode the moment it becomes read-only, with no option changing.
+support mode the moment it becomes read-only, with no option changing,
+and stops being one the moment it becomes writable again.
 
-Where the coverage stops: the mode\\='s KEYMAP is not part of the key, and
-`donkey--install-mode-keys' runs from
-`after-change-major-mode-hook'.  A binding a mode or a reader adds to
-the map after that point is not seen until something else invalidates
-this -- another major mode, or a change to one of the options.  Every
-mode builds its map before the hook runs, so this costs nothing in
-practice; `donkey-refresh-suppressed-commands' is the way to ask by
-hand.")
+Where the coverage stops: the mode\\='s KEYMAP is not part of the key.  A
+binding a mode or a reader adds to the map after the support map was
+built is not seen until something else invalidates this -- another
+major mode, the read-only flag, or a change to one of the options.
+Every mode builds its map before `after-change-major-mode-hook' runs,
+so this costs nothing in practice.")
 
 (defun donkey--enter-key-the-mode-owns-p (seq key)
   "Return non-nil if SEQ is an Enter key this major mode has its own use for.
@@ -13821,6 +14911,20 @@ text property, and Emacs reads that before any emulation map."
          (and own (symbolp own) (commandp own)
               (not (memq own '(newline undefined ignore)))))))
 
+(defvar donkey--package-keys-read (make-hash-table :test 'equal)
+  "Each package sequence `donkey--package-key' has read, by its string.")
+
+(defun donkey--package-key (sequence)
+  "Return SEQUENCE, a string in `kbd' form, as a key, or nil if it is not one.
+
+Read once and kept, since the answer depends on nothing but the
+string."
+  (let ((key (gethash sequence donkey--package-keys-read 'unread)))
+    (when (eq key 'unread)
+      (setq key (ignore-errors (kbd sequence)))
+      (puthash sequence key donkey--package-keys-read))
+    key))
+
 (defun donkey--support-mode-package-keys ()
   "Return the (SEQUENCE . COMMAND) pairs this buffer\\='s packages ask for.
 
@@ -13831,7 +14935,9 @@ DONKEY binds there; a sequence it does not bind, or binds to a prefix,
 is passed over.
 
 Nil where the section names no package, which is most of them, and
-without `donkey-key-packages' being read at all while it is empty."
+without `donkey-key-packages' being read at all while it is empty.
+Each sequence is read by `kbd' once per session; see
+`donkey--package-key'."
   (let ((section (cdr (donkey--support-mode-section)))
         (table (and (proper-list-p donkey-key-packages) donkey-key-packages))
         pairs)
@@ -13840,7 +14946,7 @@ without `donkey-key-packages' being read at all while it is empty."
         (dolist (seq (let ((seqs (cdr (assq name table))))
                        (and (proper-list-p seqs) seqs)))
           (when (stringp seq)
-            (let* ((key (ignore-errors (kbd seq)))
+            (let* ((key (donkey--package-key seq))
                    (command (and key (lookup-key donkey-normal-mode-map key))))
               (when (and command (symbolp command) (commandp command)
                          (not (donkey--enter-key-the-mode-owns-p seq key)))
@@ -13868,6 +14974,18 @@ rule 74 is a floor a section does not get to lower either."
                        (not (memq (cdr pair) typing))))
                 (cdr (donkey--support-mode-section)))))
 
+(defvar donkey--support-maps-built
+  (make-hash-table :test 'equal :weakness 'value)
+  "The support maps built so far, by everything each is made of.
+
+The key is the leader, the package\\='s (SEQUENCE . COMMAND) pairs and
+the section\\='s (CHARACTER . COMMAND) pairs, which are the whole of
+what `donkey--install-support-mode-keys' puts in a map: a reader who
+rebinds a key the package carries, edits a section or replaces the
+leader gets a new map, and a buffer whose mode answers the same as
+another\\='s shares that one\\='s.  A map no buffer holds any more is let
+go of.")
+
 (defun donkey--install-support-mode-keys ()
   "Give this buffer the keys its `donkey-support-modes' section names.
 
@@ -13890,22 +15008,32 @@ section may name \\=`SPC\\=' to take it back for a mode that needs it.
 
 Keyed on `donkey-mode' rather than on `donkey-normal-mode', because
 NORMAL state does not run here -- a support mode sits in Insert state
-the way an excluded one does, and the map has to answer there."
-  (let ((map (make-sparse-keymap)))
-    (define-key map "j" #'next-line)
-    (define-key map "k" #'previous-line)
-    (define-key map "h" #'backward-char)
-    (define-key map "l" #'forward-char)
-    ;; The leader, shared rather than copied, so whatever the user hangs
-    ;; under SPC later is reachable here too.
-    (let ((leader (lookup-key donkey-normal-mode-map " ")))
-      (when (keymapp leader) (define-key map " " (cons "leader" leader))))
-    ;; The package first, the section's own pairs over the top, so a
-    ;; section that names `h' gets its own rather than the package's.
-    (pcase-dolist (`(,key . ,command) (donkey--support-mode-package-keys))
-      (define-key map key command))
-    (pcase-dolist (`(,char . ,command) (donkey--support-mode-keys))
-      (define-key map (vector char) command))
+the way an excluded one does, and the map has to answer there.
+
+The map is built once for everything it is made of -- the leader, the
+package\\='s pairs and the section\\='s -- and every buffer those
+answer the same for shares it; see `donkey--support-maps-built'."
+  (let* ((leader (lookup-key donkey-normal-mode-map " "))
+         (packaged (donkey--support-mode-package-keys))
+         (own (donkey--support-mode-keys))
+         (inputs (list leader packaged own))
+         (map (gethash inputs donkey--support-maps-built)))
+    (unless map
+      (setq map (make-sparse-keymap))
+      (define-key map "j" #'next-line)
+      (define-key map "k" #'previous-line)
+      (define-key map "h" #'backward-char)
+      (define-key map "l" #'forward-char)
+      ;; The leader, shared rather than copied, so whatever the user
+      ;; hangs under SPC later is reachable here too.
+      (when (keymapp leader) (define-key map " " (cons "leader" leader)))
+      ;; The package first, the section's own pairs over the top, so a
+      ;; section that names `h' gets its own rather than the package's.
+      (pcase-dolist (`(,key . ,command) packaged)
+        (define-key map key command))
+      (pcase-dolist (`(,char . ,command) own)
+        (define-key map (vector char) command))
+      (puthash inputs map donkey--support-maps-built))
     (setq-local donkey--emulation-mode-map-alist
                 (list (cons 'donkey-mode map)))))
 
@@ -13919,14 +15047,25 @@ than set, so an ordinary buffer reads the same global value it always
 did and NORMAL state is reached through `donkey-normal-mode-map' alone.
 
 Runs from `donkey--ensure-default-state', the one address every major
-mode change already reaches, and does nothing while
-`donkey--mode-keys-cache' says no input to the answer has changed."
-  (let ((wanted (list major-mode buffer-read-only
-                      donkey-support-modes donkey-support-mode-exceptions
-                      donkey-key-packages
-                      donkey-excluded-modes donkey-excluded-mode-exceptions)))
-    (unless (equal wanted donkey--mode-keys-cache)
-      (setq donkey--mode-keys-cache wanted)
+mode change already reaches, and after every command from
+`donkey--check-post-command-non-editing', so a buffer that turns
+read-only or writable gets the map its state needs.  Does nothing
+while `donkey--mode-keys-cache' says no input to the answer has
+changed."
+  (let ((c donkey--mode-keys-cache))
+    (unless (and c
+                 (eq (aref c 0) major-mode)
+                 (eq (aref c 1) buffer-read-only)
+                 (eq (aref c 2) donkey-support-modes)
+                 (eq (aref c 3) donkey-support-mode-exceptions)
+                 (eq (aref c 4) donkey-key-packages)
+                 (eq (aref c 5) donkey-excluded-modes)
+                 (eq (aref c 6) donkey-excluded-mode-exceptions))
+      (setq donkey--mode-keys-cache
+            (vector major-mode buffer-read-only
+                    donkey-support-modes donkey-support-mode-exceptions
+                    donkey-key-packages
+                    donkey-excluded-modes donkey-excluded-mode-exceptions))
       (if (donkey--support-mode-p)
           (donkey--install-support-mode-keys)
         (kill-local-variable 'donkey--emulation-mode-map-alist)))))
@@ -14072,32 +15211,33 @@ the terminal's own default."
   "Return `donkey-decscusr-denied-terminals' as a list of strings.
 
 A bare string is read as the one prefix it looks like, and anything
-in the list that is not a string is dropped; any other value denies
-nothing.  Read down a `post-command-hook' path, where a signal costs
-the cursor its resync for the rest of the session: Emacs removes a
-hook function that errors and says so once, and the state DONKEY is
-in stops showing after that."
+in a proper list that is not a string is dropped; any other value, a
+dotted list among them, denies nothing.  Read down a
+`post-command-hook' path, where a signal costs the cursor its resync
+for the rest of the session: Emacs removes a hook function that errors
+and says so once, and the state DONKEY is in stops showing after that."
   (cond ((stringp donkey-decscusr-denied-terminals)
          (list donkey-decscusr-denied-terminals))
-        ((listp donkey-decscusr-denied-terminals)
+        ((proper-list-p donkey-decscusr-denied-terminals)
          (seq-filter #'stringp donkey-decscusr-denied-terminals))))
 
-(defun donkey--terminal-supports-decscusr-p ()
-  "Return non-nil if the current terminal likely supports DECSCUSR.
+(defun donkey--terminal-supports-decscusr-p (&optional terminal)
+  "Return non-nil if TERMINAL likely supports DECSCUSR.
 
-Returns nil for graphical frames and for terminals whose type
-matches a prefix in `donkey-decscusr-denied-terminals', read through
-`donkey--decscusr-denied-prefixes' so a malformed value denies
-rather than signals.
-Falls back to the `TERM' environment variable when `tty-type'
-returns nil, and performs a conservative guess based on known
-capable terminal names.
+TERMINAL defaults to the selected frame\\='s.
 
-Nil under `--batch' too, whatever `TERM' says; a test that stubs a
-capable terminal binds `noninteractive' to nil."
+Returns nil for graphical frames, for a terminal that is not a text
+terminal -- a daemon\\='s initial terminal, whose output is the daemon\\='s
+own standard output, whatever `TERM' says -- and for terminals whose
+type matches a prefix in `donkey-decscusr-denied-terminals', read
+through `donkey--decscusr-denied-prefixes' so a malformed value denies
+rather than signals.  The type is the one `tty-type' reports.
+
+Nil under `--batch' too; a test that stubs a capable terminal binds
+`noninteractive' to nil."
   (and (not noninteractive)
-       (not (display-graphic-p))
-       (let ((tty (or (tty-type) (getenv "TERM"))))
+       (not (display-graphic-p terminal))
+       (let ((tty (tty-type terminal)))
          (when tty
            (and (not (cl-some
                       (lambda (prefix)
@@ -14109,18 +15249,15 @@ capable terminal binds `noninteractive' to nil."
   "Send DECSCUSR escape sequence for TYPE to terminal.
 
 Suppresses output on graphical frames and on terminals listed in
-`donkey-decscusr-denied-terminals'.  Wraps `send-string-to-terminal'
-in `condition-case' to silently absorb I/O failures.  Sends the
-sequence twice with a brief pause to improve delivery reliability
-on terminals that drop bytes during state transitions."
+`donkey-decscusr-denied-terminals'.  Sends the sequence once, and
+waits for nothing: no redisplay, no timer, between the state change
+and the command that made it.  Wraps `send-string-to-terminal' in
+`condition-case' to silently absorb I/O failures."
   (when (donkey--terminal-supports-decscusr-p)
     (let ((seq (donkey--cursor-type-to-decscusr type)))
       (when seq
         (condition-case nil
-            (progn
-              (send-string-to-terminal seq)
-              (sit-for 0.01)
-              (send-string-to-terminal seq))
+            (send-string-to-terminal seq)
           (error nil))))))
 
 (defvar donkey--last-applied-cursor-settings (make-hash-table :test 'eq)
@@ -14173,6 +15310,50 @@ otherwise, so the next command in a visible buffer resyncs it through
 
 (defvar donkey--cursor-last-buffer nil
   "The buffer `donkey--update-cursor-passive' last updated the cursor in.")
+
+(defun donkey--give-back-terminal-cursor (&optional terminal)
+  "Send TERMINAL the terminal\\='s own cursor shape, if DONKEY changed it.
+
+With TERMINAL nil, every terminal DONKEY sent a shape to.  The
+terminal is forgotten, so its next state change sends the shape
+again.  On `kill-emacs-hook', `suspend-hook', `suspend-tty-functions'
+and `delete-terminal-functions', so the shell a terminal goes back to
+is not left with DONKEY\\='s shape.  Never signals."
+  (let ((absent (list nil))
+        (terminals
+         (if terminal
+             (list terminal)
+           (let (all)
+             (maphash (lambda (term _) (push term all))
+                      donkey--last-applied-cursor-settings)
+             all))))
+    (dolist (term terminals)
+      (unless (eq (gethash term donkey--last-applied-cursor-settings absent)
+                  absent)
+        (remhash term donkey--last-applied-cursor-settings)
+        (condition-case nil
+            (when (and (terminal-live-p term)
+                       (donkey--terminal-supports-decscusr-p term))
+              (send-string-to-terminal (donkey--cursor-type-to-decscusr nil)
+                                       term))
+          (error nil))))))
+
+(defun donkey--resync-terminal-cursor (&optional terminal)
+  "Send the shape the current state asks for again, after a resume.
+
+On `suspend-resume-hook' and `resume-tty-functions'.  TERMINAL is the
+terminal resumed, nil for the selected frame\\='s.  What the terminal
+shows is not known after a suspension, so it is forgotten and the
+shape sent again: at once when the selected frame is on it, at the
+next command otherwise.  Never signals."
+  (let ((term (or terminal (frame-terminal))))
+    (remhash term donkey--last-applied-cursor-settings)
+    (setq donkey--cursor-last-buffer nil)
+    (when (eq term (frame-terminal))
+      (condition-case nil
+          (with-current-buffer (window-buffer (selected-window))
+            (donkey--update-cursor-passive))
+        (error nil)))))
 
 (defvar donkey--cursor-last-window nil
   "The window that was selected when it last updated the cursor.")
@@ -14362,7 +15543,10 @@ Reset on next command to prevent re-entry race conditions.")
 (defun donkey--clear-transient-overlays ()
   "Clear transient overlays left by highlighting packages.
 
-Operates on the current buffer only."
+Operates on the current buffer only, and there on what its windows
+show of it: a highlight is drawn where it can be seen and point always
+can, so the parts out of view are left to the package that drew them,
+which moves its own.  A buffer no window shows is walked whole."
   (let ((cleared 0)
         (transient-faces
          '(sp-show-pair-match-face
@@ -14370,8 +15554,11 @@ Operates on the current buffer only."
            show-paren-match
            show-paren-mismatch
            hl-paren-face))
-        (beg (point-min))
-        (end (point-max)))
+        (spans (or (mapcar (lambda (window)
+                             (cons (window-start window)
+                                   (window-end window t)))
+                           (get-buffer-window-list nil nil t))
+                   (list (cons (point-min) (point-max))))))
     ;; Strategy 1: Direct variable access
     (when (boundp 'sp-show-pair-overlay-list)
       (dolist (ov sp-show-pair-overlay-list)
@@ -14394,33 +15581,35 @@ Operates on the current buffer only."
           (delete-overlay ov)
           (setq cleared (1+ cleared)))))
     ;; Strategies 2 (transient faces) and 3 (smartparens keymap
-    ;; overlays) share one scan.  An overlay Smartparens still tracks
-    ;; goes through its own `sp--remove-overlay'.
-    (dolist (ov (overlays-in beg end))
-      (when (overlay-start ov)
-        (let ((face (overlay-get ov 'face))
-              (km (overlay-get ov 'keymap)))
-          (cond
-           ((or (overlay-get ov 'donkey-cleanup)
-                (and face
-                     (cond
-                      ((symbolp face)
-                       (memq face transient-faces))
-                      ((consp face)
-                       (cl-some (lambda (f) (memq f transient-faces)) face)))))
-            (delete-overlay ov)
-            (setq cleared (1+ cleared)))
-           ((and km
-                 (or (and (boundp 'sp-pair-overlay-keymap)
-                          (eq km sp-pair-overlay-keymap))
-                     (and (boundp 'sp-overlay-keymap)
-                          (eq km sp-overlay-keymap))))
-            (if (and (boundp 'sp-pair-overlay-list)
-                     (fboundp 'sp--remove-overlay)
-                     (memq ov sp-pair-overlay-list))
-                (sp--remove-overlay ov)
-              (delete-overlay ov))
-            (setq cleared (1+ cleared)))))))
+    ;; overlays) share one scan of each span.  An overlay Smartparens
+    ;; still tracks goes through its own `sp--remove-overlay'.  An
+    ;; overlay two windows both show is met twice and gone the second
+    ;; time, which `overlay-start' answers.
+    (dolist (span spans)
+      (dolist (ov (overlays-in (car span) (cdr span)))
+        (when (overlay-start ov)
+          (let ((face (overlay-get ov 'face))
+                (km (overlay-get ov 'keymap)))
+            (cond
+             ((and face
+                   (cond
+                    ((symbolp face)
+                     (memq face transient-faces))
+                    ((consp face)
+                     (cl-some (lambda (f) (memq f transient-faces)) face))))
+              (delete-overlay ov)
+              (setq cleared (1+ cleared)))
+             ((and km
+                   (or (and (boundp 'sp-pair-overlay-keymap)
+                            (eq km sp-pair-overlay-keymap))
+                       (and (boundp 'sp-overlay-keymap)
+                            (eq km sp-overlay-keymap))))
+              (if (and (boundp 'sp-pair-overlay-list)
+                       (fboundp 'sp--remove-overlay)
+                       (memq ov sp-pair-overlay-list))
+                  (sp--remove-overlay ov)
+                (delete-overlay ov))
+              (setq cleared (1+ cleared))))))))
     cleared))
 
 (defun donkey--schedule-overlay-cleanup ()
@@ -14475,17 +15664,27 @@ recorded -- the one errand of `keyboard-quit' that the key keeps, see
 through INSERT calls `donkey--leave-insert' itself, since it has no
 `C-g' to stand in for.
 
-In the minibuffer, in a `donkey-excluded-modes' buffer, or when
-`donkey-insert-mode' is not active in the current buffer, delegates to
-`keyboard-quit' instead."
+In the minibuffer it runs what the quit key runs in the minibuffer\\='s
+own keymap, `abort-minibuffers' unless something else is bound there,
+so a minor mode that puts this command on the key -- Smartparens after
+`donkey-setup-smartparens' -- still leaves the minibuffer.  In a
+`donkey-excluded-modes' buffer, or when `donkey-insert-mode' is not
+active in the current buffer, delegates to `keyboard-quit' instead."
   (interactive)
-  (if (or (not (bound-and-true-p donkey-insert-mode))
-          (minibufferp)
-          (donkey--normal-state-off-p))
-      (keyboard-quit)
+  (cond
+   ((minibufferp)
+    (let ((own (and (current-local-map)
+                    (lookup-key (current-local-map) [?\C-g]))))
+      (if (and (commandp own) (not (eq own #'donkey--exit-insert)))
+          (call-interactively own)
+        (keyboard-quit))))
+   ((or (not (bound-and-true-p donkey-insert-mode))
+        (donkey--normal-state-off-p))
+    (keyboard-quit))
+   (t
     (donkey--leave-insert)
     ;; After the state change.
-    (donkey--abort-keyboard-macro-definition)))
+    (donkey--abort-keyboard-macro-definition))))
 
 (defun donkey--abort-keyboard-macro-definition ()
   "Stop a keyboard macro that is being recorded, the way `keyboard-quit' does.
@@ -14518,19 +15717,28 @@ names it as the command to run."
   (interactive)
   (signal 'quit nil))
 
-(defun donkey--own-prefix-p (keys)
+(defun donkey--own-prefix-p (keys &optional map)
   "Return non-nil when KEYS is a prefix of DONKEY's own.
 
-The SPC leader and its own sub-prefixes, `m', `g', `r' and `z', and
-any prefix a reader has added to `donkey-normal-mode-map' -- all of
-which answer `keymapp' here.  A prefix of Emacs's own, `C-x' or
-`C-c', is not bound there and answers nil, which is what keeps
-DONKEY's hands off it.
+MAP is the keymap that answers for DONKEY, `donkey-normal-mode-map'
+when nil.  There, the SPC leader and its own sub-prefixes, `m', `g',
+`r' and `z', and any prefix a reader has added -- all of which answer
+`keymapp'.  A support buffer passes its support map, which holds the
+same leader and the prefixes its section\\='s package makes, `g' and
+`m' for `prose'.  A prefix of Emacs's own, `C-x' or `C-c', is bound
+in neither and answers nil, which is what keeps DONKEY's hands off
+it.
 
 `donkey-mark-run-mode-map' is not consulted: the one prefix it has is
 `g', which is a prefix of the normal map as well, so asking it a
 second time could not change an answer."
-  (keymapp (lookup-key donkey-normal-mode-map keys)))
+  (keymapp (lookup-key (or map donkey-normal-mode-map) keys)))
+
+(defun donkey--support-map ()
+  "Return this buffer\\='s support-mode map, or nil where it has none."
+  (and (bound-and-true-p donkey-mode)
+       (local-variable-p 'donkey--emulation-mode-map-alist)
+       (cdr (assq 'donkey-mode donkey--emulation-mode-map-alist))))
 
 (defun donkey--intercept-quit-after-prefix ()
   "Make the quit key mean quit after a key sequence DONKEY owns.
@@ -14556,18 +15764,27 @@ the catch to DONKEY's own prefixes: after `C-x' or `C-c' the key is
 Emacs's business, and its own diagnostic names the sequence, which is
 more use than a bare quit for a prefix DONKEY has nothing to do with.
 
+The same holds in a support buffer, where DONKEY owns the leader and
+the prefixes its section\\='s package makes: the support map is asked
+there instead of Normal state\\='s.
+
 Only a sequence LONGER than one key is taken: a bare press of the quit
 key is the real `keyboard-quit' and is left alone, as are the
-minibuffer and an excluded mode."
-  (when (and (bound-and-true-p donkey-normal-mode)
-             (memq this-command '(nil undefined))
-             (not (minibufferp))
-             (not (donkey--normal-state-off-p)))
-    (let ((keys (this-single-command-keys)))
-      (when (and (> (length keys) 1)
-                 (eq (aref keys (1- (length keys))) ?\C-g)
-                 (donkey--own-prefix-p (substring keys 0 (1- (length keys)))))
-        (setq this-command 'donkey--quit-the-sequence)))))
+minibuffer, an excluded mode and Insert state in a buffer being
+written."
+  (when (memq this-command '(nil undefined))
+    (let ((map (cond ((minibufferp) nil)
+                     ((bound-and-true-p donkey-normal-mode)
+                      (and (not (donkey--normal-state-off-p))
+                           donkey-normal-mode-map))
+                     (t (donkey--support-map)))))
+      (when map
+        (let ((keys (this-single-command-keys)))
+          (when (and (> (length keys) 1)
+                     (eq (aref keys (1- (length keys))) ?\C-g)
+                     (donkey--own-prefix-p
+                      (substring keys 0 (1- (length keys))) map))
+            (setq this-command 'donkey--quit-the-sequence)))))))
 
 (defconst donkey--quit-commands-of-its-own
   '(keyboard-quit minibuffer-keyboard-quit abort-recursive-edit
@@ -14704,7 +15921,12 @@ redisplay or a timer reports as its own does not arrive here."
 ;;; ---------------------------------------------------------------------------
 
 (defvar-local donkey--saved-input-method nil
-  "Buffer-local saved input method name for restoration on Insert entry.")
+  "Buffer-local saved input method name for restoration on Insert entry.
+
+Permanent, as `current-input-method' is: a major mode started in
+Normal state, `revert-buffer' among them, keeps the method for the
+next visit to Insert state.")
+(put 'donkey--saved-input-method 'permanent-local t)
 
 (defvar donkey--input-method-quiet nil
   "Non-nil while DONKEY, rather than the user, switches the input method.
@@ -15056,14 +16278,21 @@ so one buffer's erroring hook cannot strand the rest."
   '((pre-command-hook . donkey--intercept-quit-in-insert)
     (pre-command-hook . donkey--intercept-quit-after-prefix)
     (input-method-activate-hook . donkey--on-input-method-activate)
-    (input-method-deactivate-hook . donkey--on-input-method-deactivate))
+    (input-method-deactivate-hook . donkey--on-input-method-deactivate)
+    (kill-emacs-hook . donkey--give-back-terminal-cursor)
+    (suspend-hook . donkey--give-back-terminal-cursor)
+    (suspend-tty-functions . donkey--give-back-terminal-cursor)
+    (delete-terminal-functions . donkey--give-back-terminal-cursor)
+    (suspend-resume-hook . donkey--resync-terminal-cursor)
+    (resume-tty-functions . donkey--resync-terminal-cursor))
   "The (HOOK . FUNCTION) entries the STATE modes need, `donkey-mode' or not.
 
 A subset of `donkey--global-hooks': the two quit-key backups -- for
 packages that shadow the key, and for the key pressed after one of
-DONKEY's own prefixes -- and the input-method fences.
-`donkey--install-state-hooks' adds them when a state is turned on
-without `donkey-mode'.")
+DONKEY's own prefixes -- the input-method fences, and the terminal
+cursor given back when Emacs exits or is suspended or a terminal
+closes, and sent again on resume.  `donkey--install-state-hooks' adds
+them when a state is turned on without `donkey-mode'.")
 
 (defun donkey--install-state-hooks ()
   "Add the hooks in `donkey--state-hooks' when a DONKEY state is on.
@@ -15084,6 +16313,7 @@ actually being on, because those mode hooks also fire on the way off."
   `((after-change-major-mode-hook . donkey--ensure-default-state)
     (post-command-hook . donkey--track-position)
     (post-command-hook . donkey--show-selection-hint)
+    (post-command-hook . donkey--visual-line-follow-exchange)
     (post-command-hook . donkey--check-post-command-non-editing)
     (post-command-hook . donkey--update-cursor-passive)
     (minibuffer-setup-hook . donkey--minibuffer-setup)
@@ -15091,6 +16321,7 @@ actually being on, because those mode hooks also fire on the way off."
     (window-buffer-change-functions . donkey--mark-run-resume-when-shown)
     (window-selection-change-functions . donkey--mark-run-resume-when-shown)
     (kill-buffer-hook . donkey--mark-run-forget-killed-buffer)
+    (delete-terminal-functions . donkey--mark-run-forget-terminal)
     ,@donkey--state-hooks)
   "Every (HOOK . FUNCTION) `donkey-mode' adds to Emacs\\='s own hooks.
 
@@ -15098,7 +16329,7 @@ One list, so the enable and disable paths cannot drift apart.
 `deactivate-mark-hook' is not here: its functions are installed
 buffer-locally by the commands that need them.  The
 `donkey--state-hooks' tail is shared with the standalone state modes,
-which reinstall those three on their own -- see
+which reinstall those on their own -- see
 `donkey--install-state-hooks'.")
 
 (defun donkey--install-global-hooks ()
@@ -15162,6 +16393,7 @@ donkey-mode' to toggle."
                     #'donkey--rectangle-convert)
         (advice-add 'xselect-convert-to-length :around
                     #'donkey--rectangle-convert)
+        (advice-add 'gui-set-selection :after #'donkey--rectangle-note-claim)
         (add-hook 'rectangle-mark-mode-hook
                   #'donkey--rectangle-primary-follow))
     ;; Mark run mode's map lives in `overriding-terminal-local-map',
@@ -15192,13 +16424,17 @@ donkey-mode' to toggle."
     (advice-remove 'rectangle--highlight-for-redisplay
                    #'donkey--rectangle-highlight-visible)
     (advice-remove 'apply-on-rectangle #'donkey--rectangle-apply-visible)
-    (advice-remove 'xselect-convert-to-string #'donkey--rectangle-convert)
-    (advice-remove 'xselect-convert-to-length #'donkey--rectangle-convert)
     (remove-hook 'rectangle-mark-mode-hook #'donkey--rectangle-primary-follow)
+    ;; Before the converters go: an overlay PRIMARY still holds is
+    ;; answered with its text, never the stretch between its ends.
     (dolist (buffer (buffer-list))
       (with-current-buffer buffer
         (when donkey--rectangle-primary
-          (donkey--rectangle-primary-freeze))))
+          (donkey--rectangle-primary-freeze))
+        (donkey--rectangle-primary-release)))
+    (advice-remove 'xselect-convert-to-string #'donkey--rectangle-convert)
+    (advice-remove 'xselect-convert-to-length #'donkey--rectangle-convert)
+    (advice-remove 'gui-set-selection #'donkey--rectangle-note-claim)
     (donkey--sweep-buffers #'donkey--disable-in-buffer)))
 
 ;;; ---------------------------------------------------------------------------

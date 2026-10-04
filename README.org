@@ -291,18 +291,19 @@ it. Kill the buffer to start over — nothing is written to disk.
 | =:=   | go to a line by number                 |
 | =z z= | recentre the screen                    |
 
-** Long lines: =J=, =K= and =V=
+** Long lines: =j=, =k=, =J= and =K=
 :PROPERTIES:
 :CUSTOM_ID: long-lines-j-k-and-v
 :END:
 
-On a wrapped line, =j= moves to the next *line*, which may be off the
-screen. =J= and =K= move by what you can see instead — the next and
-previous screen row.
+On a line too long for the window, =j= and =k= move by what you can
+see: the next and previous screen row, keeping the column, as Emacs's
+own =C-n= and =C-p= do. =J= and =K= move by whole lines instead, to the
+start of the next or previous line however far it wraps.
 
-=V= turns that around: it switches the buffer into visual-line mode,
-where =j= and =k= move by screen rows and =J= and =K= move by logical
-lines. Press =V= again to switch back.
+Inside a whole-line selection (=V=, below) =J= and =K= grow and shrink
+it by a line. =j= and =k= move the cursor inside it, and the next =J= or
+=K= squares it up to whole lines again.
 
 ** Counts
 
@@ -395,13 +396,23 @@ again re-anchors it where the cursor is; =C-g= cancels it.
 
 ** Whole lines: =V=
 
-=V= — see [[#long-lines-j-k-and-v][Long lines]] above — also serves as a line-wise selection
-when a selection is what you are after.
+=V= selects the line the cursor is on, and =J= and =K= grow it a line
+at a time (see [[#long-lines-j-k-and-v][Long lines]] above); =C-u 3 V= selects three lines at once.
+=V= again lets go.
 
 The highlight stops at the end of the last line, but =y=, =d= and =p=
 take that line's newline as well, so lines go and come back whole. So
 do Emacs's own =C-w=, =M-w= and =C-x r s=, and anything else that asks
 Emacs for the region's text.
+
+=C-x C-x= trades the selection's ends, as =o= does in Vim: =J= and =K=
+then move the end the cursor went to. =C-SPC= lets the line selection
+go and starts a plain one at the cursor.
+
+A line is the line the screen shows. A folded Org or outline heading
+is one line, so =V= takes it with the body it hides and =J= and =K=
+step over it in one press, the way =m l= banks it and Emacs's
+=kill-whole-line= kills it.
 
 A command that reads the region's two ends for itself sees it stop
 before the last newline: =M-x keep-lines= leaves the last line out,
@@ -500,8 +511,9 @@ leave; see [[#a-mark-run-follows-you-between-buffers][A mark run follows you bet
 
 ** Rectangles: =m v=
 
-=m v= starts a rectangle. =P= pastes one back. Rectangles work with the
-wrap keys and with banking, below.
+=m v= starts a rectangle. =P= pastes one back; over a =V= selection it
+replaces the lines with the block's rows, one row to a line.
+Rectangles work with the wrap keys and with banking, below.
 
 =c= on a rectangle empties the block on every row and puts a cursor on
 each, in INSERT state, so what you type appears on every row at once —
@@ -533,7 +545,9 @@ what the next command acts on.
 
 Banked lines survive =C-g=: they are a store you put something in on
 purpose, like the kill ring, and only the key that means discard
-discards them.
+discards them. A line you open or paste beside a banked line is not
+banked with it, and a change of major mode or a revert of the file
+keeps the bank.
 
 * Wrapping a selection in a pair
 :PROPERTIES:
@@ -633,8 +647,11 @@ With it on, as you type:
   between the two;
 - the closing half, typed where that character already stands, steps
   over it rather than doubling it;
+- in overwrite mode (the =<insert>= key) nothing pairs: a delimiter
+  replaces the character under the cursor, as it does in plain Emacs;
 - =DEL= between the halves of an empty pair takes both, and =DEL=
-  anywhere else is whatever your major mode bound it to;
+  anywhere else, or in a buffer you cannot edit such as Dired, is
+  whatever your major mode bound it to;
 - a count types and pairs nothing: =C-u 3 (= gives you three of them.
 
 The last two are DONKEY's own answers. Where =electric-pair-mode= is
@@ -790,7 +807,7 @@ There is no limit on how many matches a split holds. Past a couple of
 thousand, a keystroke writes the matches on screen at once and the
 rest as fast as they can be written, between your keystrokes; scroll
 and what you scroll onto is written first, and =C-g= waits for the
-last of them. Once the split has ended, one =u= takes back everything
+last of them, as saving the file does. Once the split has ended, one =u= takes back everything
 it wrote, at every match, and =U= puts it back; what =c=, =d= or a
 wrap did is one undo step too.
 
@@ -819,6 +836,11 @@ buffer is a selection like any other, or type the regexp with =%= in
 front — =f %foo RET= — and the whole buffer is searched whatever is
 selected. Either way you reach it by choosing it. The =%= is not part
 of the search; =\%= or =[%]= at the start searches for a percent sign.
+
+A match hidden from view — inside a folded Org subtree or outline
+heading, or in any other invisible text — is left out, so nothing is
+written where you cannot see it, and the reminder says how many were
+left out. Set =search-invisible= to =t= to hold them too.
 
 Banked lines are how the split reaches lines that are not next to each
 other. Each run of banked lines is searched up to the end of its last
@@ -883,20 +905,39 @@ into one ends it, since there is no one text to edit in all of them.
 Editing inside matches that differ is what a multiple-cursors package
 is for; this is not one.
 
+A deletion just past a match is made at every match. Backspace and
+=C-d=, with a count or without, take as many characters at each, and
+so does typing in overwrite mode, which writes over the character
+after every match alike; a command that deletes as far as the text goes — =M-d=, =C-k=, =M-\= —
+does so only where the same text stands past every match. Where it
+does not, the split ends and says so, and the other matches keep what
+they hold.
+
+A split belongs to the buffer it was made in. Text changed where it
+cannot follow — from an indirect buffer sharing the text, such as one
+=C-x 4 c= or Org makes, or by a program that turns the change hooks
+off — ends the writing and says so. Nothing is written over that
+change; what was typed stays, and =u= then takes back each edit as
+Emacs recorded it rather than every match at once. A clone made while
+a split is live does not carry the split with it.
+
 ** Cursors in a column: =t=
 
 =t= (=donkey-split-add-cursor=) puts a second cursor on the line below,
 at the same column; each =t= after adds one more below the last, and a
 count adds that many. =T= (=donkey-split-add-cursor-above=) adds above
 instead, and =DEL= takes back the cursor added last. A line shorter
-than the column gets its cursor at its end. When a motion leaves the
-cursors in different columns, ~=~ lines them up under the real one
-again; with selections it wraps them, as any delimiter does.
+than the column gets its cursor at its end, and a line hidden in a
+fold gets none: the line below is the one =j= goes to. When a motion
+leaves the cursors in different columns, ~=~ lines them up under the
+real one again; with selections it wraps them, as any delimiter does.
 
 With lines selected, =t= puts a cursor on every one of them at once:
 =V j j j j t= gives five cursors, each at its line's start, and a =v=
 selection or an =m v= block gives each line a cursor at point's column.
-The real cursor stays on point's line. The other cursors are drawn in
+The real cursor stays on point's line, or goes to the last line
+selected where the selection stops at the start of point's line: =g h
+v j j t= is two lines and two cursors. The other cursors are drawn in
 the real cursor's shape, a box or a bar as the state changes, and
 always in the text's own color rather than the real cursor's; a
 background given to the face =donkey-split-cursor-face= is used
@@ -932,7 +973,9 @@ line's end types there rather than on the next line. With a selection,
 ring as one kill, one line per cursor, and =p= gives each cursor its
 own line back when the kill has as many lines as there are cursors —
 so =m w y=, a move, and =p= copies each cursor's word to where that
-cursor went. A key =m i= would ask for is asked once.
+cursor went. Whole lines taken with =V= are the lines as =V y= at one
+cursor takes them, and =V p= replaces each cursor's line the way it
+replaces one. A key =m i= would ask for is asked once.
 
 =M= at the cursors is the mark run at every cursor: each selects its
 word, or keeps what it had selected, and the run's keys grow and
@@ -945,7 +988,8 @@ the run, and a key the cursors answer does its job at every cursor.
 The case keys are Emacs's own, and a key you gave =upcase-region= or
 =downcase-region= in Normal state works at the cursors too. An edit at
 the cursors is one change: =u= takes it back everywhere at once, and
-an edit that fails at one cursor is taken back at all of them. =z z=
+an edit that fails at one cursor is taken back at all of them, the
+cursors and their selections left as they were. =z z=
 and =C-l= move the view and keep the cursors.
 
 Every key but the ones that type runs once at every cursor: a motion
@@ -1888,6 +1932,11 @@ Those two are the default: =dumb= supports no escape sequences at all,
 and the Linux console changes its cursor by a different mechanism.
 Matching is by prefix on what =tty-type= reports.
 
+When Emacs exits or is suspended, or an =emacsclient -t= frame closes,
+the terminal is sent its own cursor shape back, so the shell you
+return to does not keep DONKEY's. Coming back from a suspension sends
+the state's shape again.
+
 If your terminal prints stray characters when the state changes, add
 its type:
 
@@ -1912,7 +1961,10 @@ into a bug report.
 :END:
 
 =y= and =p= use the system clipboard where there is one, falling back
-to the kill ring. On most systems this needs no configuration at all:
+to the kill ring. =p= reads the clipboard once per press and puts
+another program's copy on the kill ring once, however often it is
+pasted, so =M-y= after a paste reaches the kill before it. On most
+systems this needs no configuration at all:
 DONKEY looks for =wl-copy=, =xclip=, =xsel=, =pbcopy= or Windows
 PowerShell and uses the first that fits.
 
@@ -1940,7 +1992,21 @@ graphical frame:
 :CUSTOM_ID: configuring-the-enter-key
 :END:
 
-=RET= does nothing in the modes listed in =donkey-editing-modes=:
+In Normal state =RET= tries these in order and stops at the first that
+answers:
+
+1. An =org-agenda= buffer — whatever the agenda binds =RET= to.
+2. An Org buffer — the rules below: follow the link, toggle the
+   checkbox, flip the TODO.
+3. A Markdown buffer — follow the link at point.
+4. A mode not listed in =donkey-editing-modes= — whatever the mode
+   itself binds =RET= to, asked at the moment you press it. A command
+   that would type or break a line is refused, so =RET= stays inert
+   rather than inserting a newline in a buffer you are reading.
+
+Where none of them answers, =RET= does nothing. That is every buffer
+of a mode in the list, away from what the Org and Markdown steps act
+on:
 
 #+begin_src emacs-lisp
 
@@ -1952,20 +2018,10 @@ graphical frame:
 #+end_src
 
 Derived modes are covered, so those seven names cover nearly every
-buffer you actually edit. Add a mode to make =RET= inert there; remove
-one to let =RET= fall through to whatever that mode binds.
-
-Everywhere else, =RET= tries these in order and stops at the first
-that answers:
-
-1. An =org-agenda= buffer — whatever the agenda binds =RET= to.
-2. An Org buffer — the rules below: follow the link, toggle the
-   checkbox, flip the TODO.
-3. A Markdown buffer — follow the link at point.
-4. Anything else — whatever the mode itself binds =RET= to, asked at
-   the moment you press it. A command that would type or break a line
-   is refused, so =RET= stays inert rather than inserting a newline in
-   a buffer you are reading.
+buffer you actually edit. Org and Markdown are in it for what their
+own steps leave over: =RET= on an Org checkbox still toggles it. Add a
+mode to make =RET= inert there; remove one to let =RET= reach whatever
+that mode binds.
 
 ** Rules of your own
 
@@ -2065,6 +2121,10 @@ wraps and how is then your package's business, including whether
 pressing the same delimiter again takes the pair off. =M-x
 donkey-toggle-wrap-engine= flips between the two so you can feel the
 difference.
+
+In a buffer where nothing but =donkey-pair-mode= is pairing, DONKEY's
+own pairing is the package, so the wrap there is DONKEY's own, taking
+the pair off included, and the toggle says so.
 
 * Pairing: every setting
 :PROPERTIES:
@@ -3089,7 +3149,7 @@ do not have the problem.
 | =h= =j= =k= =l= | left, down, up, right                |
 | =w= =b=         | forward, back one word               |
 | =W= =B=         | forward, back one balanced expression |
-| =J= =K=         | down, up one screen row              |
+| =J= =K=         | down, up one whole line              |
 | =S=             | back through where you have been     |
 | =:=             | go to line                           |
 | =%=             | select the whole buffer              |

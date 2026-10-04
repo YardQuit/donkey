@@ -450,243 +450,96 @@ in height."
 ;;; donkey-yank
 ;;; ---------------------------------------------------------------------------
 
-(ert-deftest donkey-yank-no-region-calls-clipboard-yank ()
-  "Without an active region, calls `clipboard-yank' directly."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (yanked)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (cl-letf (((symbol-function 'use-region-p)
-                   (lambda () nil))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () (setq yanked t))))
-          (donkey-yank)))
-      (should yanked))))
+(ert-deftest donkey-yank-pastes-the-clipboard-at-point ()
+  "`p' with nothing selected inserts what the clipboard holds, at point."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "world" ()
+      "hello\n" "p"
+    (should (equal (buffer-string) "worldhello\n"))
+    (should (equal kill-ring '("world")))))
 
-(ert-deftest donkey-yank-no-region-skips-delete-active-region ()
-  "Without an active region, the function `delete-active-region' is not called."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (deleted)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (cl-letf (((symbol-function 'use-region-p)
-                   (lambda () nil))
-                  ((symbol-function 'delete-active-region)
-                   (lambda () (setq deleted t)))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () nil)))
-          (donkey-yank)))
-      (should-not deleted))))
+(ert-deftest donkey-yank-without-a-selection-removes-nothing ()
+  "`p' with nothing selected only inserts; the text around point stays."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      nil ((kill-ring (list "K")))
+      "hello\n" "l p"
+    (should (equal (buffer-string) "hKello\n"))))
 
-(ert-deftest donkey-yank-region-deletes-then-yanks ()
-  "An active region is removed before the paste lands.
-Calls the function `delete-active-region' then `clipboard-yank', in that
-order."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (order)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (push-mark 4)
-        (cl-letf (((symbol-function 'use-region-p)
-                   (lambda () t))
-                  ((symbol-function 'delete-active-region)
-                   (lambda () (push 'delete order)))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () (push 'yank order))))
-          (donkey-yank)))
-      (should (eq (nth 0 order) 'yank))
-      (should (eq (nth 1 order) 'delete))
-      (should (= (length order) 2)))))
+(ert-deftest donkey-yank-replaces-a-selection ()
+  "`p' over a `v' selection replaces it, and the replaced text is not killed."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "hey" ()
+      "hello world\n" "v l l l l l p"
+    (should (equal (buffer-string) "hey world\n"))
+    (should (equal kill-ring '("hey")))))
 
-(ert-deftest donkey-yank-no-region-inserts-clipboard-content ()
-  "Without region, `clipboard-yank' inserts clipboard text at point."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () nil))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (insert "world"))))
-        (donkey-yank))
-      (should (string= (buffer-substring 1 6) "world")))))
+(ert-deftest donkey-yank-replaces-a-selection-of-the-whole-buffer ()
+  "`% p' replaces every character of the buffer."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "world\n" ()
+      "hello\n" "% p"
+    (should (equal (buffer-string) "world\n"))))
 
-(ert-deftest donkey-yank-region-replaces-with-clipboard-content ()
-  "With region, deletes region then yanks clipboard content."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (with-temp-buffer
-      (insert "hello world\n")
-      (goto-char 6)
-      (push-mark 1)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () t))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (delete-region 1 6)))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (insert "hey"))))
-        (donkey-yank))
-      (should (string= (buffer-substring 1 4) "hey")))))
+(ert-deftest donkey-yank-in-an-empty-buffer ()
+  "`p' in an empty buffer inserts the paste and nothing else."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "text" ()
+      "" "p"
+    (should (equal (buffer-string) "text"))))
 
-(ert-deftest donkey-yank-empty-buffer-no-region ()
-  "Empty buffer, no region: `clipboard-yank' inserts at point-min."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (with-temp-buffer
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () nil))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (insert "text"))))
-        (donkey-yank))
-      (should (= (buffer-size) 4))
-      (should (string= (buffer-string) "text")))))
-
-(ert-deftest donkey-yank-region-covers-entire-buffer ()
-  "Region covers entire buffer: cleared then replaced."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char (point-max))
-      (push-mark 1)
-      (cl-letf (((symbol-function 'use-region-p)
-                 (lambda () t))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (delete-region 1 7)))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (insert "world\n"))))
-        (donkey-yank))
-      (should (string= (buffer-string) "world\n")))))
-
-(ert-deftest donkey-yank-call-interactively-with-region ()
-  "Can be called interactively with a region."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (deleted yanked)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (push-mark 4)
-        (cl-letf (((symbol-function 'use-region-p)
-                   (lambda () t))
-                  ((symbol-function 'delete-active-region)
-                   (lambda () (setq deleted t)))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () (setq yanked t))))
-          (call-interactively #'donkey-yank))
-        (should deleted)
-        (should yanked)))))
-
-(ert-deftest donkey-yank-ignores-prefix-arg ()
-  "`clipboard-yank' is called regardless of prefix arg."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (yanked)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (let ((current-prefix-arg '(4)))
-          (cl-letf (((symbol-function 'use-region-p)
-                     (lambda () nil))
-                    ((symbol-function 'clipboard-yank)
-                     (lambda () (setq yanked t))))
-            (call-interactively #'donkey-yank)))
-        (should yanked)))))
-
-(ert-deftest donkey-yank-outside-rectangle-mode-pastes-normally ()
-  "Without `rectangle-mark-mode', \"p\" deletes the region and yanks."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (called-cmd deleted yanked)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (push-mark 3)
-        (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-                  ((symbol-function 'call-interactively)
-                   (lambda (cmd) (setq called-cmd cmd)))
-                  ((symbol-function 'delete-active-region)
-                   (lambda () (setq deleted t)))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () (setq yanked t))))
-          (let ((rectangle-mark-mode nil))
-            (donkey-yank))))
-      (should-not called-cmd)
-      (should deleted)
-      (should yanked))))
+(ert-deftest donkey-yank-reads-a-prefix-as-a-count-not-a-kill-ring-index ()
+  "A count on `p' pastes the newest kill that many times; `yank' reads it as an index."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      nil ((kill-ring (list "NEW" "OLD")))
+      "x\n" "C-u 2 p"
+    (should (equal (buffer-string) "NEWNEWx\n"))))
 
 (ert-deftest donkey-yank-pastes-linear-text-not-a-rectangle ()
-  "`donkey-yank' goes through `clipboard-yank', never `yank-rectangle'.
+  "`p' pastes the clipboard and kill ring, never `killed-rectangle'."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "TXT" ((killed-rectangle (list "R1" "R2")))
+      "x\n" "p"
+    (should (equal (buffer-string) "TXTx\n"))))
 
-The two stores are reached by two keys; \"p\" only ever names the kill
-ring and the system clipboard."
-  ;; `kill-ring' is bound because `donkey-yank' checks there is
-  ;; something to paste BEFORE acting: with the ring empty it
-  ;; correctly does nothing and never reaches the mock below.  Left
-  ;; ambient this passed only when an earlier test had stocked the
-  ;; ring, which running the suite shuffled showed it relying on.
-  (let ((kill-ring (list "something")))
-    (let (
-          rectangle-yanked clipboard-yanked)
-      (with-temp-buffer
-        (insert "hello\n")
-        (goto-char 1)
-        (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
-                  ((symbol-function 'yank-rectangle)
-                   (lambda () (setq rectangle-yanked t)))
-                  ((symbol-function 'clipboard-yank)
-                   (lambda () (setq clipboard-yanked t))))
-          (let (rectangle-mark-mode)
-            (donkey-yank))))
-      (should-not rectangle-yanked)
-      (should clipboard-yanked))))
+(ert-deftest donkey-yank-of-text-emacs-copied-adds-no-kill ()
+  "Pasting what Emacs itself copied leaves the `kill-ring' as the copy left it."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      nil ()
+      "alpha beta\n" "C-u 5 y G p p p"
+    (should (equal (buffer-string) "alpha beta\nalphaalphaalpha"))
+    (should (equal kill-ring '("alpha")))))
+
+(ert-deftest donkey-yank-adds-another-programs-copy-once ()
+  "Text another program copied goes on the `kill-ring' once, however often pasted."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "EXT" ((kill-ring (list "OLD")))
+      "x\n" "p p p"
+    (should (equal (buffer-string) "EXTEXTEXTx\n"))
+    (should (equal kill-ring '("EXT" "OLD")))))
+
+(ert-deftest donkey-yank-with-a-count-reads-the-clipboard-once ()
+  "`C-u 5 p' asks the clipboard once and adds one kill for five copies."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "EXT" ((kill-ring (list "OLD")))
+      "x\n" "C-u 5 p"
+    (should (equal (buffer-string) "EXTEXTEXTEXTEXTx\n"))
+    (should (equal kill-ring '("EXT" "OLD")))
+    (should (= donkey-test-keys--clipboard-reads 1))))
+
+(ert-deftest donkey-yank-then-yank-pop-reaches-the-kill-before ()
+  "`M-y' right after `p' replaces the paste with the kill before it."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      nil ((kill-ring (list "OLD")))
+      "alpha beta\n" "C-u 5 y G p M-y"
+    (should (equal (buffer-string) "alpha beta\nOLD"))))
+
+(ert-deftest donkey-yank-with-the-clipboard-option-off-adds-its-text-once ()
+  "With `select-enable-clipboard' nil, `p' still takes the clipboard, once."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "EXT" ((select-enable-clipboard nil) (kill-ring (list "OLD")))
+      "x\n" "p p"
+    (should (equal (buffer-string) "EXTEXTx\n"))
+    (should (equal kill-ring '("EXT" "OLD")))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-indent-region-or-line
@@ -960,11 +813,25 @@ start to region end's line start (or next line if not at bol)."
           (donkey-comment-dwim))))
     (should deactivated)))
 
+;; Loaded before any test stubs `org-element-at-point', which would
+;; otherwise be an autoload cell, and so `org-element-property' -- which
+;; the comment key reads off the element -- exists.
+(require 'org-element)
+
+(defun donkey-test--src-block-here ()
+  "Stand in for `org-element-at-point': a source block spanning the buffer.
+
+Its #+begin line is the buffer's first and its #+end line the last, so
+a line between them is a line of its code."
+  (list 'src-block
+        (list :language "python" :begin 1 :post-affiliated 1
+              :end (point-max))))
+
 (ert-deftest donkey-comment-dwim-in-org-src-block-delegates-to-org-edit ()
   "Inside an org src-block, delegates to org-edit-special first."
   (let (calls)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(src-block (:language "python" :begin 1 :end 50))))
+               #'donkey-test--src-block-here)
               ((symbol-function 'org-edit-special)
                (lambda () (interactive) (push 'org-edit-special calls)))
               ((symbol-function 'comment-or-uncomment-region)
@@ -972,8 +839,9 @@ start to region end's line start (or next line if not at bol)."
               ((symbol-function 'org-edit-src-exit)
                (lambda () (interactive) (push 'org-exit calls))))
       (with-temp-buffer
-        (insert "some text\n")
+        (insert "#+begin_src python\nsome text\n#+end_src\n")
         (goto-char (point-min))
+        (forward-line 1)
         (let ((major-mode 'org-mode))
           (donkey-comment-dwim))))
     (should (memq 'org-exit calls))
@@ -988,7 +856,7 @@ Multiple lines in org src-block with active region: both org-edit-special
 and `comment-or-uncomment-region' are called."
   (let (org-edit-called comment-called)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(src-block (:language "python" :begin 1 :end 50))))
+               #'donkey-test--src-block-here)
               ((symbol-function 'org-edit-special)
                (lambda () (interactive) (setq org-edit-called t)))
               ((symbol-function 'comment-or-uncomment-region)
@@ -998,9 +866,9 @@ and `comment-or-uncomment-region' are called."
               ((symbol-function 'use-region-p)
                (lambda () t)))
       (with-temp-buffer
-        (insert "line one\nline two\nline three\n")
-        (goto-char 1)
-        (push-mark 11)
+        (insert "#+begin_src python\nline one\nline two\nline three\n#+end_src\n")
+        (goto-char 20)
+        (push-mark 30)
         (let ((major-mode 'org-mode))
           (donkey-comment-dwim))))
     (should org-edit-called)
@@ -1010,7 +878,7 @@ and `comment-or-uncomment-region' are called."
   "When org-edit-src-exit succeeds with a region, mark is deactivated."
   (let (deactivated)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(src-block (:language "python" :begin 1 :end 50))))
+               #'donkey-test--src-block-here)
               ((symbol-function 'org-edit-special)
                (lambda () (interactive) nil))
               ((symbol-function 'comment-or-uncomment-region)
@@ -1022,9 +890,9 @@ and `comment-or-uncomment-region' are called."
               ((symbol-function 'deactivate-mark)
                (lambda () (setq deactivated t))))
       (with-temp-buffer
-        (insert "a\nb\n")
-        (goto-char 1)
-        (push-mark 3)
+        (insert "#+begin_src python\na\nb\n#+end_src\n")
+        (goto-char 20)
+        (push-mark 22)
         (let ((major-mode 'org-mode))
           (donkey-comment-dwim))))
     (should deactivated)))
@@ -1036,15 +904,16 @@ If org-edit-special raises an error, `condition-case' catches it and
 displays a message instead of propagating."
   (let (messages caught-error-p)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(src-block (:language "python" :begin 1 :end 50))))
+               #'donkey-test--src-block-here)
               ((symbol-function 'org-edit-special)
                (lambda () (interactive) (error "Mock error")))
               ((symbol-function 'message)
                (lambda (fmt &rest args)
                  (push (apply #'format fmt args) messages))))
       (with-temp-buffer
-        (insert "code\n")
+        (insert "#+begin_src python\ncode\n#+end_src\n")
         (goto-char (point-min))
+        (forward-line 1)
         (let ((major-mode 'org-mode))
           (condition-case _err
               (donkey-comment-dwim)
@@ -1070,7 +939,7 @@ syntax is defined\", and without this fix the edit buffer/window was
 left open rather than being cleaned up by `org-edit-src-exit'."
   (let (org-edit-called org-exit-called)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(src-block (:language "fundamental" :begin 1 :end 50))))
+               #'donkey-test--src-block-here)
               ((symbol-function 'org-edit-special)
                (lambda () (interactive) (setq org-edit-called t)))
               ((symbol-function 'comment-or-uncomment-region)
@@ -1078,8 +947,9 @@ left open rather than being cleaned up by `org-edit-src-exit'."
               ((symbol-function 'org-edit-src-exit)
                (lambda () (interactive) (setq org-exit-called t))))
       (with-temp-buffer
-        (insert "some text\n")
+        (insert "#+begin_src python\nsome text\n#+end_src\n")
         (goto-char (point-min))
+        (forward-line 1)
         (let ((major-mode 'org-mode))
           (donkey-comment-dwim))))
     (should org-edit-called)
@@ -1089,7 +959,7 @@ left open rather than being cleaned up by `org-edit-src-exit'."
   "When in `org-mode' on a src-block, the org delegation path is taken."
   (let (call-order)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(src-block (:language "python" :begin 1 :end 50))))
+               #'donkey-test--src-block-here)
               ((symbol-function 'org-edit-special)
                (lambda () (interactive) (push 'org-edit call-order)))
               ((symbol-function 'comment-or-uncomment-region)
@@ -1097,8 +967,9 @@ left open rather than being cleaned up by `org-edit-src-exit'."
               ((symbol-function 'org-edit-src-exit)
                (lambda () (interactive) (push 'org-exit call-order))))
       (with-temp-buffer
-        (insert "code\n")
+        (insert "#+begin_src python\ncode\n#+end_src\n")
         (goto-char (point-min))
+        (forward-line 1)
         (let ((major-mode 'org-mode))
           (donkey-comment-dwim))))
     (should (memq 'org-edit call-order))
@@ -1187,6 +1058,31 @@ ordinary non-org branch instead and is not this code path at all."
                        (concat "#+begin_src python\n"
                                "  line_a\n  # line_b\n  # line_c\n"
                                "#+end_src\n\nOutro.\n"))))))
+
+(ert-deftest donkey-comment-dwim-refuses-a-source-block-delimiter-alone ()
+  "`C' on a block's #+begin or #+end line, taking no code, refuses and changes nothing."
+  (let ((text "#+begin_src emacs-lisp\n(a)\n(b)\n#+end_src\n"))
+    (dolist (keys '("" "j j j" "V"))
+      (donkey-test-keys--harness "*donkey-C-src*" #'org-mode () text keys
+        (should-error (execute-kbd-macro (kbd "C")) :type 'user-error)
+        (should (equal (list keys (buffer-string)) (list keys text)))))))
+
+(ert-deftest donkey-comment-dwim-comments-the-code-a-selection-takes-from-a-delimiter ()
+  "`C' with point on #+begin or #+end comments the lines of code selected, and no others."
+  (let ((text "#+begin_src emacs-lisp\n(a)\n(b)\n#+end_src\n"))
+    (donkey-test-keys--harness "*donkey-C-src*" #'org-mode () text "j V K C"
+      (should (equal (buffer-string)
+                     "#+begin_src emacs-lisp\n  ;; (a)\n  (b)\n#+end_src\n")))
+    (donkey-test-keys--harness "*donkey-C-src*" #'org-mode () text "V J J J C"
+      (should (equal (buffer-string)
+                     "#+begin_src emacs-lisp\n  ;; (a)\n  ;; (b)\n#+end_src\n")))))
+
+(ert-deftest donkey-comment-dwim-comments-a-blocks-keyword-line-as-org ()
+  "`C' on a keyword line before #+begin comments it as an Org line."
+  (donkey-test-keys--harness "*donkey-C-src*" #'org-mode ()
+      "#+name: demo\n#+begin_src emacs-lisp\n(a)\n#+end_src\n" "C"
+    (should (equal (buffer-string)
+                   "# #+name: demo\n#+begin_src emacs-lisp\n(a)\n#+end_src\n"))))
 
 (ert-deftest donkey-comment-dwim-real-org-src-no-region-single-line ()
   "With no region, only the current src-block line is commented.
@@ -1487,12 +1383,42 @@ for the paste path."
                     :type 'buffer-read-only))
     (should (donkey--banked-selection-p))))
 
+(ert-deftest donkey-delete-over-banks-with-read-only-text-changes-nothing ()
+  "`d' over banks that read-only text refuses deletes, kills and spends nothing."
+  (donkey-test-keys--harness "*donkey-bank-ro*" #'text-mode nil
+      "aaa\nbbb\nccc\nddd\n" "m l j j m l"
+    (put-text-property 1 3 'read-only t)
+    (should-error (execute-kbd-macro (kbd "d")) :type 'text-read-only)
+    (should (equal (buffer-string) "aaa\nbbb\nccc\nddd\n"))
+    (should-not kill-ring)
+    (should (= 2 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-paste-over-banks-with-read-only-text-changes-nothing ()
+  "`p' over banks that read-only text refuses deletes and spends nothing."
+  (donkey-test-keys--harness "*donkey-bank-ro*" #'text-mode nil
+      "aaa\nbbb\nccc\nddd\n" "m l j j m l"
+    (put-text-property 1 3 'read-only t)
+    (kill-new "PASTE\n")
+    (should-error (execute-kbd-macro (kbd "p")) :type 'text-read-only)
+    (should (equal (buffer-string) "aaa\nbbb\nccc\nddd\n"))
+    (should (= 2 (donkey--banked-line-count)))))
+
+(ert-deftest donkey-delete-over-a-bank-and-a-read-only-region-keeps-the-region ()
+  "A refused `d' over a bank and a live region leaves both standing."
+  (donkey-test-keys--harness "*donkey-bank-ro*" #'text-mode nil
+      "aaa\nbbb\nccc\nddd\n" "j j j m l g g v l"
+    (put-text-property 1 3 'read-only t)
+    (should-error (execute-kbd-macro (kbd "d")) :type 'text-read-only)
+    (should (equal (buffer-string) "aaa\nbbb\nccc\nddd\n"))
+    (should (region-active-p))
+    (should (= 1 (donkey--banked-line-count)))))
+
 (ert-deftest donkey-bank-selection-does-not-outlive-the-buffer-being-refilled ()
   "Regression test: a bank must not survive the text it banked.
 
 Emptying a buffer collapses an overlay to zero width rather than
-removing it, and banked overlays advance with text inserted at their
-end -- so refilling the buffer regrew the overlay over whatever
+removing it, and banked overlays used to advance with text inserted at
+their end -- so refilling the buffer regrew the overlay over whatever
 replaced the banked line.  Banking one line of three and then
 refilling reported the entire new buffer as banked, while
 `donkey--banked-line-count' still said one line, so `y'/`d' acted on
@@ -1522,6 +1448,35 @@ looks collapsed.  The overlays evaporate instead."
     (should (= 1 (length (donkey--banked-spans))))
     (delete-region (point-min) (save-excursion (forward-line 1) (point)))
     (should (null (donkey--banked-spans)))))
+
+(ert-deftest donkey-text-inserted-beside-a-banked-line-is-not-banked ()
+  "Text opened, typed or pasted at either edge of a banked line stays out."
+  (let ((text "aaa\nbbb\nccc\n"))
+    ;; Typed at the start of the line below.
+    (donkey-test-keys--harness "*donkey-bank-edge*" #'text-mode nil
+        text "m l j i X C-g g g y"
+      (should (equal (car kill-ring) "aaa\n")))
+    ;; A line opened below the bank, from the line below it.
+    (donkey-test-keys--harness "*donkey-bank-edge*" #'text-mode nil
+        text "m l j O N E W C-g y"
+      (should (equal (car kill-ring) "aaa\n")))
+    ;; A line opened above the bank, from the banked line.
+    (donkey-test-keys--harness "*donkey-bank-edge*" #'text-mode nil
+        text "j m l O N E W C-g d"
+      (should (equal (car kill-ring) "bbb\n"))
+      (should (equal (buffer-string) "aaa\nNEW\nccc\n")))
+    ;; Whole lines pasted at either edge.
+    (donkey-test-keys--harness "*donkey-bank-edge*" #'text-mode nil
+        text "j m l"
+      (save-excursion
+        (goto-char (point-min))
+        (forward-line 1)
+        (insert "ZZZ\n")
+        (forward-line 1)
+        (insert "YYY\n"))
+      (should (equal (buffer-string) "aaa\nZZZ\nbbb\nYYY\nccc\n"))
+      (should (equal (donkey--banked-spans)
+                     (list (cons 9 13)))))))
 
 (ert-deftest donkey-bank-selection-toggles-off-on-same-line ()
   "Banking a line twice unbanks only that line.
@@ -1556,6 +1511,20 @@ second reported \"Unbanked this line (0 total)\"."
       (should (= 2 (donkey--banked-line-count)))
       ;; Banking releases the mark so navigation can continue.
       (should-not (use-region-p)))))
+
+(ert-deftest donkey-banking-a-folded-heading-takes-its-hidden-body ()
+  "`m l' on a folded heading banks the heading with the body it hides."
+  (skip-unless (require 'org nil t))
+  (donkey-test-keys--harness "*donkey-bank-fold*" #'org-mode ()
+      "* A\n* B\nb1\nb2\n* C\n" ""
+    (goto-char (point-min))
+    (forward-line 1)
+    (let ((last-command nil))
+      (org-cycle))
+    (should (invisible-p (line-end-position)))
+    (execute-kbd-macro (kbd "m l j m l d"))
+    (should (equal (buffer-string) "* A\n"))
+    (should (equal (car kill-ring) "* B\nb1\nb2\n* C\n"))))
 
 (ert-deftest donkey-copy-banked-lines-concatenates-in-buffer-order ()
   "Banked lines are copied as one kill, in buffer order.
@@ -1776,6 +1745,26 @@ ghost could neither be toggled off nor banked over."
     (donkey-bank-selection)
     (should (= 1 (donkey--banked-line-count)))
     (should (equal (donkey--banked-spans) (list (cons 1 5))))))
+
+(ert-deftest donkey-a-bank-survives-a-change-of-major-mode ()
+  "A new major mode keeps the banks, and every key that reads them sees them."
+  (donkey-test-keys--harness "*donkey-bank-mode*" #'text-mode nil
+      "aaa\nbbb\nccc\n" "m l j m l"
+    (emacs-lisp-mode)
+    (donkey-mode 1)
+    (should (= 2 (donkey--banked-line-count)))
+    (execute-kbd-macro (kbd "j y"))
+    (should (equal (car kill-ring) "aaa\nbbb\n"))
+    (should-not (donkey--banked-selection-p))))
+
+(ert-deftest donkey-mode-disable-clears-banks-made-before-a-mode-change ()
+  "Turning off variable `donkey-mode' clears banks the mode change kept."
+  (donkey-test-keys--harness "*donkey-bank-mode*" #'text-mode nil
+      "aaa\nbbb\n" "m l"
+    (normal-mode)
+    (donkey-mode -1)
+    (should-not (seq-filter (lambda (ov) (overlay-get ov 'donkey-banked))
+                            (overlays-in (point-min) (point-max))))))
 
 (ert-deftest donkey-mode-disable-clears-banked-lines ()
   "Turning off variable `donkey-mode' clears banked highlights.
@@ -2227,6 +2216,30 @@ separately, so they can be taken out."
              (large (best-of-3 4000))
              (ratio (/ large small)))
         (should (< ratio 25))))))
+
+(ert-deftest donkey-letting-go-of-a-large-bank-is-not-quadratic ()
+  "Unbanking scales with the number of lines, not their square.
+
+The path `y', `d', `p', `m U' and a block toggled off with `m l' all
+take.  Asserts the shape of the growth, as
+`donkey-banking-a-large-region-is-not-quadratic' does: eight times the
+lines, the best of three runs, collections subtracted.  Linear measures
+about 8, quadratic about 29."
+  (cl-flet* ((unbank-n (n)
+               (with-temp-buffer
+                 (dotimes (i n) (insert (format "line %d\n" i)))
+                 (cl-letf (((symbol-function 'message) (lambda (&rest _) nil)))
+                   (donkey--bank-span (point-min) (point-max))
+                   (garbage-collect)
+                   (let ((figures (benchmark-run 1
+                                    (donkey--unbank-span (point-min) (point-max)))))
+                     (should (zerop (donkey--banked-line-count)))
+                     (- (nth 0 figures) (nth 2 figures))))))
+             (best-of-3 (n) (min (unbank-n n) (unbank-n n) (unbank-n n))))
+    (unbank-n 200)
+    (let ((small (max (best-of-3 1000) 0.0005))
+          (large (best-of-3 8000)))
+      (should (< (/ large small) 15)))))
 
 (ert-deftest donkey-docstring-first-lines-are-complete-sentences ()
   "Every docstring in donkey.el opens with a one-line sentence.
@@ -2706,6 +2719,38 @@ governed by the count."
     (goto-char 4)
     (donkey-change -2)
     (should (equal (buffer-string) "adef"))))
+
+(defmacro donkey-test--cluster-keys (text cluster keys &rest body)
+  "Type KEYS into a buffer of TEXT whose CLUSTER is one glyph, then run BODY.
+
+CLUSTER is (FROM . TO), composed with `compose-region', so the
+characters count as one whatever the display composes by itself."
+  (declare (indent 3))
+  `(donkey-test-keys--harness "*donkey-cluster*"
+       (lambda ()
+         (text-mode)
+         (insert ,text)
+         (compose-region (car ,cluster) (cdr ,cluster)))
+       ()
+       "" ,keys
+     ,@body))
+
+(ert-deftest donkey-delete-copy-and-change-count-a-cluster-as-one-character ()
+  "`x', `y' and `c' with no selection take a composed cluster whole, both ways."
+  ;; e and a combining acute accent, then x and y.
+  (donkey-test--cluster-keys "éxy" '(1 . 3) "x"
+    (should (equal (buffer-string) "xy")))
+  (donkey-test--cluster-keys "éxy" '(1 . 3) "C-u 2 x"
+    (should (equal (buffer-string) "y")))
+  (donkey-test--cluster-keys "éxy" '(1 . 3) "C-u 2 y"
+    (should (equal kill-ring '("éx"))))
+  (donkey-test--cluster-keys "éxy" '(1 . 3) "c Z C-g"
+    (should (equal (buffer-string) "Zxy")))
+  ;; Backward, from the end of the buffer.
+  (donkey-test--cluster-keys "aé" '(2 . 4) "G C-u - 1 x"
+    (should (equal (buffer-string) "a")))
+  (donkey-test--cluster-keys "aé" '(2 . 4) "G C-u - 2 y"
+    (should (equal kill-ring '("aé")))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Paste: banked lines, and nothing to paste
@@ -3341,7 +3386,7 @@ t unconditionally would grow a trailing newline on every such paste."
 (ert-deftest donkey-visual-line-paste-with-nothing-to-paste-keeps-the-line ()
   "`V p' with an empty kill ring reports and leaves the line standing.
 
-Guard order pinned: `donkey--nothing-to-paste-p' must run before the
+Guard order pinned: `donkey--take-clipboard' must run before the
 visual-line branch removes anything, the same protection the plain
 region and the bank already have."
   (donkey-test-keys--harness "*donkey-vp-test*" #'text-mode ()
@@ -4434,38 +4479,19 @@ mismatched row count rather than paste half of it."
     (should replace-called)))
 
 (ert-deftest donkey-yank-in-rectangle-mode-falls-through-to-undefined ()
-  "A live rectangle is never deleted and then pasted back linearly.
+  "`p' over a live rectangle changes nothing: no deletion, no paste, no kill.
 
-Regression test: `donkey--delete-active-region-safe' correctly deletes
-the whole rectangle (via `region-extract-function', which rect.el
-advises to respect `rectangle-mark-mode'), but that deletion deactivates
-the mark, which auto-disables `rectangle-mark-mode' via its own hook --
-so a plain linear yank immediately after would land on only one row,
-silently leaving every other row of the just-deleted rectangle with
-nothing to replace it.  Must call `undefined' instead, same as
-`donkey-wrap-region' does.  Pasting over a rectangle selection is
-\\[donkey-yank-rectangle]'s job.
-
-The deletion and the yank are both asserted absent, not just the
-fall-through: reaching `undefined' matters less than not having eaten
-the rectangle on the way there."
-  (let (called-cmd deleted yanked)
-    (with-temp-buffer
-      (insert "hello\n")
-      (goto-char 1)
-      (push-mark 3)
-      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
-                ((symbol-function 'call-interactively)
-                 (lambda (cmd) (setq called-cmd cmd)))
-                ((symbol-function 'delete-active-region)
-                 (lambda () (setq deleted t)))
-                ((symbol-function 'clipboard-yank)
-                 (lambda () (setq yanked t))))
-        (let ((rectangle-mark-mode t))
-          (donkey-yank 1))))
-    (should (eq called-cmd 'undefined))
-    (should-not deleted)
-    (should-not yanked)))
+The fall-through is `undefined', which rings the bell -- an error inside
+a keyboard macro in a live frame, a plain beep in batch -- so the key is
+sent on its own and its error ignored."
+  (donkey-test-keys--clipboard-harness "*donkey-p-test*" #'text-mode
+      "EXT" ((kill-ring (list "K")))
+      "hello\nworld\n" "m v j l l"
+    (should rectangle-mark-mode)
+    (ignore-errors (execute-kbd-macro (kbd "p")))
+    (should (equal (buffer-string) "hello\nworld\n"))
+    (should (equal kill-ring '("K")))
+    (should-not killed-rectangle)))
 
 (ert-deftest donkey-yank-rectangle-count-widens-rather-than-stacking ()
   "A count on `P' repeats each ROW, giving a wider block.
@@ -4499,6 +4525,37 @@ loudly if it changed."
      (let ((before (buffer-string)))
        (donkey-yank-rectangle count)
        (should (equal (buffer-string) before))))))
+
+(ert-deftest donkey-yank-rectangle-over-visual-lines-pastes-the-rows-as-lines ()
+  "`P' over a `V' selection replaces the lines with the rows, one row to a line.
+
+The same text `p' gives over the selection with the rows joined by
+newlines, so the line after the selection stays a line of its own."
+  (let (from-rows from-text)
+    (donkey-test-keys--harness "*donkey-vP-test*" #'text-mode
+        ((killed-rectangle (list "X" "Y")))
+        "aa\nbb\ncc\n" "V J P"
+      (setq from-rows (buffer-string)))
+    (donkey-test-keys--harness "*donkey-vP-test*" #'text-mode
+        ((kill-ring (list "X\nY")))
+        "aa\nbb\ncc\n" "V J p"
+      (setq from-text (buffer-string)))
+    (should (equal from-rows "X\nY\ncc\n"))
+    (should (equal from-rows from-text)))
+  ;; The last line, with no line ending to give back.
+  (donkey-test-keys--harness "*donkey-vP-test*" #'text-mode
+      ((killed-rectangle (list "X" "Y")))
+      "aa\nbb" "j V P"
+    (should (equal (buffer-string) "aa\nX\nY")))
+  ;; A count widens each row; zero removes the lines and pastes nothing.
+  (donkey-test-keys--harness "*donkey-vP-test*" #'text-mode
+      ((killed-rectangle (list "X" "Y")))
+      "aa\nbb\ncc\n" "V J C-u 2 P"
+    (should (equal (buffer-string) "XX\nYY\ncc\n")))
+  (donkey-test-keys--harness "*donkey-vP-test*" #'text-mode
+      ((killed-rectangle (list "X" "Y")))
+      "aa\nbb\ncc\n" "V C-u 0 P"
+    (should (equal (buffer-string) "bb\ncc\n"))))
 
 (ert-deftest donkey-yank-rectangle-leaves-banked-lines-alone ()
   "`P' does not treat banked lines as a selection; `p' does.

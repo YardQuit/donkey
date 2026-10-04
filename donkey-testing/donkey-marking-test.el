@@ -447,6 +447,34 @@ Return list (POINT MARK TEXT) describing the resulting region."
               (buffer-substring-no-properties (region-beginning) (region-end))
             ""))))
 
+(ert-deftest donkey-a-symbol-count-stops-at-the-end-of-its-list ()
+  "`m W' with a count, or repeated, inside a list marks to the list's end.
+
+No scan error reaches the reader, and the cursor stays in the list."
+  (dolist (case '(("(xfoo bar)" "oo" "C-u 3 m W" "xfoo bar")
+                  ("(foo bar)" "foo" "m W m W m W" "foo bar")
+                  ("(foo bar) baz" "foo" "C-u 9 m W" "foo bar")))
+    (pcase-let ((`(,text ,at ,keys ,want) case))
+      (donkey-test-keys--harness "*donkey-symbol-count*" #'emacs-lisp-mode ()
+          text ""
+        (search-forward at)
+        (goto-char (match-beginning 0))
+        (execute-kbd-macro (kbd keys))
+        (should (equal (list text keys (buffer-substring-no-properties
+                                        (region-beginning) (region-end)))
+                       (list text keys want)))))))
+
+(ert-deftest donkey-a-negative-symbol-count-in-a-list-raises-no-scan-error ()
+  "`C-u - 1 m W' on the first symbol of a list signals no scan error."
+  (donkey-test-keys--harness "*donkey-symbol-count*" #'emacs-lisp-mode ()
+      "(a b)" ""
+    (search-forward "a")
+    (goto-char (match-beginning 0))
+    (condition-case err
+        (execute-kbd-macro (kbd "C-u - 1 m W"))
+      (user-error nil)
+      (scan-error (ert-fail (list "scan error reached the reader" err))))))
+
 (ert-deftest donkey-mark-symbol-simple ()
   "Mark simple word from middle."
   (should (equal (nth 2 (donkey-test--symbol-result "foobar" 3)) "foobar")))
@@ -2856,6 +2884,46 @@ It falls back when nothing is found forward.  See
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "(\"quoted string\")"))))
 
+(ert-deftest donkey-mark-sexp-from-inside-a-string-or-comment ()
+  "`m A' and `m I' from inside a string or comment take the code around it.
+
+The brackets the string or comment holds are text: a lone one does not
+refuse the key, and a pair of them is not the expression marked."
+  (dolist (case '((emacs-lisp-mode "(list \"ab\" c)" "ab" "m A"
+                                   "(list \"ab\" c)")
+                  (emacs-lisp-mode "(list \"a)b\" c)" ")b" "m A"
+                                   "(list \"a)b\" c)")
+                  (emacs-lisp-mode "(list \"a(b\" c)" "(b" "m I"
+                                   "list \"a(b\" c")
+                  (emacs-lisp-mode "(f (re \"\\\\(foo\\\\)\" t))" "foo" "m A"
+                                   "(re \"\\\\(foo\\\\)\" t)")
+                  (emacs-lisp-mode "(defun f ()\n  \"Do it (now).\"\n  (g))"
+                                   "Do" "m A"
+                                   "(defun f ()\n  \"Do it (now).\"\n  (g))")
+                  (emacs-lisp-mode "(list ; a)b\n c)" ")b" "m I"
+                                   "list ; a)b\n c")
+                  (c-mode "f(\"x)y\", z);" ")y" "m A" "(\"x)y\", z)")
+                  (emacs-lisp-mode "(a (b \"s\") c)" "s" "C-u 2 m A"
+                                   "(a (b \"s\") c)")))
+    (pcase-let ((`(,mode ,text ,at ,keys ,want) case))
+      (donkey-test-keys--harness "*donkey-sexp-string*" mode ()
+          text ""
+        (search-forward at)
+        (goto-char (match-beginning 0))
+        (execute-kbd-macro (kbd keys))
+        (should (equal (list text keys
+                             (buffer-substring-no-properties
+                              (region-beginning) (region-end)))
+                       (list text keys want)))))))
+
+(ert-deftest donkey-mark-sexp-in-a-top-level-string-is-refused ()
+  "A string outside every list still has no expression around it."
+  (donkey-test-keys--harness "*donkey-sexp-string*" #'emacs-lisp-mode ()
+      "\"just (a) string\"" ""
+    (search-forward "a)")
+    (should-error (execute-kbd-macro (kbd "m A")) :type 'user-error)
+    (should-not (region-active-p))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-rectangle-mark-mode
 ;;; ---------------------------------------------------------------------------
@@ -2917,7 +2985,7 @@ its initial widening."
 (ert-deftest donkey-rectangle-mark-mode-at-end-of-line-stays-on-its-column ()
   "The initial widening must not step over the newline.
 
-Regression test: `right-char' at end of line moves to column 0 of the
+Regression test: `forward-char' at end of line moves to column 0 of the
 NEXT line, so the widening did not widen the rectangle -- it moved it,
 to the far side of the buffer from the column being looked at.
 
@@ -2958,10 +3026,28 @@ cannot drift apart: mid-line keeps its one column of width."
       (should (equal (rectangle--pos-cols (region-beginning) (region-end))
                      (cons 0 1))))))
 
+(ert-deftest donkey-rectangle-mark-mode-takes-the-character-in-right-to-left-text ()
+  "In right-to-left text `m v' takes the character under the cursor too.
+
+Mid-line it is that character, not the one before it, and at the start
+of a line the block stays on the line."
+  (dolist (case '(("مرحبا بالعالم\nسطر ثاني\n" 4 "ب")
+                  ("שלום\nעולם\n" 6 "ע")
+                  ("hello world\nsecond\n" 4 "l")))
+    (pcase-let ((`(,text ,pos ,want) case))
+      (with-temp-buffer
+        (let ((transient-mark-mode t))
+          (insert text)
+          (goto-char pos)
+          (donkey-rectangle-mark-mode)
+          (should (equal (list text (substring-no-properties
+                                     (funcall region-extract-function nil)))
+                         (list text want))))))))
+
 (ert-deftest donkey-rectangle-mark-mode-takes-one-character-not-one-column ()
   "The initial widening is one CHARACTER, which is not always one column.
 
-The widening is `right-char', so what it takes is a character; a
+The widening is `forward-char', so what it takes is a character; a
 rectangle is measured in COLUMNS, and the two only coincide for
 ordinary text:
 
@@ -3051,7 +3137,7 @@ other way round, passing live and failing in batch."
     (should-not (region-active-p))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-empty ()
-  "In an empty buffer, `right-char' has nowhere to go but does not error."
+  "In an empty buffer, `forward-char' has nowhere to go but does not error."
   (with-temp-buffer
     (should (equal (buffer-string) ""))
     (donkey-rectangle-mark-mode)
@@ -3067,9 +3153,9 @@ other way round, passing live and failing in batch."
     (should (<= (point) (point-max)))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-at-buffer-end ()
-  "At buffer end, `right-char' has nowhere to go but does not error.
+  "At buffer end, `forward-char' has nowhere to go but does not error.
 
-Regression test: `right-char' signals `end-of-buffer' with nothing
+Regression test: `forward-char' signals `end-of-buffer' with nothing
 left to widen the rectangle into.  Confirmed live in `emacs -nw':
 pressing `m v' at the end of a buffer used to surface an uncaught
 \"End of buffer\" error message instead of cleanly toggling on (with a
@@ -3083,7 +3169,7 @@ valid, if zero-width, initial rectangle selection)."
     (should (= (mark) (point-max)))))
 
 (ert-deftest donkey-rectangle-mark-mode-edge-single-character ()
-  "On a single character, `right-char' has one column to move into."
+  "On a single character, `forward-char' has one column to move into."
   (with-temp-buffer
     (insert "x")
     (goto-char 1)
@@ -3143,7 +3229,7 @@ valid, if zero-width, initial rectangle selection)."
           (end (point)))
       (should (< beg end)))))
 
-(ert-deftest donkey-rectangle-mark-mode-edge-after-right-char ()
+(ert-deftest donkey-rectangle-mark-mode-edge-after-forward-char ()
   "Point advances exactly one character after activation."
   (with-temp-buffer
     (insert "01234")
@@ -3173,7 +3259,7 @@ valid, if zero-width, initial rectangle selection)."
 (ert-deftest donkey-rectangle-mark-mode-edge-empty-at-start ()
   "An empty buffer at `point-min' does not error.
 
-Here `right-char' has nowhere to go, but must not signal."
+Here `forward-char' has nowhere to go, but must not signal."
   (with-temp-buffer
     (goto-char (point-min))
     (donkey-rectangle-mark-mode)
@@ -3570,6 +3656,53 @@ regardless of the count, so a count of 2 over \"foo-a bar-b\" marked only
         (donkey-mark-outer 2))
       (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                      "(up at (the hospital. He was) bemoaning)")))))
+
+(ert-deftest donkey-a-pair-level-skips-a-sibling-pair-beside-it ()
+  "One level out from a pair is its parent, even with a sibling right before it.
+
+Keys from inside the second of two touching pairs: a count, a repeat
+and `m a', and a sibling with no parent, which has no level beyond."
+  (dolist (case '(("(outer (x)(a))" "a)" "C-u 2 m i (" "outer (x)(a)")
+                  ("\\sqrt{\\frac{a}{b}}" "b}" "m i { m i" "\\frac{a}{b}")
+                  ("((a 1)(b 2))" "b" "C-u 2 m i (" "(a 1)(b 2)")
+                  ("(outer (x)(a))" "a)" "m a ( m a" "(outer (x)(a))")))
+    (pcase-let ((`(,text ,at ,keys ,want) case))
+      (donkey-test-keys--harness "*donkey-pair-level*" #'text-mode ()
+          text ""
+        (search-forward at)
+        (goto-char (match-beginning 0))
+        (execute-kbd-macro (kbd keys))
+        (should (equal (list text keys
+                             (buffer-substring-no-properties
+                              (region-beginning) (region-end)))
+                       (list text keys want))))))
+  (let ((text-quoting-style 'grave))
+    (donkey-test-keys--harness "*donkey-pair-level*" #'text-mode ()
+        "see [text][ref] here" ""
+      (search-forward "ref")
+      (goto-char (match-beginning 0))
+      (should (equal (cadr (should-error (execute-kbd-macro (kbd "m i [ m i"))
+                                         :type 'user-error))
+                     "No enclosing `[' beyond that level"))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     "ref")))))
+
+(ert-deftest donkey-a-pair-level-of-letters-does-not-fold-case ()
+  "The level beyond the first matches a letter delimiter exactly."
+  (let ((transient-mark-mode t)
+        (case-fold-search t)
+        (donkey-mark-pair-delimiters
+         (append donkey-mark-pair-delimiters (list (cons ?B ?E)))))
+    (with-temp-buffer
+      (insert "B b x B mid E y E")
+      (goto-char (point-min))
+      (search-forward "mi")
+      (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?B)))
+        (donkey-mark-inner 2))
+      (should (equal (buffer-substring-no-properties (region-beginning)
+                                                     (region-end))
+                     " b x B mid E y ")))))
 
 (ert-deftest donkey-mark-pair-count-on-a-symmetric-delimiter-counts-outward ()
   "A count on a symmetric delimiter counts OCCURRENCES outward.
@@ -5001,6 +5134,48 @@ the returning frame brings; ending on it would undo the resume."
       (execute-kbd-macro (kbd "C-e")))
     (should donkey--mark-run-exit-function)))
 
+(ert-deftest donkey-mark-run-a-press-on-another-terminal-is-no-step-of-it ()
+  "A press on another terminal records no step and repaints no reminder."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (let ((history donkey--mark-run-history)
+          said)
+      (cl-letf* ((orig (symbol-function 'message))
+                 ((symbol-function 'message)
+                  (lambda (fmt &rest args)
+                    (when fmt (setq said (apply #'format fmt args)))
+                    (apply orig fmt args))))
+        (let ((donkey--mark-run-terminal 'elsewhere))
+          (execute-kbd-macro (kbd "m w m w"))))
+      (should (equal said "Word marked"))
+      (should (equal donkey--mark-run-history history))
+      (should donkey--mark-run-exit-function))))
+
+(ert-deftest donkey-mark-run-ends-with-its-terminal ()
+  "Deleting the run's terminal ends the run and forgets one kept for it."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (should (memq #'donkey--mark-run-forget-terminal
+                  (default-value 'delete-terminal-functions)))
+    (donkey--mark-run-forget-terminal (frame-terminal))
+    (should-not donkey--mark-run-exit-function)
+    (should-not donkey--mark-run-pending))
+  (let ((other (get-buffer-create "*donkey-other-buffer*")))
+    (unwind-protect
+        (donkey-mark-test--keys "for text that is not saved"
+            "w w l M w C-x b *donkey-other-buffer* RET"
+          (should donkey--mark-run-suspended)
+          (donkey--mark-run-forget-terminal (frame-terminal))
+          (should-not donkey--mark-run-suspended))
+      (kill-buffer other))))
+
+(ert-deftest donkey-mark-run-on-a-terminal-deleted-unseen-ends-after-a-command ()
+  "A run whose terminal went without `delete-terminal-functions' ends after a command."
+  (donkey-mark-test--keys "for text that is not saved" "w w l M w"
+    (should donkey--mark-run-exit-function)
+    (cl-letf (((symbol-function 'terminal-live-p) (lambda (_) nil)))
+      (donkey--mark-run-mode-post-command))
+    (should-not donkey--mark-run-exit-function)
+    (should-not donkey--mark-run-pending)))
+
 (ert-deftest donkey-mark-run-keys-answer-only-on-its-own-terminal ()
   "Looked up from another terminal, a run\'s key is the ordinary one."
   (donkey-mark-test--keys "for text that is not saved" "w w l M w"
@@ -5305,6 +5480,24 @@ the mode like any foreign key."
   (donkey-mark-test--keys "for text that is" "w w l M"
     (should (eq (key-binding (kbd "g q")) 'fill-region))
     (should (eq (key-binding (kbd "g h")) 'donkey-mark-run-line-start))))
+
+(ert-deftest donkey-g-h-and-g-l-in-a-run-take-no-count ()
+  "With a run live, `g h' and `g l' with a count are bare presses."
+  (let ((text "zero\none two three four\nfive\n"))
+    (dolist (count '("C-u 0" "M--" "C-u 3"))
+      (donkey-mark-test--keys text (concat "j w M w " count " g l")
+        (should (equal (list count (donkey-mark-test--selection))
+                       (list count "two three four"))))
+      (donkey-mark-test--keys text (concat "j w M w " count " g h")
+        (should (equal (list count (donkey-mark-test--selection))
+                       (list count "one two three")))))
+    ;; With no run, the key is the motion and the count moves lines.
+    (donkey-mark-test--keys ",,, ;;;\n... ---\n" "M C-u 2 g l"
+      (should-not (region-active-p))
+      (should (= (point) (1- (point-max)))))
+    (donkey-mark-test--keys ",,, ;;;\n... ---\n" "M C-u 2 g h"
+      (should-not (region-active-p))
+      (should (= (point) 9)))))
 
 (ert-deftest donkey-a-mode-motion-continues-only-a-visible-run ()
   "A wrapper motion beside a stale mark does not conjure a selection.
@@ -5779,12 +5972,14 @@ last would win, which is not a rule anybody could hold."
         (should (equal painted donkey--linear-selection-hint))
         ;; A visual-line session over it takes the echo area.
         (setq painted nil)
-        (let ((donkey-visual-anchor (mark)))
+        (let ((donkey-visual-anchor (mark))
+              (donkey--visual-line-mark (mark)))
           (donkey--show-selection-hint))
         (should (equal painted donkey--visual-line-hint))
         ;; And a rectangle outranks both.
         (setq painted nil)
         (let ((donkey-visual-anchor (mark))
+              (donkey--visual-line-mark (mark))
               (rectangle-mark-mode t))
           (donkey--show-selection-hint))
         (should (equal painted donkey--rectangle-hint))
@@ -6847,6 +7042,20 @@ does."
     (should-not (region-active-p))
     (should (eq (key-binding "w") 'donkey-mark-word))))
 
+(ert-deftest donkey-a-run-press-that-changed-nothing-is-no-step ()
+  "A family press that leaves the selection as it was is not a step for `u'."
+  ;; The second `w' finds no word past the last one.
+  (donkey-mark-test--keys "alpha beta" "M w w u"
+    (should (equal (donkey-mark-test--selection) "alpha")))
+  ;; `J' past the last line, `s' past the last sentence.
+  (donkey-mark-test--keys "one\ntwo\n" "M J J J u"
+    (should (equal (donkey-mark-test--selection) "one\n")))
+  (donkey-mark-test--keys "One.  Two." "M s s s u"
+    (should (equal (donkey-mark-test--selection) "One.")))
+  ;; Nor is it a new branch: what `u' stepped out of is still there.
+  (donkey-mark-test--keys "alpha beta" "M w u K U"
+    (should (equal (donkey-mark-test--selection) "alpha beta"))))
+
 (ert-deftest donkey-U-steps-a-run-forward-again ()
   "`U' puts the run back where `u' stepped it out of.
 
@@ -7853,6 +8062,50 @@ a trailing period when there is a symbol in front of it to keep."
                                      (region-beginning) (region-end)))
                          (cons text twice))))))))
 
+(ert-deftest donkey-a-negative-count-with-nothing-behind-is-refused ()
+  "A negative count from the first object refuses, leaving point and mark."
+  (dolist (case '((text-mode "foo bar baz\n" "foo" "C-u - 1 m w")
+                  (text-mode "foo bar baz\n" "foo" "C-u - 3 m w")
+                  (text-mode "foo bar baz\n" "oo" "C-u - 1 m w")
+                  (emacs-lisp-mode "foo bar baz\n" "oo" "C-u - 1 m W")
+                  (emacs-lisp-mode "foo bar baz\n" "foo" "C-u - 1 m W")
+                  (emacs-lisp-mode "(a b)" "a" "C-u - 1 m W")
+                  (text-mode "one\ntwo\n\nthree\n" "one" "C-u - 1 m p")))
+    (pcase-let ((`(,mode ,text ,at ,keys) case))
+      (donkey-test-keys--harness "*donkey-negative-none*" mode ()
+          text ""
+        (search-forward at)
+        (goto-char (match-beginning 0))
+        (set-mark (point-max))
+        (deactivate-mark)
+        (let ((where (point)))
+          (should-error (execute-kbd-macro (kbd keys)) :type 'user-error)
+          (should (equal (list keys (point) (mark t) mark-active)
+                         (list keys where (point-max) nil))))))))
+
+(ert-deftest donkey-a-negative-count-takes-what-there-is-behind ()
+  "A negative count reaching past the first object marks what lies behind."
+  (donkey-test-keys--harness "*donkey-negative-some*" #'text-mode ()
+      "foo bar baz\n" ""
+    (search-forward "baz")
+    (goto-char (match-beginning 0))
+    (execute-kbd-macro (kbd "C-u - 3 m w"))
+    (should (equal (buffer-substring-no-properties (region-beginning)
+                                                   (region-end))
+                   "foo bar"))))
+
+(ert-deftest donkey-a-refused-sentence-or-paragraph-leaves-the-mark ()
+  "In a blank buffer the sentence and paragraph keys leave mark and ring alone."
+  (dolist (keys '("m s" "m S" "m p" "m P"))
+    (donkey-test-keys--harness "*donkey-blank-refusal*" #'text-mode ()
+        "   \n\n  " ""
+      (set-mark 2)
+      (deactivate-mark)
+      (setq mark-ring nil)
+      (should-error (execute-kbd-macro (kbd keys)) :type 'user-error)
+      (should (equal (list keys (point) (mark t) mark-ring)
+                     (list keys 1 2 nil))))))
+
 (ert-deftest donkey-mark-commands-never-announce-an-empty-selection ()
   "No mark command reports success with nothing selected.
 
@@ -7888,21 +8141,26 @@ an error -- never zero characters with a cheerful message."
 (defmacro donkey-rect-test--graphical (&rest body)
   "Run BODY as in a graphical frame that owns PRIMARY, recording its values.
 
-`gui-set-selection' checks each value as Emacs does before any backend
-sees it, so a value a real frame would refuse fails here too."
+The backend is stubbed and `gui-set-selection' is not, so it checks each
+value as Emacs does before any backend sees it -- a value a real frame
+would refuse fails here too -- and whatever watches it still does."
   (declare (indent 0))
   `(let ((donkey-rect-test--sets nil)
+         (donkey--rectangle-primary-claim nil)
          (select-active-regions t))
      (cl-letf (((symbol-function 'display-selections-p) (lambda (&rest _) t))
                ((symbol-function 'gui-backend-selection-owner-p)
                 (lambda (&rest _) t))
-               ((symbol-function 'gui-set-selection)
+               ((symbol-function 'gui-backend-set-selection)
                 (lambda (type value)
                   (when (eq type 'PRIMARY)
-                    (unless (gui--valid-simple-selection-p value)
-                      (error "Invalid selection %S" value))
                     (push value donkey-rect-test--sets)))))
        ,@body)))
+
+(defun donkey-rect-test--primary ()
+  "Return the text a program asking for PRIMARY now is given."
+  (cdr (xselect-convert-to-string 'PRIMARY 'STRING
+                                  (car donkey-rect-test--sets))))
 
 (defconst donkey-rect-test--text "abcdef\nghijkl\nmnopqr\nstuvwx\n"
   "Four rows for the PRIMARY tests.")
@@ -7959,6 +8217,111 @@ sees it, so a value a real frame would refuse fails here too."
       (should (equal (car donkey-rect-test--sets) "bc\nhi"))
       (should-not (local-variable-p 'select-active-regions)))))
 
+(ert-deftest donkey-rectangle-primary-answers-what-was-selected-after-an-edit ()
+  "An ended rectangle in PRIMARY answers its text as it was, whatever is typed.
+
+An edit on the rectangle's rows after it ended keeps the text first; an
+edit on other rows leaves the claim to be read when asked."
+  (donkey-rect-test--graphical
+    (donkey-test-keys--harness "*rect-primary-edit*" #'text-mode ()
+        donkey-rect-test--text "l m v j l"
+      (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+      (goto-char (point-max))
+      (insert "more\n")
+      (should (consp (overlay-get (car donkey-rect-test--sets)
+                                  'donkey-rectangle)))
+      (goto-char (point-min))
+      (delete-region 1 4)
+      (insert "pw:")
+      (forward-line 1)
+      (delete-char 3)
+      (insert "S3C")
+      (should (equal (buffer-substring-no-properties 1 14)
+                     "pw:def\nS3Cjkl"))
+      (should (equal (donkey-rect-test--primary) "bc\nhi"))
+      (erase-buffer)
+      (should (equal (donkey-rect-test--primary) "bc\nhi")))))
+
+(ert-deftest donkey-rectangle-primary-keeps-nothing-once-primary-moved-on ()
+  "An edit after PRIMARY was given something else makes no text of the rectangle."
+  (donkey-rect-test--graphical
+    (donkey-test-keys--harness "*rect-primary-moved-on*" #'text-mode ()
+        donkey-rect-test--text "l m v j l"
+      (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+      (let ((ours (car donkey-rect-test--sets)))
+        (gui-set-selection 'PRIMARY "chosen since")
+        (goto-char (point-min))
+        (insert "x")
+        (should (consp (overlay-get ours 'donkey-rectangle)))
+        (should (equal (donkey-rect-test--primary) "chosen since"))))))
+
+(ert-deftest donkey-rectangle-primary-answers-after-its-buffer-is-killed ()
+  "A rectangle in PRIMARY, live or ended, outlives its buffer."
+  (dolist (end '("C-g" nil))
+    (donkey-rect-test--graphical
+      (donkey-test-keys--harness "*rect-primary-kill*" #'text-mode ()
+          donkey-rect-test--text "l m v j l"
+        (when end
+          (condition-case nil (execute-kbd-macro (kbd end)) (quit nil)))
+        (kill-buffer (current-buffer))
+        (should (equal (list end (donkey-rect-test--primary))
+                       (list end "bc\nhi")))))))
+
+(ert-deftest donkey-rectangle-primary-is-text-once-donkey-mode-goes ()
+  "Turning DONKEY off gives PRIMARY the rectangle's text, if it still holds it."
+  (donkey-rect-test--graphical
+    (unwind-protect
+        (donkey-test-keys--harness "*rect-primary-off-text*" #'text-mode ()
+            donkey-rect-test--text "l m v j l"
+          (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+          (donkey-mode -1)
+          (should (equal (car donkey-rect-test--sets) "bc\nhi")))
+      (donkey-mode 1)))
+  (donkey-rect-test--graphical
+    (unwind-protect
+        (donkey-test-keys--harness "*rect-primary-off-other*" #'text-mode ()
+            donkey-rect-test--text "l m v j l"
+          (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+          (gui-set-selection 'PRIMARY "chosen since")
+          (donkey-mode -1)
+          (should (equal (car donkey-rect-test--sets) "chosen since")))
+      (donkey-mode 1))))
+
+(ert-deftest donkey-rectangle-primary-answers-for-the-rectangle-that-moved ()
+  "With a rectangle in each of two buffers, PRIMARY follows the one that moved."
+  (donkey-rect-test--graphical
+    (let ((other (get-buffer-create "*rect-primary-other*")))
+      (unwind-protect
+          (donkey-test-keys--harness "*rect-primary-one*" #'text-mode ()
+              donkey-rect-test--text "l m v j"
+            (let ((one (current-buffer)))
+              (with-current-buffer other
+                (erase-buffer)
+                (insert "ABCDEFGH\nIJKLMNOP\n")
+                (goto-char 5)
+                (donkey-mode 1)
+                (donkey-normal-mode 1)
+                (switch-to-buffer other)
+                (execute-kbd-macro (kbd "m v l l j")))
+              (should (equal (donkey-rect-test--primary) "EFG\nMNO"))
+              (switch-to-buffer one)
+              (execute-kbd-macro (kbd "l"))
+              (should (equal (donkey-rect-test--primary) "bc\nhi"))
+              (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+              (switch-to-buffer other)
+              (execute-kbd-macro (kbd "l"))
+              (should (equal (donkey-rect-test--primary) "EFGH\nMNOP"))
+              (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))))
+        (kill-buffer other)))))
+
+(ert-deftest donkey-rectangle-primary-m-v-cancel-leaves-the-rectangle ()
+  "`m v' to cancel leaves the rectangle in PRIMARY, as `C-g' does."
+  (donkey-rect-test--graphical
+    (donkey-test-keys--harness "*rect-primary-m-v*" #'text-mode ()
+        donkey-rect-test--text "l m v j l m v"
+      (should-not rectangle-mark-mode)
+      (should (equal (donkey-rect-test--primary) "bc\nhi")))))
+
 (ert-deftest donkey-rectangle-primary-is-answered-by-the-converter ()
   "The converters Emacs calls for text turn DONKEY's overlay into its text."
   (donkey-rect-test--graphical
@@ -8004,6 +8367,41 @@ sees it, so a value a real frame would refuse fails here too."
       (should (eq (car rol) 'rectangle))
       (should (< 0 (length (nthcdr 5 rol)) 1000))
       (funcall redisplay-unhighlight-region-function rol))))
+
+(ert-deftest donkey-rectangle-highlight-covers-the-rows-scaled-text-shows ()
+  "With text scaled down, the highlight reaches every row the window shows.
+
+A window showing three times its frame lines of the buffer's own text,
+as `text-scale-decrease' makes it, has every one of them lit."
+  (donkey-test-keys--harness "*rect-highlight-scaled*" #'text-mode ()
+      (mapconcat (lambda (i) (format "line %d" i)) (number-sequence 1 3000) "\n")
+      "l m v G"
+    (let* ((rows (* 3 (window-body-height)))
+           (rol (cl-letf (((symbol-function 'window-screen-lines)
+                           (lambda () (float rows))))
+                  (funcall redisplay-highlight-region-function
+                           (region-beginning) (region-end) (selected-window)
+                           nil))))
+      (unwind-protect
+          (let ((lit (make-hash-table)))
+            (dolist (ov (nthcdr 5 rol))
+              (puthash (line-number-at-pos (overlay-start ov)) t lit))
+            (should (= rows (seq-count
+                             (lambda (line) (gethash line lit))
+                             (number-sequence (- 3001 rows) 3000)))))
+        (funcall redisplay-unhighlight-region-function rol)))))
+
+(ert-deftest donkey-window-lines-is-never-below-the-body-height ()
+  "The lines a window shows count scaled text, and never fall below its height."
+  (dolist (case '((0.5 . 0) (3.0 . 2)))
+    (cl-letf (((symbol-function 'window-screen-lines)
+               (lambda () (* (car case) (window-body-height)))))
+      (should (= (donkey--window-lines)
+                 (max (window-body-height)
+                      (ceiling (* (car case) (window-body-height))))))))
+  (cl-letf (((symbol-function 'window-screen-lines)
+             (lambda () (error "No display"))))
+    (should (= (donkey--window-lines) (window-body-height)))))
 
 (provide 'donkey-marking-test)
 
