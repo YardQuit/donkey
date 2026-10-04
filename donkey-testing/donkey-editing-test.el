@@ -2752,6 +2752,23 @@ characters count as one whatever the display composes by itself."
   (donkey-test--cluster-keys "aé" '(2 . 4) "G C-u - 2 y"
     (should (equal kill-ring '("aé")))))
 
+(ert-deftest donkey-the-cursors-count-a-cluster-as-one-character ()
+  "`x', `y' and `c' at the cursors take a composed cluster whole, as `x' does."
+  (dolist (case '(("t x"            "x\ny\n" nil)
+                  ("t C-u 2 x"      "\n\n"   nil)
+                  ("t C-u 2 y C-g"  "éx\néy\n" "éx\néy")
+                  ("t c Z C-g C-g"  "Zx\nZy\n" nil)
+                  ("l t C-u - 1 x"  "x\ny\n" nil)))
+    (donkey-test-keys--harness "*donkey-cursor-cluster*"
+        (lambda ()
+          (text-mode)
+          (insert "éx\néy\n")
+          (compose-region 1 3)
+          (compose-region 5 7))
+        () "" (car case)
+      (should (equal (list (car case) (buffer-string) (car kill-ring))
+                     (cons (car case) (cdr case)))))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Paste: banked lines, and nothing to paste
 ;;; ---------------------------------------------------------------------------

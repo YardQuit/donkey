@@ -10867,8 +10867,9 @@ is ignored: a cursor never leaves its line."
 
 The place where the cursor is selecting, its line with the newline where
 WHOLE-LINES is non-nil and the cursor selects its line, and otherwise
-COUNT characters from the cursor, kept inside its line.  SELECTED is
-non-nil for a selection."
+COUNT characters from the cursor, kept inside its line and counted as
+`donkey--character-target' counts them for one cursor, a composed
+character being one.  SELECTED is non-nil for a selection."
   (let ((cursor (donkey--split-cursor place))
         (line (donkey--split-cursor-line place)))
     (cond
@@ -10877,7 +10878,11 @@ non-nil for a selection."
      ((donkey--split-cursor-selecting-p place)
       (list (overlay-start place) (overlay-end place) t))
      (t
-      (let ((far (max (car line) (min (cdr line) (+ cursor count)))))
+      (let ((far (save-excursion
+                   (goto-char cursor)
+                   (save-restriction
+                     (narrow-to-region (car line) (cdr line))
+                     (donkey--character-target count)))))
         (list (min cursor far) (max cursor far) nil))))))
 
 (defvar donkey--split-kill-shape nil
