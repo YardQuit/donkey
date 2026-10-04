@@ -1330,32 +1330,25 @@ is the one place the mode is tested for the Org rules."
                                (< (point) (point-max))
                                (org-element-at-point (1+ (point)))))
          (result nil))
-    ;; Context FIRST (inline elements like links within tables/headlines)
-    (dolist (rule donkey--enter-rules)
-      (when (null result)
-        (let ((rule-type (nth 0 rule))
-              (rule-cmds (nthcdr 2 rule)))
-          (when (and ctx
-                     (eq (car ctx) rule-type)
-                     (null (nth 1 rule))
-                     (donkey--enter-element-here-p ctx))
-            (setq result (seq-find #'commandp rule-cmds))))))
-    ;; Parent, then its line-start fallback, then ancestors — ALL rules
-    ;; checked per element level, most specific first
-    (dolist (elem (append (list parent fallback-parent) ancestors))
-      (when (null result)
+    ;; Context FIRST (inline elements like links within tables/headlines),
+    ;; and only the rules that ask no property of it; then the parent,
+    ;; its line-start fallback and the ancestors -- ALL rules checked per
+    ;; element level, most specific first.
+    (let ((context t))
+      (dolist (elem (cons ctx (append (list parent fallback-parent) ancestors)))
         (dolist (rule donkey--enter-rules)
-          (when (null result)
-            (let ((rule-type (nth 0 rule))
-                  (rule-prop (nth 1 rule))
-                  (rule-cmds (nthcdr 2 rule)))
-              (when (and elem
-                         (eq (car elem) rule-type)
-                         (donkey--enter-element-here-p elem)
+          (let ((rule-prop (nth 1 rule)))
+            (when (and (null result)
+                       elem
+                       (eq (car elem) (nth 0 rule))
+                       (donkey--enter-element-here-p elem)
+                       (if context
+                           (null rule-prop)
                          (or (null rule-prop)
                              (and (fboundp 'org-element-property)
-                                  (org-element-property rule-prop elem))))
-                (setq result (seq-find #'commandp rule-cmds))))))))
+                                  (org-element-property rule-prop elem)))))
+              (setq result (seq-find #'commandp (nthcdr 2 rule))))))
+        (setq context nil)))
     result))
 
 (defun donkey--org-mode-enter-handler ()
