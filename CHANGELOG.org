@@ -9,6 +9,68 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.17.3 — 2026-10-04
+
+The code was gone over for functions that answer the same question
+with code of their own, and four such pairs had drifted apart into
+bugs: Split's own copy of the wrap's pair lookup, three ways of
+working out a =V= selection's lines, the cursors' character count, and
+the first idle moment re-reading one option of three. Each question
+now has one function, and =donkey.el= is 175 lines smaller for it.
+Folded text is now never changed by =f=.
+
+*Fixed — you will notice these*
+
+- =V J d=, =V J y=, =M-w= and =C-u 2 V d= over a selection ending on
+  an empty line left that line behind: on "a", an empty line and "b",
+  =V J d= killed "a" and its newline only. The empty line is taken now.
+- =x=, =d=, =y= and =c= at the cursors on an accented letter written
+  with a combining mark, or an emoji made of joined ones, took one code
+  point and left the rest at every cursor. They take the character
+  whole, as one cursor has since 1.17.2.
+- In a split, a delimiter beside an escaped quote took the escaped
+  quote off: =f "= on =a \"foo" b= left =a \foo b=. A split now wraps
+  exactly as a wrap key does, junk rows in the pair table included.
+- A pair, or a refused command, added with =add-to-list= in your init
+  file took effect only after =M-x donkey-pair-refresh= or
+  =M-x donkey-refresh-suppressed-commands=; the first idle moment
+  re-read only the wrap keys. It reads every option now.
+- =RET= with an Enter rule whose command is a lambda signaled
+  =wrong-type-argument=; it runs the lambda now.
+
+*Changed — you will notice these*
+
+- =f= leaves out matches inside a fold whatever =search-invisible=
+  says. With =search-invisible= set to =t= it used to hold them and
+  write into the fold. Folded text is changed by =r r= and =r q=; with
+  =r q=, unfold first, so you can see each match you answer.
+- =C-u -1 m s= marks the sentence before point, as =C-u -1 m w= marks
+  the word before it; it used to mark the sentence at point. With
+  nothing before, it refuses and leaves point and the mark alone.
+
+*Fixed*
+
+- =m i= and =m a= logged "Mark set" before saying what they selected.
+- =m i= with a pair-table row whose closing half is not a character
+  raised a raw error; it says the delimiter is unsupported.
+- Undoing a split did not count what it recorded against =undo-limit=,
+  so a large split kept two full undo entries — some 13 MB each at
+  850,000 places. The newer is now cut to the limit like any other.
+
+*Under the hood*
+
+- One function now answers each of: which pair a delimiter belongs to,
+  which kind of buffer this is, which cursor a state asks for, whether
+  a mode is on a list, which lines a =V= selection covers, how a split
+  deletes at every place, how its state is cleared, and how =y= and
+  =d= choose what to act on. The Org agenda's own Enter handler is
+  gone: the agenda's =RET= has been the agenda's own since 1.12.0.
+
+*Upgrading*
+
+Nothing to do. If you set =search-invisible= to =t= so that =f= would
+reach into folds, use =r r= or =r q= there instead.
+
 * 1.17.2 — 2026-10-04
 
 Every part of the package was gone over for what happens where two
