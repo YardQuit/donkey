@@ -9122,21 +9122,19 @@ Where the places agree the one string is shared, so a verb over
                  (donkey--split-place-text (car donkey--split-places)))
     (mapcar #'donkey--split-place-text donkey--split-places)))
 
-(defun donkey--split-kill-text (&optional texts)
+(defun donkey--split-kill-text (texts)
   "Return what `c' and `d' put on the `kill-ring', or nil for nothing.
 
 One kill whatever the number of places.  Where the places agree it is
 one copy of what they held, so \\[donkey-yank] gives back what was there
 rather than a column of copies; where they differ it is every text, one
-per line, in buffer order.  TEXTS is what the places hold, where the
-caller has read it already."
-  (let ((texts (or texts
-                   (mapcar #'donkey--split-place-text donkey--split-places))))
-    (cond
-     ((seq-every-p #'string-empty-p texts) nil)
-     (donkey--split-agree (car texts))
-     (t (donkey--split-note-kill (string-join texts "\n") (length texts)
-                                 nil)))))
+per line, in buffer order.  TEXTS is what the places hold, as
+`donkey--split-place-texts' reads it."
+  (cond
+   ((seq-every-p #'string-empty-p texts) nil)
+   (donkey--split-agree (car texts))
+   (t (donkey--split-note-kill (string-join texts "\n") (length texts)
+                               nil))))
 
 (defun donkey--split-disarm ()
   "Take the split\\='s map off its terminal, leaving the split standing."
