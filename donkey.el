@@ -3623,8 +3623,7 @@ leaves the old selection standing whole, kind and all; the object
 commands call it before their search, whose refusals mark nothing."
   (when (bound-and-true-p rectangle-mark-mode)
     (rectangle-mark-mode -1))
-  (setq donkey-visual-anchor nil
-        donkey--visual-line-mark nil))
+  (donkey--clear-visual-anchor))
 
 (defun donkey--clear-visual-anchor ()
   "Clear `donkey-visual-anchor' whenever the mark is deactivated.
@@ -3892,6 +3891,25 @@ counts a folded heading as the one line the screen shows."
   (activate-mark)
   (message "%s" donkey--visual-line-hint))
 
+(defun donkey--visual-line-move (n down)
+  "Move N visible lines and fit the visual-line selection to its anchor.
+
+The selection spans whole lines from `donkey-visual-anchor' to the line
+point lands on.  DOWN is non-nil for `donkey-visual-next-line' and nil
+for `donkey-visual-previous-line', and decides the one case the two
+differ on: back on the anchor line itself, point keeps the end it came
+from."
+  (forward-visible-line n)
+  (let ((start (donkey--visible-line-start)))
+    (if (if down (> start donkey-visual-anchor) (>= start donkey-visual-anchor))
+        (progn
+          (donkey--visual-line-set-mark donkey-visual-anchor)
+          (end-of-visible-line))
+      (donkey--visual-line-set-mark
+       (donkey--visible-line-end donkey-visual-anchor))
+      (forward-visible-line 0)))
+  (activate-mark))
+
 (defun donkey-visual-next-line (&optional count)
   "Move down COUNT lines, extending the visual-line selection if active.
 
@@ -3920,15 +3938,7 @@ row.  `donkey-visual-previous-line' mirrors it."
   (interactive "p")
   (cond
    ((donkey--visual-line-session-active-p)
-    (forward-visible-line (or count 1))
-    (if (> (donkey--visible-line-start) donkey-visual-anchor)
-        (progn
-          (donkey--visual-line-set-mark donkey-visual-anchor)
-          (end-of-visible-line))
-      (donkey--visual-line-set-mark
-       (donkey--visible-line-end donkey-visual-anchor))
-      (forward-visible-line 0))
-    (activate-mark))
+    (donkey--visual-line-move (or count 1) t))
    ((bound-and-true-p rectangle-mark-mode)
     (rectangle-next-line (or count 1)))
    (t
@@ -3953,15 +3963,7 @@ Inside a rectangle this moves as `k' does there, through
   (interactive "p")
   (cond
    ((donkey--visual-line-session-active-p)
-    (forward-visible-line (- (or count 1)))
-    (if (< (donkey--visible-line-start) donkey-visual-anchor)
-        (progn
-          (donkey--visual-line-set-mark
-           (donkey--visible-line-end donkey-visual-anchor))
-          (forward-visible-line 0))
-      (donkey--visual-line-set-mark donkey-visual-anchor)
-      (end-of-visible-line))
-    (activate-mark))
+    (donkey--visual-line-move (- (or count 1)) nil))
    ((bound-and-true-p rectangle-mark-mode)
     (rectangle-previous-line (or count 1)))
    (t
@@ -5779,7 +5781,7 @@ why."
   (condition-case nil
       (cond
        ((donkey--mark-run-terminal-gone-p)
-        (donkey--mark-run-forget-terminal donkey--mark-run-terminal))
+        (donkey--mark-run-forget donkey--mark-run-terminal))
        ((not (donkey--mark-run-answers-p))
         nil)
        ((and donkey--mark-run-armed-in-macro (not executing-kbd-macro))
@@ -5885,43 +5887,31 @@ forgotten.  A run armed or suspended meanwhile is left alone."
             (setq donkey--mark-run-suspended record))
         (error nil)))))
 
-(defun donkey--mark-run-forget-killed-buffer ()
-  "End the mark run whose buffer is being killed, and forget one kept for it.
-
-On `kill-buffer-hook' while `donkey-mode' is on.  A run armed in the
-buffer is disarmed, and a run suspended or pending for it dropped,
-so no map outlives its buffer: a buffer killed from Lisp, by a
-package or a timer, would otherwise leave the run armed terminal-wide
-with nothing to act on."
-  (condition-case nil
-      (let ((dying (current-buffer)))
-        (when (eq dying donkey--mark-run-buffer)
-          (donkey--mark-run-exit))
-        (when (eq dying (car donkey--mark-run-pending))
-          (setq donkey--mark-run-pending nil))
-        (when (eq dying (car donkey--mark-run-suspended))
-          (setq donkey--mark-run-suspended nil)))
-    (error nil)))
-
 (defun donkey--mark-run-terminal-gone-p ()
   "Return non-nil when the terminal the run was armed on has been deleted."
   (let ((terminal donkey--mark-run-terminal))
     (and (eq (type-of terminal) 'terminal)
          (not (terminal-live-p terminal)))))
 
-(defun donkey--mark-run-forget-terminal (terminal)
+(defun donkey--mark-run-forget (&optional terminal)
   "End the mark run armed on TERMINAL, and forget one kept for it.
 
 On `delete-terminal-functions' while `donkey-mode' is on, so a client
 that goes takes its run with it; `donkey--mark-run-mode-post-command'
-calls it as well, for a terminal deleted without that hook."
+calls it as well, for a terminal deleted without that hook.  With no
+TERMINAL it is on `kill-buffer-hook', and does the same for the run of
+the buffer being killed: a buffer killed from Lisp, by a package or a
+timer, would otherwise leave the run armed terminal-wide with nothing to
+act on."
   (condition-case nil
-      (progn
-        (when (eq terminal donkey--mark-run-terminal)
+      (let ((key (or terminal (current-buffer)))
+            (slot (if terminal #'cadr #'car)))
+        (when (eq key (if terminal donkey--mark-run-terminal
+                        donkey--mark-run-buffer))
           (donkey--mark-run-exit))
-        (when (eq terminal (nth 1 donkey--mark-run-pending))
+        (when (eq key (funcall slot donkey--mark-run-pending))
           (setq donkey--mark-run-pending nil))
-        (when (eq terminal (nth 1 donkey--mark-run-suspended))
+        (when (eq key (funcall slot donkey--mark-run-suspended))
           (setq donkey--mark-run-suspended nil)))
     (error nil)))
 
@@ -6136,7 +6126,7 @@ selection instead of marking afresh over it."
   (let ((span (donkey--visual-line-region-bounds)))
     (set-mark (cdr span))
     (goto-char (car span)))
-  (setq donkey-visual-anchor nil)
+  (donkey--clear-visual-anchor)
   (donkey--mark-run-enter))
 
 (defun donkey-mark-run-toggle ()
@@ -11204,14 +11194,7 @@ they end."
   (interactive)
   (donkey--split-live-p)
   (let* ((spans (donkey--split-cursors-line-spans))
-         (unbanking (seq-every-p (lambda (span)
-                                   (donkey--span-lines-banked-p
-                                    (car span) (cdr span)))
-                                 spans)))
-    (dolist (span spans)
-      (if unbanking
-          (donkey--unbank-span (car span) (cdr span))
-        (donkey--bank-span (car span) (cdr span))))
+         (unbanking (donkey--toggle-bank-spans spans)))
     (message "%s %s (%d banked in all)"
              (if unbanking "Unbanked" "Banked")
              (donkey--split-places-phrase (length spans))
@@ -11455,10 +11438,7 @@ else."
                         (forward-line (1- (max 1 (or count 1))))
                         (line-end-position)))))
              (lines (count-lines (car span) (cdr span)))
-             (unbanking (donkey--span-lines-banked-p (car span) (cdr span))))
-        (if unbanking
-            (donkey--unbank-span (car span) (cdr span))
-          (donkey--bank-span (car span) (cdr span)))
+             (unbanking (donkey--toggle-bank-spans (list span))))
         (deactivate-mark)
         (message "%s %d line%s (%d total)%s"
                  (if unbanking "Unbanked" "Banked")
@@ -11592,6 +11572,20 @@ single-line toggle follows."
         (unless (donkey--banked-overlay-at (car span))
           (setq all nil))))
     all))
+
+(defun donkey--toggle-bank-spans (spans)
+  "Bank the lines of SPANS, or unbank them all where every one is banked.
+
+SPANS is a list of (BEG . END).  Return non-nil where it unbanked.  The
+toggle of `donkey-bank-selection' and of the cursors' bank key."
+  (let ((unbanking (seq-every-p (lambda (span)
+                                  (donkey--span-lines-banked-p
+                                   (car span) (cdr span)))
+                                spans)))
+    (dolist (span spans unbanking)
+      (if unbanking
+          (donkey--unbank-span (car span) (cdr span))
+        (donkey--bank-span (car span) (cdr span))))))
 
 (defun donkey--unbank-span (beg end)
   "Unbank every whole line in BEG..END that is currently banked.
@@ -16265,8 +16259,8 @@ actually being on, because those mode hooks also fire on the way off."
     (minibuffer-exit-hook . donkey--minibuffer-exit)
     (window-buffer-change-functions . donkey--mark-run-resume-when-shown)
     (window-selection-change-functions . donkey--mark-run-resume-when-shown)
-    (kill-buffer-hook . donkey--mark-run-forget-killed-buffer)
-    (delete-terminal-functions . donkey--mark-run-forget-terminal)
+    (kill-buffer-hook . donkey--mark-run-forget)
+    (delete-terminal-functions . donkey--mark-run-forget)
     ,@donkey--state-hooks)
   "Every (HOOK . FUNCTION) `donkey-mode' adds to Emacs\\='s own hooks.
 

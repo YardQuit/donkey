@@ -5176,9 +5176,9 @@ the returning frame brings; ending on it would undo the resume."
 (ert-deftest donkey-mark-run-ends-with-its-terminal ()
   "Deleting the run's terminal ends the run and forgets one kept for it."
   (donkey-mark-test--keys "for text that is not saved" "w w l M w"
-    (should (memq #'donkey--mark-run-forget-terminal
+    (should (memq #'donkey--mark-run-forget
                   (default-value 'delete-terminal-functions)))
-    (donkey--mark-run-forget-terminal (frame-terminal))
+    (donkey--mark-run-forget (frame-terminal))
     (should-not donkey--mark-run-exit-function)
     (should-not donkey--mark-run-pending))
   (let ((other (get-buffer-create "*donkey-other-buffer*")))
@@ -5186,7 +5186,7 @@ the returning frame brings; ending on it would undo the resume."
         (donkey-mark-test--keys "for text that is not saved"
             "w w l M w C-x b *donkey-other-buffer* RET"
           (should donkey--mark-run-suspended)
-          (donkey--mark-run-forget-terminal (frame-terminal))
+          (donkey--mark-run-forget (frame-terminal))
           (should-not donkey--mark-run-suspended))
       (kill-buffer other))))
 
