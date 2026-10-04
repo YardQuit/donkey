@@ -1018,7 +1018,7 @@ fails."
       (should (eq (donkey--mark-pair-open-for ?\() ?\())
       ;; the wrap engine, which answers a symmetric delimiter with
       ;; itself by design rather than with nil
-      (should (characterp (donkey--wrap-close-char ?\()))
+      (should (characterp (cdr (donkey--wrap-open-close ?\())))
       ;; the chart, and which keys wrap
       (should (equal (donkey--wrap-delimiter-characters) nil))
       ;; the platform report
@@ -1028,6 +1028,19 @@ fails."
       (should-not (donkey--pair-close-for ?\())
       (should-not (donkey--pair-open-for ?\)))
       (should-not (donkey--pair-exception-p ?\()))))
+
+(ert-deftest donkey-a-pair-whose-closer-is-not-a-character-is-unsupported ()
+  "`m i' on a row closing with something not a character says it is unsupported.
+
+The reader's error, not a type error out of the scan."
+  (let ((donkey-mark-pair-delimiters
+         (cons '(?{ . "}") donkey-mark-pair-delimiters)))
+    (donkey-test-keys--harness "*donkey-pair-closer-string*" #'text-mode ()
+        "a {x} b" "l l"
+      (should (string-match-p
+               "\\`Unsupported delimiter .{.; see"
+               (cadr (should-error (donkey--mark-pair-read-delimiter)
+                                   :type 'user-error)))))))
 
 (ert-deftest donkey-the-delimiter-prompt-reads-the-table-after-the-wait ()
   "A pair added while `m i' is waiting is one `m i' can use.

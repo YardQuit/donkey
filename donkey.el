@@ -465,6 +465,23 @@ same answer by another route."
        (donkey--memo-major-mode-in-p 'donkey--excluded-mode-cache
                                      donkey-excluded-modes)))
 
+(defun donkey--mode-row (rows)
+  "Return the first of ROWS naming this major mode or a mode it derives from.
+
+ROWS is a list of (MODE . TAIL).  Coerced at every level it is walked,
+because its readers sit on hooks (rules 3 and 81): ROWS only when a
+proper list, a row only when a cons whose car is a non-nil symbol and
+whose tail is a proper list -- so neither this function nor a caller
+walking the tail can signal on a mis-typed option."
+  (and (proper-list-p rows)
+       (seq-find (lambda (row)
+                   (and (consp row)
+                        (symbolp (car row))
+                        (car row)
+                        (proper-list-p (cdr row))
+                        (provided-mode-derived-p major-mode (car row))))
+                 rows)))
+
 (defun donkey--support-mode-section ()
   "Return this buffer\\='s section of `donkey-support-modes', or nil.
 
@@ -480,22 +497,14 @@ option is copied into the buffer.
 
 A row that is not a cons whose car is a symbol, or whose tail is not
 a proper list, is skipped -- so neither this function nor the callers
-that walk the tail can signal on a mis-typed option."
+that walk the tail can signal on a mis-typed option; see
+`donkey--mode-row'."
   (let ((cache donkey--support-mode-cache))
     (if (and cache
              (eq (car (car cache)) major-mode)
              (eq (cdr (car cache)) donkey-support-modes))
         (cdr cache)
-      (let ((result
-             (and (proper-list-p donkey-support-modes)
-                  (seq-find (lambda (row)
-                              (and (consp row)
-                                   (symbolp (car row))
-                                   (proper-list-p (cdr row))
-                                   (or (eq major-mode (car row))
-                                       (provided-mode-derived-p major-mode
-                                                                (car row)))))
-                            donkey-support-modes))))
+      (let ((result (donkey--mode-row donkey-support-modes)))
         (setq donkey--support-mode-cache
               (cons (cons major-mode donkey-support-modes) result))
         result))))
@@ -1769,7 +1778,7 @@ two places to read it."
   (let* ((halves (delete-dups
                   (apply #'append
                          (mapcar (lambda (ch)
-                                   (list ch (donkey--wrap-close-char ch)))
+                                   (list ch (or (donkey--pair-close-for ch) ch)))
                                  (donkey--wrap-delimiter-characters)))))
          (claimed (seq-count (lambda (ch)
                                (eq (donkey--binding-value
@@ -2654,23 +2663,7 @@ not something fingers repeat."
                  " knows of is pairing in this buffer, so a press will"
                  " insert one character")))))))
 
-(defvar donkey-mark-pair-delimiters) ;(donkey--wrap-close-char); defined below, in "Mark and Text Object Selection Commands"
-
-(defun donkey--wrap-close-char (open-char)
-  "Return the character that closes OPEN-CHAR for `donkey-wrap-region'.
-
-Looked up in `donkey-mark-pair-delimiters' when OPEN-CHAR is a
-recognized pair there, so bracket-type wrap delimiters (e.g. `(') close
-with their real counterpart (`)') instead of themselves; otherwise
-OPEN-CHAR is symmetric (e.g. `\"') and closes with itself.
-
-A pair whose CLOSE is not a character closes with itself too.  The
-table is a defcustom and holds whatever it was given: left unchecked,
-a close of \"}\" signals from `string' at the moment of the press, and
-a close outside the character range inserts whatever that number
-happens to name."
-  (let ((close (cdr (assq open-char (donkey--pair-table)))))
-    (if (characterp close) close open-char)))
+(defvar donkey-mark-pair-delimiters) ;(donkey--wrap-open-close); defined below, in "Mark and Text Object Selection Commands"
 
 (defun donkey--wrap-open-close (char)
   "Return the (OPEN . CLOSE) pair CHAR names, whichever half of it CHAR is.
@@ -2679,10 +2672,12 @@ Resolved through `donkey-mark-pair-delimiters', so `)' names the same
 pair as `(' and the wrap keys read the table `m i' reads.  A symmetric
 delimiter answers itself on both sides, and so does a character the
 table does not know, or one whose row opens with something that is not
-a character: both halves of the answer are always characters."
+a character: both halves of the answer are always characters, and a
+closing half that is not one closes with the opener, as a symmetric
+delimiter does."
   (let ((open (donkey--mark-pair-open-for char)))
     (unless (characterp open) (setq open char))
-    (cons open (donkey--wrap-close-char open))))
+    (cons open (or (donkey--pair-close-for open) open))))
 
 (defun donkey--wrap-escaped-p (pos)
   "Return non-nil when the character at POS is backslash-escaped.
@@ -2755,23 +2750,21 @@ reads as point."
           (donkey--insertion-read-only-p beg)
           (donkey--insertion-read-only-p end)))))
 
-(defun donkey--wrap-rectangle-region (open-char)
-  "Wrap each line of the active rectangle selection with OPEN-CHAR.
+(defun donkey--wrap-rectangle-region (open-char close-char)
+  "Wrap each line of the active rectangle selection in OPEN-CHAR, CLOSE-CHAR.
 
-Also inserts OPEN-CHAR's matching close character (see
-`donkey--wrap-close-char'), each at that line's own rectangle
-start/end column.  Uses `move-to-column' with FORCE non-nil, same as
-`string-rectangle-line' and other rectangle commands, so lines
-shorter than the rectangle are padded with spaces up to each column
-instead of bunching both characters together at end of line."
-  (let ((close-char (donkey--wrap-close-char open-char)))
-    (apply-on-rectangle
-     (lambda (startcol endcol)
-       (move-to-column endcol t)
-       (insert (string close-char))
-       (move-to-column startcol t)
-       (insert (string open-char)))
-     (region-beginning) (region-end))))
+Each goes at that line\\='s own rectangle start and end column, through
+`move-to-column' with FORCE non-nil as `string-rectangle-line' and the
+other rectangle commands do, so a line shorter than the rectangle is
+padded with spaces up to each column instead of taking both characters
+together at its end."
+  (apply-on-rectangle
+   (lambda (startcol endcol)
+     (move-to-column endcol t)
+     (insert (string close-char))
+     (move-to-column startcol t)
+     (insert (string open-char)))
+   (region-beginning) (region-end)))
 
 (defun donkey--wrap-put-on (beg end open close)
   "Wrap the text between BEG and END in OPEN and CLOSE.
@@ -2853,7 +2846,7 @@ standing."
         (progn
           (when (donkey--wrap-refused-by-read-only-text-p)
             (signal 'text-read-only nil))
-          (donkey--wrap-rectangle-region open))
+          (donkey--wrap-rectangle-region open close))
       (let ((beg (region-beginning))
             (end (region-end)))
         (if (donkey--wrap-already-wrapped-p beg end open close)
@@ -2985,10 +2978,10 @@ keyboard."
     ;; and for the same reason; signaled as Emacs itself signals it.
     (when (donkey--wrap-refused-by-read-only-text-p)
       (signal 'text-read-only nil))
-    (let ((open (car (donkey--wrap-open-close last-command-event))))
+    (let ((pair (donkey--wrap-open-close last-command-event)))
       (if (bound-and-true-p rectangle-mark-mode)
-          (donkey--wrap-rectangle-region open)
-        (donkey--wrap-delegate open))))
+          (donkey--wrap-rectangle-region (car pair) (cdr pair))
+        (donkey--wrap-delegate (car pair)))))
    (t
     (donkey--wrap-selection last-command-event))))
 
@@ -3214,13 +3207,14 @@ shape a reader gets from one bracket too few."
 (defun donkey--pair-close-for (open)
   "Return the closing half of the pair OPEN opens, or nil.
 
-A plain lookup, and one that never signals: `donkey--pair-table' hands
-it a proper list, and `assq' passes over a row that is not a cons.
-What comes back need not be a character, the table holding whatever it
-was given, so a caller that writes it into the buffer puts OPEN
-through `donkey--pair-characters' first, which is where such a row is
-refused."
-  (cdr (assq open (donkey--pair-table))))
+Read from `donkey--pair-table', and answered only when that half is a
+character: the table is a defcustom and holds whatever it was given,
+and a closing half of \"}\" or nil names no key and inserts nothing
+sensible.  Nil, too, for a character that opens no pair.  A caller
+that wants a character either way -- the wrap keys, which close a
+symmetric delimiter with itself -- asks for the opener in its place."
+  (let ((close (cdr (assq open (donkey--pair-table)))))
+    (and (characterp close) close)))
 
 (defun donkey--pair-open-for (close)
   "Return the opening half of the pair CLOSE closes, or nil.
@@ -3248,20 +3242,10 @@ Reads `donkey-pair-delimiter-exceptions', first matching row only.
 
 Coerced at every level it is walked, because this runs from
 `post-self-insert-hook' and a signal there aborts the reader\\='s own
-typing (rules 3 and 81): the option is walked only when it is a
-proper list, a row is read only when it is a cons whose car is a
-symbol, and its tail only when that tail is a proper list.  A row
-whose tail is a single value -- `(text-mode . 5)', the shape a reader
-gets from one dot too many -- passes `consp' and would otherwise
-signal here."
-  (let ((row (and (proper-list-p donkey-pair-delimiter-exceptions)
-                  (seq-find (lambda (entry)
-                              (and (consp entry)
-                                   (symbolp (car entry))
-                                   (car entry)
-                                   (proper-list-p (cdr entry))
-                                   (derived-mode-p (car entry))))
-                            donkey-pair-delimiter-exceptions))))
+typing (rules 3 and 81); see `donkey--mode-row'.  A row whose tail is
+a single value -- `(text-mode . 5)', the shape a reader gets from one
+dot too many -- is skipped."
+  (let ((row (donkey--mode-row donkey-pair-delimiter-exceptions)))
     (and row (memq char (seq-filter #'characterp (cdr row))) t)))
 
 (defun donkey--pair-inclusions-here ()
@@ -3276,20 +3260,11 @@ row naming a character the table has no closer for would signal from
 
 Coerced at every level it is walked (rules 3 and 81), exactly as
 `donkey--pair-exception-p' is."
-  (let ((row (and (proper-list-p donkey-pair-delimiter-inclusions)
-                  (seq-find (lambda (entry)
-                              (and (consp entry)
-                                   (symbolp (car entry))
-                                   (car entry)
-                                   (proper-list-p (cdr entry))
-                                   (derived-mode-p (car entry))))
-                            donkey-pair-delimiter-inclusions))))
+  (let ((row (donkey--mode-row donkey-pair-delimiter-inclusions)))
     (and row
-         (let ((pairs (donkey--pair-table)))
-           (seq-filter (lambda (char)
-                         (and (characterp char)
-                              (characterp (cdr (assq char pairs)))))
-                       (cdr row))))))
+         (seq-filter (lambda (char)
+                       (and (characterp char) (donkey--pair-close-for char)))
+                     (cdr row)))))
 
 (defun donkey--pair-count-here ()
   "Return how many delimiters actually pair in this buffer.
@@ -3448,7 +3423,7 @@ do and Emacs\\='s own three pairs would be lost."
       (let* ((asked (delq nil
                           (mapcar (lambda (char)
                                     (let ((close (donkey--pair-close-for char)))
-                                      (and (characterp close) (cons char close))))
+                                      (and close (cons char close))))
                                   (donkey--pair-characters))))
              (had (default-value 'electric-pair-pairs))
              (added (seq-remove (lambda (row) (member row had)) asked)))
@@ -4506,7 +4481,7 @@ than from a key."
          ;; two disagree, and a pair added while the prompt stood was
          ;; accepted as an opener and then refused as unsupported
          ;; (rule 19).
-         (close-char (or (cdr (assq open-char (donkey--pair-table)))
+         (close-char (or (donkey--pair-close-for open-char)
                          (donkey--mark-pair-unsupported-error open-char))))
     (list open-char close-char on-opener (and (or on-opener on-closer) t))))
 
@@ -4549,41 +4524,30 @@ does not know."
             (user-error "No digraph %s" keys))
           (aref result 0))))))
 
-(defun donkey--mark-pair-scan-forward (open-char close-char)
-  "Scan forward for the CLOSE-CHAR balancing one already-open OPEN-CHAR.
+(defun donkey--mark-pair-scan (open-char close-char forward)
+  "Scan for the delimiter balancing one already open, or already closed.
 
-Counts nested OPEN-CHAR/CLOSE-CHAR occurrences of the SAME type along
-the way, so a nested pair of the same delimiter (e.g. the inner
-`(...)' in \"(a(b)c)\") does not get mistaken for the enclosing one's
-close.  Returns the position immediately after the matching CLOSE-CHAR.
-Signals `search-failed' if the nesting never closes before the end of
-the buffer.  Only valid when OPEN-CHAR and CLOSE-CHAR differ --
-nesting is meaningless for a symmetric delimiter, where the same
-character both opens and closes."
+FORWARD non-nil looks ahead for the CLOSE-CHAR balancing one OPEN-CHAR
+already open and returns the position just after it; nil looks back
+for the OPEN-CHAR balancing one CLOSE-CHAR already closed and returns
+its position.  Nested pairs of the same type are counted on the way,
+so the inner `(...)' in \"(a(b)c)\" is not taken for the outer one's
+other half.  Signals `search-failed' where the nesting never balances
+before the buffer's edge.  Only valid when OPEN-CHAR and CLOSE-CHAR
+differ: nesting is meaningless for a symmetric delimiter."
   (let ((regexp (concat (regexp-quote (string open-char))
-                         "\\|" (regexp-quote (string close-char))))
+                        "\\|" (regexp-quote (string close-char))))
+        (deeper (if forward open-char close-char))
         (depth 1))
     (while (> depth 0)
-      (unless (re-search-forward regexp nil t)
-        (signal 'search-failed (list (string close-char))))
-      (setq depth (if (eq (char-before) open-char) (1+ depth) (1- depth))))
-    (point)))
-
-(defun donkey--mark-pair-scan-backward (open-char close-char)
-  "Scan backward for the OPEN-CHAR balancing one already-closed CLOSE-CHAR.
-
-Counts nested OPEN-CHAR/CLOSE-CHAR occurrences of the SAME type along
-the way, mirroring `donkey--mark-pair-scan-forward'.  Returns the
-position of the matching OPEN-CHAR.  Signals `search-failed' if the
-nesting never opens before the start of the buffer.  Only valid when
-OPEN-CHAR and CLOSE-CHAR differ."
-  (let ((regexp (concat (regexp-quote (string open-char))
-                         "\\|" (regexp-quote (string close-char))))
-        (depth 1))
-    (while (> depth 0)
-      (unless (re-search-backward regexp nil t)
-        (signal 'search-failed (list (string open-char))))
-      (setq depth (if (eq (char-after) close-char) (1+ depth) (1- depth))))
+      (unless (if forward
+                  (re-search-forward regexp nil t)
+                (re-search-backward regexp nil t))
+        (signal 'search-failed
+                (list (string (if forward close-char open-char)))))
+      (setq depth (if (eq (if forward (char-before) (char-after)) deeper)
+                      (1+ depth)
+                    (1- depth))))
     (point)))
 
 (defun donkey--mark-pair-positions (open-char close-char on-opener)
@@ -4615,7 +4579,7 @@ left where it was, found or not, and a miss is a `user-error'."
             (condition-case nil
                 (setq end-pos (if symmetric
                                    (search-forward (string close-char) nil nil)
-                                 (donkey--mark-pair-scan-forward open-char close-char)))
+                                 (donkey--mark-pair-scan open-char close-char t)))
               (search-failed
                (unless symmetric
                  (user-error "No matching '%c' found after cursor" close-char))
@@ -4630,14 +4594,14 @@ left where it was, found or not, and a miss is a `user-error'."
           (condition-case nil
               (setq start-pos (if symmetric
                                    (search-backward (string open-char) nil nil)
-                                 (donkey--mark-pair-scan-backward open-char close-char)))
+                                 (donkey--mark-pair-scan open-char close-char nil)))
             (search-failed
              (user-error "No '%c' found near cursor" open-char))))
         (goto-char (1+ start-pos))
         (condition-case nil
             (setq end-pos (if symmetric
                                (search-forward (string close-char) nil nil)
-                             (donkey--mark-pair-scan-forward open-char close-char)))
+                             (donkey--mark-pair-scan open-char close-char t)))
           (search-failed
            (user-error "No matching '%c' found after cursor" close-char))))
       (cons start-pos end-pos))))
@@ -4711,11 +4675,11 @@ Signals a `user-error' when there is no enclosing pair left."
                    ;; scan's own message.
                    (condition-case nil
                        (let* ((case-fold-search nil)
-                              (start (donkey--mark-pair-scan-backward
-                                      open-char close-char)))
+                              (start (donkey--mark-pair-scan
+                                      open-char close-char nil)))
                          (goto-char (1+ start))
-                         (cons start (donkey--mark-pair-scan-forward
-                                      open-char close-char)))
+                         (cons start (donkey--mark-pair-scan
+                                      open-char close-char t)))
                      (error
                       (user-error "No enclosing `%c' beyond that level"
                                   open-char))))))
@@ -14222,8 +14186,8 @@ at the first idle moment after `donkey-mode' comes on;
   (let (wanted)
     (dolist (ch (donkey--wrap-delimiter-characters))
       (push ch wanted)
-      (let ((close (donkey--wrap-close-char ch)))
-        (unless (eq close ch) (push close wanted))))
+      (let ((close (donkey--pair-close-for ch)))
+        (when (and close (not (eq close ch))) (push close wanted))))
     ;; Let go first, so a character moved out of the list frees its key
     ;; before another one in the list can be judged against it.
     (map-keymap
@@ -14431,7 +14395,7 @@ outright."
   (let ((asked (or everything (proper-list-p donkey-wrap-delimiters)))
         taken)
     (dolist (ch (donkey--wrap-delimiter-characters))
-      (dolist (half (list ch (donkey--wrap-close-char ch)))
+      (dolist (half (list ch (or (donkey--pair-close-for ch) ch)))
         (let ((now (donkey--binding-value
                     (lookup-key donkey-normal-mode-map (vector half)))))
           (unless (or (eq now #'donkey-wrap-region)
@@ -14499,10 +14463,9 @@ For the line that says a delimiter cannot wrap: `>' cannot, because
 `donkey-indent-region-or-line' holds the key, and `<' can -- which is
 the thing the reader wants told.  Answers nil when the pair is
 symmetric or the other half has no key either."
-  (let* ((open (donkey--mark-pair-open-for char))
-         (other (if (eq char open) (donkey--wrap-close-char open) open)))
-    (and (characterp other)
-         (not (eq other char))
+  (let* ((pair (donkey--wrap-open-close char))
+         (other (if (eq char (car pair)) (cdr pair) (car pair))))
+    (and (not (eq other char))
          (eq (donkey--binding-value
               (lookup-key donkey-normal-mode-map (vector other)))
              'donkey-wrap-region)

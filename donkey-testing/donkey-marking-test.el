@@ -1850,7 +1850,7 @@ Regression test: point on the OUTER opening delimiter of a
 same-type nested pair (e.g. the outer `{' of \"{{inner}}\") must select
 the content up to the OUTER closing delimiter, not the nearest one.
 
-Before `donkey--mark-pair-scan-forward' existed, this used a plain
+Before `donkey--mark-pair-scan' existed, this used a plain
 `search-forward' for the close character, which stops at the FIRST
 occurrence regardless of nesting -- for \"{{inner}}\" from the outer
 `{', that found the inner pair's `}' instead of the outer one,
@@ -1874,7 +1874,7 @@ selecting the correct \"{inner}\"."
 
 Same regression as `donkey-mark-inner-nested-same-type-from-outer-open',
 but with point on the OUTER closing delimiter instead (exercising the
-nesting-aware backward scan, `donkey--mark-pair-scan-backward')."
+nesting-aware backward scan, `donkey--mark-pair-scan')."
   (dolist (case '(("{{inner}}" . "{inner}")
                    ("((inner))" . "(inner)")
                    ("[[inner]]" . "[inner]")))
@@ -1942,7 +1942,7 @@ unrelated character."
 
 (ert-deftest donkey-mark-inner-nested-same-type-unbalanced-signals-error ()
   "An unbalanced nested same-type delimiter (missing outer close)
-signals an error via `donkey--mark-pair-scan-forward' failing, rather
+signals an error via `donkey--mark-pair-scan' failing, rather
 than silently matching the wrong (inner) close."
   (with-temp-buffer
     (insert "(a(b)c")
@@ -2075,7 +2075,7 @@ Regression test: point outside any matching pair, with several
 unrelated same-type pairs earlier in the buffer, signals an error
 without moving point.
 
-`donkey--mark-pair-scan-backward' walks past those earlier
+`donkey--mark-pair-scan' walks past those earlier
 pairs (correctly counting nesting depth as it goes) before it runs out of
 buffer and fails -- each intermediate match genuinely moves point, so
 without `save-excursion' wrapping the scan, the signalled error still

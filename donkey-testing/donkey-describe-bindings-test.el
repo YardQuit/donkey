@@ -1174,7 +1174,7 @@ at the end."
   (should (equal (assoc "<<" donkey--digraph-common) (cons "<<" "«")))
   (should (equal (assoc ">>" donkey--digraph-common) (cons ">>" "»")))
   (should (assq ?\« donkey-mark-pair-delimiters))
-  (should (eq (donkey--wrap-close-char ?\«) ?\»))
+  (should (eq (cdr (donkey--wrap-open-close ?\«)) ?\»))
   ;; beside the quotation marks: the four quotes, then these two
   (should (equal (mapcar #'car (seq-take donkey--digraph-common 6))
                  '("'6" "'9" "\"6" "\"9" "<<" ">>")))
@@ -4313,9 +4313,9 @@ same answer a pair with no CLOSE at all gets."
     (unwind-protect
         (progn
           (setq donkey-mark-pair-delimiters (list (cons ?# "}")))
-          (should (eq (donkey--wrap-close-char ?#) ?#))
+          (should (eq (cdr (donkey--wrap-open-close ?#)) ?#))
           (setq donkey-mark-pair-delimiters (list (cons ?# nil)))
-          (should (eq (donkey--wrap-close-char ?#) ?#)))
+          (should (eq (cdr (donkey--wrap-open-close ?#)) ?#)))
       (setq donkey-mark-pair-delimiters was))))
 
 (ert-deftest donkey-the-settle-reports-even-when-the-claim-cannot-run ()

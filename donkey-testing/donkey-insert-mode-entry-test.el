@@ -1325,17 +1325,17 @@ It does not deactivate the mark or exit
       (should (bound-and-true-p rectangle-mark-mode))
       (should (use-region-p)))))
 
-(ert-deftest donkey-wrap-close-char-uses-mark-pair-delimiters ()
-  "`donkey--wrap-close-char' resolves the close side of a pair.
+(ert-deftest donkey-a-wrap-key-closes-with-the-other-half-of-its-pair ()
+  "`donkey--wrap-open-close' resolves the close side of a pair.
 
 It resolves the close side of a recognized
-`donkey-mark-pair-delimiters' entry, falling back to OPEN-CHAR itself
-when it is not a recognized pair (symmetric delimiters, or any
+`donkey-mark-pair-delimiters' entry, falling back to the character
+itself when it is not a recognized pair (symmetric delimiters, or any
 character a user has not added to `donkey-mark-pair-delimiters')."
-  (should (equal (donkey--wrap-close-char ?\() ?\)))
-  (should (equal (donkey--wrap-close-char ?\[) ?\]))
-  (should (equal (donkey--wrap-close-char ?\") ?\"))
-  (should (equal (donkey--wrap-close-char ?!) ?!)))
+  (should (equal (cdr (donkey--wrap-open-close ?\()) ?\)))
+  (should (equal (cdr (donkey--wrap-open-close ?\[)) ?\]))
+  (should (equal (cdr (donkey--wrap-open-close ?\")) ?\"))
+  (should (equal (cdr (donkey--wrap-open-close ?!)) ?!)))
 
 (ert-deftest donkey-a-delegated-wrap-enters-insert-inserts-then-exits ()
   "Delegating, a wrap enters Insert, self-inserts, then leaves for Normal.
@@ -1794,7 +1794,7 @@ DONKEY command holds, `:' and `>'."
     (unless (memq ch '(?: ?>))
       (should (eq (lookup-key donkey-normal-mode-map (char-to-string ch))
                   #'donkey-wrap-region))
-      (let ((close (donkey--wrap-close-char ch)))
+      (let ((close (cdr (donkey--wrap-open-close ch))))
         (unless (or (eq close ch) (memq close '(?: ?>)))
           (should (eq (lookup-key donkey-normal-mode-map (char-to-string close))
                       #'donkey-wrap-region)))))))
@@ -1918,7 +1918,7 @@ all."
        (should (< (length narrow) (length wide)))
        (should (equal narrow (sort (delete-dups
                                     (append donkey--wrap-delegated-delimiters
-                                            (mapcar #'donkey--wrap-close-char
+                                            (mapcar (lambda (c) (cdr (donkey--wrap-open-close c)))
                                                     donkey--wrap-delegated-delimiters)))
                                    #'<))))
      (cl-letf (((symbol-function 'message)
