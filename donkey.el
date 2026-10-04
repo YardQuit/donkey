@@ -9603,13 +9603,7 @@ Bound to \\`f' in Normal state."
                  (donkey--split-hidden-note donkey--split-hidden))
       ;; Letting go of the selection runs the reader's hooks, and a
       ;; split half made is worse than one whose selection lingers.
-      (condition-case err
-          (progn
-            (when (bound-and-true-p rectangle-mark-mode)
-              (rectangle-mark-mode -1))
-            (deactivate-mark))
-        (error (message "DONKEY: letting go of the selection failed: %s"
-                        (error-message-string err))))
+      (donkey--split-let-go-of-selection)
       (let ((first (car donkey--split-places)))
         (goto-char (overlay-start first))
         (setq donkey--split-primary first
@@ -9619,6 +9613,16 @@ Bound to \\`f' in Normal state."
       ;; Spent last, once the split stands.
       (donkey--consume-banked-spans donkey--split-banked)
       (message "%s" (donkey--split-hint)))))
+
+(defun donkey--split-let-go-of-selection ()
+  "Drop the selection a split was made from, saying so rather than signaling."
+  (condition-case err
+      (progn
+        (when (bound-and-true-p rectangle-mark-mode)
+          (rectangle-mark-mode -1))
+        (deactivate-mark))
+    (error (message "DONKEY: letting go of the selection failed: %s"
+                    (error-message-string err)))))
 
 (defun donkey--split-hidden-note (n)
   "Return what to say of N hidden matches left out, or \"\" for none."
@@ -10163,13 +10167,7 @@ layer that is live falls through to Normal state."
 
 Lets go of the selection first, a rectangle included."
   (donkey--split-dissolve t)
-  (condition-case err
-      (progn
-        (when (bound-and-true-p rectangle-mark-mode)
-          (rectangle-mark-mode -1))
-        (deactivate-mark))
-    (error (message "DONKEY: letting go of the selection failed: %s"
-                    (error-message-string err))))
+  (donkey--split-let-go-of-selection)
   (let ((first (donkey--split-cursor-make (point))))
     (setq donkey--split-places (list first)
           donkey--split-primary first
