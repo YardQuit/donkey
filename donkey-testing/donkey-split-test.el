@@ -3589,6 +3589,20 @@ the bottom up every line is parsed from far back."
         (donkey-split-test--numbered-lines 50) "v G f ( ["
       (should (= 2 (donkey-split-test--split-entries))))))
 
+(ert-deftest donkey-split-an-undo-keeps-to-undo-limit-by-what-it-holds ()
+  "The record an undo of a split makes counts too: past `undo-limit' older go.
+
+Undone, the entry stays redoable."
+  (let ((undo-limit 600)
+        (undo-strong-limit 1200))
+    (donkey-split-test--on "foo"
+      (donkey-split-test--keys "*split-undo-limit-redo*"
+          (donkey-split-test--numbered-lines 50) "v G f ( C-g u"
+        (should (= 1 (donkey-split-test--split-entries)))
+        (should (string-prefix-p "foo 1\n" (buffer-string)))
+        (execute-kbd-macro (kbd "U"))
+        (should (string-prefix-p "(foo) 1\n" (buffer-string)))))))
+
 (ert-deftest donkey-split-a-record-past-undo-outer-limit-is-not-made ()
   "A change too large for `undo-outer-limit' is made, said, and not recorded."
   (let ((undo-outer-limit 100)

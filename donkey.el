@@ -8154,7 +8154,8 @@ TO and FROM, and END is where NOW ends at the last position.  Only
 what differs between the two is rewritten, see
 `donkey--split-put-back-at'.  The reverse is recorded the same way, at
 the positions the texts then stand at, so the change can be undone
-again.  Refuses, changing nothing, where a position does not hold NOW:
+again, and counted by what it holds as `donkey--split-record' counts
+it.  Refuses, changing nothing, where a position does not hold NOW:
 the buffer is no longer what the entry was made from.  Where a split
 is live, what is put in beside one of its places stays outside the
 place, so no place holds anything but what it held; see
@@ -8224,7 +8225,11 @@ written at them"))
                        (donkey--split-texts-length then n))
                     (aref moved 0) new-end
                     #'donkey--split-put-back moved then now new-end)
-              buffer-undo-list)))))
+              buffer-undo-list)
+        ;; Counted as the entry it puts back was.  It is the newest group,
+        ;; which the cut always keeps, and the change it reverses has
+        ;; already passed `undo-outer-limit'.
+        (donkey--split-truncate-undo)))))
 
 (defun donkey--split-put-back-at (pos now then)
   "Rewrite NOW, standing at POS, into THEN, changing only what differs.
