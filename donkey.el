@@ -6451,12 +6451,17 @@ number of objects forward again happens to land.
 BACKWARD and FORWARD are the object\\='s own motions.  Going back one and
 forward one lands on the end of the object behind, from any position a
 caller has normalized; the `min' is for a caller that has not, where
-FORWARD could return past where it started."
+FORWARD could return past where it started.  Where there is no object
+behind ORIGIN -- the first in its list -- the answer is ORIGIN itself."
   (save-excursion
     (goto-char origin)
-    (funcall backward 1)
-    (funcall forward 1)
-    (min (point) origin)))
+    (condition-case nil
+        (progn
+          (funcall backward 1)
+          (funcall forward 1)
+          (min (point) origin))
+      ;; No object behind ORIGIN in its list: nothing to reach back to.
+      (scan-error origin))))
 
 (defun donkey--refuse-blank-mark (object &optional origin)
   "Drop the region and report when it is nothing but whitespace.
@@ -6701,8 +6706,7 @@ a bare press does -- see `donkey--object-count'."
       ;; the new end.
       (set-mark (save-excursion
                   (goto-char (mark t))
-                  (forward-sexp n)
-                  (when (> n 0)
+                  (when (> (donkey--forward-sexps n) 0)
                     (donkey--trim-symbol-punctuation))
                   (point)))
     (let ((origin (point)))
@@ -6727,19 +6731,37 @@ a bare press does -- see `donkey--object-count'."
                                  (point) #'backward-sexp #'forward-sexp))
                      (donkey--trim-symbol-punctuation)
                      (point))))
-          (forward-sexp n)
+          (donkey--forward-sexps n)
           (donkey--trim-symbol-prefix)
           (push-mark far t))
-      (forward-sexp n)
-      (when (> n 0)
-        (donkey--trim-symbol-punctuation))
-      (push-mark (point) t)
-      ;; Back over the same number of symbols the first step covered.
-      (backward-sexp n)
-      (when (> n 0)
-        (donkey--trim-symbol-prefix)))
+      (let ((moved (donkey--forward-sexps n)))
+        (when (> moved 0)
+          (donkey--trim-symbol-punctuation))
+        (push-mark (point) t)
+        ;; Back over the same number of symbols the first step covered.
+        (donkey--forward-sexps (- moved))
+        (when (> moved 0)
+          (donkey--trim-symbol-prefix))))
     (activate-mark)))
   (message "Symbol marked"))
+
+(defun donkey--forward-sexps (n)
+  "Move over N balanced expressions, fewer where they run out; return how many.
+
+A negative N moves backward.  The end of the enclosing list or of the
+buffer stops the walk where it got to rather than signaling, the way a
+count of words stops at the buffer\\='s end."
+  (let ((step (if (< n 0) -1 1))
+        (done 0))
+    (condition-case nil
+        (while (/= done n)
+          (let ((before (point)))
+            (forward-sexp step)
+            (if (= (point) before)
+                (setq n done)
+              (setq done (+ done step)))))
+      (scan-error nil))
+    done))
 
 (defun donkey-mark-symbol-backward (&optional count)
   "Select the symbol at point, or grow a symbol selection BACKWARD.

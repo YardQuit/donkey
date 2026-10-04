@@ -447,6 +447,34 @@ Return list (POINT MARK TEXT) describing the resulting region."
               (buffer-substring-no-properties (region-beginning) (region-end))
             ""))))
 
+(ert-deftest donkey-a-symbol-count-stops-at-the-end-of-its-list ()
+  "`m W' with a count, or repeated, inside a list marks to the list's end.
+
+No scan error reaches the reader, and the cursor stays in the list."
+  (dolist (case '(("(xfoo bar)" "oo" "C-u 3 m W" "xfoo bar")
+                  ("(foo bar)" "foo" "m W m W m W" "foo bar")
+                  ("(foo bar) baz" "foo" "C-u 9 m W" "foo bar")))
+    (pcase-let ((`(,text ,at ,keys ,want) case))
+      (donkey-test-keys--harness "*donkey-symbol-count*" #'emacs-lisp-mode ()
+          text ""
+        (search-forward at)
+        (goto-char (match-beginning 0))
+        (execute-kbd-macro (kbd keys))
+        (should (equal (list text keys (buffer-substring-no-properties
+                                        (region-beginning) (region-end)))
+                       (list text keys want)))))))
+
+(ert-deftest donkey-a-negative-symbol-count-in-a-list-raises-no-scan-error ()
+  "`C-u - 1 m W' on the first symbol of a list signals no scan error."
+  (donkey-test-keys--harness "*donkey-symbol-count*" #'emacs-lisp-mode ()
+      "(a b)" ""
+    (search-forward "a")
+    (goto-char (match-beginning 0))
+    (condition-case err
+        (execute-kbd-macro (kbd "C-u - 1 m W"))
+      (user-error nil)
+      (scan-error (ert-fail (list "scan error reached the reader" err))))))
+
 (ert-deftest donkey-mark-symbol-simple ()
   "Mark simple word from middle."
   (should (equal (nth 2 (donkey-test--symbol-result "foobar" 3)) "foobar")))
