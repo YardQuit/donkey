@@ -3993,8 +3993,10 @@ by one column, and not at the end of a line or of the buffer."
   (interactive)
   (if (bound-and-true-p rectangle-mark-mode)
       (progn
-        (rectangle-mark-mode -1)
+        ;; Deactivated first, as \\[keyboard-quit] does, so what the
+        ;; rectangle leaves in PRIMARY is the rectangle.
         (deactivate-mark)
+        (rectangle-mark-mode -1)
         (message "Rectangle: canceled"))
     (let ((had-active-region mark-active))
       (rectangle-mark-mode 1)
@@ -4101,14 +4103,31 @@ still finds its rows lit.  An error falls back to the whole rectangle."
             (funcall next orig start end window rol)))
       (error (funcall next orig start end window rol)))))
 
-(defvar donkey--rectangle-primary-overlay nil
-  "The overlay PRIMARY holds for a rectangle, or nil.
+(defvar-local donkey--rectangle-primary-overlay nil
+  "The overlay given to PRIMARY for this buffer\\='s rectangle, or nil.
 
 `gui-set-selection' takes an overlay as a selection whose text is read
 when a program asks for it.  This one has no face; its property
-donkey-rectangle is `live' while its rectangle is, or the rectangle\\='s
+donkey-rectangle is `live' while its rectangle is, the rectangle\\='s
 \(STARTCOL . ENDCOL) once it has ended, the overlay then spanning the
-rectangle\\='s corners.")
+rectangle\\='s corners, and the rectangle\\='s text once anything would
+have changed what the corners read; see
+`donkey--rectangle-primary-snapshot'.  One a buffer, so a rectangle
+in one buffer never moves or answers for another\\='s.")
+
+(defvar donkey--rectangle-primary-claim nil
+  "The value PRIMARY was last given in this Emacs, or nil.
+
+Noted after every `gui-set-selection' by
+`donkey--rectangle-note-claim', so DONKEY can tell whether PRIMARY still
+holds one of its overlays.")
+
+(defun donkey--rectangle-note-claim (type value)
+  "Note VALUE as the value of PRIMARY, when TYPE names that selection.
+
+After `gui-set-selection', while `donkey-mode' is on.  Never signals."
+  (when (member type '(nil PRIMARY "PRIMARY"))
+    (setq donkey--rectangle-primary-claim value)))
 
 (defvar-local donkey--rectangle-primary nil
   "Non-nil while this buffer\\='s live rectangle is what PRIMARY answers with.
@@ -4165,24 +4184,75 @@ asks.  Never signals."
 
 STATE is as the property donkey-rectangle of
 `donkey--rectangle-primary-overlay' holds it.  The overlay from an
-earlier rectangle goes."
+earlier rectangle goes.  Once PRIMARY holds it, a change to its rows or
+the buffer going away first keeps its text; see
+`donkey--rectangle-primary-snapshot'."
   (when (overlayp donkey--rectangle-primary-overlay)
     (delete-overlay donkey--rectangle-primary-overlay))
   (let ((overlay (make-overlay beg end nil nil t)))
     (overlay-put overlay 'donkey-rectangle state)
     (setq donkey--rectangle-primary-overlay overlay)
-    (donkey--rectangle-primary-set overlay)))
+    (when (donkey--rectangle-primary-set overlay)
+      (donkey--rectangle-primary-arm t))))
+
+(defun donkey--rectangle-primary-arm (on)
+  "Arm `donkey--rectangle-primary-snapshot' here, or with ON nil disarm it."
+  (if on
+      (progn
+        (add-hook 'before-change-functions
+                  #'donkey--rectangle-primary-snapshot nil t)
+        (add-hook 'kill-buffer-hook #'donkey--rectangle-primary-snapshot nil t))
+    (remove-hook 'before-change-functions #'donkey--rectangle-primary-snapshot t)
+    (remove-hook 'kill-buffer-hook #'donkey--rectangle-primary-snapshot t)))
+
+(defun donkey--rectangle-primary-snapshot (&optional beg end)
+  "Keep the text this buffer\\='s rectangle gives PRIMARY before it can change.
+
+On `before-change-functions' and `kill-buffer-hook', buffer-locally,
+while PRIMARY holds this buffer\\='s rectangle.  A change between BEG
+and END that touches an ended rectangle\\='s rows, or the buffer going
+away with any rectangle of its own in PRIMARY, turns what PRIMARY holds
+into the text it reads now, so a program asking later is given what was
+selected and never what was typed there since.  Once PRIMARY holds
+something else there is nothing to keep, and the hooks go.  Never
+signals."
+  (condition-case nil
+      (let* ((overlay donkey--rectangle-primary-overlay)
+             (state (and (overlayp overlay) (overlay-buffer overlay)
+                         (overlay-get overlay 'donkey-rectangle))))
+        (cond
+         ((or (not (eq donkey--rectangle-primary-claim overlay))
+              (stringp state)
+              (null state))
+          (donkey--rectangle-primary-arm nil))
+         ((and beg (or (eq state 'live)
+                       (> beg (save-excursion
+                                (goto-char (overlay-end overlay))
+                                (line-end-position)))
+                       (< end (save-excursion
+                                (goto-char (overlay-start overlay))
+                                (line-beginning-position)))))
+          ;; A live rectangle keeps its own text before a change, and a
+          ;; change on other rows changes nothing PRIMARY reads.
+          nil)
+         (t
+          (overlay-put overlay 'donkey-rectangle
+                       (donkey--rectangle-primary-text overlay))
+          (donkey--rectangle-primary-arm nil))))
+    (error nil)))
 
 (defun donkey--rectangle-primary-text (value)
   "Return the text PRIMARY holding VALUE gives, or nil if VALUE is not ours.
 
 VALUE is ours when it is an overlay DONKEY gave PRIMARY; see
 `donkey--rectangle-primary-overlay'.  A live rectangle is answered as
-Emacs would have answered it, and an ended one from its corners."
+Emacs would have answered it, an ended one from its corners, and one
+whose text was kept with that text."
   (when (and (overlayp value) (overlay-get value 'donkey-rectangle))
     (let ((state (overlay-get value 'donkey-rectangle))
           (buffer (overlay-buffer value)))
       (cond
+       ((stringp state) state)
        ((not (buffer-live-p buffer)) "")
        ((eq state 'live)
         (if (buffer-local-value 'rectangle-mark-mode buffer)
@@ -4209,7 +4279,7 @@ rectangle is turned into its text only here, when a program asks."
            (or (donkey--rectangle-primary-text value) value)))
 
 (defun donkey--rectangle-primary-set (value)
-  "Give PRIMARY VALUE, where Emacs still owns it.
+  "Give PRIMARY VALUE, where Emacs still owns it, and return VALUE if given.
 
 A string replaces the overlay an earlier rectangle left there."
   (when (gui-backend-selection-owner-p 'PRIMARY)
@@ -4261,6 +4331,22 @@ Never signals."
            (substring-no-properties (funcall region-extract-function nil)))))
     (error nil)))
 
+(defun donkey--rectangle-primary-release ()
+  "Let go of this buffer\\='s rectangle overlay, PRIMARY keeping its text.
+
+As `donkey-mode' goes off, and the converters that read the overlay go
+with it: where PRIMARY still holds the overlay it is given the text
+instead, and the overlay and its hooks go."
+  (let ((overlay donkey--rectangle-primary-overlay))
+    (when (overlayp overlay)
+      (when (and (eq donkey--rectangle-primary-claim overlay)
+                 (gui-backend-selection-owner-p 'PRIMARY))
+        (gui-set-selection 'PRIMARY
+                           (or (donkey--rectangle-primary-text overlay) "")))
+      (delete-overlay overlay)
+      (setq donkey--rectangle-primary-overlay nil))
+    (donkey--rectangle-primary-arm nil)))
+
 (defun donkey--rectangle-primary-follow ()
   "Answer PRIMARY from the rectangle while it lives, and keep it as it ends.
 
@@ -4289,7 +4375,8 @@ itself, which a program asking for it is answered from; see
     (let ((overlay (make-overlay (region-beginning) (region-end) nil nil t)))
       (overlay-put overlay 'donkey-rectangle 'live)
       (setq donkey--rectangle-primary-overlay overlay)
-      (gui-set-selection 'PRIMARY overlay)))
+      (gui-set-selection 'PRIMARY overlay)
+      (donkey--rectangle-primary-arm t)))
    ((not rectangle-mark-mode)
     (donkey--rectangle-primary-freeze))))
 
@@ -16246,6 +16333,7 @@ donkey-mode' to toggle."
                     #'donkey--rectangle-convert)
         (advice-add 'xselect-convert-to-length :around
                     #'donkey--rectangle-convert)
+        (advice-add 'gui-set-selection :after #'donkey--rectangle-note-claim)
         (add-hook 'rectangle-mark-mode-hook
                   #'donkey--rectangle-primary-follow))
     ;; Mark run mode's map lives in `overriding-terminal-local-map',
@@ -16276,13 +16364,17 @@ donkey-mode' to toggle."
     (advice-remove 'rectangle--highlight-for-redisplay
                    #'donkey--rectangle-highlight-visible)
     (advice-remove 'apply-on-rectangle #'donkey--rectangle-apply-visible)
-    (advice-remove 'xselect-convert-to-string #'donkey--rectangle-convert)
-    (advice-remove 'xselect-convert-to-length #'donkey--rectangle-convert)
     (remove-hook 'rectangle-mark-mode-hook #'donkey--rectangle-primary-follow)
+    ;; Before the converters go: an overlay PRIMARY still holds is
+    ;; answered with its text, never the stretch between its ends.
     (dolist (buffer (buffer-list))
       (with-current-buffer buffer
         (when donkey--rectangle-primary
-          (donkey--rectangle-primary-freeze))))
+          (donkey--rectangle-primary-freeze))
+        (donkey--rectangle-primary-release)))
+    (advice-remove 'xselect-convert-to-string #'donkey--rectangle-convert)
+    (advice-remove 'xselect-convert-to-length #'donkey--rectangle-convert)
+    (advice-remove 'gui-set-selection #'donkey--rectangle-note-claim)
     (donkey--sweep-buffers #'donkey--disable-in-buffer)))
 
 ;;; ---------------------------------------------------------------------------

@@ -8051,21 +8051,26 @@ an error -- never zero characters with a cheerful message."
 (defmacro donkey-rect-test--graphical (&rest body)
   "Run BODY as in a graphical frame that owns PRIMARY, recording its values.
 
-`gui-set-selection' checks each value as Emacs does before any backend
-sees it, so a value a real frame would refuse fails here too."
+The backend is stubbed and `gui-set-selection' is not, so it checks each
+value as Emacs does before any backend sees it -- a value a real frame
+would refuse fails here too -- and whatever watches it still does."
   (declare (indent 0))
   `(let ((donkey-rect-test--sets nil)
+         (donkey--rectangle-primary-claim nil)
          (select-active-regions t))
      (cl-letf (((symbol-function 'display-selections-p) (lambda (&rest _) t))
                ((symbol-function 'gui-backend-selection-owner-p)
                 (lambda (&rest _) t))
-               ((symbol-function 'gui-set-selection)
+               ((symbol-function 'gui-backend-set-selection)
                 (lambda (type value)
                   (when (eq type 'PRIMARY)
-                    (unless (gui--valid-simple-selection-p value)
-                      (error "Invalid selection %S" value))
                     (push value donkey-rect-test--sets)))))
        ,@body)))
+
+(defun donkey-rect-test--primary ()
+  "Return the text a program asking for PRIMARY now is given."
+  (cdr (xselect-convert-to-string 'PRIMARY 'STRING
+                                  (car donkey-rect-test--sets))))
 
 (defconst donkey-rect-test--text "abcdef\nghijkl\nmnopqr\nstuvwx\n"
   "Four rows for the PRIMARY tests.")
@@ -8121,6 +8126,111 @@ sees it, so a value a real frame would refuse fails here too."
       (should (equal (buffer-string) "adef\ngjkl\nmnopqr\nstuvwx\n"))
       (should (equal (car donkey-rect-test--sets) "bc\nhi"))
       (should-not (local-variable-p 'select-active-regions)))))
+
+(ert-deftest donkey-rectangle-primary-answers-what-was-selected-after-an-edit ()
+  "An ended rectangle in PRIMARY answers its text as it was, whatever is typed.
+
+An edit on the rectangle's rows after it ended keeps the text first; an
+edit on other rows leaves the claim to be read when asked."
+  (donkey-rect-test--graphical
+    (donkey-test-keys--harness "*rect-primary-edit*" #'text-mode ()
+        donkey-rect-test--text "l m v j l"
+      (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+      (goto-char (point-max))
+      (insert "more\n")
+      (should (consp (overlay-get (car donkey-rect-test--sets)
+                                  'donkey-rectangle)))
+      (goto-char (point-min))
+      (delete-region 1 4)
+      (insert "pw:")
+      (forward-line 1)
+      (delete-char 3)
+      (insert "S3C")
+      (should (equal (buffer-substring-no-properties 1 14)
+                     "pw:def\nS3Cjkl"))
+      (should (equal (donkey-rect-test--primary) "bc\nhi"))
+      (erase-buffer)
+      (should (equal (donkey-rect-test--primary) "bc\nhi")))))
+
+(ert-deftest donkey-rectangle-primary-keeps-nothing-once-primary-moved-on ()
+  "An edit after PRIMARY was given something else makes no text of the rectangle."
+  (donkey-rect-test--graphical
+    (donkey-test-keys--harness "*rect-primary-moved-on*" #'text-mode ()
+        donkey-rect-test--text "l m v j l"
+      (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+      (let ((ours (car donkey-rect-test--sets)))
+        (gui-set-selection 'PRIMARY "chosen since")
+        (goto-char (point-min))
+        (insert "x")
+        (should (consp (overlay-get ours 'donkey-rectangle)))
+        (should (equal (donkey-rect-test--primary) "chosen since"))))))
+
+(ert-deftest donkey-rectangle-primary-answers-after-its-buffer-is-killed ()
+  "A rectangle in PRIMARY, live or ended, outlives its buffer."
+  (dolist (end '("C-g" nil))
+    (donkey-rect-test--graphical
+      (donkey-test-keys--harness "*rect-primary-kill*" #'text-mode ()
+          donkey-rect-test--text "l m v j l"
+        (when end
+          (condition-case nil (execute-kbd-macro (kbd end)) (quit nil)))
+        (kill-buffer (current-buffer))
+        (should (equal (list end (donkey-rect-test--primary))
+                       (list end "bc\nhi")))))))
+
+(ert-deftest donkey-rectangle-primary-is-text-once-donkey-mode-goes ()
+  "Turning DONKEY off gives PRIMARY the rectangle's text, if it still holds it."
+  (donkey-rect-test--graphical
+    (unwind-protect
+        (donkey-test-keys--harness "*rect-primary-off-text*" #'text-mode ()
+            donkey-rect-test--text "l m v j l"
+          (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+          (donkey-mode -1)
+          (should (equal (car donkey-rect-test--sets) "bc\nhi")))
+      (donkey-mode 1)))
+  (donkey-rect-test--graphical
+    (unwind-protect
+        (donkey-test-keys--harness "*rect-primary-off-other*" #'text-mode ()
+            donkey-rect-test--text "l m v j l"
+          (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+          (gui-set-selection 'PRIMARY "chosen since")
+          (donkey-mode -1)
+          (should (equal (car donkey-rect-test--sets) "chosen since")))
+      (donkey-mode 1))))
+
+(ert-deftest donkey-rectangle-primary-answers-for-the-rectangle-that-moved ()
+  "With a rectangle in each of two buffers, PRIMARY follows the one that moved."
+  (donkey-rect-test--graphical
+    (let ((other (get-buffer-create "*rect-primary-other*")))
+      (unwind-protect
+          (donkey-test-keys--harness "*rect-primary-one*" #'text-mode ()
+              donkey-rect-test--text "l m v j"
+            (let ((one (current-buffer)))
+              (with-current-buffer other
+                (erase-buffer)
+                (insert "ABCDEFGH\nIJKLMNOP\n")
+                (goto-char 5)
+                (donkey-mode 1)
+                (donkey-normal-mode 1)
+                (switch-to-buffer other)
+                (execute-kbd-macro (kbd "m v l l j")))
+              (should (equal (donkey-rect-test--primary) "EFG\nMNO"))
+              (switch-to-buffer one)
+              (execute-kbd-macro (kbd "l"))
+              (should (equal (donkey-rect-test--primary) "bc\nhi"))
+              (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+              (switch-to-buffer other)
+              (execute-kbd-macro (kbd "l"))
+              (should (equal (donkey-rect-test--primary) "EFGH\nMNOP"))
+              (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))))
+        (kill-buffer other)))))
+
+(ert-deftest donkey-rectangle-primary-m-v-cancel-leaves-the-rectangle ()
+  "`m v' to cancel leaves the rectangle in PRIMARY, as `C-g' does."
+  (donkey-rect-test--graphical
+    (donkey-test-keys--harness "*rect-primary-m-v*" #'text-mode ()
+        donkey-rect-test--text "l m v j l m v"
+      (should-not rectangle-mark-mode)
+      (should (equal (donkey-rect-test--primary) "bc\nhi")))))
 
 (ert-deftest donkey-rectangle-primary-is-answered-by-the-converter ()
   "The converters Emacs calls for text turn DONKEY's overlay into its text."
