@@ -2671,8 +2671,10 @@ happens to name."
 Resolved through `donkey-mark-pair-delimiters', so `)' names the same
 pair as `(' and the wrap keys read the table `m i' reads.  A symmetric
 delimiter answers itself on both sides, and so does a character the
-table does not know."
+table does not know, or one whose row opens with something that is not
+a character: both halves of the answer are always characters."
   (let ((open (donkey--mark-pair-open-for char)))
+    (unless (characterp open) (setq open char))
     (cons open (donkey--wrap-close-char open))))
 
 (defun donkey--wrap-escaped-p (pos)
@@ -9254,26 +9256,16 @@ Bound to \\`d' inside `donkey-split-mode-map'."
     (setq donkey--split-did 'deleted)
     (donkey--split-dissolve)))
 
-(defun donkey--split-pair (char)
-  "Return the (OPENER . CLOSER) CHAR names, whichever half it is.
-
-Read from `donkey-mark-pair-delimiters', the one table
-`donkey-wrap-region' reads, so a pair added once is added everywhere."
-  (let ((pairs (donkey--pair-table)))
-    (or (assq char pairs)
-        (rassq char pairs)
-        (cons char char))))
-
 (defun donkey--split-wrapped-p (opener closer places)
-  "Return non-nil where every one of PLACES sits inside OPENER and CLOSER."
+  "Return non-nil where every one of PLACES sits inside OPENER and CLOSER.
+
+Asked of each place as `donkey-wrap-region' asks of a selection, through
+`donkey--wrap-already-wrapped-p', so an escaped delimiter beside a place
+does not count as the pair around it."
   (seq-every-p
    (lambda (place)
-     (let ((beg (overlay-start place))
-           (end (overlay-end place)))
-       (and (> beg (point-min))
-            (< end (point-max))
-            (eq (char-before beg) opener)
-            (eq (char-after end) closer))))
+     (donkey--wrap-already-wrapped-p (overlay-start place) (overlay-end place)
+                                     opener closer))
    places))
 
 (defmacro donkey--split-atomic-change (&rest body)
@@ -9336,9 +9328,11 @@ See `donkey--split-delete-spans' and `donkey--split-kill-text'."
 (defun donkey-split-wrap (char)
   "Wrap every place in the split in the pair CHAR names, or take it off.
 
-Reads `donkey-mark-pair-delimiters' the way `donkey-wrap-region' does, so
-either half of a pair names it and nothing is escaped.  Where the pair
-already stands outside every place it is taken off instead.
+Reads `donkey-mark-pair-delimiters' through the lookup
+`donkey-wrap-region' uses, so either half of a pair names it, and a row
+whose closing half is not a character closes with the opener itself.
+Where the pair already stands outside every place it is taken off
+instead; an escaped delimiter beside a place is not that pair.
 
 The delimiters land outside the places, so what the split holds is
 unchanged and a verb can still follow.  The split stays armed: another
@@ -9355,7 +9349,7 @@ its own key, as `donkey-wrap-region' is reached in Normal state."
   (interactive (list (read-char "Wrap every place in: ")))
   (donkey--split-live-p)
   (donkey--split-holding-gc
-    (let* ((pair (donkey--split-pair char))
+    (let* ((pair (donkey--wrap-open-close char))
            (opener (car pair))
            (closer (cdr pair))
            (targets (if donkey--split-cursors
@@ -9371,12 +9365,8 @@ its own key, as `donkey-wrap-region' is reached in Normal state."
               (ops nil)
               ;; One string for every opener and one for every closer,
               ;; so the record holds two strings, not two per place.
-              (open (if (characterp opener)
-                        (string opener)
-                      (format "%s" opener)))
-              (close (if (characterp closer)
-                         (string closer)
-                       (format "%s" closer))))
+              (open (string opener))
+              (close (string closer)))
           (donkey--split-atomic-change
             (save-excursion
               (dolist (place targets)

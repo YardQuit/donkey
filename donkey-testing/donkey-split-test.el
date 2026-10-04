@@ -213,6 +213,42 @@ split can be driven by real keys without a minibuffer."
     (donkey-split-test--keys "*split-wrap-empty-then*" "a\nbb\n" "v G f [ a X"
       (should (equal (buffer-string) "[X]a\n[X]bb\n")))))
 
+(ert-deftest donkey-split-an-escaped-delimiter-beside-a-place-is-not-its-pair ()
+  "A quote escaped beside a place is text: the split wraps, as a selection does.
+
+The wrap key over the same text in Normal state is the control."
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-wrap-escaped*" "a \\\"foo\" b" "f \""
+      (should (equal (buffer-string) "a \\\"\"foo\"\" b"))))
+  (donkey-split-test--on "foo"
+    (donkey-split-test--keys "*split-wrap-escaped-w*" "a \\\"foo\" b" "f w \""
+      (should (equal (buffer-string) "a \\\"\"foo\"\" b"))))
+  (donkey-split-test--keys "*split-wrap-escaped-normal*" "a \\\"foo\" b"
+      "l l l l v l l \""
+    (should (equal (buffer-string) "a \\\"\"fo\"o\" b"))))
+
+(ert-deftest donkey-split-reads-the-pair-table-as-a-wrap-key-does ()
+  "Rows the table holds wrongly wrap at a split as they do in Normal state.
+
+A closing half that is not a character closes with the opener, and of
+two rows naming one closer the first answers.  A row that opens with
+something not a character leaves its closing half naming itself, as
+the wrap keys, which never claim such a row, read it."
+  (dolist (case '((((?\( . "}")) "(" "a (foo( b" "a (fo(o b")
+                  (((?| . nil)) "|" "a |foo| b" "a |fo|o b")
+                  (((?\( . ?\)) (?\( . ?\])) "]" "a (foo) b" "a (fo)o b")
+                  ((("s" . ?S)) "S" "a SfooS b" nil)))
+    (let ((donkey-mark-pair-delimiters
+           (append (car case) donkey-mark-pair-delimiters)))
+      (donkey-split-test--on "foo"
+        (donkey-split-test--keys "*split-wrap-table*" "a foo b"
+            (concat "f w " (nth 1 case))
+          (should (equal (buffer-string) (nth 2 case)))))
+      (when (nth 3 case)
+        (donkey-split-test--keys "*split-wrap-table-normal*" "a foo b"
+            (concat "l l v l l " (nth 1 case))
+          (should (equal (buffer-string) (nth 3 case))))))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; What is searched
 ;;; ---------------------------------------------------------------------------
