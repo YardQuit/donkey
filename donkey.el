@@ -10707,6 +10707,9 @@ place deleted since, by a merge, is passed over."
 (defun donkey--split-cursors-restore (snapshot)
   "Restore every cursor from SNAPSHOT, and show them."
   (donkey--split-cursors-put-back snapshot)
+  ;; The last command the next replayed key sees, for a step either
+  ;; way: every reader of `last-command' takes the two step keys alike,
+  ;; as adjusters of a live run.
   (setq donkey--split-cursor-last 'donkey-mark-run-step-back)
   (donkey--split-cursors-settle))
 
