@@ -9,6 +9,82 @@ rather than repeating every commit, so a release that was mostly
 internal work has a short entry even where the diff was large. The
 commits themselves remain the record of why.
 
+* 1.18.0 — 2026-11-20
+
+A periodic check of the code went looking for keys that meet in
+unusual ways: folded Org text, composed characters, counts of zero and
+below, and the cursors. It found bugs in each, and fixes them. Two keys
+now refuse where they used to change text you could not see, and three
+read a count differently, which is why this is a minor release.
+
+*Changed — you will notice these*
+
+- =g j= on a folded Org heading refuses with "Hidden text there --
+  nothing deleted; show it first". It used to join the heading with the
+  first line of its hidden body, changing text inside the fold.
+- Mid mark run, a negative count that would take back the whole run
+  refuses ("That would leave no word selected") and leaves the selection
+  as it was. =m w C-u - 1 m w= used to leave an empty region, and the
+  =d= after it deleted a character with nothing put on the kill ring.
+- =C-u 0 J=, =C-u 0 K= and =C-u 0 g j= act as a bare press: one line
+  down, one line up, one join. =J= and =K= used to go to the start of
+  the line, and =g j= joined nothing.
+- =C-u - 1 m p= leaves point at the start of the selection, as =m w=,
+  =m s= and =m W= do; it used to leave point at the end. With nothing
+  before point it says "No paragraph before point".
+
+*Fixed — you will notice these*
+
+- On a folded Org heading, =M J d=, =M K d=, =M K y= and =M K c= took
+  the heading's text and left its hidden body behind, as a heading of
+  its own or joined to the heading above; on the first heading Org
+  raised =beginning-of-buffer=. They take the heading with its body, as
+  =V d= does.
+- At the cursors, =V d=, =V y= and =V p= on folded headings took the
+  headings alone, and with a cursor on the first heading stopped with an
+  error. They take each heading with its body. =t V M d= left an empty
+  line at every cursor, and =t V M c= killed the lines with an extra
+  newline between them; both now match one cursor.
+- At the cursors, an accented letter written with a combining mark was
+  two characters: =t l d= deleted the accent alone, and =t a X= typed
+  between the letter and its accent and ended the cursors.
+- In a split, pressing a delimiter to take a pair off places that share
+  one, such as ="a"b"= split on =[ab]=, deleted the =a=, and =u= did not
+  bring it back. It refuses with "Places share a delimiter".
+- In =x "ab\" y= with =ab\= selected, ="= took both quotes off. The
+  backslash escapes the quote after it, so the selection gets a pair of
+  its own now.
+- On Emacs 31, with text scaled down, a tall rectangle left the lower
+  rows of the window unlit again.
+- =RET= on the second line of an Org checkbox item raised a raw error.
+  It does its plain job there; the item's first line still ticks it.
+- =C= in an Org source block commented one line too many when the
+  selection ended at the start of a line.
+- A save made while a split was still writing, with a place that could
+  not be written, was abandoned when =debug-on-error= was on. The save
+  goes ahead and the echo area says not every place was written.
+
+*Fixed*
+
+- A =donkey-self-insert-commands= that is not a list stopped DONKEY
+  re-reading its options, made setting five options through Customize
+  signal, and could stop DONKEY loading. It reads as empty now, and each
+  option is re-read on its own.
+
+*Under the hood*
+
+- One function now does each of: the negative count of the four mark
+  keys, growing a mark run, the lines =C= takes, the wrap's read-only
+  refusal, banking a line, the text of banked lines, and the inputs the
+  state memos compare.
+- Two tests that failed on Emacs 29.1 and 31.1, and in graphical
+  builds, read what they check the way those Emacs versions store it.
+
+*Upgrading*
+
+To join a folded heading's body with =g j=, show the body first. If you
+used =C-u 0 J= to go to the start of the line, =g h= does that.
+
 * 1.17.3 — 2026-10-04
 
 The code was gone over for functions that answer the same question
