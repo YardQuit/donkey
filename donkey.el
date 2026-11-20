@@ -11397,37 +11397,35 @@ else."
   (interactive "p")
   ;; A COUNT with no region reads as the region it would have taken
   ;; to select those lines, the toggle rule included.
-  (if (or (use-region-p) (> (prefix-numeric-value count) 1))
-      (let* ((span (if (use-region-p)
-                       (donkey--whole-line-span (region-beginning) (region-end))
-                     (donkey--whole-line-span
-                      (point)
-                      (save-excursion
-                        (forward-line (1- (max 1 (or count 1))))
-                        (line-end-position)))))
-             (lines (donkey--span-line-count (list span)))
-             (unbanking (donkey--toggle-bank-spans (list span))))
-        (deactivate-mark)
-        (message "%s %d line%s (%d total)%s"
-                 (if unbanking "Unbanked" "Banked")
-                 lines
-                 (if (= 1 lines) "" "s")
-                 (donkey--banked-line-count)
-                 (if unbanking "" " -- navigate, then y/d/p")))
-    (let ((existing (donkey--banked-overlays-at (point))))
-      (if existing
-          (progn
-            (donkey--delete-banked-overlays existing)
-            (message "Unbanked this line (%d total)"
-                     (donkey--banked-line-count)))
-        (let ((span (donkey--whole-line-span (point) (point))))
-          ;; The empty final line of a newline-terminated buffer spans
-          ;; no text; there is nothing to bank.
-          (if (>= (car span) (cdr span))
-              (message "Nothing to bank -- empty final line")
-            (donkey--bank-span (car span) (cdr span))
-            (message "Banked this line (%d total) -- navigate, then y/d/p"
-                     (donkey--banked-line-count))))))))
+  (let* ((region (use-region-p))
+         (single (and (not region) (< (prefix-numeric-value count) 2)))
+         (span (if region
+                   (donkey--whole-line-span (region-beginning) (region-end))
+                 (donkey--whole-line-span
+                  (point)
+                  (save-excursion
+                    (forward-line (1- (max 1 (or count 1))))
+                    (line-end-position))))))
+    (if (and single (>= (car span) (cdr span)))
+        ;; The empty final line of a newline-terminated buffer spans
+        ;; no text; there is nothing to bank.
+        (message "Nothing to bank -- empty final line")
+      (let ((unbanking (donkey--toggle-bank-spans (list span))))
+        (when region (deactivate-mark))
+        (donkey--say-bank-toggle unbanking
+                                 (donkey--span-line-count (list span))
+                                 single)))))
+
+(defun donkey--say-bank-toggle (unbanking lines single)
+  "Say that LINES lines were unbanked where UNBANKING, banked otherwise.
+
+SINGLE says it of \"this line\" rather than of a count."
+  (message "%s %s (%d total)%s"
+           (if unbanking "Unbanked" "Banked")
+           (if single "this line"
+             (format "%d line%s" lines (if (= 1 lines) "" "s")))
+           (donkey--banked-line-count)
+           (if unbanking "" " -- navigate, then y/d/p")))
 
 (defun donkey--banked-overlays-at (pos)
   "Return every banked overlay touching the line POS is on.
@@ -11472,8 +11470,7 @@ each line.  To drop a whole contiguous run at once use
     (if (not overlays)
         (message "No banked line at point")
       (donkey--delete-banked-overlays overlays)
-      (message "Unbanked this line (%d total)"
-               (donkey--banked-line-count)))))
+      (donkey--say-bank-toggle t 1 t))))
 
 (defun donkey-unbank-section ()
   "Unbank the whole contiguous banked run point is standing on.
