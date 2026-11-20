@@ -3617,7 +3617,6 @@ never survives its region."
   (setq donkey-visual-anchor nil
         donkey--visual-line-mark nil))
 
-
 (defun donkey--visual-line-session-active-p ()
   "Return non-nil if point is continuing an active visual-line selection.
 
@@ -5324,7 +5323,6 @@ down."
                   (move-end-of-line 1)
                   (point)))
     (move-end-of-line count)))
-
 
 (defun donkey-mark-run-buffer-start (&optional arg)
   "Stretch the run back to the buffer's start, or jump there.
