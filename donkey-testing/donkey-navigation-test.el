@@ -1176,6 +1176,23 @@ then had nothing to delete."
     (should (= (point) 6))
     (should-not (region-active-p))))
 
+(ert-deftest donkey-J-and-K-read-a-zero-count-as-a-bare-press ()
+  "`C-u 0 J' and `C-u 0 K' do what `J' and `K' do, in a session and out."
+  (dolist (case '(("l C-u 0 J" "l J")
+                  ("j l C-u 0 K" "j l K")
+                  ("V C-u 0 J y" "V J y")
+                  ("j V C-u 0 K y" "j V K y")
+                  ("m v l C-u 0 J d" "m v l J d")))
+    (let ((results
+           (mapcar (lambda (keys)
+                     (donkey-test-keys--harness "*donkey-J-zero*" #'text-mode ()
+                         "abc\ndef\nghi\n" keys
+                       (list (buffer-string) (point) (car kill-ring)
+                             killed-rectangle)))
+                   case)))
+      (should (equal (cons (car case) (car results))
+                     (cons (car case) (cadr results)))))))
+
 (ert-deftest donkey-visual-line-toggle-call-interactively ()
   "Can be called via `call-interactively'."
   (with-temp-buffer

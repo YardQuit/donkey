@@ -3908,10 +3908,11 @@ top (mark moves to the anchor's line end, point to the new line's
 start) -- covering the case where `J' first moves point back up TO,
 and then past, the anchor line itself.
 
-COUNT defaults to 1, and a negative COUNT moves up instead.  The
-selection is re-derived from the anchor and wherever point lands, not
-accumulated as it goes, so a count needs no special handling: the
-branch below is the same one a run of single presses would end on.
+COUNT defaults to 1, a COUNT of zero is a bare press, and a negative
+COUNT moves up instead.  The selection is re-derived from the anchor
+and wherever point lands, not accumulated as it goes, so a count needs
+no special handling: the branch below is the same one a run of single
+presses would end on.
 In a session a line is the line the screen shows, so a folded heading
 and its hidden body are one step.
 
@@ -3919,13 +3920,14 @@ Inside a rectangle this moves as `j' does there, through
 `rectangle-next-line', which keeps the column, so the block grows by a
 row.  `donkey-visual-previous-line' mirrors it."
   (interactive "p")
-  (cond
-   ((donkey--visual-line-session-active-p)
-    (donkey--visual-line-move (or count 1) t))
-   ((bound-and-true-p rectangle-mark-mode)
-    (rectangle-next-line (or count 1)))
-   (t
-    (forward-line (or count 1)))))
+  (let ((n (donkey--object-count count)))
+    (cond
+     ((donkey--visual-line-session-active-p)
+      (donkey--visual-line-move n t))
+     ((bound-and-true-p rectangle-mark-mode)
+      (rectangle-next-line n))
+     (t
+      (forward-line n)))))
 
 (defun donkey-visual-previous-line (&optional count)
   "Move up COUNT lines, extending the visual-line selection if active.
@@ -3938,19 +3940,21 @@ anchor keeps growing upward; moving up while still below the anchor
 shrinks the selection back down toward it instead, covering the case
 where `K' moves point up past the anchor line.
 
-COUNT defaults to 1, and a negative COUNT moves down instead; see
-`donkey-visual-next-line' for why no accumulation is needed.
+COUNT defaults to 1, a COUNT of zero is a bare press, and a negative
+COUNT moves down instead; see `donkey-visual-next-line' for why no
+accumulation is needed.
 
 Inside a rectangle this moves as `k' does there, through
 `rectangle-previous-line'."
   (interactive "p")
-  (cond
-   ((donkey--visual-line-session-active-p)
-    (donkey--visual-line-move (- (or count 1)) nil))
-   ((bound-and-true-p rectangle-mark-mode)
-    (rectangle-previous-line (or count 1)))
-   (t
-    (forward-line (- (or count 1))))))
+  (let ((n (donkey--object-count count)))
+    (cond
+     ((donkey--visual-line-session-active-p)
+      (donkey--visual-line-move (- n) nil))
+     ((bound-and-true-p rectangle-mark-mode)
+      (rectangle-previous-line n))
+     (t
+      (forward-line (- n))))))
 
 (defun donkey-rectangle-mark-mode ()
   "Toggle rectangle mark mode.
@@ -5001,7 +5005,8 @@ so the two commands cannot drift apart."
 
 Nil and zero are one; anything else is itself.  `donkey-mark-word',
 `donkey-mark-symbol', `donkey-mark-sentence' and `donkey-mark-paragraph'
-read their COUNT through this, so the four agree.
+read their COUNT through this, so the four agree, and so do
+`donkey-visual-next-line' and `donkey-visual-previous-line'.
 
 A NEGATIVE count keeps its meaning, the objects behind the one point
 normalizes onto."
