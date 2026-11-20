@@ -2432,7 +2432,8 @@ the other way, pulling the current line up onto the previous one, and
 is untouched, so both directions are available.
 
 COUNT joins that many following lines, so `C-u 3 g j' collapses three
-lines into this one.  A COUNT below 1 joins nothing.
+lines into this one.  A COUNT of zero is a bare press and joins one
+line; a negative COUNT joins nothing.
 
 On the last line there is nothing to pull up and nothing happens; the
 buffer's final newline is left alone, as every other whole-line
@@ -2461,7 +2462,7 @@ body first, as for `donkey-delete'."
   (interactive "p")
   (let ((n (if (use-region-p)
                (max 1 (1- (donkey--region-line-count)))
-             (max 0 (or count 1))))
+             (max 0 (donkey--object-count count))))
         (joined 0))
     (save-excursion
       (when (use-region-p) (goto-char (region-beginning)))
@@ -2481,7 +2482,7 @@ body first, as for `donkey-delete'."
       (setq joined (1+ joined)
             n (1- n)))
     ;; N is untouched when nothing joined, so it still says whether a
-    ;; join was asked for: a COUNT below 1 asks for none.
+    ;; join was asked for: a negative COUNT asks for none.
     (when (and (zerop joined) (> n 0))
       (message "No line below to join"))))
 
@@ -5003,7 +5004,8 @@ so the two commands cannot drift apart."
 Nil and zero are one; anything else is itself.  `donkey-mark-word',
 `donkey-mark-symbol', `donkey-mark-sentence' and `donkey-mark-paragraph'
 read their COUNT through this, so the four agree, and so do
-`donkey-visual-next-line' and `donkey-visual-previous-line'.
+`donkey-visual-next-line', `donkey-visual-previous-line' and
+`donkey-join-line'.
 
 A NEGATIVE count keeps its meaning, the objects behind the one point
 normalizes onto."

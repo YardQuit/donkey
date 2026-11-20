@@ -3698,13 +3698,17 @@ and the key delivered the Emacs one."
     (donkey-join-line 3)
     (should (equal (buffer-string) "a b c d\ne\n"))))
 
-(ert-deftest donkey-join-line-zero-or-negative-count-joins-nothing ()
-  "A count below 1 does nothing rather than reversing direction.
+(ert-deftest donkey-join-line-reads-a-zero-count-as-a-bare-press ()
+  "`C-u 0 g j' joins the line below, as `g j' does."
+  (dolist (keys '("j C-u 0 g j" "j g j"))
+    (donkey-test-keys--harness "*donkey-join-zero*" #'text-mode ()
+        "alpha\nbeta\ngamma\ndelta\n" keys
+      (should (equal (cons keys (buffer-string))
+                     (cons keys "alpha\nbeta gamma\ndelta\n"))))))
 
-`join-line' reads any nil-or-non-positive argument as \"join to the
-PREVIOUS line\", so passing a user's zero straight through would have
-silently flipped the direction of a command they asked to do less of."
-  (dolist (n '(0 -1 -5))
+(ert-deftest donkey-join-line-negative-count-joins-nothing ()
+  "A negative count joins nothing and says nothing."
+  (dolist (n '(-1 -5))
     (with-temp-buffer
       (insert "alpha\nbeta\ngamma\n")
       (goto-char (point-min))
