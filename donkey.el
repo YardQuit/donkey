@@ -13955,18 +13955,17 @@ yet goes on the list when somebody meets it."
 
 Remaps installed before and no longer asked for are taken out again,
 so a reader who removes an entry gets the key back.  Anything in the
-list that is not a symbol is skipped: a defcustom holds whatever it
-was given."
+list that is not a symbol is skipped, and a value that is not a list
+refuses nothing: a defcustom holds whatever it was given."
   (dolist (command donkey--suppressed-insert-commands)
     (when (and (symbolp command)
                (eq (lookup-key donkey-normal-mode-map (vector 'remap command))
                    'undefined))
       (define-key donkey-normal-mode-map (vector 'remap command) nil t)))
   (setq donkey--suppressed-insert-commands nil)
-  (dolist (command donkey-self-insert-commands)
-    (when (symbolp command)
-      (push command donkey--suppressed-insert-commands)
-      (define-key donkey-normal-mode-map (vector 'remap command) #'undefined))))
+  (dolist (command (donkey--mode-list donkey-self-insert-commands))
+    (push command donkey--suppressed-insert-commands)
+    (define-key donkey-normal-mode-map (vector 'remap command) #'undefined)))
 
 (defun donkey-refresh-suppressed-commands ()
   "Re-install the remaps `donkey-self-insert-commands' asks for.
@@ -14589,10 +14588,18 @@ Normal state refuses, and the pair options what `electric-pair-mode'
 is handed.  A plain `setq' or `add-to-list' on any of them tells
 nobody, so every way of catching up calls this: the `:set' of each,
 the first idle moment after the mode comes on, and the three refresh
-commands."
-  (donkey--claim-wrap-keys)
-  (donkey--suppress-insert-commands)
-  (donkey--pair-supply-electric-pair))
+commands.
+
+Each step runs on its own: one whose option cannot be read says so
+and the others still run, because this is reached from a timer and
+from the `:set' of five options."
+  (dolist (step '(donkey--claim-wrap-keys
+                  donkey--suppress-insert-commands
+                  donkey--pair-supply-electric-pair))
+    (condition-case err
+        (funcall step)
+      (error (message "DONKEY: could not read its options again (%s): %s" step
+                      (error-message-string err))))))
 
 (defun donkey--settle-bindings-once ()
   "Read the options again, then say what has taken DONKEY's keys.

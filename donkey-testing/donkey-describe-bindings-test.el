@@ -4336,6 +4336,30 @@ them what happened."
     (should (seq-find (lambda (l) (string-match-p "could not read its options again" l))
                       said))))
 
+(ert-deftest donkey-an-unreadable-option-does-not-stop-the-other-steps ()
+  "A step of the re-read that signals leaves the other two to run."
+  (let (ran)
+    (cl-letf (((symbol-function 'donkey--claim-wrap-keys)
+               (lambda () (error "Table is nonsense")))
+              ((symbol-function 'donkey--suppress-insert-commands)
+               (lambda () (push 'suppress ran)))
+              ((symbol-function 'donkey--pair-supply-electric-pair)
+               (lambda () (push 'pair ran)))
+              ((symbol-function 'message) #'ignore))
+      (donkey--reread-options))
+    (should (equal (sort ran #'string<) '(pair suppress)))))
+
+(ert-deftest donkey-a-refused-command-option-that-is-no-list-refuses-nothing ()
+  "A number or a dotted pair in `donkey-self-insert-commands' is read as none."
+  (let ((commands donkey-self-insert-commands))
+    (unwind-protect
+        (dolist (bad (list 5 '(a . b)))
+          (setq donkey-self-insert-commands bad)
+          (donkey--suppress-insert-commands)
+          (should-not donkey--suppressed-insert-commands))
+      (setq donkey-self-insert-commands commands)
+      (donkey--suppress-insert-commands))))
+
 (ert-deftest donkey-a-delimiter-description-is-not-read-as-a-command-name ()
   "The report substitutes its key names before the delimiter goes in.
 
