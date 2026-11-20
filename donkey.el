@@ -11691,13 +11691,15 @@ selection stays.  Where it goes through, the banks on SPANS are spent."
           (donkey--bank-span (car span) (cdr span)))))
     (donkey--delete-banked-overlays banks)))
 
+(defun donkey--spans-text (spans)
+  "Return the text of SPANS, each (BEG . END), put together in their order."
+  (mapconcat (lambda (span) (buffer-substring (car span) (cdr span))) spans ""))
+
 (defun donkey--copy-banked-selection ()
   "Copy every banked line (plus any active region's lines) as one kill."
   (let* ((spans (donkey--effective-line-spans))
          (lines (donkey--span-line-count spans))
-         (text (mapconcat (lambda (span)
-                            (buffer-substring (car span) (cdr span)))
-                          spans "")))
+         (text (donkey--spans-text spans)))
     (kill-new text)
     (donkey--consume-banked-spans spans)
     (deactivate-mark)
@@ -11748,9 +11750,7 @@ valid while the earlier ones are still being removed."
   (barf-if-buffer-read-only)
   (let* ((spans (donkey--effective-line-spans))
          (lines (donkey--span-line-count spans))
-         (text (mapconcat (lambda (span)
-                            (buffer-substring (car span) (cdr span)))
-                          spans "")))
+         (text (donkey--spans-text spans)))
     (donkey--edit-banked-lines
      spans
      (lambda ()
