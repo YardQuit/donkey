@@ -1154,10 +1154,10 @@ character, so a large count costs one search per cluster it crosses."
 (defun donkey--refuse-hidden-text (beg end)
   "Signal a `user-error' when any text between BEG and END is invisible.
 
-The guard the counted branches of `donkey-delete' and `donkey-change'
-share: text a fold or an outline hides is not deleted unseen, as Org\\='s
-own `org-delete-char' does not delete it.  Checked before anything is
-removed."
+The guard `donkey-join-line' and the counted branches of
+`donkey-delete' and `donkey-change' share: text a fold or an outline
+hides is not deleted unseen, as Org\\='s own `org-delete-char' does not
+delete it.  Checked before anything is removed."
   (let ((pos (min beg end))
         (limit (max beg end)))
     (while (< pos limit)
@@ -2453,12 +2453,21 @@ how many.  Banked lines are not consulted; a bank is spent by `y', `d'
 and `p' only.
 
 A selection nothing can be done with -- one line, the last in the
-buffer -- is kept, and the message is the same as without one."
+buffer -- is kept, and the message is the same as without one.
+
+A join that would change text a fold hides is refused and nothing is
+joined: on a folded Org heading the line below is hidden, so show the
+body first, as for `donkey-delete'."
   (interactive "p")
   (let ((n (if (use-region-p)
                (max 1 (1- (donkey--region-line-count)))
              (max 0 (or count 1))))
         (joined 0))
+    (save-excursion
+      (when (use-region-p) (goto-char (region-beginning)))
+      (let ((from (line-end-position)))
+        (forward-line n)
+        (donkey--refuse-hidden-text from (point))))
     ;; The join starts on the selection's first line, and the selection
     ;; is spent there -- unless nothing is below that line, in which case
     ;; nothing is done and the selection stays where it was.

@@ -3928,6 +3928,21 @@ and then took the newline as well."
         (donkey-join-line 1))
       (should (equal shown "No line below to join")))))
 
+(ert-deftest donkey-join-line-refuses-to-change-a-fold ()
+  "`g j' that would change text a fold hides joins nothing.
+
+On the folded heading itself, over it with `V', and with a count that
+reaches it from the line above."
+  (skip-unless (require 'org nil t))
+  (let ((text "* A\n* H\nbody\n* I\nx\n"))
+    (dolist (keys '("j g j" "j V g j" "C-u 2 g j"))
+      (donkey-test-keys--harness "*donkey-join-fold*" #'org-mode () text ""
+        (forward-line 1)
+        (org-fold-hide-subtree)
+        (goto-char (point-min))
+        (should-error (execute-kbd-macro (kbd keys)) :type 'user-error)
+        (should (equal (buffer-string) text))))))
+
 (ert-deftest donkey-join-line-joins-the-selected-lines-into-one ()
   "`V J J g j' makes the three selected lines one and leaves the fourth.
 
