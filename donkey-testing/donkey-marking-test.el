@@ -4055,6 +4055,21 @@ from \"two two.\" itself, held first."
                                                              (region-end)))
                        case))))))
 
+(ert-deftest donkey-a-negative-count-leaves-point-at-the-start ()
+  "A fresh negative count leaves point at the start and the mark at the end.
+
+The same for the four forward mark keys."
+  (dolist (case '((text-mode "a\n\nb\n\nc\n" "g e k C-u - 1 m p" "\nb\n")
+                  (text-mode "aa bb cc" "w w C-u - 1 m w" "bb")
+                  (text-mode "One a.  Two b.  Three c." "G b C-u - 1 m s"
+                             "Two b.")
+                  (emacs-lisp-mode "(foo 'bar baz)" "G b C-u - 1 m W" "'bar")))
+    (pcase-let ((`(,mode ,text ,keys ,selected) case))
+      (donkey-test-keys--harness "*donkey-negative-ends*" mode () text keys
+        (should (equal (list keys (donkey-mark-test--selection)
+                             (= (point) (region-beginning)))
+                       (list keys selected t)))))))
+
 (ert-deftest donkey-mark-sentence-reads-a-negative-count-as-the-others-do ()
   "`C-u -N m s' marks the N sentences behind, as `m w', `m W' and `m p' do.
 
@@ -8140,7 +8155,8 @@ a trailing period when there is a symbol in front of it to keep."
                   (emacs-lisp-mode "foo bar baz\n" "oo" "C-u - 1 m W")
                   (emacs-lisp-mode "foo bar baz\n" "foo" "C-u - 1 m W")
                   (emacs-lisp-mode "(a b)" "a" "C-u - 1 m W")
-                  (text-mode "one\ntwo\n\nthree\n" "one" "C-u - 1 m p")))
+                  (text-mode "one\ntwo\n\nthree\n" "one" "C-u - 1 m p")
+                  (text-mode "\n\none\n" "one" "C-u - 1 m p")))
     (pcase-let ((`(,mode ,text ,at ,keys) case))
       (donkey-test-keys--harness "*donkey-negative-none*" mode ()
           text ""

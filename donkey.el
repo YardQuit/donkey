@@ -6312,17 +6312,8 @@ a bare press does -- see `donkey--object-count'."
           (mark-even-if-inactive t)
           (n (donkey--object-count count)))
       (if (and (not extend) (< n 0))
-          ;; `mark-word' measures a negative count from point, so a
-          ;; fresh press takes its far end from `donkey--object-end-before'.
-          (let ((far (donkey--object-end-before
-                      (point) #'backward-word #'forward-word)))
-            (forward-word n)
-            ;; Nothing behind the first word to count back over.
-            (when (>= (point) far)
-              (goto-char start)
-              (user-error "No word before point"))
-            (push-mark far t)
-            (activate-mark))
+          ;; `mark-word' measures a negative count from point.
+          (donkey--mark-behind n #'forward-word "word" start)
         (mark-word n extend))))
   (message "Word marked"))
 
@@ -6407,6 +6398,42 @@ behind ORIGIN -- the first in its list -- the answer is ORIGIN itself."
       ;; No object behind ORIGIN in its list: nothing to reach back to.
       (scan-error origin))))
 
+(defun donkey--mark-behind (n motion object origin &optional far trim)
+  "Select the -N objects behind the one point is on, point at the start.
+
+The fresh press of a mark key given a negative count N, shared by
+`donkey-mark-word', `donkey-mark-sentence', `donkey-mark-symbol' and
+`donkey-mark-paragraph'.  Point is on the start of the object it
+counts from.  MOTION moves over objects as `forward-word' does, a
+negative count going back; an error from it stops at the buffer's
+start, so a count reaching past the first object marks what there is.
+
+FAR is the selection's far end, where the mark goes; by default where
+the object just behind point ends, see `donkey--object-end-before'.
+TRIM, when non-nil, is called with the symbol `far' at that end before
+the walk and with `start' at the start after it.
+
+Where nothing but whitespace lies between the two ends, the press is
+refused with a `user-error' naming OBJECT, point back at ORIGIN and
+the mark left alone."
+  (let ((far (or far
+                 (save-excursion
+                   (goto-char (donkey--object-end-before
+                               (point)
+                               (lambda (k) (funcall motion (- k)))
+                               motion))
+                   (when trim (funcall trim 'far))
+                   (point)))))
+    (condition-case nil
+        (funcall motion n)
+      (error (goto-char (point-min))))
+    (when trim (funcall trim 'start))
+    (unless (and (< (point) far) (donkey--text-between-p (point) far))
+      (goto-char origin)
+      (user-error "No %s before point" object))
+    (push-mark far t)
+    (activate-mark)))
+
 (defun donkey--refuse-blank-mark (object &optional origin)
   "Drop the region and report when it is nothing but whitespace.
 
@@ -6488,19 +6515,11 @@ same run from the other end, as does every member of
         (mark-even-if-inactive t)
         (n (donkey--object-count count)))
     (if (and (not extending) (< n 0))
-        (let ((far (donkey--object-end-before
-                    (point) #'backward-sentence #'forward-sentence)))
-          ;; Running out of sentences marks what there is; Emacs's own
-          ;; motion signals near the buffer's start rather than stopping.
-          (condition-case nil
-              (backward-sentence (- n))
-            (error (goto-char (point-min))))
-          (skip-chars-forward "[:space:]\n" far)
-          (unless (< (point) far)
-            (goto-char origin)
-            (user-error "No sentence before point"))
-          (push-mark far t)
-          (activate-mark))
+        ;; Blank before the first sentence is not part of it.
+        (donkey--mark-behind n #'forward-sentence "sentence" origin nil
+                             (lambda (end)
+                               (when (eq end 'start)
+                                 (skip-chars-forward "[:space:]\n"))))
       (condition-case nil
           (mark-end-of-sentence n)
         ;; A count running past the last sentence marks what there is
@@ -6604,19 +6623,22 @@ marks one, as a bare press does -- see `donkey--object-count'."
           (backward-paragraph 1)
         (forward-paragraph 1)
         (backward-paragraph 1))
-      (let ((start (point)))
-        (forward-paragraph n)
-        (donkey--absorb-paragraph-blank start)
-        ;; Nothing but blank between the two ends -- a blank buffer, or
-        ;; a negative count from the first paragraph -- is refused
-        ;; before the mark moves, with the cursor where it was.
-        (unless (donkey--text-between-p (min start (point))
-                                        (max start (point)))
-          (goto-char origin)
-          (user-error "No paragraph at or before point"))
-        (push-mark (point) nil t)
-        (goto-char start))
-      (activate-mark))
+      (if (< n 0)
+          ;; The paragraph point is on starts at its leading blank line,
+          ;; which is where the paragraphs behind it end.
+          (donkey--mark-behind n #'forward-paragraph "paragraph" origin
+                               (point))
+        (let ((start (point)))
+          (forward-paragraph n)
+          (donkey--absorb-paragraph-blank start)
+          ;; Nothing but blank between the two ends, a blank buffer, is
+          ;; refused before the mark moves, with the cursor where it was.
+          (unless (donkey--text-between-p start (point))
+            (goto-char origin)
+            (user-error "No paragraph at or before point"))
+          (push-mark (point) nil t)
+          (goto-char start)
+          (activate-mark))))
     (message "Paragraph marked")))
 
 (defun donkey-mark-paragraph-backward (&optional count)
@@ -6693,18 +6715,11 @@ a bare press does -- see `donkey--object-count'."
     ;; Each trim belongs to an end of the selection; a negative count
     ;; takes its far end from the object behind point.
     (if (< n 0)
-        (let ((far (save-excursion
-                     (goto-char (donkey--object-end-before
-                                 (point) #'backward-sexp #'forward-sexp))
-                     (donkey--trim-symbol-punctuation)
-                     (point))))
-          (donkey--forward-sexps n)
-          (donkey--trim-symbol-prefix)
-          ;; Nothing behind the first symbol to count back over.
-          (when (>= (point) far)
-            (goto-char start)
-            (user-error "No symbol before point"))
-          (push-mark far t))
+        (donkey--mark-behind n #'donkey--forward-sexps "symbol" start nil
+                             (lambda (end)
+                               (if (eq end 'far)
+                                   (donkey--trim-symbol-punctuation)
+                                 (donkey--trim-symbol-prefix))))
       (let ((moved (donkey--forward-sexps n)))
         (when (> moved 0)
           (donkey--trim-symbol-punctuation))
@@ -6712,8 +6727,8 @@ a bare press does -- see `donkey--object-count'."
         ;; Back over the same number of symbols the first step covered.
         (donkey--forward-sexps (- moved))
         (when (> moved 0)
-          (donkey--trim-symbol-prefix))))
-    (activate-mark)))
+          (donkey--trim-symbol-prefix)))
+      (activate-mark))))
   (message "Symbol marked"))
 
 (defun donkey--forward-sexps (n)
