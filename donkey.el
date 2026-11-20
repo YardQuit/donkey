@@ -2784,15 +2784,22 @@ character of what they held."
     (delete-char 1))
   (goto-char (1- beg)))
 
-(defun donkey--wrap-refused-by-read-only-delimiters-p (beg end)
-  "Return non-nil when the delimiters outside BEG and END cannot be deleted.
+(defun donkey--wrap-barf-if-read-only (&optional beg end)
+  "Signal as Emacs does when a wrap may not change the buffer here.
 
-A non-nil `read-only' text property refuses a deletion wherever it
-stands, stickiness having no part in it -- that is `insert's rule and
-not the one a deletion is judged by.  Asked of the two characters a
-take-off deletes, so a refusal comes before either of them goes."
-  (or (get-text-property (1- beg) 'read-only)
-      (get-text-property end 'read-only)))
+A read-only buffer signals through `barf-if-buffer-read-only', and
+read-only text where the wrap inserts signals `text-read-only'; see
+`donkey--wrap-refused-by-read-only-text-p'.  With BEG and END the press
+takes the pair around them off instead, and the two delimiters it
+deletes are asked: a non-nil `read-only' property refuses a deletion
+wherever it stands, stickiness having no part in it.  Called before
+anything changes, so a refusal leaves the selection."
+  (barf-if-buffer-read-only)
+  (when (if beg
+            (or (get-text-property (1- beg) 'read-only)
+                (get-text-property end 'read-only))
+          (donkey--wrap-refused-by-read-only-text-p))
+    (signal 'text-read-only nil)))
 
 (defun donkey--wrap-delegate (open-char)
   "Hand OPEN-CHAR to `self-insert-command' with the mark still active.
@@ -2830,21 +2837,17 @@ standing."
   (let* ((pair (donkey--wrap-open-close char))
          (open (car pair))
          (close (cdr pair)))
-    (barf-if-buffer-read-only)
     (if (bound-and-true-p rectangle-mark-mode)
         (progn
-          (when (donkey--wrap-refused-by-read-only-text-p)
-            (signal 'text-read-only nil))
+          (donkey--wrap-barf-if-read-only)
           (donkey--wrap-rectangle-region open close))
       (let ((beg (region-beginning))
             (end (region-end)))
         (if (donkey--wrap-already-wrapped-p beg end open close)
             (progn
-              (when (donkey--wrap-refused-by-read-only-delimiters-p beg end)
-                (signal 'text-read-only nil))
+              (donkey--wrap-barf-if-read-only beg end)
               (donkey--wrap-take-off beg end))
-          (when (donkey--wrap-refused-by-read-only-text-p)
-            (signal 'text-read-only nil))
+          (donkey--wrap-barf-if-read-only)
           (donkey--wrap-put-on beg end open close))))))
 
 (defvar donkey-normal-mode) ;(donkey--wrap-key-would-run); defined below, in "Donkey Mode Definitions"
@@ -2941,9 +2944,8 @@ press where `donkey-pair-mode' is the only thing pairing in the
 buffer.
 
 A read-only buffer is refused before anything is changed, and
-read-only text the same way and at the same moment, through
-`donkey--wrap-refused-by-read-only-text-p' or, for a take-off,
-`donkey--wrap-refused-by-read-only-delimiters-p'.
+read-only text the same way and at the same moment; see
+`donkey--wrap-barf-if-read-only'.
 
 A count is ignored: one delimiter press, one wrap.  A wrap does not
 stop a keyboard macro that is being recorded.  See
@@ -2960,13 +2962,9 @@ keyboard."
    ((and (eq donkey-wrap-region-engine 'pairing-package)
          ;; DONKEY's own pairing as the package wraps as DONKEY does.
          (not (eq (donkey--wrap-pairing-package-here) 'donkey-pair-mode)))
-    ;; Refused here, before any state changes, so the selection
-    ;; outlives the refusal.
-    (barf-if-buffer-read-only)
-    ;; The text-property twin of the check above, at the same moment
-    ;; and for the same reason; signaled as Emacs itself signals it.
-    (when (donkey--wrap-refused-by-read-only-text-p)
-      (signal 'text-read-only nil))
+    ;; Refused before any state changes, so the selection outlives
+    ;; the refusal.
+    (donkey--wrap-barf-if-read-only)
     (let ((pair (donkey--wrap-open-close last-command-event)))
       (if (bound-and-true-p rectangle-mark-mode)
           (donkey--wrap-rectangle-region (car pair) (cdr pair))
