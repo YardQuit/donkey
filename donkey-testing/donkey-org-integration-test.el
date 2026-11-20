@@ -396,7 +396,9 @@ distinguishable from \"was called and did nothing\"."
   "In `org-mode' with checkbox item (parent element), calls `org-toggle-checkbox'."
   (let (called-cmd)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(item (:checkbox t))))
+               (lambda ()
+                 (list 'item (list :checkbox t
+                                   :begin (line-beginning-position)))))
               ((symbol-function 'org-element-context)
                (lambda () '(plain-text (:begin 1 :end 5))))
               ((symbol-function 'org-toggle-checkbox)
@@ -969,7 +971,9 @@ bindings buffer, where `special-mode' runs before `use-local-map'."
   "Item with checkbox property triggers checkbox rule before others."
   (let (called-cmd)
     (cl-letf (((symbol-function 'org-element-at-point)
-               (lambda () '(item (:checkbox t))))
+               (lambda ()
+                 (list 'item (list :checkbox t
+                                   :begin (line-beginning-position)))))
               ((symbol-function 'org-element-context)
                (lambda () '(plain-text (:begin 1 :end 5))))
               ((symbol-function 'org-toggle-checkbox)
@@ -1123,6 +1127,16 @@ line itself still cycles it."
   ;; A list item with no checkbox has nothing to tick.
   (donkey-org-key-test "- milk\n" "RET"
     (should (equal (donkey-org-key-test--line) "- milk"))))
+
+(ert-deftest donkey-org-ret-on-an-item-continuation-line-leaves-the-item ()
+  "RET on a checkbox item's second line changes nothing and signals nothing.
+
+A nested item's own first line still ticks that item."
+  (let ((text "- [ ] a\n  more\n"))
+    (donkey-org-key-test text "j RET"
+      (should (equal (buffer-string) text))))
+  (donkey-org-key-test "- [ ] a\n  - [ ] b\n  - [ ] c\n" "j RET"
+    (should (equal (donkey-org-key-test--line) "  - [X] b"))))
 
 (ert-deftest donkey-org-ret-follows-a-link-from-anywhere-on-it ()
   "RET opens a link whichever part of it point sits on.

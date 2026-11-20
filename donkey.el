@@ -1323,11 +1323,13 @@ Set to nil in `config.el' if you want to define rules manually."
 (defun donkey--enter-element-here-p (elem)
   "Return non-nil when the Org element ELEM may answer Enter at point.
 
-A headline answers only with point on its own heading line.  Org counts
-the blank lines under a heading as part of the headline, and Enter on
-one of them is not Enter on the heading.  Every other element answers
-wherever Org says point is in it."
-  (or (not (eq (car-safe elem) 'headline))
+A headline answers only with point on its own heading line, and a list
+item only on its first line.  Org counts the blank lines under a
+heading as part of the headline, and an item's continuation lines as
+part of the item, and Enter on one of them is not Enter on the heading
+or the item.  Every other element answers wherever Org says point is
+in it."
+  (or (not (memq (car-safe elem) '(headline item)))
       (let ((begin (and (fboundp 'org-element-property)
                         (org-element-property :begin elem))))
         (and begin (= begin (line-beginning-position))))))
