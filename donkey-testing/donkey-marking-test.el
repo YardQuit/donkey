@@ -6695,10 +6695,28 @@ made to agree about what a negative count reaches back to."
       "w w w l C-u -3 m w M w"
     (should (equal (donkey-mark-test--selection) "for text that is")))
   (let ((moded (donkey-mark-test--keys "for text that is not saved"
-                   "w w w l M C-u -3 w" (donkey-mark-test--selection)))
+                   "w w w l M w w C-u -2 w" (donkey-mark-test--selection)))
         (prefixed (donkey-mark-test--keys "for text that is not saved"
-                      "w w w l m w C-u -3 m w" (donkey-mark-test--selection))))
+                      "w w w l m w m w m w C-u -2 m w"
+                    (donkey-mark-test--selection))))
+    (should (equal moded "is "))
     (should (equal moded prefixed))))
+
+(ert-deftest donkey-a-negative-count-taking-back-a-whole-run-is-refused ()
+  "Mid-run, a negative count that would empty the run or cross point refuses.
+
+The selection is left as it was, for each of the four forward keys."
+  (dolist (case '((text-mode "aa bb cc" "m w" "C-u - 1 m w" "aa")
+                  (text-mode "aa bb cc" "w l m w m w" "C-u - 3 m w" "bb cc")
+                  (text-mode "One a.  Two b." "m s" "C-u - 1 m s" "One a.")
+                  (emacs-lisp-mode "foo bar baz" "m W" "C-u - 1 m W" "foo")
+                  (text-mode "a\n\nb\n" "m p" "C-u - 3 m p" "a\n\n")))
+    (pcase-let ((`(,mode ,text ,run ,keys ,selected) case))
+      (donkey-test-keys--harness "*donkey-negative-run*" mode () text ""
+        (should-error (execute-kbd-macro (kbd (concat run " " keys)))
+                      :type 'user-error)
+        (should (equal (list keys (donkey-mark-test--selection))
+                       (list keys selected)))))))
 
 (ert-deftest donkey-normalizing-a-run-touches-only-an-inverted-one ()
   "`donkey--normalize-mark-run\' is a no-op unless the ends are reversed.

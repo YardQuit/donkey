@@ -6280,7 +6280,9 @@ word grown forward to the end of its sentence.
 
 COUNT marks that many words.  A negative COUNT marks that many words
 before the one point normalizes onto, and a COUNT of zero marks one, as
-a bare press does -- see `donkey--object-count'."
+a bare press does -- see `donkey--object-count'.  Mid-run a negative
+COUNT walks the forward end back, and one that would take back the
+whole run is refused; see `donkey--mark-grow'."
   (interactive "p")
   (donkey--ensure-non-rectangle-selection)
   (let ((extend (donkey--mark-run-continuing-p))
@@ -6302,19 +6304,12 @@ a bare press does -- see `donkey--object-count'."
         (goto-char origin)
         (user-error "No word at or before point"))
       (beginning-of-thing 'word)))
-    ;; Skipped when extending: `mark-word' measures its extension from
-    ;; the start of the word already selected.  A companion press is
-    ;; presented as a repeat, so `mark-word''s own extension fires from
-    ;; the mark.
-    (let ((last-command (if extend this-command last-command))
-          ;; `mark-word' reads the mark with plain `mark', and a run
-          ;; whose region a hook deactivated must still grow.
-          (mark-even-if-inactive t)
-          (n (donkey--object-count count)))
-      (if (and (not extend) (< n 0))
-          ;; `mark-word' measures a negative count from point.
-          (donkey--mark-behind n #'forward-word "word" start)
-        (mark-word n extend))))
+    (let ((n (donkey--object-count count)))
+      (cond
+       (extend (donkey--mark-grow "word" (lambda () (forward-word n))))
+       ;; `mark-word' measures a negative count from point.
+       ((< n 0) (donkey--mark-behind n #'forward-word "word" start))
+       (t (mark-word n)))))
   (message "Word marked"))
 
 (defun donkey--mark-backward (count motion delegate label)
@@ -6398,6 +6393,20 @@ behind ORIGIN -- the first in its list -- the answer is ORIGIN itself."
       ;; No object behind ORIGIN in its list: nothing to reach back to.
       (scan-error origin))))
 
+(defun donkey--mark-grow (object motion)
+  "Move a run's forward end by calling MOTION at the mark.
+
+The extending press of `donkey-mark-word', `donkey-mark-sentence',
+`donkey-mark-symbol' and `donkey-mark-paragraph'.  MOTION is called with
+point at the mark and leaves point where the mark goes.  An end that
+would reach point or pass it, as a negative count taking back the
+whole run does, is refused with a `user-error' naming OBJECT and the
+selection left as it was."
+  (let ((end (save-excursion (goto-char (mark t)) (funcall motion) (point))))
+    (when (<= end (point))
+      (user-error "That would leave no %s selected" object))
+    (set-mark end)))
+
 (defun donkey--mark-behind (n motion object origin &optional far trim)
   "Select the -N objects behind the one point is on, point at the start.
 
@@ -6469,9 +6478,9 @@ report behind it.
 COUNT marks that many sentences, read as `donkey-mark-word' reads its
 own: zero is one, and a negative COUNT marks the sentences behind the
 one point is in, refusing where there is none; mid-run it walks the
-selection's end back instead.  A COUNT reaching past the last sentence
-marks what there is and stops, the way every other counted command
-does.
+selection's end back instead, refusing where that would empty the run.
+A COUNT reaching past the last sentence marks what there is and stops,
+the way every other counted command does.
 
 Pressing the key again immediately EXTENDS the selection by another
 sentence rather than re-marking the same one, and keeps extending until
@@ -6508,25 +6517,31 @@ same run from the other end, as does every member of
     ;; Point goes back before reporting.
     (error (goto-char origin)
            (user-error "No sentence at or before point")))
-  ;; A companion press is presented as a repeat, so
-  ;; `mark-end-of-sentence''s own extension fires from the mark.
-  (let ((last-command (if extending this-command last-command))
-        ;; A deactivated run must still grow.
-        (mark-even-if-inactive t)
-        (n (donkey--object-count count)))
-    (if (and (not extending) (< n 0))
-        ;; Blank before the first sentence is not part of it.
-        (donkey--mark-behind n #'forward-sentence "sentence" origin nil
-                             (lambda (end)
-                               (when (eq end 'start)
-                                 (skip-chars-forward "[:space:]\n"))))
+  (let ((n (donkey--object-count count)))
+    (cond
+     (extending
+      ;; Running out of sentences stops at the buffer's edge.
+      (donkey--mark-grow "sentence"
+                         (lambda ()
+                           (condition-case nil
+                               (forward-sentence n)
+                             (error (goto-char (if (> n 0) (point-max)
+                                                 (point-min))))))))
+     ((< n 0)
+      ;; Blank before the first sentence is not part of it.
+      (donkey--mark-behind n #'forward-sentence "sentence" origin nil
+                           (lambda (end)
+                             (when (eq end 'start)
+                               (skip-chars-forward "[:space:]\n")))))
+     (t
       (condition-case nil
-          (mark-end-of-sentence n)
+          (let ((last-command nil))
+            (mark-end-of-sentence n))
         ;; A count running past the last sentence marks what there is
         ;; and stops.
         (end-of-buffer (push-mark (point-max) nil t))
         (error (goto-char origin)
-               (user-error "No sentence at or before point")))))
+               (user-error "No sentence at or before point"))))))
   ;; A blank buffer is refused here, the motions not signaling on one.
   (unless extending
     (donkey--refuse-blank-mark "sentence" origin))
@@ -6601,14 +6616,12 @@ marks one, as a bare press does -- see `donkey--object-count'."
         (origin (point))
         (extending (donkey--mark-run-continuing-p)))
     (if extending
-        ;; Grown by moving the mark, and the blank-line rule applies
-        ;; here too, so repeating the key agrees with a count.
-        (set-mark (save-excursion
-                    (let ((start (point)))
-                      (goto-char (mark t))
-                      (forward-paragraph n)
-                      (donkey--absorb-paragraph-blank start)
-                      (point))))
+        ;; The blank-line rule applies here too, so repeating the key
+        ;; agrees with a count.
+        (donkey--mark-grow "paragraph"
+                           (lambda ()
+                             (forward-paragraph n)
+                             (donkey--absorb-paragraph-blank origin)))
       ;; Point ends at the start, mark at the end.  From a blank line
       ;; the forward key takes the paragraph below and the backward key
       ;; the one above, each falling through to the other side where
@@ -6691,13 +6704,11 @@ a bare press does -- see `donkey--object-count'."
   (let ((n (donkey--object-count count))
         (start (point)))
    (if (donkey--mark-run-continuing-p)
-      ;; Grown by moving the mark; the punctuation trim runs again for
-      ;; the new end.
-      (set-mark (save-excursion
-                  (goto-char (mark t))
-                  (when (> (donkey--forward-sexps n) 0)
-                    (donkey--trim-symbol-punctuation))
-                  (point)))
+      ;; The punctuation trim runs again for the new end.
+      (donkey--mark-grow "symbol"
+                         (lambda ()
+                           (when (> (donkey--forward-sexps n) 0)
+                             (donkey--trim-symbol-punctuation))))
     (let ((origin (point)))
      ;; From a gap, onto the symbol ahead by syntax, across punctuation,
      ;; quotes and brackets, or for a backward press and at the end of
