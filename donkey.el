@@ -1098,6 +1098,22 @@ Counted as `donkey--grapheme-end' counts, backward."
           start)
       (1- pos))))
 
+(defun donkey--out-of-cluster (pos from)
+  "Return POS, or the edge of the grapheme cluster POS is inside.
+
+Moved as the command loop moves point after a command: from FROM, where
+point was before, a move back lands at the cluster\\='s start and any
+other at its end, so point is never left between a letter and its
+combining marks.  See `donkey--grapheme-end'."
+  (let ((cmp (and (< (point-min) pos (point-max)) (find-composition pos))))
+    (if (not (and cmp (< (car cmp) pos (cadr cmp))))
+        pos
+      (let* ((end (donkey--grapheme-end pos))
+             (start (donkey--grapheme-start end)))
+        (cond ((>= start pos) pos)
+              ((< pos from) start)
+              (t end))))))
+
 (defun donkey--character-target (n)
   "Return the position N characters from point, within the accessible text.
 
@@ -10416,14 +10432,18 @@ that would otherwise reach the next one."
             (global-mark-ring nil)
             (deactivate-mark nil))
         (unwind-protect
-            (condition-case nil
-                (if (eq edit 'line)
-                    (save-restriction
-                      (narrow-to-region beg end)
-                      (call-interactively command))
-                  (call-interactively command))
-              ((beginning-of-buffer end-of-buffer)
-               (goto-char (donkey--split-cursor place))))
+            (let ((from (point)))
+              (condition-case nil
+                  (if (eq edit 'line)
+                      (save-restriction
+                        (narrow-to-region beg end)
+                        (call-interactively command))
+                    (call-interactively command))
+                ((beginning-of-buffer end-of-buffer)
+                 (goto-char (donkey--split-cursor place))))
+              ;; Point leaves a composed character as the command loop
+              ;; would move it after the command at one cursor.
+              (goto-char (donkey--out-of-cluster (point) from)))
           ;; A mark COMMAND pushed went onto a ring these bindings throw
           ;; away.  Its marker would stay in the buffer until the next
           ;; garbage collection, moved by every change made before then
@@ -10802,7 +10822,7 @@ cursor holding a selection types after the whole of it, the way
        place
        (if (donkey--split-cursor-selecting-p place)
            (overlay-end place)
-         (min end (1+ (donkey--split-cursor place))))
+         (min end (donkey--grapheme-end (donkey--split-cursor place))))
        nil nil nil)))
   (donkey--split-cursors-settle)
   (donkey--split-enter-edit nil 'start))

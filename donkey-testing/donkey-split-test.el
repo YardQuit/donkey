@@ -1795,6 +1795,30 @@ this a verb elsewhere acts on nothing at all."
       (should (equal (list (car case) (donkey-split-test--cursors)) case))
       (should (equal (buffer-string) donkey-split-test--column)))))
 
+(ert-deftest donkey-split-cursors-never-stop-inside-a-composed-character ()
+  "Every cursor steps over e and its combining accent as one cursor does.
+
+Each line at the cursors ends as the same keys leave a line of its own,
+with the accent composed by the display and with `compose-region'."
+  (dolist (compose '(nil t))
+    (dolist (keys '("l a X C-g" "l l d" "l l i X C-g" "g l h h h i X C-g"))
+      (let ((one nil))
+        (dolist (lines '(1 2))
+          (donkey-test-keys--harness "*cursors-composed*"
+              (lambda ()
+                (text-mode)
+                (dotimes (_ lines)
+                  (let ((start (point)))
+                    (insert "xe\u0301yz\n")
+                    (when compose
+                      (compose-region (1+ start) (+ start 3))))))
+              () "" (if (= lines 1) keys (concat "t " keys))
+            (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+              (if (= lines 1)
+                  (setq one text)
+                (should (equal (list compose keys text)
+                               (list compose keys (concat one one))))))))))))
+
 (ert-deftest donkey-split-cursors-grow-a-selection-on-a-second-press ()
   "`m w m w' selects two words at every cursor, each cursor growing its own."
   (donkey-split-test--keys "*cursors-grow-sel*" "a b c\nd e f\n" "t m w m w"
