@@ -9188,6 +9188,18 @@ does not count as the pair around it."
                                      opener closer))
    places))
 
+(defun donkey--split-places-share-delimiter-p (places)
+  "Return non-nil where one of PLACES ends one character before another begins.
+
+Asked where the pair stands outside every place, so the character
+between two such places is the first one\\='s closer and the second
+one\\='s opener at once."
+  (let ((starts (make-hash-table :test #'eql)))
+    (dolist (place places)
+      (puthash (overlay-start place) t starts))
+    (seq-some (lambda (place) (gethash (1+ (overlay-end place)) starts))
+              places)))
+
 (defmacro donkey--split-atomic-change (&rest body)
   "Run BODY, a change at the places of a split, as all of it or none of it.
 
@@ -9252,7 +9264,10 @@ Reads `donkey-mark-pair-delimiters' through the lookup
 `donkey-wrap-region' uses, so either half of a pair names it, and a row
 whose closing half is not a character closes with the opener itself.
 Where the pair already stands outside every place it is taken off
-instead; an escaped delimiter beside a place is not that pair.
+instead; an escaped delimiter beside a place is not that pair.  Where
+one place\\='s closer is the next place\\='s opener, taking the pair off
+would take one delimiter for two, so it is refused with a `user-error'
+and nothing changes.
 
 The delimiters land outside the places, so what the split holds is
 unchanged and a verb can still follow.  The split stays armed: another
@@ -9279,6 +9294,8 @@ its own key, as `donkey-wrap-region' is reached in Normal state."
                                     donkey--split-places)
                       donkey--split-places))
            (off (and targets (donkey--split-wrapped-p opener closer targets))))
+      (when (and off (donkey--split-places-share-delimiter-p targets))
+        (user-error "Places share a delimiter"))
       (if (null targets)
           (call-interactively #'undefined)
         (let ((head buffer-undo-list)

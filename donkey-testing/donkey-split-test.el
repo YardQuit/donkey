@@ -190,6 +190,18 @@ split can be driven by real keys without a minibuffer."
     (donkey-split-test--keys "*split-unwrap*" "a foo b\nc foo d\n" "v G f ( ("
       (should (equal (buffer-string) "a foo b\nc foo d\n")))))
 
+(ert-deftest donkey-split-refuses-to-take-off-a-delimiter-two-places-share ()
+  "Unwrapping places that share a delimiter is refused and changes nothing."
+  (dolist (case '(("[ab]" "\"a\"b\"\n" "\"")
+                  ("[a-z]+" "\"foo\"bar\"\n\"baz\"\n" "\"")))
+    (donkey-split-test--on (car case)
+      (donkey-split-test--keys "*split-unwrap-shared*" (cadr case) "v G f"
+        (should (equal (should-error (execute-kbd-macro (kbd (nth 2 case)))
+                                     :type 'user-error)
+                       '(user-error "Places share a delimiter")))
+        (should (equal (buffer-string) (cadr case)))
+        (should donkey--split-places)))))
+
 (ert-deftest donkey-split-a-wrap-leaves-the-split-standing-for-a-verb ()
   "Wrapping does not end the split: another pair nests, and a verb follows."
   (donkey-split-test--on "foo"
