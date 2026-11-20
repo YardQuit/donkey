@@ -9743,15 +9743,20 @@ never leaves; at the cursors the count is let go of, as
 (defun donkey--split-cursor-set (place cursor anchor line memory)
   "Put PLACE\\='s cursor at CURSOR, selecting from ANCHOR or its LINE.
 
-ANCHOR is a position or nil, LINE non-nil for the whole line, and
-MEMORY the vector of `donkey--split-cursor-memory' values the cursor
-keeps, or nil."
+ANCHOR is a position or nil, LINE non-nil for the whole line as the
+screen shows it, a folded heading with its hidden body, and MEMORY the
+vector of `donkey--split-cursor-memory' values the cursor keeps, or
+nil."
   (cond
    (line
-    (save-excursion
-      (goto-char cursor)
-      (move-overlay place (line-beginning-position) (line-end-position))
-      (overlay-put place 'donkey-offset (- cursor (line-beginning-position)))))
+    (let* ((span (donkey--whole-line-span cursor cursor))
+           (start (car span))
+           (end (cdr span)))
+      ;; The place stops before the line's own newline.
+      (move-overlay place start (if (and (> end start) (eq (char-before end) ?\n))
+                                    (1- end)
+                                  end))
+      (overlay-put place 'donkey-offset (- cursor start))))
    (anchor
     (move-overlay place (min cursor anchor) (max cursor anchor)))
    (t
@@ -10578,8 +10583,9 @@ the cursors answer does its job at every cursor."
         (progn
           (dolist (place donkey--split-places)
             (when (overlay-get place 'donkey-line)
-              (let ((line (donkey--split-cursor-line place)))
-                (donkey--split-cursor-set place (car line) (cdr line)
+              (let* ((cursor (donkey--split-cursor place))
+                     (span (donkey--whole-line-span cursor cursor)))
+                (donkey--split-cursor-set place (car span) (cdr span)
                                           nil nil))))
           (setq donkey--split-cursor-last 'donkey-mark-run-adopt))
       (condition-case nil
@@ -10840,7 +10846,8 @@ is ignored: a cursor never leaves its line."
   "Return (BEG END SELECTED) for what PLACE\\='s cursor acts on.
 
 The place where the cursor is selecting, its line with the newline where
-WHOLE-LINES is non-nil and the cursor selects its line, and otherwise
+WHOLE-LINES is non-nil and the cursor selects its line, as
+`donkey--whole-line-span' takes a line, and otherwise
 COUNT characters from the cursor, kept inside its line and counted as
 `donkey--character-target' counts them for one cursor, a composed
 character being one.  SELECTED is non-nil for a selection."
@@ -10848,7 +10855,8 @@ character being one.  SELECTED is non-nil for a selection."
         (line (donkey--split-cursor-line place)))
     (cond
      ((and whole-lines (overlay-get place 'donkey-line))
-      (list (car line) (min (point-max) (1+ (cdr line))) t))
+      (let ((span (donkey--whole-line-span cursor cursor)))
+        (list (car span) (cdr span) t)))
      ((donkey--split-cursor-selecting-p place)
       (list (overlay-start place) (overlay-end place) t))
      (t
@@ -10893,8 +10901,17 @@ newline."
         (and (= (length pieces) n) pieces)))))
 
 (defun donkey--split-cursors-whole-lines-p ()
-  "Return non-nil where every cursor has its whole line selected."
-  (seq-every-p (lambda (place) (overlay-get place 'donkey-line))
+  "Return non-nil where every cursor has its whole line selected.
+
+A line is selected whole by \\[donkey-split-cursors-select-lines], or
+as the line and its newline, which is how
+\\[donkey-split-cursors-run-toggle] takes such a selection into the run."
+  (seq-every-p (lambda (place)
+                 (let ((beg (overlay-start place)))
+                   (or (overlay-get place 'donkey-line)
+                       (and (< beg (overlay-end place))
+                            (equal (donkey--whole-line-span beg beg)
+                                   (cons beg (overlay-end place)))))))
                donkey--split-places))
 
 (defun donkey--split-cursors-kill-text (texts &optional lines)
@@ -10953,14 +10970,14 @@ one undo entry whatever the number of cursors, and the cursors stay."
                                       (and (nth 2 span)
                                            (buffer-substring (car span)
                                                              (cadr span))))
-                                    spans))))
+                                    spans)))
+           (lines (donkey--split-cursors-whole-lines-p)))
       (if (seq-every-p (lambda (span) (= (car span) (cadr span))) spans)
           (message "Nothing to delete")
         (donkey--split-delete-spans
          (mapcar (lambda (span) (cons (car span) (cadr span))) spans))
         (when kills
-          (kill-new (donkey--split-cursors-kill-text
-                     kills (donkey--split-cursors-whole-lines-p))))
+          (kill-new (donkey--split-cursors-kill-text kills lines)))
         (setq donkey--split-did 'deleted)
         (donkey--split-cursors-deselect)))))
 

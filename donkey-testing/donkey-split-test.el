@@ -1869,6 +1869,34 @@ this a verb elsewhere acts on nothing at all."
       (should (equal (list (car case) (car kill-ring) (buffer-string))
                      (list (car case) (nth 2 case) (nth 3 case)))))))
 
+(ert-deftest donkey-split-cursors-take-a-folded-heading-with-its-body ()
+  "`V y', `V d' and `V p' at the cursors take each folded heading with its body."
+  (dolist (case '(("t V d" "* c\nbody3\n" "* a\nbody\n* b\nbody2\n")
+                  ("j t V d" "* a\nbody\n" "* b\nbody2\n* c\nbody3\n")
+                  ("t V y" "* a\nbody\n* b\nbody2\n* c\nbody3\n"
+                   "* a\nbody\n* b\nbody2\n")
+                  ("j t V p" "* a\nbody\nX\nX\n" "X\n")))
+    (donkey-test-keys--harness "*cursors-fold-lines*" #'org-mode ()
+        "* a\nbody\n* b\nbody2\n* c\nbody3\n" ""
+      (kill-new "X\n")
+      (org-overview)
+      (execute-kbd-macro (kbd (car case)))
+      (should (equal (list (car case) (buffer-string) (car kill-ring))
+                     (list (car case) (nth 1 case) (nth 2 case)))))))
+
+(ert-deftest donkey-split-cursors-take-whole-lines-into-a-run-with-their-newlines ()
+  "`V M' at the cursors takes each line with its newline, as `V M' does."
+  (dolist (case '((text-mode "t V M d" "a1\nb2\nc3\n" "c3\n" "a1\nb2\n")
+                  (text-mode "t V M y" "a1\nb2\nc3\n" "a1\nb2\nc3\n" "a1\nb2\n")
+                  (org-mode "t V M d" "* a\nbody\n* b\nbody2\n* c\nbody3\n"
+                            "* c\nbody3\n" "* a\nbody\n* b\nbody2\n")))
+    (donkey-test-keys--harness "*cursors-line-run*" (car case) () (nth 2 case) ""
+      (when (eq (car case) 'org-mode)
+        (org-overview))
+      (execute-kbd-macro (kbd (nth 1 case)))
+      (should (equal (list (nth 1 case) (buffer-string) (car kill-ring))
+                     (list (nth 1 case) (nth 3 case) (nth 4 case)))))))
+
 (ert-deftest donkey-split-cursors-paste-over-whole-lines-keeping-the-lines ()
   "`V p' at the cursors replaces each line and opens no line under it."
   (dolist (case '(("V y t V p" "a\nb\nc\n" "a\na\nc\n")
@@ -2328,8 +2356,8 @@ minibuffer as text, and every cursor's line is searched."
       "t t V M"
     (should donkey--split-running)
     (should (equal (donkey-split-test--texts)
-                   '("one two three four" "five six seven eight"
-                     "nine ten eleven")))))
+                   '("one two three four\n" "five six seven eight\n"
+                     "nine ten eleven\n")))))
 
 (ert-deftest donkey-split-cursors-change-case-at-every-cursor ()
   "`M-u', `M-l' and `M-c' act on each selection, or the word at each cursor."
