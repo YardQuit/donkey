@@ -5383,21 +5383,24 @@ one character is the difference between a line selection and the text
 of a line, and `M J d' removes the line outright as `V d' does.  The
 highlight reaches the next line's first column.
 
+A line is the line the screen shows: a folded heading and the body it
+hides are one line, as they are to \`V'.
+
 COUNT lines; a COUNT below 1 is treated as 1, the reading the
 backward keys give theirs -- the other direction is \`K'."
   (interactive "p")
   (let ((n (max 1 (or count 1))))
     (if (donkey--mark-run-continuing-p)
-        ;; `forward-line' from the mark adds N whole lines, completing a
-        ;; mid-line mark's line first; at the end of a buffer with no
-        ;; final newline it stops at `point-max'.
+        ;; From the mark, N visible lines on, completing a mid-line
+        ;; mark's line first; at the end of a buffer with no final
+        ;; newline it stops at `point-max'.
         (set-mark (save-excursion
                     (goto-char (mark t))
-                    (forward-line n)
+                    (forward-visible-line n)
                     (point)))
       (donkey--ensure-non-rectangle-selection)
-      (beginning-of-line)
-      (push-mark (save-excursion (forward-line n) (point)) t t))
+      (goto-char (donkey--visible-line-start))
+      (push-mark (save-excursion (forward-visible-line n) (point)) t t))
     (message "Line marked")))
 
 (defun donkey-mark-run-line-backward (&optional count)
@@ -5417,21 +5420,20 @@ A fresh press marks the whole line, newline included.  The extending
 branch walks POINT, which sits at a line START already, so the end the
 newline belongs to is the one the partner owns.
 
+A line is the line the screen shows, as for the partner.
+
 COUNT lines; a COUNT below 1 is treated as 1."
   (interactive "p")
   (let ((n (max 1 (or count 1))))
     (if (donkey--mark-run-continuing-p)
         (progn
-          (if (bolp)
-              (forward-line (- n))
-            (beginning-of-line)
-            (forward-line (- (1- n))))
+          (forward-visible-line
+           (if (= (point) (donkey--visible-line-start)) (- n) (- 1 n)))
           (activate-mark))
       (donkey--ensure-non-rectangle-selection)
-      (beginning-of-line)
-      (push-mark (save-excursion (forward-line 1) (point)) t t)
-      (when (> n 1)
-        (forward-line (- (1- n)))))
+      (goto-char (donkey--visible-line-start))
+      (push-mark (save-excursion (forward-visible-line 1) (point)) t t)
+      (forward-visible-line (- 1 n)))
     (message "Line marked")))
 
 (defun donkey-mark-run-exchange ()

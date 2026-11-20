@@ -6542,6 +6542,28 @@ line -- so `M J K d' removes the line from anywhere."
     (should (equal moded "one two\nthree\none two\n"))
     (should (equal moded visual))))
 
+(defun donkey-mark-test--fold-first (text keys)
+  "Run KEYS on TEXT in Org with its first heading folded; return the result.
+
+The result is the buffer text followed by the newest kill."
+  (donkey-test-keys--harness "*donkey-mark-fold*" #'org-mode () text ""
+    (org-fold-hide-subtree)
+    (should (invisible-p (line-end-position)))
+    (execute-kbd-macro (kbd keys))
+    (list (buffer-substring-no-properties (point-min) (point-max))
+          (car kill-ring))))
+
+(ert-deftest donkey-line-runs-step-over-a-fold-as-one-line ()
+  "In the mark run, `J' and `K' count a folded heading as one line."
+  (skip-unless (require 'org nil t))
+  (let ((text "* H\nbody\n* I\nx\n"))
+    (should (equal (donkey-mark-test--fold-first text "M J K d")
+                   (list "* I\nx\n" "* H\nbody\n")))
+    (should (equal (donkey-mark-test--fold-first text "M J y")
+                   (list text "H\nbody\n")))
+    (should (equal (donkey-mark-test--fold-first text "j M K K y")
+                   (list text "* H\nbody\n* I")))))
+
 (ert-deftest donkey-star-trades-the-end-the-motions-hold ()
   "`*' swaps point and mark, so the motions adjust the other end.
 

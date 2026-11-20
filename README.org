@@ -411,8 +411,8 @@ go and starts a plain one at the cursor.
 
 A line is the line the screen shows. A folded Org or outline heading
 is one line, so =V= takes it with the body it hides and =J= and =K=
-step over it in one press, the way =m l= banks it and Emacs's
-=kill-whole-line= kills it.
+step over it in one press, in a line selection and in a mark run, the
+way =m l= banks it and Emacs's =kill-whole-line= kills it.
 
 A command that reads the region's two ends for itself sees it stop
 before the last newline: =M-x keep-lines= leaves the last line out,
