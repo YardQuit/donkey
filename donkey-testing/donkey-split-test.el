@@ -78,7 +78,10 @@ split can be driven by real keys without a minibuffer."
     (donkey-split-test--on "[0-9]+"
       (donkey-split-test--keys "*split-kill-differ*" "id=1;\nid=22;\nid=333;\n"
           (concat "v G f " keys)
-        (should (equal (list keys kill-ring) (list keys '("1\n22\n333"))))))))
+        (should (equal (list keys kill-ring) (list keys '("1\n22\n333")))))))
+  (donkey-split-test--on ".+\n"
+    (donkey-split-test--keys "*split-kill-differ*" "a1\n\nb2\n" "v G f d"
+      (should (equal kill-ring '("a1\n\nb2\n"))))))
 
 (ert-deftest donkey-split-ignores-case-without-a-capital ()
   "Case is ignored as `replace-regexp' ignores it."
@@ -1920,6 +1923,25 @@ with the accent composed by the display and with `compose-region'."
       (execute-kbd-macro (kbd (nth 1 case)))
       (should (equal (list (nth 1 case) (buffer-string) (car kill-ring))
                      (list (nth 1 case) (nth 3 case) (nth 4 case)))))))
+
+(ert-deftest donkey-split-cursors-change-whole-lines-as-one-cursor-does ()
+  "`t V M c' leaves what `V J M c' leaves, and `t V c' kills what `V J c' kills."
+  (dolist (case '((text-mode "a1\nb2\nc3\n")
+                  (text-mode "x\nx\nc3\n")
+                  (org-mode "* a\nbody\n* b\nbody2\n* c\nbody3\n")))
+    (let ((results
+           (mapcar (lambda (keys)
+                     (donkey-test-keys--harness "*cursors-line-run-c*" (car case) ()
+                         (cadr case) ""
+                       (when (eq (car case) 'org-mode)
+                         (org-overview))
+                       (execute-kbd-macro (kbd keys))
+                       (list (buffer-string) (car kill-ring))))
+                   '("V J M c" "t V M c"))))
+      (should (equal (cons (cadr case) (car results))
+                     (cons (cadr case) (cadr results))))))
+  (donkey-test-keys--harness "*cursors-line-c*" #'text-mode () "a1\nb2\nc3\n" "t V c"
+    (should (equal (car kill-ring) "a1\nb2"))))
 
 (ert-deftest donkey-split-cursors-paste-over-whole-lines-keeping-the-lines ()
   "`V p' at the cursors replaces each line and opens no line under it."

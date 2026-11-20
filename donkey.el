@@ -9137,10 +9137,14 @@ Where the places agree the one string is shared, so a verb over
 One kill whatever the number of places.  Where the places agree it is
 one copy of what they held, so \\[donkey-yank] gives back what was there
 rather than a column of copies; where they differ it is every text, one
-per line, in buffer order.  TEXTS is what the places hold, as
-`donkey--split-place-texts' reads it."
+per line, in buffer order.  Where every place is a cursor\\='s line
+with its newline, the lines are put together as they are, as
+`donkey--split-cursors-kill-text' puts them.  TEXTS is what the places
+hold, as `donkey--split-place-texts' reads it."
   (cond
    ((seq-every-p #'string-empty-p texts) nil)
+   ((and donkey--split-cursors (donkey--split-cursors-whole-lines-p t))
+    (donkey--split-cursors-kill-text texts t))
    (donkey--split-agree (car texts))
    (t (donkey--split-note-kill (string-join texts "\n") (length texts)
                                nil))))
@@ -10991,15 +10995,17 @@ newline."
                                    "\n")))
         (and (= (length pieces) n) pieces)))))
 
-(defun donkey--split-cursors-whole-lines-p ()
+(defun donkey--split-cursors-whole-lines-p (&optional with-newlines)
   "Return non-nil where every cursor has its whole line selected.
 
 A line is selected whole by \\[donkey-split-cursors-select-lines], or
 as the line and its newline, which is how
-\\[donkey-split-cursors-run-toggle] takes such a selection into the run."
+\\[donkey-split-cursors-run-toggle] takes such a selection into the run.
+With WITH-NEWLINES non-nil only the second counts: every cursor\\='s
+place holds its line and the newline after it."
   (seq-every-p (lambda (place)
                  (let ((beg (overlay-start place)))
-                   (or (overlay-get place 'donkey-line)
+                   (or (and (not with-newlines) (overlay-get place 'donkey-line))
                        (and (< beg (overlay-end place))
                             (equal (donkey--whole-line-span beg beg)
                                    (cons beg (overlay-end place)))))))
