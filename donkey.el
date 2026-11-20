@@ -4031,7 +4031,12 @@ the columns `apply-on-rectangle' would give it, and ARGS."
 Around `rectangle--highlight-for-redisplay', which NEXT is, with ORIG,
 START, END, WINDOW and ROL as it takes them.  The highlight is rebuilt
 when what the window shows has moved, so a scroll that is no command
-still finds its rows lit.  An error falls back to the whole rectangle."
+still finds its rows lit.  An error falls back to the whole rectangle.
+
+Where Emacs limits the highlight itself, to `window-height' lines each
+side of point, that height is read as `donkey--window-lines' while
+the highlight is built, so scaled-down text is lit to the window\\='s
+foot as well."
   (if (not donkey-mode)
       (funcall next orig start end window rol)
     (condition-case nil
@@ -4043,9 +4048,17 @@ still finds its rows lit.  An error falls back to the whole rectangle."
                                             span)
                       (if (eq (car-safe rol) 'rectangle)
                           (append (list 'rectangle nil) (nthcdr 2 rol))
-                        rol))))
-          (let ((donkey--rectangle-span span))
-            (funcall next orig start end window rol)))
+                        rol)))
+               (height (symbol-function 'window-height)))
+          (cl-letf (((symbol-function 'window-height)
+                     (lambda (&optional win &rest more)
+                       (let ((lines (apply height win more)))
+                         (if more
+                             lines
+                           (max lines (donkey--window-lines
+                                       (or win (selected-window)))))))))
+            (let ((donkey--rectangle-span span))
+              (funcall next orig start end window rol))))
       (error (funcall next orig start end window rol)))))
 
 (defvar-local donkey--rectangle-primary-overlay nil
