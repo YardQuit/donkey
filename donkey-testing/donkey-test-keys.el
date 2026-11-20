@@ -201,9 +201,11 @@ user was told without silencing the run."
            (cl-letf* ((orig (symbol-function 'message))
                       ((symbol-function 'message)
                        (lambda (fmt &rest args)
-                         (when fmt
-                           (setq donkey-test-keys--said
-                                 (apply #'format fmt args)))
+                         ;; A nil or empty message clears the echo area,
+                         ;; as `tooltip-hide' does before every command.
+                         (setq donkey-test-keys--said
+                               (and fmt (not (equal fmt ""))
+                                    (apply #'format fmt args)))
                          (apply orig fmt args))))
              (execute-kbd-macro (kbd ,keys)))
            ,@body))
