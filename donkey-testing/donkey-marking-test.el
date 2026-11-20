@@ -8432,7 +8432,7 @@ as `text-scale-decrease' makes it, has every one of them lit."
                            nil))))
       (unwind-protect
           (let ((lit (make-hash-table)))
-            (dolist (ov (nthcdr 5 rol))
+            (dolist (ov (seq-filter #'overlayp rol))
               (puthash (line-number-at-pos (overlay-start ov)) t lit))
             (should (= rows (seq-count
                              (lambda (line) (gethash line lit))
