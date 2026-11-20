@@ -620,12 +620,35 @@ open."
 (defvar-local donkey--insert-kind-cache nil
   "What `donkey--insert-state-kind' last answered here, and from what.
 
-The six inputs to that answer followed by the answer.  Kept because
+The answer consed onto the values of `donkey--kind-inputs'.  Kept because
 the question is asked several times for every command -- by the mode
 line, which is a `:eval' form, by the cursor, and by
 `donkey--normal-state-off-p' for the state machinery -- and reaching
 it the long way runs `donkey--support-mode-p', whose own memo
 compares `donkey-support-modes' whole.")
+
+(defconst donkey--kind-inputs
+  '(major-mode buffer-read-only
+    donkey-excluded-modes donkey-excluded-mode-exceptions
+    donkey-support-modes donkey-support-mode-exceptions)
+  "The variables the kind of a buffer is worked out from.
+
+Every memo of that answer keys off these, so one added here is seen by
+all of them.  Compared with `eq', which is why a list a reader changes
+must be a new list.")
+
+(defun donkey--kind-inputs-values ()
+  "Return the current values of `donkey--kind-inputs', in that order."
+  (mapcar #'symbol-value donkey--kind-inputs))
+
+(defun donkey--kind-inputs-current-p (values)
+  "Return non-nil if VALUES are, by `eq', the current `donkey--kind-inputs'.
+
+Walks both lists without consing: this is asked on every command."
+  (let ((vars donkey--kind-inputs))
+    (while (and vars values (eq (car values) (symbol-value (car vars))))
+      (setq vars (cdr vars) values (cdr values)))
+    (and (null vars) (null values))))
 
 (defun donkey--insert-state-kind ()
   "Return which kind of buffer this is: `support', `excluded' or `insert'.
@@ -635,25 +658,17 @@ mode-line letter or the same cursor, so both read the answer here
 rather than working it out apart.  `donkey--support-mode-p' is asked
 first, as it is the one that already excludes an excluded mode.
 
-Memoized on every input to the answer: the major mode, the read-only
-flag the rule reads, and the four lists that decide the kind."
+Memoized on every input to the answer, `donkey--kind-inputs': the
+major mode, the read-only flag the rule reads, and the four lists
+that decide the kind."
   (let ((c donkey--insert-kind-cache))
-    (if (and c
-             (eq (nth 0 c) major-mode)
-             (eq (nth 1 c) buffer-read-only)
-             (eq (nth 2 c) donkey-excluded-modes)
-             (eq (nth 3 c) donkey-excluded-mode-exceptions)
-             (eq (nth 4 c) donkey-support-modes)
-             (eq (nth 5 c) donkey-support-mode-exceptions))
-        (nth 6 c)
+    (if (and c (donkey--kind-inputs-current-p (cdr c)))
+        (car c)
       (let ((result (cond ((donkey--support-mode-p) 'support)
                           ((donkey--excluded-mode-p) 'excluded)
                           (t 'insert))))
         (setq donkey--insert-kind-cache
-              (list major-mode buffer-read-only
-                    donkey-excluded-modes donkey-excluded-mode-exceptions
-                    donkey-support-modes donkey-support-mode-exceptions
-                    result))
+              (cons result (donkey--kind-inputs-values)))
         result))))
 
 (defun donkey--insert-state-lighter ()
@@ -14724,14 +14739,15 @@ list does not stand in its way; where none does they are
 (defvar-local donkey--mode-keys-cache nil
   "What `donkey--install-mode-keys' last built here, or nil.
 
-A vector of everything the answer depends on, compared with `eq', so
-that the map is rebuilt when one of them changes and a command that
-changed none of them pays seven comparisons.
+`donkey-key-packages' consed onto the values of `donkey--kind-inputs',
+compared with `eq', so that the map is rebuilt when one of them
+changes and a command that changed none of them pays seven
+comparisons.
 
-It has to be the same set `donkey--normal-state-off-p' reads, and for
-the same buffer: that predicate decides whether NORMAL state runs, this
-one decides whether the support map is installed, and a buffer where
-the two disagree gets neither.  `buffer-read-only' is in it for that
+Both read the same set, `donkey--kind-inputs', for the same buffer:
+`donkey--normal-state-off-p' decides whether NORMAL state runs, this
+memo whether the support map is installed, and a buffer where the two
+disagree gets neither.  `buffer-read-only' is in it for that
 reason -- `donkey--program-buffer-p' reads it, so a buffer becomes a
 support mode the moment it becomes read-only, with no option changing,
 and stops being one the moment it becomes writable again.
@@ -14912,18 +14928,10 @@ while `donkey--mode-keys-cache' says no input to the answer has
 changed."
   (let ((c donkey--mode-keys-cache))
     (unless (and c
-                 (eq (aref c 0) major-mode)
-                 (eq (aref c 1) buffer-read-only)
-                 (eq (aref c 2) donkey-support-modes)
-                 (eq (aref c 3) donkey-support-mode-exceptions)
-                 (eq (aref c 4) donkey-key-packages)
-                 (eq (aref c 5) donkey-excluded-modes)
-                 (eq (aref c 6) donkey-excluded-mode-exceptions))
+                 (eq (car c) donkey-key-packages)
+                 (donkey--kind-inputs-current-p (cdr c)))
       (setq donkey--mode-keys-cache
-            (vector major-mode buffer-read-only
-                    donkey-support-modes donkey-support-mode-exceptions
-                    donkey-key-packages
-                    donkey-excluded-modes donkey-excluded-mode-exceptions))
+            (cons donkey-key-packages (donkey--kind-inputs-values)))
       (if (donkey--support-mode-p)
           (donkey--install-support-mode-keys)
         (kill-local-variable 'donkey--emulation-mode-map-alist)))))
