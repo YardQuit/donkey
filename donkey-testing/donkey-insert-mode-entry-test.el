@@ -2289,12 +2289,8 @@ belonging to something else."
   "An escaped opener is not the pair being taken off.
 
 Only an unescaped delimiter counts as already standing around the
-selection.  The shape that reaches the rule is an escaped opener with
-an unescaped closer -- where both are escaped, the backslash before
-the closer is what sits next to the selection and the question never
-arises.  Taking that pair off would leave the backslash behind, so the
-selection gets a pair of its own instead.  Where the coverage stops,
-and the docstring says so."
+selection.  Taking that pair off would leave the backslash behind, so
+the selection gets a pair of its own instead."
   (with-temp-buffer
     (emacs-lisp-mode)
     (insert "a \\\"word\" b")
@@ -2305,6 +2301,17 @@ and the docstring says so."
     (should (donkey--wrap-escaped-p 4))
     (should-not (donkey--wrap-escaped-p 9))
     (should-not (donkey--wrap-already-wrapped-p 5 9 ?\" ?\"))))
+
+(ert-deftest donkey-an-escaped-closer-outside-the-selection-is-no-wrap ()
+  "A selection ending in a backslash, before a quote, gets a pair of its own.
+
+The closer is escaped by the selection's last character, so the quotes
+around it are not the pair being taken off; the same for a paren."
+  (dolist (case '(("x \"ab\\\" y" "\"" "x \"\"ab\\\"\" y")
+                  ("x (ab\\) y" "(" "x ((ab\\)) y")))
+    (pcase-let ((`(,text ,key ,expected) case))
+      (donkey-wrap-test--own #'text-mode text (concat "l l l v l l l " key)
+        (should (equal (list text (buffer-string)) (list text expected)))))))
 
 (ert-deftest donkey-a-counted-wrap-of-donkeys-own-wraps-once ()
   "A count before a wrap delimiter wraps once, whatever the count says.

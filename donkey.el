@@ -2683,14 +2683,15 @@ does not, each of those escaping the one before it."
   "Return non-nil when OPEN and CLOSE already stand around BEG and END.
 
 The two characters immediately outside the selection, and only those:
-nothing is searched for.  An escaped delimiter does not count, so a
-selection whose neighbors are escaped quotes gets a pair of its own
+nothing is searched for.  An escaped delimiter on either side does not
+count, so a selection beside an escaped quote gets a pair of its own
 rather than losing the one it stands in."
   (and (> beg (point-min))
        (< end (point-max))
        (eq (char-before beg) open)
        (eq (char-after end) close)
-       (not (donkey--wrap-escaped-p (1- beg)))))
+       (not (donkey--wrap-escaped-p (1- beg)))
+       (not (donkey--wrap-escaped-p end))))
 
 (defun donkey--insertion-read-only-p (pos)
   "Return non-nil when inserting text at POS would be refused as read-only.
