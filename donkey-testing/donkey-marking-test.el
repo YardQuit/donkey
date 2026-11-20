@@ -6595,6 +6595,20 @@ The result is the buffer text followed by the newest kill."
       (should (equal (list (buffer-string) (car kill-ring))
                      (list "* H\nbody\n" "* I\nx\n"))))))
 
+(ert-deftest donkey-changing-a-run-holding-a-folded-heading-takes-its-body ()
+  "`M K c' takes a folded heading with its body and opens Insert state there."
+  (skip-unless (require 'org nil t))
+  (dolist (case '(("M K c" "\n* I\nx\n" "* H\nbody")
+                  ("j M K c" "* H\nbody\n" "* I\nx\n")
+                  ("M c" "* \nbody\n* I\nx\n" "H")))
+    (donkey-test-keys--harness "*donkey-mark-fold*" #'org-mode ()
+        "* H\nbody\n* I\nx\n" ""
+      (org-overview)
+      (execute-kbd-macro (kbd (car case)))
+      (should (equal (list (car case) (buffer-string) (car kill-ring)
+                           donkey-insert-mode)
+                     (list (car case) (nth 1 case) (nth 2 case) t))))))
+
 (ert-deftest donkey-star-trades-the-end-the-motions-hold ()
   "`*' swaps point and mark, so the motions adjust the other end.
 

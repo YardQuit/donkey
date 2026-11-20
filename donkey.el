@@ -1181,6 +1181,9 @@ single empty line.  `V d' takes the newline; `V c' keeps it.
 An EMPTY line under `V' is changed the same way: it stays, empty, with
 INSERT state on it.
 
+A selection holding all a folded heading shows takes the body it hides
+with it, as `donkey-delete' does.
+
 Banked lines are not honored either.  With lines banked via
 `donkey-bank-selection' and no active region, this changes the character
 at point and leaves the banks standing -- `y', `d' and `p' all act on
@@ -1215,7 +1218,13 @@ not entered."
         ;; onto the ring.
         (if (= (mark) (point))
             (deactivate-mark)
-          (kill-region (mark) (point)))
+          (let ((end (donkey--selection-end-with-fold (region-beginning)
+                                                      (region-end))))
+            ;; Mark to point, as `kill-region' is handed a region, so a
+            ;; kill after a kill appends on the side it would.
+            (if (< (point) (mark))
+                (kill-region end (point))
+              (kill-region (mark) end))))
         (donkey-enter-insert))
     ;; Not killed: no selection was made, so there is nothing to put
     ;; back.
@@ -2367,6 +2376,18 @@ the same place."
   (interactive "p")
   (donkey--copy-or-delete count nil))
 
+(defun donkey--selection-end-with-fold (beg end)
+  "Return END, or the end of the fold it begins, for a selection BEG to END.
+
+A selection holding all a line shows before its fold holds the line\\='s
+text, and the fold goes with it, as it does for `V': `y', `d' and `c'
+never take a folded heading from its hidden body.  A selection that
+starts inside that line, or ends anywhere but a line end, keeps END."
+  (if (and (<= beg (donkey--visible-line-start end))
+           (save-excursion (goto-char end) (eolp)))
+      (donkey--visible-line-end end)
+    end))
+
 (defun donkey--copy-or-delete (count copy)
   "Copy, where COPY is non-nil, or delete what `y' and `d' act on.
 
@@ -2389,16 +2410,11 @@ at point.  Only a copy that happened clears the selection."
               (donkey--delete-banked-selection))
             t)
            ((donkey--selection-to-act-on-p)
-            (let* ((bounds (donkey--visual-line-region-bounds))
-                   (end (cdr bounds)))
-              ;; A selection holding all a line shows before its fold
-              ;; holds the line's text, and the fold goes with it, as
-              ;; for `V': the heading is not taken from its hidden body.
-              (when (and (<= (car bounds) (donkey--visible-line-start end))
-                         (save-excursion (goto-char end) (eolp)))
-                (setq end (donkey--visible-line-end end)))
+            (let ((bounds (donkey--visual-line-region-bounds)))
               (funcall (if copy #'kill-ring-save #'kill-region)
-                       (car bounds) end))
+                       (car bounds)
+                       (donkey--selection-end-with-fold (car bounds)
+                                                        (cdr bounds))))
             t)
            ((zerop n) nil)
            ((/= target (point))
