@@ -1077,6 +1077,16 @@ ordinary non-org branch instead and is not this code path at all."
       (should (equal (buffer-string)
                      "#+begin_src emacs-lisp\n  ;; (a)\n  ;; (b)\n#+end_src\n")))))
 
+(ert-deftest donkey-comment-dwim-leaves-out-the-line-a-region-ends-at-the-start-of ()
+  "`v j C' comments one line, in a source block as in a Lisp buffer."
+  (donkey-test-keys--harness "*donkey-C-src*" #'org-mode ()
+      "#+begin_src emacs-lisp\n(a)\n(b)\n(c)\n#+end_src\n" "j v j C"
+    (should (equal (buffer-string)
+                   "#+begin_src emacs-lisp\n  ;; (a)\n  (b)\n  (c)\n#+end_src\n")))
+  (donkey-test-keys--harness "*donkey-C-lisp*" #'emacs-lisp-mode ()
+      "(a)\n(b)\n(c)\n" "v j C"
+    (should (equal (buffer-string) ";; (a)\n(b)\n(c)\n"))))
+
 (ert-deftest donkey-comment-dwim-comments-a-blocks-keyword-line-as-org ()
   "`C' on a keyword line before #+begin comments it as an Org line."
   (donkey-test-keys--harness "*donkey-C-src*" #'org-mode ()

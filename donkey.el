@@ -1581,53 +1581,51 @@ major mode via `org-edit-special' for language-aware commenting, then
 returns to the Org buffer.  A region reaching outside the block
 comments only its lines of code.  On the block\\='s #+begin or #+end line
 with nothing selected, there is no code to comment and it refuses:
-commenting either line alone breaks the block."
+commenting either line alone breaks the block.
+
+Which lines a region takes in is `donkey--region-line-count's answer:
+one that ends at the start of a line leaves that line out, in a source
+block as elsewhere."
   (interactive)
-  (cond
-   ((donkey--org-src-block-lines)
-    (let* ((block (donkey--org-src-block-lines))
-           (has-region (use-region-p))
-           ;; The org lines asked for, cut to the block's code.
-           (from (max (1+ (car block))
-                      (line-number-at-pos
-                       (if has-region (region-beginning) (point)))))
-           (to (min (1- (cdr block))
-                    (line-number-at-pos
-                     (if has-region (region-end) (point))))))
-      (when (> from to)
-        (user-error "Not commented: a source block's #+begin or #+end line -- select lines of its code"))
-      (condition-case err
-          (progn
-            (org-edit-special)
-            ;; `org-edit-special' stays outside the `unwind-protect':
-            ;; with no edit buffer there is nothing to exit from.
-            (unwind-protect
-                ;; The edit buffer's first line is the line after #+begin.
-                (save-excursion
-                  (goto-char (point-min))
-                  (forward-line (- from (car block) 1))
-                  (let ((beg (point)))
-                    (forward-line (- to from))
-                    (comment-or-uncomment-region
-                     beg (line-beginning-position 2))))
-              (org-edit-src-exit))
-            (when has-region (deactivate-mark)))
-        (error
-         (message "donkey-comment-dwim (org-src): %s"
-                  (error-message-string err))))))
-   (t
-    (if (use-region-p)
-        (let ((beg (save-excursion
-                     (goto-char (region-beginning))
-                     (line-beginning-position)))
-              (end (save-excursion
-                     (goto-char (region-end))
-                     (if (bolp) (point) (line-beginning-position 2)))))
-          (comment-or-uncomment-region beg end))
-      (comment-or-uncomment-region
-       (line-beginning-position)
-       (line-beginning-position 2)))
-    (deactivate-mark))))
+  (let* ((region (use-region-p))
+         ;; The lines asked for, from BEG to the start of the line
+         ;; after the last.
+         (beg (save-excursion
+                (goto-char (if region (region-beginning) (point)))
+                (line-beginning-position)))
+         (end (save-excursion
+                (goto-char (if region (region-end) (point)))
+                (if (and region (bolp) (> (point) beg))
+                    (point)
+                  (line-beginning-position 2))))
+         (block (donkey--org-src-block-lines)))
+    (if (not block)
+        (comment-or-uncomment-region beg end)
+      ;; The org lines asked for, cut to the block's code.
+      (let ((from (max (1+ (car block)) (line-number-at-pos beg)))
+            (to (min (1- (cdr block))
+                     (line-number-at-pos (max beg (1- end))))))
+        (when (> from to)
+          (user-error "Not commented: a source block's #+begin or #+end line -- select lines of its code"))
+        (condition-case err
+            (progn
+              (org-edit-special)
+              ;; `org-edit-special' stays outside the `unwind-protect':
+              ;; with no edit buffer there is nothing to exit from.
+              (unwind-protect
+                  ;; The edit buffer's first line is the line after #+begin.
+                  (save-excursion
+                    (goto-char (point-min))
+                    (forward-line (- from (car block) 1))
+                    (let ((code-beg (point)))
+                      (forward-line (- to from))
+                      (comment-or-uncomment-region
+                       code-beg (line-beginning-position 2))))
+                (org-edit-src-exit)))
+          (error
+           (message "donkey-comment-dwim (org-src): %s"
+                    (error-message-string err))))))
+    (deactivate-mark)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Clipboard Tools Detection
