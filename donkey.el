@@ -2292,6 +2292,9 @@ pastes back as a complete line instead of splicing onto whatever line
 \"p\" lands in.  An empty line is a line too: `V y' on one copies its
 newline.
 
+A selection holding all a folded heading shows takes the body it hides
+as well, as `donkey-delete' does: the copy is what a delete removes.
+
 With `rectangle-mark-mode' active, copies the rectangle instead of a
 linear region -- and does so even when lines are banked, leaving every
 bank standing.  The live selection wins and the bank is the fallback;
@@ -2328,6 +2331,10 @@ blanks behind.  Taking one character more than was highlighted is
 deliberate, not an off-by-one: see `donkey--visual-line-region-bounds'.
 An empty line goes the same way, its newline on the kill ring for
 \\[donkey-yank] to put back.
+
+A selection holding all a folded heading shows, such as `M K' on one,
+takes the body it hides with it, as `V' would; a heading is never
+deleted from its hidden body.
 
 With `rectangle-mark-mode' active, kills the rectangle via
 `kill-rectangle', which fills `killed-rectangle' -- the store
@@ -2382,9 +2389,16 @@ at point.  Only a copy that happened clears the selection."
               (donkey--delete-banked-selection))
             t)
            ((donkey--selection-to-act-on-p)
-            (let ((bounds (donkey--visual-line-region-bounds)))
+            (let* ((bounds (donkey--visual-line-region-bounds))
+                   (end (cdr bounds)))
+              ;; A selection holding all a line shows before its fold
+              ;; holds the line's text, and the fold goes with it, as
+              ;; for `V': the heading is not taken from its hidden body.
+              (when (and (<= (car bounds) (donkey--visible-line-start end))
+                         (save-excursion (goto-char end) (eolp)))
+                (setq end (donkey--visible-line-end end)))
               (funcall (if copy #'kill-ring-save #'kill-region)
-                       (car bounds) (cdr bounds)))
+                       (car bounds) end))
             t)
            ((zerop n) nil)
            ((/= target (point))

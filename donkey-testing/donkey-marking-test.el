@@ -6579,6 +6579,22 @@ The result is the buffer text followed by the newest kill."
     (should (equal (donkey-mark-test--fold-first text "j M K K y")
                    (list text "* H\nbody\n* I")))))
 
+(ert-deftest donkey-a-run-holding-a-folded-heading-takes-its-body ()
+  "`M K d' and `M K y' take a folded heading with its body; `M d' the word."
+  (skip-unless (require 'org nil t))
+  (let ((text "* H\nbody\n* I\nx\n"))
+    (should (equal (donkey-mark-test--fold-first text "M K d")
+                   (list "\n* I\nx\n" "* H\nbody")))
+    (should (equal (donkey-mark-test--fold-first text "M K y")
+                   (list text "* H\nbody")))
+    (should (equal (donkey-mark-test--fold-first text "M d")
+                   (list "* \nbody\n* I\nx\n" "H")))
+    (donkey-test-keys--harness "*donkey-mark-fold*" #'org-mode () text ""
+      (org-overview)
+      (execute-kbd-macro (kbd "j M K d"))
+      (should (equal (list (buffer-string) (car kill-ring))
+                     (list "* H\nbody\n" "* I\nx\n"))))))
+
 (ert-deftest donkey-star-trades-the-end-the-motions-hold ()
   "`*' swaps point and mark, so the motions adjust the other end.
 

@@ -412,7 +412,9 @@ go and starts a plain one at the cursor.
 A line is the line the screen shows. A folded Org or outline heading
 is one line, so =V= takes it with the body it hides and =J= and =K=
 step over it in one press, in a line selection and in a mark run, the
-way =m l= banks it and Emacs's =kill-whole-line= kills it. =g j= on a
+way =m l= banks it and Emacs's =kill-whole-line= kills it. A
+selection that holds all a folded heading shows holds its body too, so
+=M K d= on one deletes the heading with its body. =g j= on a
 folded heading joins nothing, since the line below it is hidden: show
 the body first.
 
