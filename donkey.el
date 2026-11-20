@@ -8073,9 +8073,14 @@ On `before-save-hook' while a split is armed, ahead of the reader\\='s
 own functions there, so the file and whatever formats it get the text
 the buffer shows.  Nothing is written over a change the split did not
 see; see `donkey--split-note-unseen'.  A place that cannot be written
-is reported by Emacs, which saves all the same."
-  (unless (donkey--split-note-unseen)
-    (donkey--split-sweep-flush)))
+is reported in the echo area and the save goes ahead, whatever
+`debug-on-error' says: never signals."
+  (condition-case err
+      (unless (donkey--split-note-unseen)
+        (donkey--split-sweep-flush))
+    (error
+     (message "Split: not every place was written before the save -- %s"
+              (error-message-string err)))))
 
 (defun donkey--split-text-at (texts i)
   "Return element I of TEXTS, as `donkey--split-texts' shapes them.

@@ -1051,6 +1051,31 @@ when BODY runs.  `donkey-split-test--saved' counts what the file holds."
     (should-not (buffer-modified-p))
     (should (= (donkey-split-test--saved "foo 7999") 1))))
 
+(ert-deftest donkey-split-saves-though-a-place-cannot-be-written-when-debugging ()
+  "With `debug-on-error' on, a place that refuses still leaves the save to go ahead."
+  (donkey-split-test--saving
+    (save-excursion
+      (goto-char (point-max))
+      (search-backward "foo 7999")
+      (let ((inhibit-read-only t)
+            (buffer-undo-list t))
+        (put-text-property (point) (+ (point) 3) 'read-only t)))
+    (let ((said nil))
+      (cl-letf* ((orig (symbol-function 'message))
+                 ((symbol-function 'message)
+                  (lambda (fmt &rest args)
+                    (when (and fmt (string-prefix-p "Split:" fmt))
+                      (setq said (apply #'format fmt args)))
+                    (let ((inhibit-message t))
+                      (apply orig fmt args)))))
+        (let ((debug-on-error t)
+              (debugger (lambda (&rest _) (error "Entered the debugger"))))
+          (save-buffer)))
+      (should-not (buffer-modified-p))
+      (should (= (donkey-split-test--saved "foo 7999") 1))
+      (should (equal said (concat "Split: not every place was written"
+                                  " before the save -- Text is read-only"))))))
+
 (ert-deftest donkey-split-ends-when-donkey-mode-is-turned-off ()
   "Turning DONKEY off takes a split down with it."
   (unwind-protect
